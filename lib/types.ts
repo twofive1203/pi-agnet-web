@@ -31,6 +31,13 @@ export interface ImageContent {
   };
 }
 
+/** A file attached to a chat message (stored server-side, referenced by path). */
+export interface AttachedFile {
+  name: string;
+  size: number;
+  path: string;
+}
+
 export interface ThinkingContent {
   type: "thinking";
   thinking: string;
