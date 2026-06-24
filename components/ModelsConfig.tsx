@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import type { DeepSeekBalanceResult } from "@/lib/deepseek-balance";
 // Color icons (have their own fill colors — no background needed)
 import AnthropicIcon from "@lobehub/icons/es/Anthropic/components/Mono";
 import OpenAIIcon from "@lobehub/icons/es/OpenAI/components/Mono";
@@ -108,6 +109,24 @@ type OAuthLoginState =
   | { phase: "progress"; message: string }
   | { phase: "success" }
   | { phase: "error"; message: string };
+
+type CredentialStatus = "valid" | "expired" | "not_found" | "parse_error";
+
+interface QuotaTier {
+  name: string;
+  utilization: number;
+  resetsAt: string | null;
+}
+
+interface SubscriptionQuota {
+  tool: string;
+  credentialStatus: CredentialStatus;
+  credentialMessage: string | null;
+  success: boolean;
+  tiers: QuotaTier[];
+  error: string | null;
+  queriedAt: number | null;
+}
 
 interface ModelEntry {
   id: string;
@@ -704,9 +723,152 @@ function ModelDetail({
 
 // ── OAuth detail ──────────────────────────────────────────────────────────────
 
+const QUOTA_TIER_LABELS: Record<string, string> = {
+  five_hour: "5h",
+  seven_day: "7d",
+};
+
+/**
+ * 根据额度使用百分比返回展示颜色。
+ *
+ * @param utilization 使用百分比，范围通常为 0-100。
+ * @returns CSS 颜色值。
+ */
+function quotaColor(utilization: number): string {
+  if (utilization >= 90) return "#f87171";
+  if (utilization >= 70) return "#fb923c";
+  return "#4ade80";
+}
+
+/**
+ * 格式化额度窗口重置倒计时。
+ *
+ * @param resetsAt ISO 格式的重置时间。
+ * @returns 简短倒计时文本，无法计算时返回 null。
+ */
+function formatResetCountdown(resetsAt: string | null): string | null {
+  if (!resetsAt) return null;
+  const diffMs = new Date(resetsAt).getTime() - Date.now();
+  if (!Number.isFinite(diffMs) || diffMs <= 0) return null;
+
+  const totalMinutes = Math.floor(diffMs / 60000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours >= 24) return `${Math.floor(hours / 24)}d ${hours % 24}h`;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${minutes}m`;
+}
+
+/**
+ * 格式化额度查询的相对更新时间。
+ *
+ * @param timestamp 查询完成的毫秒时间戳。
+ * @returns 简短相对时间文本。
+ */
+function formatQuotaQueriedAt(timestamp: number | null): string {
+  if (!timestamp) return "never";
+  const diffSeconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
+  if (diffSeconds < 60) return "just now";
+  if (diffSeconds < 3600) return `${Math.floor(diffSeconds / 60)}m ago`;
+  if (diffSeconds < 86400) return `${Math.floor(diffSeconds / 3600)}h ago`;
+  return `${Math.floor(diffSeconds / 86400)}d ago`;
+}
+
+/**
+ * 渲染 OAuth 订阅额度查询结果。
+ *
+ * @param props.quota 当前订阅额度结果。
+ * @param props.loading 是否正在刷新额度。
+ * @param props.onRefresh 手动刷新额度的回调。
+ * @returns 订阅额度展示内容。
+ */
+function OAuthQuotaView({
+  quota,
+  loading,
+  onRefresh,
+}: {
+  quota: SubscriptionQuota | null;
+  loading: boolean;
+  onRefresh: () => void;
+}) {
+  if (!quota && !loading) return null;
+
+  const knownTiers = (quota?.tiers ?? []).filter((tier) => tier.name in QUOTA_TIER_LABELS);
+
+  return (
+    <div style={{ border: "1px solid var(--border)", borderRadius: 6, background: "var(--bg-panel)", padding: 12, display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0 }}>Usage</span>
+          <span style={{ fontSize: 11, color: "var(--text-dim)" }}>
+            {loading ? "Refreshing…" : `Updated ${formatQuotaQueriedAt(quota?.queriedAt ?? null)}`}
+          </span>
+        </div>
+        <button
+          onClick={onRefresh}
+          disabled={loading}
+          title="Refresh usage"
+          aria-label="Refresh usage"
+          style={{ width: 28, height: 28, border: "1px solid var(--border)", borderRadius: 5, background: "var(--bg)", color: loading ? "var(--text-dim)" : "var(--text-muted)", cursor: loading ? "default" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 12a9 9 0 0 1-9 9 8.8 8.8 0 0 1-6.36-2.64" />
+            <path d="M3 12a9 9 0 0 1 9-9 8.8 8.8 0 0 1 6.36 2.64" />
+            <path d="M3 4v8h8" />
+            <path d="M21 20v-8h-8" />
+          </svg>
+        </button>
+      </div>
+
+      {quota && quota.credentialStatus === "expired" && !quota.success && (
+        <div style={{ fontSize: 12, color: "#fb923c", lineHeight: 1.5 }}>{quota.error ?? "Token expired. Please re-login."}</div>
+      )}
+
+      {quota && quota.credentialStatus === "parse_error" && (
+        <div style={{ fontSize: 12, color: "#f87171", lineHeight: 1.5 }}>{quota.error ?? "Failed to read OAuth credentials."}</div>
+      )}
+
+      {quota && quota.credentialStatus === "not_found" && (
+        <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.5 }}>No OAuth credential found.</div>
+      )}
+
+      {quota && quota.credentialStatus === "valid" && !quota.success && (
+        <div style={{ fontSize: 12, color: "#f87171", lineHeight: 1.5 }}>{quota.error ?? "Usage query failed."}</div>
+      )}
+
+      {quota?.success && knownTiers.length === 0 && (
+        <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.5 }}>No quota windows returned.</div>
+      )}
+
+      {knownTiers.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {knownTiers.map((tier) => {
+            const color = quotaColor(tier.utilization);
+            const countdown = formatResetCountdown(tier.resetsAt);
+            return (
+              <div key={tier.name} style={{ display: "grid", gridTemplateColumns: "46px 1fr 84px", alignItems: "center", gap: 10 }}>
+                <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600 }}>{QUOTA_TIER_LABELS[tier.name]}</span>
+                <div style={{ height: 6, borderRadius: 99, background: "var(--bg)", border: "1px solid var(--border)", overflow: "hidden" }}>
+                  <div style={{ height: "100%", width: `${Math.min(Math.max(tier.utilization, 0), 100)}%`, background: color }} />
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 1, minWidth: 0 }}>
+                  <span style={{ fontSize: 12, color, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{Math.round(tier.utilization)}%</span>
+                  {countdown && <span style={{ fontSize: 10, color: "var(--text-dim)", whiteSpace: "nowrap" }}>{countdown}</span>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefresh: () => void }) {
   const [loginState, setLoginState] = useState<OAuthLoginState>({ phase: "idle" });
   const [inputValue, setInputValue] = useState("");
+  const [quota, setQuota] = useState<SubscriptionQuota | null>(null);
+  const [quotaLoading, setQuotaLoading] = useState(false);
   const eventSourceRef = useRef<EventSource | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -720,6 +882,8 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
   useEffect(() => {
     setLoginState({ phase: "idle" });
     setInputValue("");
+    setQuota(null);
+    setQuotaLoading(false);
     eventSourceRef.current?.close();
     eventSourceRef.current = null;
   }, [provider.id]);
@@ -727,6 +891,34 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
   useEffect(() => {
     return () => { eventSourceRef.current?.close(); };
   }, []);
+
+  const loadQuota = useCallback(async () => {
+    if (provider.id !== "openai-codex" || !provider.loggedIn) return;
+    setQuotaLoading(true);
+    try {
+      const res = await fetch(`/api/auth/quota/${encodeURIComponent(provider.id)}`);
+      const data = await res.json() as SubscriptionQuota;
+      setQuota(data);
+    } catch (error) {
+      setQuota({
+        tool: provider.id,
+        credentialStatus: "valid",
+        credentialMessage: error instanceof Error ? error.message : String(error),
+        success: false,
+        tiers: [],
+        error: error instanceof Error ? error.message : "Usage query failed",
+        queriedAt: Date.now(),
+      });
+    } finally {
+      setQuotaLoading(false);
+    }
+  }, [provider.id, provider.loggedIn]);
+
+  useEffect(() => {
+    if (provider.id === "openai-codex" && provider.loggedIn) {
+      void loadQuota();
+    }
+  }, [provider.id, provider.loggedIn, loadQuota]);
 
   const handleLogin = useCallback(() => {
     eventSourceRef.current?.close();
@@ -957,11 +1149,126 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
           </>
         )}
       </div>
+
+      {provider.id === "openai-codex" && provider.loggedIn && (
+        <OAuthQuotaView quota={quota} loading={quotaLoading} onRefresh={loadQuota} />
+      )}
     </div>
   );
 }
 
 // ── API Key detail ────────────────────────────────────────────────────────────
+
+/**
+ * 格式化余额查询的相对更新时间。
+ *
+ * @param timestamp 查询完成的毫秒时间戳。
+ * @returns 简短相对时间文本。
+ */
+function formatBalanceQueriedAt(timestamp: number | null): string {
+  if (!timestamp) return "never";
+  const diffSeconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
+  if (diffSeconds < 60) return "just now";
+  if (diffSeconds < 3600) return `${Math.floor(diffSeconds / 60)}m ago`;
+  if (diffSeconds < 86400) return `${Math.floor(diffSeconds / 3600)}h ago`;
+  return `${Math.floor(diffSeconds / 86400)}d ago`;
+}
+
+/**
+ * 将 DeepSeek 币种转换为展示前缀。
+ *
+ * @param currency DeepSeek 返回的币种代码。
+ * @returns 展示余额时使用的货币前缀。
+ */
+function deepSeekCurrencyPrefix(currency: string): string {
+  if (currency === "CNY") return "¥";
+  if (currency === "USD") return "$";
+  return "";
+}
+
+/**
+ * 渲染 DeepSeek 官方余额查询结果。
+ *
+ * @param props.balance 当前余额查询结果。
+ * @param props.loading 是否正在刷新余额。
+ * @param props.onRefresh 手动刷新余额的回调。
+ * @returns DeepSeek 余额展示内容。
+ */
+function DeepSeekBalanceView({
+  balance,
+  loading,
+  onRefresh,
+}: {
+  balance: DeepSeekBalanceResult | null;
+  loading: boolean;
+  onRefresh: () => void;
+}) {
+  const availableColor = balance?.isAvailable === false ? "#f87171" : "#4ade80";
+
+  return (
+    <div style={{ border: "1px solid var(--border)", borderRadius: 6, background: "var(--bg-panel)", padding: 12, display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0 }}>Balance</span>
+          <span style={{ fontSize: 11, color: "var(--text-dim)" }}>
+            {loading ? "Refreshing…" : `Updated ${formatBalanceQueriedAt(balance?.queriedAt ?? null)}`}
+          </span>
+        </div>
+        <button
+          onClick={onRefresh}
+          disabled={loading}
+          title="Refresh balance"
+          aria-label="Refresh balance"
+          style={{ width: 28, height: 28, border: "1px solid var(--border)", borderRadius: 5, background: "var(--bg)", color: loading ? "var(--text-dim)" : "var(--text-muted)", cursor: loading ? "default" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 12a9 9 0 0 1-9 9 8.8 8.8 0 0 1-6.36-2.64" />
+            <path d="M3 12a9 9 0 0 1 9-9 8.8 8.8 0 0 1 6.36 2.64" />
+            <path d="M3 4v8h8" />
+            <path d="M21 20v-8h-8" />
+          </svg>
+        </button>
+      </div>
+
+      {balance?.error && (
+        <div style={{ fontSize: 12, color: "#f87171", lineHeight: 1.5 }}>{balance.error}</div>
+      )}
+
+      {balance?.success && (
+        <>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+            <span style={{ fontSize: 12, color: "var(--text-muted)" }}>API calls</span>
+            <span style={{ fontSize: 12, color: availableColor, fontWeight: 700 }}>
+              {balance.isAvailable === false ? "Unavailable" : "Available"}
+            </span>
+          </div>
+
+          {balance.balanceInfos.length === 0 ? (
+            <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.5 }}>No balance details returned.</div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {balance.balanceInfos.map((info) => {
+                const prefix = deepSeekCurrencyPrefix(info.currency);
+                return (
+                  <div key={info.currency} style={{ border: "1px solid var(--border)", borderRadius: 5, background: "var(--bg)", padding: 10, display: "grid", gridTemplateColumns: "1fr auto", gap: 8 }}>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                      <span style={{ fontSize: 11, color: "var(--text-dim)", fontWeight: 600 }}>{info.currency}</span>
+                      <span style={{ fontSize: 18, color: "var(--text)", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{prefix}{info.totalBalance}</span>
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 3, alignItems: "flex-end", justifyContent: "center" }}>
+                      <span style={{ fontSize: 11, color: "var(--text-dim)", fontVariantNumeric: "tabular-nums" }}>grant {prefix}{info.grantedBalance}</span>
+                      <span style={{ fontSize: 11, color: "var(--text-dim)", fontVariantNumeric: "tabular-nums" }}>top-up {prefix}{info.toppedUpBalance}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
 
 function ApiKeyDetail({ provider, onRefresh }: { provider: ApiKeyProvider; onRefresh: () => void }) {
   const [apiKey, setApiKey] = useState("");
@@ -969,13 +1276,50 @@ function ApiKeyDetail({ provider, onRefresh }: { provider: ApiKeyProvider; onRef
   const [removing, setRemoving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedOk, setSavedOk] = useState(false);
+  const [balance, setBalance] = useState<DeepSeekBalanceResult | null>(null);
+  const [balanceLoading, setBalanceLoading] = useState(false);
 
   // Reset state when provider changes
   useEffect(() => {
     setApiKey("");
     setError(null);
     setSavedOk(false);
-  }, [provider.id]);
+    setBalance(null);
+    setBalanceLoading(false);
+  }, [provider.id, provider.configured]);
+
+  /**
+   * 从服务端刷新 DeepSeek 官方余额。
+   *
+   * @returns 无返回值，查询结果写入组件状态。
+   */
+  const loadDeepSeekBalance = useCallback(async () => {
+    if (provider.id !== "deepseek" || !provider.configured) return;
+    setBalanceLoading(true);
+    try {
+      const res = await fetch(`/api/auth/balance/${encodeURIComponent(provider.id)}`);
+      const data = await res.json() as DeepSeekBalanceResult;
+      setBalance(data);
+    } catch (e) {
+      setBalance({
+        provider: provider.id,
+        configured: provider.configured,
+        success: false,
+        isAvailable: null,
+        balanceInfos: [],
+        error: e instanceof Error ? e.message : String(e),
+        queriedAt: Date.now(),
+      });
+    } finally {
+      setBalanceLoading(false);
+    }
+  }, [provider.id, provider.configured]);
+
+  useEffect(() => {
+    if (provider.id === "deepseek" && provider.configured) {
+      void loadDeepSeekBalance();
+    }
+  }, [provider.id, provider.configured, loadDeepSeekBalance]);
 
   const handleSave = useCallback(async () => {
     if (!apiKey.trim()) return;
@@ -993,6 +1337,7 @@ function ApiKeyDetail({ provider, onRefresh }: { provider: ApiKeyProvider; onRef
         setError(d.error ?? `HTTP ${res.status}`);
       } else {
         setApiKey("");
+        setBalance(null);
         setSavedOk(true);
         setTimeout(() => setSavedOk(false), 2000);
         onRefresh();
@@ -1011,7 +1356,10 @@ function ApiKeyDetail({ provider, onRefresh }: { provider: ApiKeyProvider; onRef
       const res = await fetch(`/api/auth/api-key/${encodeURIComponent(provider.id)}`, { method: "DELETE" });
       const d = await res.json() as { success?: boolean; error?: string };
       if (!res.ok || d.error) setError(d.error ?? `HTTP ${res.status}`);
-      else onRefresh();
+      else {
+        setBalance(null);
+        onRefresh();
+      }
     } catch (e) {
       setError(String(e));
     } finally {
@@ -1073,6 +1421,10 @@ function ApiKeyDetail({ provider, onRefresh }: { provider: ApiKeyProvider; onRef
       </Field>
 
       {error && <p style={{ margin: 0, fontSize: 12, color: "#f87171" }}>{error}</p>}
+
+      {provider.id === "deepseek" && provider.configured && (
+        <DeepSeekBalanceView balance={balance} loading={balanceLoading} onRefresh={loadDeepSeekBalance} />
+      )}
 
       {provider.configured && (
         <button
