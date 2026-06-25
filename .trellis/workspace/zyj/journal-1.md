@@ -45,3 +45,36 @@ Implemented [Add Chat] feature in file preview panel:
 ### Next Steps
 
 - None - task complete
+
+
+## Session 2: New WorkTree session flow
+
+**Date**: 2026-06-25
+**Task**: New WorkTree session flow
+**Branch**: `main`
+
+### Summary
+
+Added New WorkTree flow with configurable worktree defaults, backend Git worktree creation API, worktree session metadata, immediate file browsing support, and grouped worktree display in the project picker.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e4594a9` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
