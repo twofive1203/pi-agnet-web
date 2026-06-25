@@ -91,6 +91,7 @@ Browser                Next.js Server              AgentSession (in-process)
 | `skills/install/` | POST | Install a skill via `npx skills add` |
 | `commands/` | GET | List slash commands from skills for a cwd |
 | `cwd/validate/` | POST | Validate a candidate workspace path |
+| `git/worktrees/` | POST | Create a Git worktree from the selected cwd and allow immediate file browsing |
 | `default-cwd/` | POST | Create and return `~/pi-cwd-<YYYYMMDD>` |
 | `home/` | GET | Return `os.homedir()` |
 | `usage/` | GET | Aggregate token/cost stats across sessions |
@@ -293,6 +294,7 @@ Default: `~/.pi/agent/`
 Override via `PI_CODING_AGENT_DIR` environment variable.  
 Session files: `~/.pi/agent/sessions/<encoded-cwd>/<timestamp>_<uuid>.jsonl`  
 Model config: `~/.pi/agent/models.json`  
+Web config: `~/.pi/agent/pi-web.json` (currently used for New WorkTree defaults)
 Settings: `~/.pi/agent/settings.json`
 
 ---

@@ -2,6 +2,7 @@ import { SessionManager, buildSessionContext as piBuildSessionContext, getAgentD
 import type { SessionEntry, SessionInfo, SessionContext, SessionTreeNode, AssistantMessage } from "./types";
 import type { SessionEntry as PiSessionEntry, SessionInfo as PiSessionInfo } from "@earendil-works/pi-coding-agent";
 import { normalizeToolCalls } from "./normalize";
+import { getWorktreeMetadataForCwd } from "./git-worktree";
 
 export { getAgentDir };
 
@@ -13,6 +14,16 @@ export async function listAllSessions(): Promise<SessionInfo[]> {
   const piSessions: PiSessionInfo[] = await SessionManager.listAll();
   const pathToId = new Map<string, string>();
   for (const s of piSessions) pathToId.set(s.path, s.id);
+
+  const worktreeByCwd = new Map<string, SessionInfo["worktree"]>();
+  await Promise.all([...new Set(piSessions.map((s) => s.cwd).filter(Boolean))].map(async (cwd) => {
+    try {
+      const metadata = await getWorktreeMetadataForCwd(cwd);
+      if (metadata) worktreeByCwd.set(cwd, metadata);
+    } catch {
+      // Worktree metadata is best-effort; normal session listing must still work.
+    }
+  }));
 
   const cache = getPathCache();
   return piSessions.map((s) => {
@@ -28,6 +39,7 @@ export async function listAllSessions(): Promise<SessionInfo[]> {
       messageCount: s.messageCount,
       firstMessage: s.firstMessage || "(no messages)",
       parentSessionId: s.parentSessionPath ? pathToId.get(s.parentSessionPath) : undefined,
+      worktree: worktreeByCwd.get(s.cwd),
     };
   });
 }

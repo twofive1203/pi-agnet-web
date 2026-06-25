@@ -184,6 +184,13 @@ export interface SessionTreeNode {
   label?: string;
 }
 
+export interface WorktreeInfo {
+  isWorktree: true;
+  branch?: string;
+  repoRoot?: string;
+  mainWorktreePath?: string;
+}
+
 export interface SessionInfo {
   path: string;
   id: string;
@@ -194,6 +201,7 @@ export interface SessionInfo {
   messageCount: number;
   firstMessage: string;
   parentSessionId?: string; // set if this session was forked from another
+  worktree?: WorktreeInfo;
 }
 
 export interface SessionContext {
