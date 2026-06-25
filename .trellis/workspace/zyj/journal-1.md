@@ -177,3 +177,36 @@ Added a generic Settings modal with WorkTree configuration, persisted pi-web.jso
 ### Next Steps
 
 - None - task complete
+
+
+## Session 6: Worktree archive and deletion safeguards
+
+**Date**: 2026-06-25
+**Task**: Worktree archive and deletion safeguards
+**Branch**: `pi/20260625-121412`
+
+### Summary
+
+Added WorkTree archive/delete flows, clearer dirty-worktree prompts, hook-safe archive commits, and pinned main project rows in the workspace picker.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `586ace4` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
