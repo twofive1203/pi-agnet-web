@@ -507,3 +507,69 @@ Translated all TrellisPanel UI labels, tooltips, empty states, progress descript
 ### Next Steps
 
 - None - task complete
+
+
+## Session 16: Git status panel in central chat top bar
+
+**Date**: 2026-06-26
+**Task**: Git status panel in central chat top bar
+**Branch**: `pi/20260626-170826`
+
+### Summary
+
+Implemented Git status dropdown panel for the central chat top bar. Added GET /api/git/status route returning branch, commits, staged/unstaged changes, untracked files, and stash count. Created GitPanel component with six sections: Branch Status, Recent Commits, Staged, Unstaged, Untracked, Stash. Integrated into AppShell with activeTopPanel='git', orange dirty indicator on the Git button, auto-refresh on agent end and cwd switch. Added GitFileChange, GitCommitInfo, GitStatusInfo types to lib/types.ts. Allowed 127.0.0.1 and localhost in allowedDevOrigins for HMR dev access.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `28498c5` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 17: Add Git commit graph visualization
+
+**Date**: 2026-06-26
+**Task**: Add Git commit graph visualization
+**Branch**: `pi/20260626-170826`
+
+### Summary
+
+Added a Git commit graph API and Git panel visualization with branch lanes, fork/merge connector arrows, custom SVG hover tooltips, row highlighting, dense spacing, and removed non-commit branch indicator dots.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `02e1cfe` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

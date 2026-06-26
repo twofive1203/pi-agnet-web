@@ -13,6 +13,7 @@ import { SubagentPanel } from "./SubagentPanel";
 import { SettingsConfig } from "./SettingsConfig";
 import { TrellisPanel } from "./TrellisPanel";
 import { BranchNavigator } from "./BranchNavigator";
+import { GitPanel } from "./GitPanel";
 import { getRelativeFilePath } from "@/lib/file-paths";
 import { formatWorkspaceTitle } from "@/lib/workspace-title";
 import { useTheme } from "@/hooks/useTheme";
@@ -97,11 +98,15 @@ export function AppShell() {
     setSubagentRuns(runs);
   }, []);
 
+  // Git panel state
+  const [gitDirty, setGitDirty] = useState(false);
+  const [gitRefreshKey, setGitRefreshKey] = useState(0);
+
   // Single active panel — only one dropdown open at a time
-  const [activeTopPanel, setActiveTopPanel] = useState<"branches" | "system" | "subagents" | null>(null);
+  const [activeTopPanel, setActiveTopPanel] = useState<"branches" | "system" | "subagents" | "git" | null>(null);
   const [topPanelPos, setTopPanelPos] = useState<{ top: number; left: number; width: number } | null>(null);
 
-  const toggleTopPanel = useCallback((panel: "branches" | "system" | "subagents") => {
+  const toggleTopPanel = useCallback((panel: "branches" | "system" | "subagents" | "git") => {
     setActiveTopPanel((cur) => cur === panel ? null : panel);
   }, []);
 
@@ -159,6 +164,8 @@ export function AppShell() {
     setBranchActiveLeafId(null);
     setSystemPrompt(null);
     setActiveTopPanel(null);
+    setGitRefreshKey((k) => k + 1);
+    setGitDirty(false);
     router.replace("/", { scroll: false });
   }, [router]);
 
@@ -203,6 +210,7 @@ export function AppShell() {
   const handleAgentEnd = useCallback(() => {
     setRefreshKey((k) => k + 1);
     setExplorerRefreshKey((k) => k + 1);
+    setGitRefreshKey((k) => k + 1);
   }, []);
 
   const handleSessionForked = useCallback((newSessionId: string) => {
@@ -636,6 +644,38 @@ export function AppShell() {
                   return null;
                 })()}
               </button>
+              <button
+                onClick={() => toggleTopPanel("git")}
+                style={{
+                  display: "flex", alignItems: "center", gap: 6,
+                  height: "100%", padding: "0 12px",
+                  background: activeTopPanel === "git" ? "var(--bg-selected)" : "none",
+                  border: "none",
+                  borderTop: activeTopPanel === "git" ? "2px solid var(--accent)" : "2px solid transparent",
+                  borderRight: "1px solid var(--border)",
+                  cursor: "pointer",
+                  color: activeTopPanel === "git" ? "var(--text)" : "var(--text-muted)",
+                  fontSize: 11, whiteSpace: "nowrap", transition: "color 0.1s, background 0.1s",
+                  position: "relative",
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text)"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.color = activeTopPanel === "git" ? "var(--text)" : "var(--text-muted)"; }}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                  <line x1="6" y1="3" x2="6" y2="15" />
+                  <circle cx="18" cy="6" r="3" />
+                  <circle cx="6" cy="18" r="3" />
+                  <path d="M18 9a9 9 0 0 1-9 9" />
+                </svg>
+                <span>Git</span>
+                {gitDirty && (
+                  <span style={{
+                    position: "absolute", top: 4, right: 4,
+                    width: 7, height: 7, borderRadius: "50%",
+                    background: "#f59e0b",
+                  }} />
+                )}
+              </button>
             </div>
           )}
           {/* Session stats — right-aligned in top bar */}
@@ -766,6 +806,14 @@ export function AppShell() {
                   borderBottom: "1px solid var(--border)",
                 }}>
                   <SubagentPanel runs={subagentRuns} />
+                </div>
+              )}
+              {activeTopPanel === "git" && (
+                <div style={{
+                  background: "var(--bg-panel)",
+                  borderBottom: "1px solid var(--border)",
+                }}>
+                  <GitPanel cwd={trellisCwd} refreshKey={gitRefreshKey} onDirtyChange={setGitDirty} />
                 </div>
               )}
             </div>

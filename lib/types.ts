@@ -233,3 +233,62 @@ export interface RpcSessionState {
   sessionName?: string;
   messageCount: number;
 }
+
+// Git status panel types
+export interface GitFileChange {
+  status: "M" | "A" | "D" | "R" | "C" | "U" | "?";
+  file: string;
+  oldFile?: string;
+}
+
+export interface GitCommitInfo {
+  hash: string;
+  message: string;
+  author: string;
+  date: string;
+  relativeDate: string;
+}
+
+export interface GitCommitRef {
+  name: string;
+  type: "branch" | "tag" | "head" | "remote";
+}
+
+export interface GitGraphCommit {
+  hash: string;
+  message: string;
+  author: string;
+  date: string;
+  relativeDate: string;
+  parents: string[];
+  refs: GitCommitRef[];
+}
+
+export interface GitBranchInfo {
+  name: string;
+  isCurrent: boolean;
+  upstream?: string | null;
+  ahead: number;
+  behind: number;
+  latestCommit: string;
+}
+
+export interface GitGraphData {
+  commits: GitGraphCommit[];
+  branches: GitBranchInfo[];
+}
+
+export interface GitStatusInfo {
+  branch: string | null;
+  upstream: string | null;
+  isDetached: boolean;
+  isDirty: boolean;
+  isWorktree: boolean;
+  ahead: number;
+  behind: number;
+  staged: GitFileChange[];
+  unstaged: GitFileChange[];
+  untracked: string[];
+  recentCommits: GitCommitInfo[];
+  stashCount: number;
+}

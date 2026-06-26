@@ -30,6 +30,8 @@ API routes live under `app/api/`. When adding, removing, or changing routes, upd
 | `sessions/archived/` | GET | List archived sessions for a cwd. |
 | `git/worktrees/archive/` | POST | Squash, push, merge, and remove a Git worktree after user risk confirmation; archive also deletes sessions for that worktree cwd. |
 | `git/info/` | GET | Return best-effort Git branch/worktree metadata for a cwd. |
+| `git/status/` | GET | Return detailed Git status (branch, commits, staged/unstaged changes, untracked files, stash) for a cwd. |
+| `git/graph/` | GET | Return decorated commit graph data (commits, parents, refs, local branches) for the Git panel branch visualization. |
 | `web-config/` | GET/PUT | Read/write `~/.pi/agent/pi-web.json` for WorkTree defaults and optional Trellis panel settings. |
 | `trellis/tasks/` | GET | List read-only Trellis task summaries for an authorized workspace cwd when the Trellis panel setting is enabled. |
 | `trellis/tasks/[taskKey]/` | GET | Read one Trellis task detail, artifacts, manifest counts, hierarchy, and derived phase/progress. |
