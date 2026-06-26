@@ -33,10 +33,11 @@ Start with:
 pm2 start ecosystem.config.cjs
 ```
 
-## Proxy Startup and Update
+## Proxy Startup
 
-- `start-pi-web-proxy.sh` starts pi-web with `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, and `NODE_OPTIONS=--use-env-proxy`.
-- `update-pi-web.sh` fetches/pulls with rebase/autostash, runs `npm run build`, then starts through `start-pi-web-proxy.sh`.
+- `scripts/start-pi-web-proxy.sh` starts pi-web with `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, and `NODE_OPTIONS=--use-env-proxy`.
+- `scripts/start-pi-web-proxy.ps1` provides the same proxy startup flow for PowerShell.
+- The proxy scripts default to the production command `npm run start`; use `PI_WEB_CMD="npm run dev"` for development.
 
 Default proxy is `http://127.0.0.1:7897`; override with `PROXY_URL` or `SOCKS_PROXY_URL` where supported.
 

@@ -933,9 +933,12 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     else modelsByProvider.push({ provider: opt.provider, options: [opt] });
   }
 
-  const currentName = model
-    ? (modelOptions.find((o) => o.modelId === model.modelId && o.provider === model.provider)?.name ?? model.modelId)
-    : modelOptions.length > 0 ? modelOptions[0].name : null;
+  const currentModelOption = model
+    ? modelOptions.find((o) => o.modelId === model.modelId && o.provider === model.provider)
+    : modelOptions[0];
+  const currentModelLabel = currentModelOption
+    ? `${currentModelOption.provider}/${currentModelOption.name}`
+    : model ? `${model.provider}/${model.modelId}` : null;
 
   // Close dropdowns on outside click
   useEffect(() => {
@@ -1436,7 +1439,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               </svg>
             </button>
             {/* Model selector — visible always, disabled during streaming */}
-            {modelOptions.length > 0 && currentName && onModelChange && (
+            {modelOptions.length > 0 && currentModelLabel && onModelChange && (
                 <div ref={dropdownRef} style={{ position: "relative" }}>
                   <button
                     onClick={(e) => {
@@ -1477,7 +1480,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                       <line x1="20" y1="9" x2="23" y2="9" /><line x1="20" y1="14" x2="23" y2="14" />
                       <line x1="1" y1="9" x2="4" y2="9" /><line x1="1" y1="14" x2="4" y2="14" />
                     </svg>
-                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{currentName}</span>
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{currentModelLabel}</span>
                   </button>
                   {modelDropdownOpen && modelDropdownRect && (() => {
                     const viewportHeight = window.visualViewport?.height ?? window.innerHeight;

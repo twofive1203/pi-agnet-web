@@ -15,4 +15,4 @@
 
 ## Network / Proxy
 
-Use `start-pi-web-proxy.sh` when provider calls need the local proxy. It sets common proxy env vars and `NODE_OPTIONS=--use-env-proxy` for modern Node fetch/undici behavior.
+Use `scripts/start-pi-web-proxy.sh` or `scripts/start-pi-web-proxy.ps1` when provider calls need the local proxy. They set common proxy env vars and `NODE_OPTIONS=--use-env-proxy` for modern Node fetch/undici behavior.
