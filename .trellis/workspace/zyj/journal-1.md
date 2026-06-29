@@ -573,3 +573,36 @@ Added a Git commit graph API and Git panel visualization with branch lanes, fork
 ### Next Steps
 
 - None - task complete
+
+
+## Session 18: Trellis task detail panel fixes
+
+**Date**: 2026-06-29
+**Task**: Trellis task detail panel fixes
+**Branch**: `pi/20260629-085447`
+
+### Summary
+
+Clarified Trellis task detail metadata and progress semantics: recorded task metadata no longer appears as missing errors, manifest counts are labeled as context, optional meta.lastCheck drives check-stage status, and docs/specs were updated. Validated with lint, type-check, and diff-check.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `5c01e62` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
