@@ -6,8 +6,8 @@
 #   $env:SOCKS_PROXY_URL="socks5://127.0.0.1:7897"; .\start-pi-web-proxy.ps1
 #   $env:PI_WEB_CMD="npm run dev"; .\start-pi-web-proxy.ps1
 
-$PROXY_URL = if ($env:PROXY_URL) { $env:PROXY_URL } else { "http://127.0.0.1:7897" }
-$SOCKS_PROXY_URL = if ($env:SOCKS_PROXY_URL) { $env:SOCKS_PROXY_URL } else { "socks5://127.0.0.1:7897" }
+$PROXY_URL = if ($env:PROXY_URL) { $env:PROXY_URL } else { "http://127.0.0.1:20112" }
+$SOCKS_PROXY_URL = if ($env:SOCKS_PROXY_URL) { $env:SOCKS_PROXY_URL } else { "socks5://127.0.0.1:20112" }
 $PI_WEB_CMD = if ($env:PI_WEB_CMD) { $env:PI_WEB_CMD } else { "npm run start" }
 
 # curl/git/etc. often read these.

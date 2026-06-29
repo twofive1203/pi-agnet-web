@@ -293,6 +293,91 @@ const model = (run as { details?: { results?: { model?: string }[] } }).details?
 const model = run.routing?.model;
 ```
 
+### Scenario: Guarded Git mutation routes from status panels
+
+#### 1. Scope / Trigger
+
+Use this contract when adding a Git mutation to a status-oriented panel. This is
+cross-layer work: browser control → Next.js API route → local `git` command → UI
+refresh.
+
+#### 2. Signatures
+
+- Branch switch route: `POST /api/git/switch`.
+- Request: `{ cwd: string; branch: string }`.
+- Success response: `{ success: true, branch: string, switchedTo: string }`.
+- Error response: `{ error: string }` with an appropriate HTTP status.
+
+#### 3. Contracts
+
+- Keep mutation controls explicit; selecting an option must not mutate the
+  workspace until the user clicks a dedicated action button.
+- Git commands must use `execFile("git", args)` or an equivalent argv-array API,
+  never shell string interpolation.
+- Validate `cwd` as a Git repository before running the mutation.
+- Validate local branch identity exactly with `show-ref --verify --quiet
+  refs/heads/<branch>` or an equivalent exact-ref check; do not use glob/list
+  matching for security-sensitive branch existence checks.
+- Block dirty working trees before branch switching. Do not stash, force switch,
+  discard, or carry changes unless that behavior has its own explicit design.
+- On success, refresh the existing status/graph loading path so displayed branch,
+  ahead/behind, change lists, graph, and parent dirty indicators all update from
+  server state.
+
+#### 4. Validation & Error Matrix
+
+| Condition | Required behavior |
+| --- | --- |
+| Invalid JSON | 400 JSON error. |
+| Missing/blank `cwd` | 400 JSON error. |
+| Missing/blank `branch` | 400 JSON error. |
+| `cwd` is not a Git repository | 400 JSON error. |
+| Local branch ref does not exist | 404 JSON error. |
+| Working tree has staged, unstaged, or untracked changes | 409 JSON error; do not run `git switch`. |
+| Clean worktree and valid local branch | Run `git switch -- <branch>` and return success. |
+| Git rejects switch, such as branch checked out in another worktree | 500 JSON error with readable Git stderr/stdout detail. |
+
+#### 5. Good/Base/Bad Cases
+
+- Good: user selects `feature/foo`, clicks Switch, the route verifies
+  `refs/heads/feature/foo`, sees a clean tree, switches, and `GitPanel` calls
+  `fetchAll()`.
+- Base: current branch is selected; the Switch button is disabled with an
+  explanatory hint.
+- Bad: branch select `onChange` immediately calls `git switch`, or the API checks
+  existence with `git branch --list <branch>` and accepts pattern behavior.
+
+#### 6. Tests Required
+
+At minimum, verify these assertion points manually or with focused tests:
+
+- Dirty status disables the UI action and the API returns 409 if called anyway.
+- Current-branch selection cannot switch.
+- A missing local branch returns a 404-style JSON error.
+- A branch already checked out in another worktree surfaces Git's error without
+  clearing the current UI state.
+- A successful switch refreshes status, graph, change lists, and top-bar dirty
+  indicator.
+- Non-Git directories keep their existing empty/not-repository state.
+
+#### 7. Wrong vs Correct
+
+##### Wrong
+
+```typescript
+// Selection alone mutates the workspace and branch matching can behave like a pattern.
+onChange={(event) => fetch("/api/git/switch", { body: JSON.stringify({ branch: event.currentTarget.value }) })}
+await git(["branch", "--list", branch], cwd);
+```
+
+##### Correct
+
+```typescript
+// Explicit action plus exact local-ref validation.
+<button onClick={() => void handleSwitchBranch()} disabled={!canSwitchBranch}>Switch</button>
+await git(["show-ref", "--verify", "--quiet", `refs/heads/${branch}`], cwd);
+```
+
 ### Trellis task-detail display contracts
 
 When rendering the Trellis task drawer, keep these projections explicit:
