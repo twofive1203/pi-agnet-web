@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 26
+- **Total Sessions**: 28
 - **Last Active**: 2026-06-29
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~876 | Active |
+| `journal-1.md` | ~73 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,8 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 28 | 2026-06-29 | Git panel branch preview | `e3c5213` | `main` |
+| 27 | 2026-06-29 | Git panel branch switching | `1a2102c` | `main` |
 | 26 | 2026-06-29 | ChatGPT usage panel | `8cd9304` | `pi/20260629-152818` |
 | 25 | 2026-06-29 | Show subagent model metadata | `a509276` | `pi/20260629-151227` |
 | 24 | 2026-06-29 | Usage stats archived sessions | `fbef798` | `pi/20260629-144056` |
