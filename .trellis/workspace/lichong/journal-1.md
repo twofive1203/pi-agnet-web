@@ -38,3 +38,36 @@ Implemented and verified safe local branch switching in the Git panel: added gua
 ### Next Steps
 
 - None - task complete
+
+
+## Session 28: Git panel branch preview
+
+**Date**: 2026-06-29
+**Task**: Git panel branch preview
+**Branch**: `main`
+
+### Summary
+
+Implemented Git panel branch preview so selecting a local branch refreshes the commit graph without switching checkout; archived the task and recorded the session.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e3c5213` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
