@@ -33,7 +33,7 @@ API routes live under `app/api/`. When adding, removing, or changing routes, upd
 | `git/info/` | GET | Return best-effort Git branch/worktree metadata for a cwd. |
 | `git/status/` | GET | Return detailed Git status (branch, commits, staged/unstaged changes, untracked files, stash) for a cwd. |
 | `git/graph/` | GET | Return decorated commit graph data (commits, parents, refs, local branches) for the Git panel branch visualization. |
-| `web-config/` | GET/PUT | Read/write `~/.pi/agent/pi-web.json` for WorkTree defaults, optional Trellis panel settings, setup proxy, and Trellis subagent model policy. |
+| `web-config/` | GET/PUT | Read/write `~/.pi/agent/pi-web.json` for WorkTree defaults, Usage scan scope, optional Trellis panel settings, setup proxy, and Trellis subagent model policy. |
 | `trellis/tasks/` | GET | List read-only Trellis task summaries for an authorized workspace cwd when the Trellis panel setting is enabled. |
 | `trellis/tasks/[taskKey]/` | GET | Read one Trellis task detail, artifacts, manifest counts, hierarchy, and derived phase/progress. |
 | `trellis/setup/status/` | GET | Inspect Trellis prerequisites, CLI availability, and selected-workspace initialization state without requiring the panel setting to be enabled. |
@@ -41,7 +41,7 @@ API routes live under `app/api/`. When adding, removing, or changing routes, upd
 | `trellis/setup/update/` | POST | Upgrade/install the Trellis CLI and run `trellis update` for an authorized workspace that already has `.trellis`. |
 | `default-cwd/` | POST | Create and return `~/pi-cwd-<YYYYMMDD>`. |
 | `home/` | GET | Return `os.homedir()`. |
-| `usage/` | GET | Aggregate token/cost usage across sessions. |
+| `usage/` | GET | Aggregate token/cost usage across active-only or active-plus-archived sessions based on `pi-web.json` Usage settings. |
 | `auth/providers/` | GET | List configured auth provider statuses. |
 | `auth/all-providers/` | GET | List all known provider ids. |
 | `auth/accounts/[provider]/` | GET/POST/PATCH/DELETE | List saved OAuth accounts, import one or more raw/CPA/SUB2API OAuth account JSON entries, update account remarks/extra info, return cached quota reset metadata, and soft-delete inactive saved accounts for supported providers (`openai-codex`). |

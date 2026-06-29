@@ -9,6 +9,7 @@ import type {
   PiWebSubagentModality,
   PiWebSubagentRunPolicy,
   PiWebTrellisConfig,
+  PiWebUsageConfig,
   PiWebWorktreeConfig,
 } from "@/lib/pi-web-config";
 import type { TrellisCommandResponse, TrellisSetupStatus } from "@/lib/trellis-setup-types";
@@ -65,7 +66,7 @@ const TEMPLATE_VARIABLES = [
   { token: "{yyyyMMdd-HHmmss}", description: "创建时刻，格式如 20260625-153012" },
 ];
 
-type SettingsSection = "worktree" | "trellis";
+type SettingsSection = "worktree" | "usage" | "trellis";
 type SubagentThinkingOption = PiWebSubagentRunPolicy["thinking"];
 
 const SUBAGENT_AGENT_NAMES = ["trellis-implement", "trellis-check", "trellis-research"];
@@ -302,6 +303,11 @@ function trellisConfigsEqual(a: PiWebTrellisConfig | null, b: PiWebTrellisConfig
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
+function usageConfigsEqual(a: PiWebUsageConfig | null, b: PiWebUsageConfig | null): boolean {
+  if (!a || !b) return a === b;
+  return a.includeArchived === b.includeArchived;
+}
+
 export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string | null; onClose: () => void; onConfigChange?: () => void }) {
   const [section, setSection] = useState<SettingsSection>("worktree");
   const [loading, setLoading] = useState(true);
@@ -313,6 +319,8 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
   const [savedWorktree, setSavedWorktree] = useState<PiWebWorktreeConfig | null>(null);
   const [trellis, setTrellis] = useState<PiWebTrellisConfig | null>(null);
   const [savedTrellis, setSavedTrellis] = useState<PiWebTrellisConfig | null>(null);
+  const [usage, setUsage] = useState<PiWebUsageConfig | null>(null);
+  const [savedUsage, setSavedUsage] = useState<PiWebUsageConfig | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [trellisStatus, setTrellisStatus] = useState<TrellisSetupStatus | null>(null);
@@ -326,8 +334,8 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
   const [developerNameTouched, setDeveloperNameTouched] = useState(false);
 
   const dirty = useMemo(
-    () => !worktreeConfigsEqual(worktree, savedWorktree) || !trellisConfigsEqual(trellis, savedTrellis),
-    [worktree, savedWorktree, trellis, savedTrellis],
+    () => !worktreeConfigsEqual(worktree, savedWorktree) || !trellisConfigsEqual(trellis, savedTrellis) || !usageConfigsEqual(usage, savedUsage),
+    [worktree, savedWorktree, trellis, savedTrellis, usage, savedUsage],
   );
 
   const loadConfig = useCallback(async (signal?: AbortSignal) => {
@@ -343,6 +351,8 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
       setSavedWorktree(data.config.worktree);
       setTrellis(data.config.trellis);
       setSavedTrellis(data.config.trellis);
+      setUsage(data.config.usage);
+      setSavedUsage(data.config.usage);
       setConfigPath(data.path);
       setExists(data.exists);
       if (data.parseError) {
@@ -425,6 +435,11 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
     setNotice(null);
   }, []);
 
+  const updateUsage = useCallback((patch: Partial<PiWebUsageConfig>) => {
+    setUsage((prev) => prev ? { ...prev, ...patch } : prev);
+    setNotice(null);
+  }, []);
+
   const updateDefaultSubagentPolicy = useCallback((patch: Partial<PiWebSubagentRunPolicy>) => {
     setTrellis((prev) => prev ? {
       ...prev,
@@ -496,13 +511,15 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
     setSavedWorktree(config.worktree);
     setTrellis(config.trellis);
     setSavedTrellis(config.trellis);
+    setUsage(config.usage);
+    setSavedUsage(config.usage);
     setConfigPath(path);
     setExists(configExists);
     onConfigChange?.();
   }, [onConfigChange]);
 
   const saveConfig = useCallback(async (successNotice?: string): Promise<boolean> => {
-    if (!worktree || !trellis) return false;
+    if (!worktree || !trellis || !usage) return false;
     setSaving(true);
     setError(null);
     setNotice(null);
@@ -510,7 +527,7 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
       const res = await fetch("/api/web-config", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ worktree, trellis }),
+        body: JSON.stringify({ worktree, trellis, usage }),
       });
       const data = await res.json() as WebConfigResponse & { success?: boolean };
       if (!res.ok || data.error) throw new Error(data.error ?? `HTTP ${res.status}`);
@@ -523,16 +540,17 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
     } finally {
       setSaving(false);
     }
-  }, [applyLoadedConfig, worktree, trellis]);
+  }, [applyLoadedConfig, worktree, trellis, usage]);
 
   const handleSave = useCallback(async () => {
-    await saveConfig("设置已保存。Trellis 面板开关会立即生效，WorkTree 设置会用于下一次创建 New WorkTree。");
+    await saveConfig("设置已保存。Usage/Trellis 设置会立即生效，WorkTree 设置会用于下一次创建 New WorkTree。");
   }, [saveConfig]);
 
   const resetToDefaults = useCallback(() => {
     if (!defaults) return;
     setWorktree(defaults.worktree);
     setTrellis(defaults.trellis);
+    setUsage(defaults.usage);
     setNotice("已在表单中恢复默认值，点击保存后会写入 pi-web.json。");
   }, [defaults]);
 
@@ -561,6 +579,8 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
         setSavedWorktree(data.config.worktree);
         setTrellis(data.config.trellis);
         setSavedTrellis(data.config.trellis);
+        setUsage(data.config.usage);
+        setSavedUsage(data.config.usage);
         onConfigChange?.();
       }
       setNotice(action === "init" ? "Trellis 已初始化，右侧抽屉已自动启用。" : "Trellis 已更新。");
@@ -653,13 +673,14 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
         <div style={{ display: "flex", minHeight: 0 }}>
           <div style={{ width: 150, borderRight: "1px solid var(--border)", padding: 10, background: "var(--bg-subtle)", flexShrink: 0, display: "flex", flexDirection: "column", gap: 6 }}>
             {renderSectionButton("worktree", "WorkTree", "New WorkTree 默认配置")}
+            {renderSectionButton("usage", "Usage", "Usage 统计范围")}
             {renderSectionButton("trellis", "Trellis", "Trellis 面板开关")}
           </div>
 
           <div style={{ padding: 18, overflow: "auto", flex: 1 }}>
             {loading ? (
               <div style={{ color: "var(--text-muted)", fontSize: 13 }}>正在加载设置…</div>
-            ) : worktree && trellis ? (
+            ) : worktree && trellis && usage ? (
               <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
                 {error && <div style={{ padding: "8px 10px", borderRadius: 8, background: "rgba(239,68,68,0.12)", color: "#f87171", fontSize: 12, overflowWrap: "anywhere" }}>{error}</div>}
                 {notice && <div style={{ padding: "8px 10px", borderRadius: 8, background: "rgba(37,99,235,0.12)", color: "var(--accent)", fontSize: 12, overflowWrap: "anywhere" }}>{notice}</div>}
@@ -713,6 +734,22 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
                         ))}
                       </div>
                     </div>
+                  </div>
+                ) : section === "usage" ? (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                    <div>
+                      <h3 style={{ margin: 0, color: "var(--text)", fontSize: 15 }}>Usage 统计</h3>
+                      <p style={{ margin: "5px 0 0", color: "var(--text-muted)", fontSize: 12, lineHeight: 1.5 }}>
+                        控制左下角 Usage 弹窗扫描哪些 session 文件。保存到 <code style={{ fontFamily: "var(--font-mono)", color: "var(--text)", overflowWrap: "anywhere" }}>{configPath}</code>
+                        {exists ? "" : "（保存时会自动创建）"}
+                      </p>
+                    </div>
+                    <ToggleField
+                      label="统计时包含已归档 Session"
+                      description="开启后 Usage 会同时扫描 sessions 和 sessions-archive；关闭后只统计当前存活的 sessions。已删除的 session 文件不会参与统计。"
+                      checked={usage.includeArchived}
+                      onChange={(includeArchived) => updateUsage({ includeArchived })}
+                    />
                   </div>
                 ) : (
                   <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>

@@ -57,6 +57,10 @@ function formatTokens(value: number): string {
   return value.toLocaleString();
 }
 
+function formatTokensM(value: number): string {
+  return `${Math.round(value / 1_000_000).toLocaleString()}M`;
+}
+
 /**
  * 计算 token 汇总总数。
  *
@@ -224,14 +228,16 @@ export function UsageStatsModal({ cwd, onClose }: UsageStatsModalProps) {
             <>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 8, marginBottom: 12 }}>
                 <Metric label="Cost" value={formatCost(stats?.totals.cost ?? 0)} strong />
-                <Metric label="Tokens" value={formatTokens(totalTokens(stats?.totals ?? zeroTotals))} />
+                <Metric label="Tokens" value={`${formatTokens(totalTokens(stats?.totals ?? zeroTotals))} (${formatTokensM(totalTokens(stats?.totals ?? zeroTotals))})`} />
                 <Metric label="Calls" value={formatTokens(stats?.totals.calls ?? 0)} />
                 <Metric label="Sessions" value={`${stats?.bySession.length ?? 0}/${stats?.matchedSessions ?? 0}`} />
+                <Metric label="Scanned active/archive" value={`${stats?.scannedActiveSessions ?? 0}/${stats?.scannedArchivedSessions ?? 0}`} />
+                <Metric label="Matched active/archive" value={`${stats?.matchedActiveSessions ?? 0}/${stats?.matchedArchivedSessions ?? 0}`} />
               </div>
 
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(280px, 100%), 1fr))", gap: 12 }}>
                 <section style={panelStyle}>
-                  <SectionTitle title="Daily" right={loading ? "Loading" : stats ? `${stats.from} - ${stats.to}` : ""} />
+                  <SectionTitle title="Daily" right={loading ? "Loading" : stats ? `${stats.from} - ${stats.to} · ${stats.scope.includeArchived ? "with archive" : "active only"}` : ""} />
                   <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
                     {(stats?.byDay ?? []).length === 0 ? (
                       <EmptyState />
@@ -372,9 +378,10 @@ function TokenRows({ totals }: { totals: UsageTotals }) {
   return (
     <div style={{ display: "flex", flexDirection: "column" }}>
       {rows.map(([label, value]) => (
-        <div key={label} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 0", borderTop: "1px solid var(--border)", fontSize: 12 }}>
+        <div key={label} style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 96px 54px", gap: 8, alignItems: "center", padding: "6px 0", borderTop: "1px solid var(--border)", fontSize: 12 }}>
           <span style={{ color: "var(--text-muted)" }}>{label}</span>
-          <span style={{ color: "var(--text)", fontVariantNumeric: "tabular-nums" }}>{formatTokens(value)}</span>
+          <span style={{ color: "var(--text)", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{formatTokens(value)}</span>
+          <span style={{ color: "var(--text-dim)", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{formatTokensM(value)}</span>
         </div>
       ))}
     </div>

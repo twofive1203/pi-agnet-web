@@ -15,11 +15,11 @@
 | `components/ModelsConfig.tsx` | Modal for editing `models.json`, OAuth/API-key auth, and ChatGPT Plus/Pro saved-account add/import, activation, remarks, extra-info dialog, cached quota reset display with inline mini usage pies, manual quota refresh, inactive-account deletion, and raw/CPA/SUB2API account JSON import via shared converters. |
 | `components/GitPanel.tsx` | Git status dropdown panel showing branch, commits, staged/unstaged changes, untracked files, and stash. |
 | `components/SkillsConfig.tsx` | Modal for browsing/installing skills. |
-| `components/SettingsConfig.tsx` | Settings modal for WorkTree defaults and optional Trellis panel settings in `pi-web.json`, including Trellis docs guidance, prerequisite/status inspection, install/init, update, proxy controls, and Trellis subagent model policy controls. |
+| `components/SettingsConfig.tsx` | Settings modal for WorkTree defaults, Usage scan scope, and optional Trellis panel settings in `pi-web.json`, including Trellis docs guidance, prerequisite/status inspection, install/init, update, proxy controls, and Trellis subagent model policy controls. |
 | `components/SubagentPanel.tsx` | Top-bar subagent activity panel, including nested subagent inspection and Trellis subagent model-routing metadata when available. |
 | `components/TrellisPanel.tsx` | Read-only Trellis task drawer: task list, filters, details, artifacts, hierarchy, manifest/context counts, recorded task metadata, optional check-run state, derived phase/progress, and optional externally focused task selection. |
 | `components/TrellisSessionWidget.tsx` | Floating session-scoped Trellis progress widget shown only when the current chat session has a high-confidence associated task; clicking opens the Trellis drawer focused on that task. |
-| `components/UsageStatsModal.tsx` | Token/cost usage statistics modal. |
+| `components/UsageStatsModal.tsx` | Token/cost usage statistics modal with active/archive scan counts and rounded M-token conversions. |
 | `components/FileExplorer.tsx` | File tree inside the sidebar. |
 | `components/FileViewer.tsx` | File content viewer in a tab. |
 | `components/FileIcons.tsx` | Monochrome SVG icons for files/folders. |

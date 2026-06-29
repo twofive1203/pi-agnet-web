@@ -388,11 +388,11 @@ export function scanArchivedCwds(): { cwds: string[]; counts: Record<string, num
  * Parses JSONL files in the archive directory matching the given cwd.
  * Uses SessionManager.open() for efficient metadata extraction.
  */
-export async function listArchivedSessionsForCwd(cwd: string): Promise<SessionInfo[]> {
+async function listArchivedSessions(cwd?: string): Promise<SessionInfo[]> {
   const archiveDir = getSessionsArchiveDir();
   if (!existsSync(archiveDir)) return [];
 
-  const targets = cwdKeys(cwd);
+  const targets = cwd ? cwdKeys(cwd) : null;
   const cache = getPathCache();
   const sessions: SessionInfo[] = [];
 
@@ -409,9 +409,10 @@ export async function listArchivedSessionsForCwd(cwd: string): Promise<SessionIn
         // of archive directory name because historic sessions may use cwd aliases.
         const sm = SessionManager.open(filePath);
         const header = sm.getHeader();
-        if (!header?.id || !cwdMatchesAny(header.cwd, targets)) continue;
+        if (!header?.id) continue;
+        if (targets && !cwdMatchesAny(header.cwd, targets)) continue;
 
-        const sessionCwd = header.cwd ? canonicalizeCwd(header.cwd) : cwd;
+        const sessionCwd = header.cwd ? canonicalizeCwd(header.cwd) : cwd ?? "";
         // Cache the path so resolveSessionPath can find it
         cache.set(header.id, filePath);
 
@@ -460,6 +461,14 @@ export async function listArchivedSessionsForCwd(cwd: string): Promise<SessionIn
   }
 
   return sessions.sort((a, b) => b.modified.localeCompare(a.modified));
+}
+
+export async function listAllArchivedSessions(): Promise<SessionInfo[]> {
+  return listArchivedSessions();
+}
+
+export async function listArchivedSessionsForCwd(cwd: string): Promise<SessionInfo[]> {
+  return listArchivedSessions(cwd);
 }
 
 /**

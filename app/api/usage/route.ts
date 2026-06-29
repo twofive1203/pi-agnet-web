@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { readPiWebConfig } from "@/lib/pi-web-config";
 import { formatLocalDate, getUsageStats, parseLocalDateParam } from "@/lib/usage-stats";
 
 export const dynamic = "force-dynamic";
@@ -39,7 +40,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "from must be earlier than or equal to to" }, { status: 400 });
     }
 
-    const stats = await getUsageStats({ from, to, cwd });
+    const config = readPiWebConfig();
+    const stats = await getUsageStats({ from, to, cwd, includeArchived: config.usage.includeArchived });
     return NextResponse.json({
       ...stats,
       from: fromParam ?? formatLocalDate(from),

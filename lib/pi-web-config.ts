@@ -59,14 +59,20 @@ export interface PiWebTrellisConfig {
   subagents: PiWebTrellisSubagentsConfig;
 }
 
+export interface PiWebUsageConfig {
+  includeArchived: boolean;
+}
+
 export interface PiWebConfig {
   worktree: PiWebWorktreeConfig;
   trellis: PiWebTrellisConfig;
+  usage: PiWebUsageConfig;
 }
 
 export interface PiWebConfigPatch {
   worktree?: unknown;
   trellis?: unknown;
+  usage?: unknown;
 }
 
 export interface PiWebConfigReadResult {
@@ -91,6 +97,9 @@ export const DEFAULT_PI_WEB_CONFIG: PiWebConfig = {
     baseDirTemplate: "{repoParent}/{repoName}.worktrees",
     pathTemplate: "{baseDir}/{branchSlug}",
     sessionDisplay: "separate",
+  },
+  usage: {
+    includeArchived: true,
   },
   trellis: {
     enabled: false,
@@ -252,6 +261,7 @@ function normalizePiWebConfig(raw: unknown): PiWebConfig {
   const root = isRecord(raw) ? raw : {};
   const worktree = isRecord(root.worktree) ? root.worktree : {};
   const trellis = isRecord(root.trellis) ? root.trellis : {};
+  const usage = isRecord(root.usage) ? root.usage : {};
   return {
     worktree: {
       baseRef: readString(worktree.baseRef, defaults.worktree.baseRef),
@@ -259,6 +269,9 @@ function normalizePiWebConfig(raw: unknown): PiWebConfig {
       baseDirTemplate: readString(worktree.baseDirTemplate, defaults.worktree.baseDirTemplate),
       pathTemplate: readString(worktree.pathTemplate, defaults.worktree.pathTemplate),
       sessionDisplay: readSessionDisplay(worktree.sessionDisplay, defaults.worktree.sessionDisplay),
+    },
+    usage: {
+      includeArchived: readBoolean(usage.includeArchived, defaults.usage.includeArchived),
     },
     trellis: {
       enabled: readBoolean(trellis.enabled, defaults.trellis.enabled),
@@ -443,6 +456,15 @@ function validateTrellisSubagentsConfig(value: unknown): PiWebTrellisSubagentsCo
   };
 }
 
+export function validatePiWebUsageConfig(value: unknown): PiWebUsageConfig {
+  if (!isRecord(value)) {
+    throw new PiWebConfigValidationError("usage config must be an object");
+  }
+  return {
+    includeArchived: requireBoolean(value.includeArchived, "usage.includeArchived"),
+  };
+}
+
 export function validatePiWebTrellisConfig(value: unknown): PiWebTrellisConfig {
   if (!isRecord(value)) {
     throw new PiWebConfigValidationError("trellis config must be an object");
@@ -467,12 +489,14 @@ export function writePiWebConfigPatch(patch: PiWebConfigPatch): PiWebConfigReadR
 
   const hasWorktree = Object.prototype.hasOwnProperty.call(patch, "worktree");
   const hasTrellis = Object.prototype.hasOwnProperty.call(patch, "trellis");
-  if (!hasWorktree && !hasTrellis) {
+  const hasUsage = Object.prototype.hasOwnProperty.call(patch, "usage");
+  if (!hasWorktree && !hasTrellis && !hasUsage) {
     throw new PiWebConfigValidationError("no supported config sections provided");
   }
 
   const normalizedWorktree = hasWorktree ? validatePiWebWorktreeConfig(patch.worktree) : undefined;
   const normalizedTrellis = hasTrellis ? validatePiWebTrellisConfig(patch.trellis) : undefined;
+  const normalizedUsage = hasUsage ? validatePiWebUsageConfig(patch.usage) : undefined;
   const path = getPiWebConfigPath();
   const current = readRawConfigFile(path);
   const raw = current.parseError ? {} : current.raw;
@@ -491,6 +515,14 @@ export function writePiWebConfigPatch(patch: PiWebConfigPatch): PiWebConfigReadR
     nextRaw.trellis = {
       ...previousTrellis,
       ...normalizedTrellis,
+    };
+  }
+
+  if (normalizedUsage) {
+    const previousUsage = isRecord(raw.usage) ? raw.usage : {};
+    nextRaw.usage = {
+      ...previousUsage,
+      ...normalizedUsage,
     };
   }
 

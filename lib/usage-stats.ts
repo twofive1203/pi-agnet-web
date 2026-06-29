@@ -1,5 +1,6 @@
 import { SessionManager } from "@earendil-works/pi-coding-agent";
-import { listAllSessions } from "@/lib/session-reader";
+import { listAllArchivedSessions, listAllSessions } from "@/lib/session-reader";
+import { canonicalizeCwd, expandCwd } from "@/lib/cwd";
 import type { SessionEntry, SessionInfo, SessionMessageEntry, AssistantMessage } from "@/lib/types";
 
 export interface UsageTotals {
@@ -38,6 +39,7 @@ export interface UsageStatsResult {
   scope: {
     cwd?: string;
     timezone: string;
+    includeArchived: boolean;
   };
   totals: UsageTotals;
   byDay: UsageDaySummary[];
@@ -46,6 +48,10 @@ export interface UsageStatsResult {
   bySession: UsageSessionSummary[];
   scannedSessions: number;
   matchedSessions: number;
+  scannedActiveSessions: number;
+  scannedArchivedSessions: number;
+  matchedActiveSessions: number;
+  matchedArchivedSessions: number;
   skippedEntries: number;
 }
 
@@ -53,12 +59,31 @@ export interface UsageStatsOptions {
   from: Date;
   to: Date;
   cwd?: string;
+  includeArchived?: boolean;
 }
 
 interface UsageRecord {
   entry: SessionMessageEntry;
   message: AssistantMessage;
   session: SessionInfo;
+}
+
+function cwdKeys(cwd: string | undefined): Set<string> {
+  const keys = new Set<string>();
+  if (!cwd) return keys;
+  for (const candidate of [cwd, expandCwd(cwd), canonicalizeCwd(cwd)]) {
+    if (candidate) keys.add(candidate.replace(/[\\/]+$/, ""));
+  }
+  return keys;
+}
+
+function cwdMatches(sessionCwd: string | undefined, filterCwd: string | undefined): boolean {
+  if (!filterCwd) return true;
+  const targets = cwdKeys(filterCwd);
+  for (const key of cwdKeys(sessionCwd)) {
+    if (targets.has(key)) return true;
+  }
+  return false;
 }
 
 /**
@@ -139,8 +164,12 @@ export function parseLocalDateParam(value: string | null, endOfDay: boolean): Da
  * @returns 费用统计总览以及按日、模型、供应商、会话拆分的汇总。
  */
 export async function getUsageStats(options: UsageStatsOptions): Promise<UsageStatsResult> {
-  const sessions = await listAllSessions();
-  const matchedSessions = options.cwd ? sessions.filter((session) => session.cwd === options.cwd) : sessions;
+  const activeSessions = await listAllSessions();
+  const archivedSessions = options.includeArchived === false ? [] : await listAllArchivedSessions();
+  const sessions = [...activeSessions, ...archivedSessions];
+  const matchedSessions = sessions.filter((session) => cwdMatches(session.cwd, options.cwd));
+  const matchedActiveSessions = matchedSessions.filter((session) => !session.archived);
+  const matchedArchivedSessions = matchedSessions.filter((session) => session.archived);
   const records: UsageRecord[] = [];
   let skippedEntries = 0;
 
@@ -208,6 +237,7 @@ export async function getUsageStats(options: UsageStatsOptions): Promise<UsageSt
     scope: {
       cwd: options.cwd,
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "local",
+      includeArchived: options.includeArchived !== false,
     },
     totals,
     byDay: [...byDay.entries()]
@@ -218,6 +248,10 @@ export async function getUsageStats(options: UsageStatsOptions): Promise<UsageSt
     bySession: [...bySession.values()].sort((a, b) => b.totals.cost - a.totals.cost),
     scannedSessions: sessions.length,
     matchedSessions: matchedSessions.length,
+    scannedActiveSessions: activeSessions.length,
+    scannedArchivedSessions: archivedSessions.length,
+    matchedActiveSessions: matchedActiveSessions.length,
+    matchedArchivedSessions: matchedArchivedSessions.length,
     skippedEntries,
   };
 }
