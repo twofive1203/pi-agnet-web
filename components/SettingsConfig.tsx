@@ -4,7 +4,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type {
   PiWebConfig,
   PiWebSubagentAgentConfig,
+  PiWebSubagentDifficultyTier,
   PiWebSubagentModelRef,
+  PiWebSubagentModality,
   PiWebSubagentRunPolicy,
   PiWebTrellisConfig,
   PiWebWorktreeConfig,
@@ -68,6 +70,18 @@ type SubagentThinkingOption = PiWebSubagentRunPolicy["thinking"];
 
 const SUBAGENT_AGENT_NAMES = ["trellis-implement", "trellis-check", "trellis-research"];
 const SUBAGENT_THINKING_OPTIONS: SubagentThinkingOption[] = ["inherit", "off", "minimal", "low", "medium", "high", "xhigh"];
+const SUBAGENT_MODALITIES: PiWebSubagentModality[] = ["text", "multimodal"];
+const SUBAGENT_TIERS: PiWebSubagentDifficultyTier[] = ["simple", "standard", "complex", "critical"];
+const SUBAGENT_MODALITY_LABELS: Record<PiWebSubagentModality, string> = {
+  text: "文本任务",
+  multimodal: "多模态任务（图片/截图/视觉）",
+};
+const SUBAGENT_TIER_LABELS: Record<PiWebSubagentDifficultyTier, string> = {
+  simple: "简单：短问答、轻量查询",
+  standard: "标准：常规检查、普通修复",
+  complex: "复杂：实现、重构、跨文件改动",
+  critical: "关键：架构、安全、迁移、高风险改动",
+};
 
 function formatModelValue(model: PiWebSubagentModelRef): string {
   if (model.mode !== "specific") return model.mode;
@@ -172,7 +186,7 @@ function ThinkingSelect({
       style={{ ...inputStyle, opacity: disabled ? 0.6 : 1, cursor: disabled ? "not-allowed" : "pointer" }}
     >
       {SUBAGENT_THINKING_OPTIONS.map((option) => (
-        <option key={option} value={option}>{option === "inherit" ? "继承主会话 thinking" : option}</option>
+        <option key={option} value={option}>{option === "inherit" ? "跟随主会话思考强度" : option === "off" ? "关闭思考" : option}</option>
       ))}
     </select>
   );
@@ -448,6 +462,34 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
     setNotice(null);
   }, []);
 
+  const updateRouter = useCallback((patch: Partial<PiWebTrellisConfig["subagents"]["router"]>) => {
+    setTrellis((prev) => prev ? {
+      ...prev,
+      subagents: {
+        ...prev.subagents,
+        router: { ...prev.subagents.router, ...patch },
+      },
+    } : prev);
+    setNotice(null);
+  }, []);
+
+  const updateRoutePolicy = useCallback((modality: PiWebSubagentModality, tier: PiWebSubagentDifficultyTier, patch: Partial<PiWebSubagentRunPolicy>) => {
+    setTrellis((prev) => prev ? {
+      ...prev,
+      subagents: {
+        ...prev.subagents,
+        routes: {
+          ...prev.subagents.routes,
+          [modality]: {
+            ...prev.subagents.routes[modality],
+            [tier]: { ...prev.subagents.routes[modality][tier], ...patch },
+          },
+        },
+      },
+    } : prev);
+    setNotice(null);
+  }, []);
+
   const applyLoadedConfig = useCallback((config: PiWebConfig, path: string, configExists: boolean, nextDefaults?: PiWebConfig) => {
     if (nextDefaults) setDefaults(nextDefaults);
     setWorktree(config.worktree);
@@ -718,20 +760,20 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
 
                     <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: 12, borderRadius: 10, background: "var(--bg-subtle)", border: "1px solid var(--border)" }}>
                       <div>
-                        <div style={{ color: "var(--text)", fontSize: 13, fontWeight: 800 }}>Subagent 模型</div>
+                        <div style={{ color: "var(--text)", fontSize: 13, fontWeight: 800 }}>子代理模型</div>
                         <div style={{ color: "var(--text-muted)", fontSize: 11, marginTop: 3, lineHeight: 1.45 }}>
-                          配置 Trellis subagent 子进程使用的模型。默认跟随主会话模型；显式工具入参仍然拥有最高优先级。
+                          给 Trellis 派出去的子代理单独选模型。默认跟随当前聊天使用的主模型；如果某次工具调用里手动指定了模型，会优先使用手动指定。
                         </div>
                       </div>
                       {modelsError && <div style={{ padding: "7px 9px", borderRadius: 7, background: "rgba(239,68,68,0.12)", color: "#f87171", fontSize: 11 }}>{modelsError}</div>}
                       <ToggleField
-                        label="启用 Subagent 模型策略"
-                        description="关闭后保持当前行为：仅使用工具入参、agent frontmatter 或 Pi CLI 默认模型。自动路由仍需后续高级开关单独启用。"
+                        label="启用子代理模型设置"
+                        description="开启后按下面的规则给子代理选模型；关闭后回到旧行为：只看工具调用参数、agent 文件头配置或 Pi 默认模型。自动分流需要单独打开。"
                         checked={trellis.subagents.enabled}
                         onChange={(enabled) => updateSubagentConfig({ enabled })}
                       />
                       <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 12 }}>
-                        <Field label="默认模型策略" description="未命中 per-agent 固定策略时使用。">
+                        <Field label="默认子代理模型" description="没有命中特殊规则时，所有子代理都按这个配置走。推荐保持“跟随主会话模型”。">
                           <ModelPolicySelect
                             value={trellis.subagents.defaultPolicy.model}
                             onChange={(model) => updateDefaultSubagentPolicy({ model })}
@@ -739,7 +781,7 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
                             disabled={!trellis.subagents.enabled}
                           />
                         </Field>
-                        <Field label="默认 Thinking" description="inherit 表示继承主会话 thinking。">
+                        <Field label="默认思考强度" description="“跟随主会话思考强度”表示使用当前聊天的 thinking 设置。">
                           <ThinkingSelect
                             value={trellis.subagents.defaultPolicy.thinking}
                             onChange={(thinking) => updateDefaultSubagentPolicy({ thinking })}
@@ -747,8 +789,87 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
                           />
                         </Field>
                       </div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 10, paddingTop: 4, borderTop: "1px solid var(--border)" }}>
+                        <ToggleField
+                          label="启用自动分流选模型"
+                          description="开启后先判断任务属于“文本/多模态”和“简单/标准/复杂/关键”哪一类，再按下面的分流表选择子代理模型。默认关闭，避免额外消耗。"
+                          checked={trellis.subagents.router.enabled}
+                          onChange={(enabled) => updateRouter({ enabled })}
+                          disabled={!trellis.subagents.enabled}
+                        />
+                        <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 12 }}>
+                          <Field label="分流判断模型" description="这个模型只负责判断任务类别，不执行真正的子任务。可用较便宜/较快的模型。">
+                            <ModelPolicySelect
+                              value={trellis.subagents.router.model}
+                              onChange={(model) => updateRouter({ model })}
+                              models={modelList}
+                              disabled={!trellis.subagents.enabled || !trellis.subagents.router.enabled}
+                            />
+                          </Field>
+                          <Field label="分流判断思考强度" description="建议 minimal/low，避免“判断该用哪个模型”这一步本身太贵。">
+                            <ThinkingSelect
+                              value={trellis.subagents.router.thinking}
+                              onChange={(thinking) => updateRouter({ thinking })}
+                              disabled={!trellis.subagents.enabled || !trellis.subagents.router.enabled}
+                            />
+                          </Field>
+                        </div>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                          <Field label="分流失败时的任务类型" description="分流判断模型失败、超时或输出格式错误时使用。">
+                            <select
+                              value={trellis.subagents.router.fallbackOnError.modality}
+                              onChange={(e) => updateRouter({ fallbackOnError: { ...trellis.subagents.router.fallbackOnError, modality: e.target.value as PiWebSubagentModality } })}
+                              disabled={!trellis.subagents.enabled || !trellis.subagents.router.enabled}
+                              style={inputStyle}
+                            >
+                              <option value="text">文本任务</option>
+                              <option value="multimodal">多模态任务（图片/截图/视觉）</option>
+                            </select>
+                          </Field>
+                          <Field label="分流失败时的任务等级" description="分流判断不可用时默认按哪个复杂度处理。建议 standard 或 complex。">
+                            <select
+                              value={trellis.subagents.router.fallbackOnError.tier}
+                              onChange={(e) => updateRouter({ fallbackOnError: { ...trellis.subagents.router.fallbackOnError, tier: e.target.value as PiWebSubagentDifficultyTier } })}
+                              disabled={!trellis.subagents.enabled || !trellis.subagents.router.enabled}
+                              style={inputStyle}
+                            >
+                              {SUBAGENT_TIERS.map((tier) => <option key={tier} value={tier}>{SUBAGENT_TIER_LABELS[tier]}</option>)}
+                            </select>
+                          </Field>
+                        </div>
+                      </div>
+
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8, paddingTop: 4, borderTop: "1px solid var(--border)" }}>
+                        <div style={{ fontSize: 12, color: "var(--text)", fontWeight: 700 }}>分流模型表</div>
+                        <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.45 }}>按“任务类型 × 任务等级”给子代理指定模型。比如：简单文本任务用便宜模型，复杂实现任务用更强模型，多模态任务用支持图片的模型。</div>
+                        {SUBAGENT_MODALITIES.map((modality) => (
+                          <div key={modality} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                            <div style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 700 }}>{SUBAGENT_MODALITY_LABELS[modality]}</div>
+                            {SUBAGENT_TIERS.map((tier) => {
+                              const policy = trellis.subagents.routes[modality][tier];
+                              return (
+                                <div key={`${modality}-${tier}`} style={{ display: "grid", gridTemplateColumns: "90px minmax(180px, 1fr) 120px", gap: 8, alignItems: "center" }}>
+                                  <span title={tier} style={{ fontSize: 11, color: "var(--text-dim)" }}>{SUBAGENT_TIER_LABELS[tier]}</span>
+                                  <ModelPolicySelect
+                                    value={policy.model}
+                                    onChange={(model) => updateRoutePolicy(modality, tier, { model })}
+                                    models={modelList}
+                                    disabled={!trellis.subagents.enabled || !trellis.subagents.router.enabled}
+                                  />
+                                  <ThinkingSelect
+                                    value={policy.thinking}
+                                    onChange={(thinking) => updateRoutePolicy(modality, tier, { thinking })}
+                                    disabled={!trellis.subagents.enabled || !trellis.subagents.router.enabled}
+                                  />
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ))}
+                      </div>
+
                       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                        <div style={{ fontSize: 12, color: "var(--text)", fontWeight: 700 }}>内置 Trellis Agent 覆盖</div>
+                        <div style={{ fontSize: 12, color: "var(--text)", fontWeight: 700 }}>按 Agent 单独覆盖</div>
                         {SUBAGENT_AGENT_NAMES.map((agent) => {
                           const agentConfig = trellis.subagents.agents[agent] ?? { strategy: "default" as const };
                           const fixed = agentConfig.fixed ?? trellis.subagents.defaultPolicy;
@@ -762,9 +883,10 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
                                 disabled={!trellis.subagents.enabled}
                                 style={{ ...inputStyle, opacity: trellis.subagents.enabled ? 1 : 0.6 }}
                               >
-                                <option value="default">默认策略</option>
-                                <option value="fixed">固定模型</option>
-                                <option value="disabled">禁用策略</option>
+                                <option value="default">使用默认规则</option>
+                                <option value="route">总是自动分流</option>
+                                <option value="fixed">固定指定模型</option>
+                                <option value="disabled">不使用这里的设置</option>
                               </select>
                               <ModelPolicySelect
                                 value={fixed.model}

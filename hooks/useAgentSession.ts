@@ -63,6 +63,10 @@ export interface SubagentRun {
     source?: string;
     model?: string;
     thinking?: string;
+    modality?: string;
+    tier?: string;
+    routerModel?: string;
+    confidence?: number;
     fallbackReason?: string;
   };
   /** Path to this subagent's own session JSONL (for recursive child lookup) */

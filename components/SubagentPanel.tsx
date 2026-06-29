@@ -211,7 +211,9 @@ function formatRouting(routing: SubagentRun["routing"]): string | null {
   if (!routing?.source) return null;
   const target = routing.model ?? (routing.source === "piDefault" ? "Pi default" : null);
   const thinking = routing.thinking && routing.thinking !== "off" ? `:${routing.thinking}` : "";
-  const base = target ? `${routing.source} → ${target}${thinking}` : routing.source;
+  const route = routing.modality && routing.tier ? ` ${routing.modality}/${routing.tier}` : "";
+  const confidence = typeof routing.confidence === "number" ? ` ${(routing.confidence * 100).toFixed(0)}%` : "";
+  const base = target ? `${routing.source}${route} → ${target}${thinking}${confidence}` : `${routing.source}${route}${confidence}`;
   return routing.fallbackReason ? `${base} (${routing.fallbackReason})` : base;
 }
 

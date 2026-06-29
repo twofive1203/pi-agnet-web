@@ -12,7 +12,9 @@ export interface PiWebWorktreeConfig {
 
 export type PiWebSubagentModelMode = "followMain" | "piDefault" | "specific" | "unset";
 export type PiWebSubagentThinking = "inherit" | "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
-export type PiWebSubagentAgentStrategy = "default" | "fixed" | "disabled";
+export type PiWebSubagentAgentStrategy = "default" | "route" | "fixed" | "disabled";
+export type PiWebSubagentModality = "text" | "multimodal";
+export type PiWebSubagentDifficultyTier = "simple" | "standard" | "complex" | "critical";
 
 export interface PiWebSubagentModelRef {
   mode: PiWebSubagentModelMode;
@@ -28,11 +30,24 @@ export interface PiWebSubagentRunPolicy {
 export interface PiWebSubagentAgentConfig {
   strategy: PiWebSubagentAgentStrategy;
   fixed?: PiWebSubagentRunPolicy;
+  minimumTier?: PiWebSubagentDifficultyTier;
+  maximumTier?: PiWebSubagentDifficultyTier;
 }
+
+export interface PiWebSubagentRouterConfig {
+  enabled: boolean;
+  model: PiWebSubagentModelRef;
+  thinking: PiWebSubagentThinking;
+  fallbackOnError: { modality: PiWebSubagentModality; tier: PiWebSubagentDifficultyTier };
+}
+
+export type PiWebSubagentRouteTable = Record<PiWebSubagentModality, Record<PiWebSubagentDifficultyTier, PiWebSubagentRunPolicy>>;
 
 export interface PiWebTrellisSubagentsConfig {
   enabled: boolean;
   defaultPolicy: PiWebSubagentRunPolicy;
+  router: PiWebSubagentRouterConfig;
+  routes: PiWebSubagentRouteTable;
   agents: Record<string, PiWebSubagentAgentConfig>;
 }
 
@@ -88,9 +103,29 @@ export const DEFAULT_PI_WEB_CONFIG: PiWebConfig = {
         model: { mode: "followMain" },
         thinking: "inherit",
       },
+      router: {
+        enabled: false,
+        model: { mode: "piDefault" },
+        thinking: "minimal",
+        fallbackOnError: { modality: "text", tier: "standard" },
+      },
+      routes: {
+        text: {
+          simple: { model: { mode: "followMain" }, thinking: "inherit" },
+          standard: { model: { mode: "followMain" }, thinking: "inherit" },
+          complex: { model: { mode: "followMain" }, thinking: "high" },
+          critical: { model: { mode: "followMain" }, thinking: "xhigh" },
+        },
+        multimodal: {
+          simple: { model: { mode: "followMain" }, thinking: "inherit" },
+          standard: { model: { mode: "followMain" }, thinking: "medium" },
+          complex: { model: { mode: "followMain" }, thinking: "high" },
+          critical: { model: { mode: "followMain" }, thinking: "xhigh" },
+        },
+      },
       agents: {
-        "trellis-implement": { strategy: "default" },
-        "trellis-check": { strategy: "default" },
+        "trellis-implement": { strategy: "default", minimumTier: "complex" },
+        "trellis-check": { strategy: "default", minimumTier: "standard" },
         "trellis-research": { strategy: "default" },
       },
     },
@@ -143,13 +178,50 @@ function readSubagentPolicy(value: unknown, fallback: PiWebSubagentRunPolicy): P
   };
 }
 
+function readSubagentModality(value: unknown, fallback: PiWebSubagentModality): PiWebSubagentModality {
+  return value === "text" || value === "multimodal" ? value : fallback;
+}
+
+function readSubagentTier(value: unknown, fallback?: PiWebSubagentDifficultyTier): PiWebSubagentDifficultyTier | undefined {
+  return value === "simple" || value === "standard" || value === "complex" || value === "critical" ? value : fallback;
+}
+
+function readSubagentRouterConfig(value: unknown, fallback: PiWebSubagentRouterConfig): PiWebSubagentRouterConfig {
+  const root = isRecord(value) ? value : {};
+  const fallbackRoute = fallback.fallbackOnError;
+  const rawFallback = isRecord(root.fallbackOnError) ? root.fallbackOnError : {};
+  return {
+    enabled: readBoolean(root.enabled, fallback.enabled),
+    model: readSubagentModelRef(root.model, fallback.model),
+    thinking: readSubagentThinking(root.thinking, fallback.thinking),
+    fallbackOnError: {
+      modality: readSubagentModality(rawFallback.modality, fallbackRoute.modality),
+      tier: readSubagentTier(rawFallback.tier, fallbackRoute.tier) ?? fallbackRoute.tier,
+    },
+  };
+}
+
+function readSubagentRoutes(value: unknown, fallback: PiWebSubagentRouteTable): PiWebSubagentRouteTable {
+  const root = isRecord(value) ? value : {};
+  const out = structuredClone(fallback) as PiWebSubagentRouteTable;
+  for (const modality of ["text", "multimodal"] as const) {
+    const rawModality = isRecord(root[modality]) ? root[modality] : {};
+    for (const tier of ["simple", "standard", "complex", "critical"] as const) {
+      out[modality][tier] = readSubagentPolicy(rawModality[tier], fallback[modality][tier]);
+    }
+  }
+  return out;
+}
+
 function readSubagentAgentConfig(value: unknown, fallback: PiWebSubagentAgentConfig): PiWebSubagentAgentConfig {
   const root = isRecord(value) ? value : {};
-  const strategy = root.strategy === "default" || root.strategy === "fixed" || root.strategy === "disabled" ? root.strategy : fallback.strategy;
+  const strategy = root.strategy === "default" || root.strategy === "route" || root.strategy === "fixed" || root.strategy === "disabled" ? root.strategy : fallback.strategy;
   const fixedFallback = fallback.fixed ?? DEFAULT_PI_WEB_CONFIG.trellis.subagents.defaultPolicy;
   return {
     strategy,
     fixed: root.fixed || fallback.fixed ? readSubagentPolicy(root.fixed, fixedFallback) : undefined,
+    minimumTier: readSubagentTier(root.minimumTier, fallback.minimumTier),
+    maximumTier: readSubagentTier(root.maximumTier, fallback.maximumTier),
   };
 }
 
@@ -169,6 +241,8 @@ function readTrellisSubagentsConfig(value: unknown, fallback: PiWebTrellisSubage
   return {
     enabled: readBoolean(root.enabled, fallback.enabled),
     defaultPolicy: readSubagentPolicy(root.defaultPolicy, fallback.defaultPolicy),
+    router: readSubagentRouterConfig(root.router, fallback.router),
+    routes: readSubagentRoutes(root.routes, fallback.routes),
     agents: readSubagentAgents(root.agents, fallback.agents),
   };
 }
@@ -302,13 +376,53 @@ function validateSubagentPolicy(value: unknown, field: string): PiWebSubagentRun
 function validateSubagentAgentConfig(value: unknown, field: string): PiWebSubagentAgentConfig {
   if (!isRecord(value)) throw new PiWebConfigValidationError(`${field} must be an object`);
   const strategy = value.strategy;
-  if (strategy !== "default" && strategy !== "fixed" && strategy !== "disabled") {
+  if (strategy !== "default" && strategy !== "route" && strategy !== "fixed" && strategy !== "disabled") {
     throw new PiWebConfigValidationError(`${field}.strategy is invalid`);
   }
   return {
     strategy,
     fixed: value.fixed === undefined ? undefined : validateSubagentPolicy(value.fixed, `${field}.fixed`),
+    minimumTier: value.minimumTier === undefined ? undefined : validateSubagentTier(value.minimumTier, `${field}.minimumTier`),
+    maximumTier: value.maximumTier === undefined ? undefined : validateSubagentTier(value.maximumTier, `${field}.maximumTier`),
   };
+}
+
+function validateSubagentModality(value: unknown, field: string): PiWebSubagentModality {
+  if (value === "text" || value === "multimodal") return value;
+  throw new PiWebConfigValidationError(`${field} is invalid`);
+}
+
+function validateSubagentTier(value: unknown, field: string): PiWebSubagentDifficultyTier {
+  if (value === "simple" || value === "standard" || value === "complex" || value === "critical") return value;
+  throw new PiWebConfigValidationError(`${field} is invalid`);
+}
+
+function validateSubagentRouterConfig(value: unknown): PiWebSubagentRouterConfig {
+  if (!isRecord(value)) throw new PiWebConfigValidationError("trellis.subagents.router must be an object");
+  const fallback = isRecord(value.fallbackOnError) ? value.fallbackOnError : {};
+  return {
+    enabled: requireBoolean(value.enabled, "trellis.subagents.router.enabled"),
+    model: validateSubagentModelRef(value.model, "trellis.subagents.router"),
+    thinking: validateSubagentThinking(value.thinking, "trellis.subagents.router"),
+    fallbackOnError: {
+      modality: validateSubagentModality(fallback.modality, "trellis.subagents.router.fallbackOnError.modality"),
+      tier: validateSubagentTier(fallback.tier, "trellis.subagents.router.fallbackOnError.tier"),
+    },
+  };
+}
+
+function validateSubagentRoutes(value: unknown): PiWebSubagentRouteTable {
+  if (!isRecord(value)) throw new PiWebConfigValidationError("trellis.subagents.routes must be an object");
+  const routes = {} as PiWebSubagentRouteTable;
+  for (const modality of ["text", "multimodal"] as const) {
+    const rawModality = value[modality];
+    if (!isRecord(rawModality)) throw new PiWebConfigValidationError(`trellis.subagents.routes.${modality} must be an object`);
+    routes[modality] = {} as Record<PiWebSubagentDifficultyTier, PiWebSubagentRunPolicy>;
+    for (const tier of ["simple", "standard", "complex", "critical"] as const) {
+      routes[modality][tier] = validateSubagentPolicy(rawModality[tier], `trellis.subagents.routes.${modality}.${tier}`);
+    }
+  }
+  return routes;
 }
 
 function validateTrellisSubagentsConfig(value: unknown): PiWebTrellisSubagentsConfig {
@@ -323,6 +437,8 @@ function validateTrellisSubagentsConfig(value: unknown): PiWebTrellisSubagentsCo
   return {
     enabled: requireBoolean(value.enabled, "trellis.subagents.enabled"),
     defaultPolicy: validateSubagentPolicy(value.defaultPolicy, "trellis.subagents.defaultPolicy"),
+    router: validateSubagentRouterConfig(value.router),
+    routes: validateSubagentRoutes(value.routes),
     agents,
   };
 }
