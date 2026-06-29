@@ -775,3 +775,36 @@ Designed and implemented Trellis subagent model policy, automatic routing by mod
 ### Next Steps
 
 - None - task complete
+
+
+## Session 24: Usage stats archived sessions
+
+**Date**: 2026-06-29
+**Task**: Usage stats archived sessions
+**Branch**: `pi/20260629-144056`
+
+### Summary
+
+Investigated Usage statistics data flow, fixed aggregation to optionally include archived sessions, added Usage settings for active-only versus active-plus-archived scope, added active/archive counts and rounded M-token display, updated docs, validated lint and type-check, committed and pushed the branch.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `fbef798` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
