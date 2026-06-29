@@ -107,6 +107,8 @@ function RunItem({
 
   const displayOutput = run.result ?? run.partialOutput;
   const routingLabel = formatRouting(run.routing);
+  const metadata = getRunMetadata(run.routing);
+  const metadataTitle = routingLabel ?? metadata.map((item) => `${item.label}: ${item.value}`).join(" · ");
   const hasSessionFile = !!run.sessionFile;
   const hasChildren = childrenRuns && childrenRuns.length > 0;
 
@@ -136,10 +138,8 @@ function RunItem({
         <span style={{ color: "var(--text-muted)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {taskDisplay}
         </span>
-        {routingLabel && (
-          <span title={routingLabel} style={{ color: "var(--text-dim)", fontSize: 10, flexShrink: 0, maxWidth: 170, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {routingLabel}
-          </span>
+        {metadata.length > 0 && (
+          <RunMetadataChips items={metadata} title={metadataTitle} />
         )}
         {hasSessionFile && !hasChildren && isExpanded && (
           <span style={{ color: "var(--text-dim)", fontSize: 9, flexShrink: 0, fontStyle: "italic" }}>
@@ -210,11 +210,50 @@ function RunItem({
 function formatRouting(routing: SubagentRun["routing"]): string | null {
   if (!routing?.source) return null;
   const target = routing.model ?? (routing.source === "piDefault" ? "Pi default" : null);
-  const thinking = routing.thinking && routing.thinking !== "off" ? `:${routing.thinking}` : "";
+  const thinking = routing.thinking ? `:${routing.thinking}` : "";
   const route = routing.modality && routing.tier ? ` ${routing.modality}/${routing.tier}` : "";
   const confidence = typeof routing.confidence === "number" ? ` ${(routing.confidence * 100).toFixed(0)}%` : "";
   const base = target ? `${routing.source}${route} → ${target}${thinking}${confidence}` : `${routing.source}${route}${confidence}`;
   return routing.fallbackReason ? `${base} (${routing.fallbackReason})` : base;
+}
+
+function getRunMetadata(routing: SubagentRun["routing"]): { label: string; value: string }[] {
+  if (!routing) return [];
+  const model = routing.model ?? (routing.source === "piDefault" ? "Pi default" : null);
+  return [
+    ...(model ? [{ label: "Model", value: model }] : []),
+    ...(routing.thinking ? [{ label: "Thinking", value: routing.thinking }] : []),
+  ];
+}
+
+function RunMetadataChips({ items, title }: { items: { label: string; value: string }[]; title?: string | null }) {
+  return (
+    <span
+      title={title ?? undefined}
+      style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 1, minWidth: 0, maxWidth: 260 }}
+    >
+      {items.map((item) => (
+        <span
+          key={item.label}
+          style={{
+            color: "var(--text-muted)",
+            background: "var(--bg-subtle)",
+            border: "1px solid var(--border)",
+            borderRadius: 999,
+            padding: "1px 6px",
+            fontSize: 10,
+            lineHeight: 1.4,
+            maxWidth: item.label === "Model" ? 170 : 80,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          <span style={{ color: "var(--text-dim)" }}>{item.label}: </span>{item.value}
+        </span>
+      ))}
+    </span>
+  );
 }
 
 function ChildRunItem({ run, depth }: { run: SubagentRun; depth: number }) {
@@ -225,6 +264,9 @@ function ChildRunItem({ run, depth }: { run: SubagentRun; depth: number }) {
   const statusColor = isRunning ? "#f59e0b" : isFailed ? "#ef4444" : "#22c55e";
   const statusIcon = isRunning ? "○" : isFailed ? "✕" : "✓";
   const displayOutput = run.result ?? run.partialOutput;
+  const routingLabel = formatRouting(run.routing);
+  const metadata = getRunMetadata(run.routing);
+  const metadataTitle = routingLabel ?? metadata.map((item) => `${item.label}: ${item.value}`).join(" · ");
 
   return (
     <div>
@@ -253,6 +295,9 @@ function ChildRunItem({ run, depth }: { run: SubagentRun; depth: number }) {
         <span style={{ color: "var(--text-muted)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 11 }}>
           {run.task ? run.task.split("\n")[0].slice(0, 80) : ""}
         </span>
+        {metadata.length > 0 && (
+          <RunMetadataChips items={metadata} title={metadataTitle} />
+        )}
         <span style={{ fontSize: 9, color: "var(--text-dim)", flexShrink: 0 }}>
           {expanded ? "▲" : "▼"}
         </span>

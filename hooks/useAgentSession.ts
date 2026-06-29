@@ -76,6 +76,39 @@ export interface SubagentRun {
   loaded?: boolean;
 }
 
+type SubagentResultMetadata = {
+  agent?: string;
+  sessionFile?: string;
+  routing?: SubagentRun["routing"];
+  model?: string;
+  thinking?: string;
+  thinkingLevel?: string;
+};
+
+function routingFromResult(result: SubagentResultMetadata | undefined): SubagentRun["routing"] | undefined {
+  if (!result) return undefined;
+  if (result.routing) return result.routing;
+  if (!result.model && !result.thinking && !result.thinkingLevel) return undefined;
+  return {
+    source: "result",
+    model: result.model,
+    thinking: result.thinking ?? result.thinkingLevel,
+  };
+}
+
+function resultIndexForRun(runId: string, toolCallId: string): number | null {
+  if (runId === toolCallId) return 0;
+  if (runId.startsWith(toolCallId + "-c")) {
+    const idx = parseInt(runId.slice(toolCallId.length + 2), 10);
+    return Number.isNaN(idx) ? null : idx;
+  }
+  if (runId.startsWith(toolCallId + "-")) {
+    const idx = parseInt(runId.slice(toolCallId.length + 1), 10);
+    return Number.isNaN(idx) ? null : idx;
+  }
+  return null;
+}
+
 export type AgentPhase =
   | { kind: "waiting_model" }
   | { kind: "running_tools"; tools: { id: string; name: string }[] }
@@ -445,22 +478,15 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
             ?.content?.map((c) => c.text ?? "")
             .join("") ?? undefined;
         // Extract sessionFile/routing metadata from subagent tool-call details.
-        const details = (event.result as { details?: { results?: { agent?: string; sessionFile?: string }[]; routing?: SubagentRun["routing"]; runs?: { routing?: SubagentRun["routing"] }[] } } | undefined)?.details;
-        const childSessions = details?.results?.map((r: { agent?: string; sessionFile?: string }) => r.sessionFile).filter(Boolean) ?? [];
-        const routing = details?.routing ?? details?.runs?.find((run) => run.routing)?.routing;
+        const details = (event.result as { details?: { results?: SubagentResultMetadata[]; routing?: SubagentRun["routing"]; runs?: { routing?: SubagentRun["routing"] }[] } } | undefined)?.details;
+        const fallbackRouting = details?.routing ?? details?.runs?.find((run) => run.routing)?.routing;
         setSubagentRuns((prev) =>
           prev.map((r) => {
-            if (r.id === endId || r.id.startsWith(endId + "-")) {
-              // For parallel mode, suffixes like -0, -1 map to results[] indices
-              let sessionFile: string | undefined;
-              if (r.id === endId && childSessions.length === 1) {
-                sessionFile = childSessions[0];
-              } else if (r.id.startsWith(endId + "-")) {
-                const idx = parseInt(r.id.slice(endId.length + 1), 10);
-                if (!isNaN(idx) && idx < childSessions.length) {
-                  sessionFile = childSessions[idx];
-                }
-              }
+            const resultIndex = resultIndexForRun(r.id, endId);
+            if (resultIndex !== null) {
+              const result = details?.results?.[resultIndex];
+              const sessionFile = result?.sessionFile;
+              const routing = routingFromResult(result) ?? fallbackRouting;
               return { ...r, status: isError ? "failed" : "completed", result: resultText, partialOutput: "", sessionFile: sessionFile ?? r.sessionFile, routing: routing ?? r.routing };
             }
             return r;

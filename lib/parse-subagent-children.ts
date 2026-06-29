@@ -25,6 +25,8 @@ export function parseSubagentChildren(sessionFile: string): SubagentRun[] {
     lineIndex: number;
   }
 
+  type RoutingMetadata = SubagentRun["routing"];
+
   const pendingCalls: Map<string, PendingToolCall> = new Map();
   const now = Date.now();
 
@@ -92,12 +94,18 @@ export function parseSubagentChildren(sessionFile: string): SubagentRun[] {
           .join("");
       }
 
-      // Extract sessionFile from details.results
-      const details = msg.details as { results?: { sessionFile?: string }[] } | undefined;
+      // Extract sessionFile/routing metadata from tool result details.
+      const details = msg.details as { results?: { sessionFile?: string; routing?: RoutingMetadata; model?: string; thinking?: string; thinkingLevel?: string }[]; routing?: RoutingMetadata; runs?: { routing?: RoutingMetadata }[] } | undefined;
       let childSessionFile: string | undefined;
+      let resultRouting: RoutingMetadata;
       if (details?.results?.length === 1) {
-        childSessionFile = details.results[0]?.sessionFile;
+        const result = details.results[0];
+        childSessionFile = result?.sessionFile;
+        resultRouting = result?.routing ?? (result?.model || result?.thinking || result?.thinkingLevel
+          ? { source: "result", model: result.model, thinking: result.thinking ?? result.thinkingLevel }
+          : undefined);
       }
+      const routing = details?.routing ?? resultRouting ?? details?.results?.find((r) => r.routing)?.routing ?? details?.runs?.find((r) => r.routing)?.routing;
 
       const isError = !!msg.isError;
 
@@ -112,6 +120,7 @@ export function parseSubagentChildren(sessionFile: string): SubagentRun[] {
         depth: 1,
         parentId: undefined,
         sessionFile: childSessionFile,
+        routing,
       });
     }
   }

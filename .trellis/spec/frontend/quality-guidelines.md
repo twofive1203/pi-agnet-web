@@ -216,6 +216,83 @@ const result = await fetch(`/api/sessions/${sessionId}/trellis-task`);
 if (result.task) showWidget(result.task);
 ```
 
+### Scenario: Subagent panel metadata projections
+
+### 1. Scope / Trigger
+
+Use this contract when displaying subagent execution metadata in the top-bar
+Subagents panel or nested-subagent inspection UI. The data may arrive from live
+RPC tool events or from stored child-session JSONL parsing.
+
+### 2. Signatures
+
+- Live event owner: `hooks/useAgentSession.ts` projects subagent tool events into
+  `SubagentRun`.
+- Stored child parser: `parseSubagentChildren(sessionFile)` returns
+  `SubagentRun[]` for nested subagents.
+- UI consumer: `SubagentPanel({ runs }: { runs: SubagentRun[] })` renders rows
+  without reparsing raw tool payloads.
+- Metadata fields: `SubagentRun.routing.model` and
+  `SubagentRun.routing.thinking`; generic subagent result payloads may expose
+  `details.results[].model` even when no `routing` object exists.
+
+### 3. Contracts
+
+- `SubagentRun` is the shared UI projection. Components should format
+  `SubagentRun` fields, not cast raw RPC/JSONL payloads.
+- Prefer explicit routing metadata when present.
+- If only result metadata is present, project known fields into
+  `SubagentRun.routing` with a non-user-facing source such as `"result"`.
+- Missing model or thinking fields must be hidden or clearly non-misleading;
+  do not invent a thinking level from the parent session.
+- Preserve full routing details in a tooltip or equivalent compact debugging
+  affordance when visible metadata is shortened.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required behavior |
+| --- | --- |
+| `routing.model` exists | Show the model outside raw expanded output. |
+| `routing.thinking` exists, including `off` | Show the thinking level outside raw expanded output. |
+| `details.results[].model` exists without `routing` | Show the model after projecting it into `SubagentRun.routing`. |
+| Model/thinking missing | Hide that field; do not show `unknown` unless product explicitly asks for it. |
+| Multiple parallel/chain results | Map each row to the matching `details.results[]` index. |
+
+### 5. Good/Base/Bad Cases
+
+- Good: a completed subagent row shows `Model: openai-codex/gpt-5.5`, with the
+  row tooltip preserving the routing/result source.
+- Base: no model or thinking metadata exists; the row still shows agent, task,
+  status, and expansion controls.
+- Bad: the component parses `event.result.details.results` directly or displays
+  the parent chat thinking level as the child subagent thinking level.
+
+### 6. Tests Required
+
+At minimum, verify these assertion points manually or with focused tests:
+
+- Live subagent completion with `details.results[].model` displays a model chip.
+- Rows with no metadata still render and expand normally.
+- Tooltip/debug text remains available for shortened metadata.
+- Nested child parsing preserves available model/thinking metadata.
+- Parallel or chain subagent rows map result metadata by row index.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```typescript
+// Component reparses a raw result shape and may diverge from live event logic.
+const model = (run as { details?: { results?: { model?: string }[] } }).details?.results?.[0]?.model;
+```
+
+#### Correct
+
+```typescript
+// Event/parser layers project metadata once; the component only formats it.
+const model = run.routing?.model;
+```
+
 ### Trellis task-detail display contracts
 
 When rendering the Trellis task drawer, keep these projections explicit:
