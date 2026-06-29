@@ -44,13 +44,13 @@ API routes live under `app/api/`. When adding, removing, or changing routes, upd
 | `usage/` | GET | Aggregate token/cost usage across sessions. |
 | `auth/providers/` | GET | List configured auth provider statuses. |
 | `auth/all-providers/` | GET | List all known provider ids. |
-| `auth/accounts/[provider]/` | GET/POST/PATCH/DELETE | List saved OAuth accounts, import one or more raw/CPA/SUB2API OAuth account JSON entries, update account remarks, and soft-delete inactive saved accounts for supported providers (`openai-codex`). |
+| `auth/accounts/[provider]/` | GET/POST/PATCH/DELETE | List saved OAuth accounts, import one or more raw/CPA/SUB2API OAuth account JSON entries, update account remarks/extra info, return cached quota reset metadata, and soft-delete inactive saved accounts for supported providers (`openai-codex`). |
 | `auth/accounts/[provider]/activate/` | POST | Activate a saved OAuth account and reload live RPC auth state. |
 | `auth/login/[provider]/` | GET/POST | Initiate OAuth login for a provider; `openai-codex?accountMode=add` saves another account without replacing active auth. |
 | `auth/logout/[provider]/` | POST | Clear OAuth tokens for a provider. |
 | `auth/api-key/[provider]/` | GET | Get masked API-key status for a provider. |
 | `auth/balance/[provider]/` | GET | Query DeepSeek account balance. |
-| `auth/quota/[provider]/` | GET | Query OpenAI Codex subscription quota. |
+| `auth/quota/[provider]/` | GET | Query OpenAI Codex subscription quota for the active account, or for a saved account with `?accountId=...`; queries update the saved account's cached quota reset metadata and refresh expired saved-account OAuth tokens when possible. |
 
 ## Implementation Pointers
 

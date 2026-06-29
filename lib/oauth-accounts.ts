@@ -28,9 +28,24 @@ interface StoredOpenAICodexCredential extends OAuthCredential {
 
 type NormalizedOpenAICodexCredential = StoredOpenAICodexCredential & { accountId: string };
 
+export interface OAuthAccountQuotaCacheTier {
+  name: string;
+  utilization: number;
+  resetsAt: string | null;
+}
+
+export interface OAuthAccountQuotaCache {
+  success: boolean;
+  tiers: OAuthAccountQuotaCacheTier[];
+  error: string | null;
+  queriedAt: number | null;
+}
+
 interface OAuthAccountMetadataEntry {
   accountId: string;
   label?: string;
+  extraInfo?: string;
+  quotaCache?: OAuthAccountQuotaCache;
   labelBackfillDisabledAt?: string;
   createdAt: string;
   updatedAt: string;
@@ -46,6 +61,8 @@ interface OAuthAccountStoreMetadata {
 export interface OAuthAccountSummary {
   accountId: string;
   label?: string;
+  extraInfo?: string;
+  quotaCache?: OAuthAccountQuotaCache;
   displayName: string;
   maskedAccountId: string;
   active: boolean;
@@ -149,6 +166,24 @@ async function writeJsonFile(provider: string, path: string, value: unknown): Pr
   await chmod(path, JSON_FILE_MODE).catch(() => {});
 }
 
+function normalizeQuotaCache(value: unknown): OAuthAccountQuotaCache | undefined {
+  if (!isRecord(value)) return undefined;
+  const tiers = Array.isArray(value.tiers)
+    ? value.tiers.filter(isRecord).map((tier) => ({
+      name: typeof tier.name === "string" ? tier.name : "unknown",
+      utilization: typeof tier.utilization === "number" && Number.isFinite(tier.utilization) ? tier.utilization : 0,
+      resetsAt: typeof tier.resetsAt === "string" ? tier.resetsAt : null,
+    }))
+    : [];
+
+  return {
+    success: value.success === true,
+    tiers,
+    error: typeof value.error === "string" ? value.error : null,
+    queriedAt: typeof value.queriedAt === "number" && Number.isFinite(value.queriedAt) ? value.queriedAt : null,
+  };
+}
+
 function normalizeAccountEntry(value: unknown): OAuthAccountMetadataEntry | null {
   if (!isRecord(value)) return null;
   if (typeof value.accountId !== "string" || value.accountId.trim().length === 0) return null;
@@ -160,6 +195,9 @@ function normalizeAccountEntry(value: unknown): OAuthAccountMetadataEntry | null
     updatedAt: value.updatedAt,
   };
   if (typeof value.label === "string" && value.label.trim()) entry.label = value.label.trim();
+  if (typeof value.extraInfo === "string" && value.extraInfo.trim()) entry.extraInfo = value.extraInfo.trim();
+  const quotaCache = normalizeQuotaCache(value.quotaCache);
+  if (quotaCache) entry.quotaCache = quotaCache;
   if (typeof value.labelBackfillDisabledAt === "string" && value.labelBackfillDisabledAt.trim()) entry.labelBackfillDisabledAt = value.labelBackfillDisabledAt;
   if (typeof value.lastActivatedAt === "string" && value.lastActivatedAt.trim()) entry.lastActivatedAt = value.lastActivatedAt;
   return entry;
@@ -355,6 +393,8 @@ function accountSummary(metadata: OAuthAccountStoreMetadata, entry: OAuthAccount
   return {
     accountId: entry.accountId,
     label: entry.label,
+    extraInfo: entry.extraInfo,
+    quotaCache: entry.quotaCache,
     displayName: entry.label ?? entry.accountId,
     maskedAccountId,
     active: metadata.activeAccountId === entry.accountId,
@@ -412,7 +452,7 @@ async function clearActiveAccount(provider: string): Promise<void> {
   await writeMetadata(provider, { ...metadata, activeAccountId: undefined });
 }
 
-async function readAccountCredential(provider: string, accountId: string): Promise<NormalizedOpenAICodexCredential> {
+export async function readOAuthAccountCredential(provider: string, accountId: string): Promise<NormalizedOpenAICodexCredential> {
   if (!accountId.trim()) throw new OAuthAccountStoreError("accountId is required", 400);
 
   const credential = await readJsonFile(credentialPath(provider, accountId), "OAuth account credential");
@@ -517,7 +557,11 @@ export async function listOAuthAccounts(provider: string): Promise<OAuthAccounts
   };
 }
 
-export async function updateOAuthAccountLabel(provider: string, accountId: string, label: unknown): Promise<OAuthAccountsList> {
+export async function updateOAuthAccountMetadata(
+  provider: string,
+  accountId: string,
+  updates: { label?: unknown; extraInfo?: unknown },
+): Promise<OAuthAccountsList> {
   assertSupportedProvider(provider);
   const normalizedAccountId = accountId.trim();
   if (!normalizedAccountId) throw new OAuthAccountStoreError("accountId is required", 400);
@@ -525,7 +569,6 @@ export async function updateOAuthAccountLabel(provider: string, accountId: strin
     throw new OAuthAccountStoreError("Saved OAuth account not found", 404);
   }
 
-  const normalizedLabel = typeof label === "string" ? label.trim() : "";
   const metadata = await readMetadata(provider);
   let found = false;
   const now = new Date().toISOString();
@@ -533,12 +576,20 @@ export async function updateOAuthAccountLabel(provider: string, accountId: strin
     if (entry.accountId !== normalizedAccountId) return entry;
     found = true;
     const nextEntry: OAuthAccountMetadataEntry = { ...entry, updatedAt: now };
-    if (normalizedLabel) {
-      nextEntry.label = normalizedLabel;
-      delete nextEntry.labelBackfillDisabledAt;
-    } else {
-      delete nextEntry.label;
-      nextEntry.labelBackfillDisabledAt = now;
+    if ("label" in updates) {
+      const normalizedLabel = typeof updates.label === "string" ? updates.label.trim() : "";
+      if (normalizedLabel) {
+        nextEntry.label = normalizedLabel;
+        delete nextEntry.labelBackfillDisabledAt;
+      } else {
+        delete nextEntry.label;
+        nextEntry.labelBackfillDisabledAt = now;
+      }
+    }
+    if ("extraInfo" in updates) {
+      const normalizedExtraInfo = typeof updates.extraInfo === "string" ? updates.extraInfo.trim() : "";
+      if (normalizedExtraInfo) nextEntry.extraInfo = normalizedExtraInfo;
+      else delete nextEntry.extraInfo;
     }
     return nextEntry;
   });
@@ -546,6 +597,29 @@ export async function updateOAuthAccountLabel(provider: string, accountId: strin
   if (!found) throw new OAuthAccountStoreError("Saved OAuth account metadata not found", 404);
   await writeMetadata(provider, { ...metadata, accounts });
   return listOAuthAccounts(provider);
+}
+
+export async function updateOAuthAccountLabel(provider: string, accountId: string, label: unknown): Promise<OAuthAccountsList> {
+  return updateOAuthAccountMetadata(provider, accountId, { label });
+}
+
+export async function updateOAuthAccountQuotaCache(
+  provider: string,
+  accountId: string,
+  quotaCache: OAuthAccountQuotaCache,
+): Promise<void> {
+  assertSupportedProvider(provider);
+  const normalizedAccountId = accountId.trim();
+  if (!normalizedAccountId) return;
+  const metadata = await readMetadata(provider);
+  const now = new Date().toISOString();
+  let changed = false;
+  const accounts = metadata.accounts.map((entry) => {
+    if (entry.accountId !== normalizedAccountId) return entry;
+    changed = true;
+    return { ...entry, quotaCache, updatedAt: now };
+  });
+  if (changed) await writeMetadata(provider, { ...metadata, accounts });
 }
 
 export async function deleteOAuthAccount(provider: string, accountId: string): Promise<OAuthAccountsList> {
@@ -578,7 +652,7 @@ export async function activateOAuthAccount(provider: string, accountId: string):
   const authStorage = AuthStorage.create();
   await syncActiveOAuthAccountCredential(provider, authStorage);
 
-  const credential = await readAccountCredential(provider, normalizedAccountId);
+  const credential = await readOAuthAccountCredential(provider, normalizedAccountId);
   authStorage.set(provider, credential);
   if (authStorage.drainErrors().length > 0) {
     throw new OAuthAccountStoreError("Failed to update active OAuth credential", 500);

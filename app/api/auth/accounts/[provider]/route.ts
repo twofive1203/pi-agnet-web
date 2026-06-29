@@ -1,5 +1,5 @@
 import { isOAuthAccountImportMode } from "@/lib/oauth-account-converters";
-import { deleteOAuthAccount, importOAuthAccountCredential, listOAuthAccounts, OAuthAccountStoreError, updateOAuthAccountLabel } from "@/lib/oauth-accounts";
+import { deleteOAuthAccount, importOAuthAccountCredential, listOAuthAccounts, OAuthAccountStoreError, updateOAuthAccountMetadata } from "@/lib/oauth-accounts";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -46,14 +46,17 @@ export async function PATCH(
   { params }: { params: Promise<{ provider: string }> },
 ) {
   const { provider } = await params;
-  const body = await req.json().catch(() => ({})) as { accountId?: unknown; label?: unknown };
+  const body = await req.json().catch(() => ({})) as { accountId?: unknown; label?: unknown; extraInfo?: unknown };
 
   if (typeof body.accountId !== "string" || !body.accountId.trim()) {
     return Response.json({ error: "accountId is required" }, { status: 400 });
   }
 
   try {
-    return Response.json(await updateOAuthAccountLabel(provider, body.accountId, body.label));
+    const updates: { label?: unknown; extraInfo?: unknown } = {};
+    if ("label" in body) updates.label = body.label;
+    if ("extraInfo" in body) updates.extraInfo = body.extraInfo;
+    return Response.json(await updateOAuthAccountMetadata(provider, body.accountId, updates));
   } catch (error) {
     return errorResponse(error);
   }

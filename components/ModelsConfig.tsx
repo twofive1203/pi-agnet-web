@@ -92,9 +92,18 @@ interface OAuthProvider {
   loggedIn: boolean;
 }
 
+interface OAuthAccountQuotaCache {
+  success: boolean;
+  tiers: QuotaTier[];
+  error: string | null;
+  queriedAt: number | null;
+}
+
 interface OAuthAccountSummary {
   accountId: string;
   label?: string;
+  extraInfo?: string;
+  quotaCache?: OAuthAccountQuotaCache;
   displayName: string;
   maskedAccountId: string;
   active: boolean;
@@ -883,16 +892,52 @@ function OAuthQuotaView({
   );
 }
 
+function accountQuotaResetText(account: OAuthAccountSummary): string {
+  const tiers = (account.quotaCache?.tiers ?? []).filter((tier) => tier.name in QUOTA_TIER_LABELS && tier.resetsAt);
+  if (tiers.length === 0) return account.quotaCache?.queriedAt ? "No reset time" : "No quota cache";
+  return tiers.map((tier) => {
+    const countdown = formatResetCountdown(tier.resetsAt);
+    return `${QUOTA_TIER_LABELS[tier.name]} ${countdown ?? "due"}`;
+  }).join(" · ");
+}
+
+function AccountQuotaMiniCharts({ account }: { account: OAuthAccountSummary }) {
+  const tiers = (account.quotaCache?.tiers ?? []).filter((tier) => tier.name in QUOTA_TIER_LABELS);
+  if (tiers.length === 0) return null;
+
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 4, marginLeft: 6, verticalAlign: "middle" }}>
+      {tiers.map((tier) => {
+        const utilization = Math.min(Math.max(tier.utilization, 0), 100);
+        const color = quotaColor(utilization);
+        const label = QUOTA_TIER_LABELS[tier.name];
+        return (
+          <span key={tier.name} title={`${label} quota ${Math.round(utilization)}% used`} style={{ display: "inline-flex", alignItems: "center", gap: 2 }}>
+            <span style={{ width: 16, height: 16, borderRadius: "50%", background: `conic-gradient(${color} ${utilization * 3.6}deg, var(--bg-panel) 0deg)`, border: "1px solid var(--border)", display: "inline-flex", alignItems: "center", justifyContent: "center", boxSizing: "border-box" }}>
+              <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--bg)" }} />
+            </span>
+            <span style={{ fontSize: 9, color: "var(--text-dim)", fontWeight: 600 }}>{label}</span>
+          </span>
+        );
+      })}
+    </span>
+  );
+}
+
 function OAuthAccountsView({
   accounts,
   loading,
   error,
   activatingAccountId,
   savingLabelAccountId,
+  savingExtraInfoAccountId,
+  refreshingQuotaAccountId,
   deletingAccountId,
   onRefresh,
   onActivate,
   onEditLabel,
+  onEditExtraInfo,
+  onRefreshQuota,
   onDelete,
 }: {
   accounts: OAuthAccountSummary[];
@@ -900,10 +945,14 @@ function OAuthAccountsView({
   error: string | null;
   activatingAccountId: string | null;
   savingLabelAccountId: string | null;
+  savingExtraInfoAccountId: string | null;
+  refreshingQuotaAccountId: string | null;
   deletingAccountId: string | null;
   onRefresh: () => void;
   onActivate: (accountId: string) => void;
   onEditLabel: (account: OAuthAccountSummary) => void;
+  onEditExtraInfo: (account: OAuthAccountSummary) => void;
+  onRefreshQuota: (account: OAuthAccountSummary) => void;
   onDelete: (account: OAuthAccountSummary) => void;
 }) {
   return (
@@ -936,44 +985,128 @@ function OAuthAccountsView({
 
       {accounts.length > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          {accounts.map((account) => (
-            <div key={account.accountId} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 9px", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 5 }}>
-              <span style={{ width: 8, height: 8, borderRadius: "50%", background: account.active ? "#4ade80" : "var(--border)", flexShrink: 0 }} />
-              <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
-                <span style={{ fontSize: 12, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{account.displayName}</span>
-                <span style={{ fontSize: 10, color: "var(--text-dim)", fontFamily: "var(--font-mono)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{account.maskedAccountId}</span>
+          {accounts.map((account) => {
+            const quotaRefreshing = refreshingQuotaAccountId === account.accountId;
+            return (
+              <div key={account.accountId} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 9px", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 5 }}>
+                <span style={{ width: 8, height: 8, borderRadius: "50%", background: account.active ? "#4ade80" : "var(--border)", flexShrink: 0 }} />
+                <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
+                  <span style={{ fontSize: 12, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{account.displayName}</span>
+                  <span style={{ fontSize: 10, color: "var(--text-dim)", fontFamily: "var(--font-mono)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{account.maskedAccountId}</span>
+                  {account.extraInfo && <span style={{ fontSize: 11, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{account.extraInfo}</span>}
+                  <div style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0, fontSize: 10, color: account.quotaCache?.error ? "#fb923c" : "var(--text-dim)" }}>
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>
+                      Reset: {accountQuotaResetText(account)}{account.quotaCache?.queriedAt ? ` · ${formatQuotaQueriedAt(account.quotaCache.queriedAt)}` : ""}
+                    </span>
+                    <AccountQuotaMiniCharts account={account} />
+                  </div>
+                </div>
+                <button
+                  onClick={() => onEditLabel(account)}
+                  disabled={savingLabelAccountId === account.accountId}
+                  style={{ padding: "4px 9px", background: "none", border: "1px solid var(--border)", borderRadius: 4, color: savingLabelAccountId === account.accountId ? "var(--text-dim)" : "var(--text-muted)", cursor: savingLabelAccountId === account.accountId ? "default" : "pointer", fontSize: 11, fontWeight: 600 }}
+                >
+                  {savingLabelAccountId === account.accountId ? "Saving…" : "Remark"}
+                </button>
+                <button
+                  onClick={() => onEditExtraInfo(account)}
+                  disabled={savingExtraInfoAccountId === account.accountId}
+                  style={{ padding: "4px 9px", background: "none", border: "1px solid var(--border)", borderRadius: 4, color: savingExtraInfoAccountId === account.accountId ? "var(--text-dim)" : "var(--text-muted)", cursor: savingExtraInfoAccountId === account.accountId ? "default" : "pointer", fontSize: 11, fontWeight: 600 }}
+                >
+                  {savingExtraInfoAccountId === account.accountId ? "Saving…" : "Details"}
+                </button>
+                {account.active ? (
+                  <span style={{ fontSize: 11, color: "#4ade80", fontWeight: 600 }}>active</span>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => onActivate(account.accountId)}
+                      disabled={Boolean(activatingAccountId) || deletingAccountId === account.accountId}
+                      style={{ padding: "4px 9px", background: "none", border: "1px solid var(--border)", borderRadius: 4, color: activatingAccountId === account.accountId ? "var(--text-dim)" : "var(--accent)", cursor: activatingAccountId || deletingAccountId === account.accountId ? "default" : "pointer", fontSize: 11, fontWeight: 600 }}
+                    >
+                      {activatingAccountId === account.accountId ? "Activating…" : "Activate"}
+                    </button>
+                    <button
+                      onClick={() => onDelete(account)}
+                      disabled={Boolean(deletingAccountId) || Boolean(activatingAccountId)}
+                      style={{ padding: "4px 9px", background: "none", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 4, color: deletingAccountId === account.accountId ? "var(--text-dim)" : "#ef4444", cursor: deletingAccountId || activatingAccountId ? "default" : "pointer", fontSize: 11, fontWeight: 600 }}
+                    >
+                      {deletingAccountId === account.accountId ? "Deleting…" : "Delete"}
+                    </button>
+                  </>
+                )}
+                <button
+                  onClick={() => onRefreshQuota(account)}
+                  disabled={Boolean(refreshingQuotaAccountId)}
+                  title="Refresh this account quota reset time"
+                  aria-label="Refresh this account quota reset time"
+                  style={{ width: 28, height: 28, padding: 0, background: "none", border: "1px solid var(--border)", borderRadius: 4, color: quotaRefreshing ? "var(--text-dim)" : "var(--accent)", cursor: refreshingQuotaAccountId ? "default" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 12a9 9 0 0 1-9 9 8.8 8.8 0 0 1-6.36-2.64" />
+                    <path d="M3 12a9 9 0 0 1 9-9 8.8 8.8 0 0 1 6.36 2.64" />
+                    <path d="M3 4v8h8" />
+                    <path d="M21 20v-8h-8" />
+                  </svg>
+                </button>
               </div>
-              <button
-                onClick={() => onEditLabel(account)}
-                disabled={savingLabelAccountId === account.accountId}
-                style={{ padding: "4px 9px", background: "none", border: "1px solid var(--border)", borderRadius: 4, color: savingLabelAccountId === account.accountId ? "var(--text-dim)" : "var(--text-muted)", cursor: savingLabelAccountId === account.accountId ? "default" : "pointer", fontSize: 11, fontWeight: 600 }}
-              >
-                {savingLabelAccountId === account.accountId ? "Saving…" : "Remark"}
-              </button>
-              {account.active ? (
-                <span style={{ fontSize: 11, color: "#4ade80", fontWeight: 600 }}>active</span>
-              ) : (
-                <>
-                  <button
-                    onClick={() => onActivate(account.accountId)}
-                    disabled={Boolean(activatingAccountId) || deletingAccountId === account.accountId}
-                    style={{ padding: "4px 9px", background: "none", border: "1px solid var(--border)", borderRadius: 4, color: activatingAccountId === account.accountId ? "var(--text-dim)" : "var(--accent)", cursor: activatingAccountId || deletingAccountId === account.accountId ? "default" : "pointer", fontSize: 11, fontWeight: 600 }}
-                  >
-                    {activatingAccountId === account.accountId ? "Activating…" : "Activate"}
-                  </button>
-                  <button
-                    onClick={() => onDelete(account)}
-                    disabled={Boolean(deletingAccountId) || Boolean(activatingAccountId)}
-                    style={{ padding: "4px 9px", background: "none", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 4, color: deletingAccountId === account.accountId ? "var(--text-dim)" : "#ef4444", cursor: deletingAccountId || activatingAccountId ? "default" : "pointer", fontSize: 11, fontWeight: 600 }}
-                  >
-                    {deletingAccountId === account.accountId ? "Deleting…" : "Delete"}
-                  </button>
-                </>
-              )}
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
+    </div>
+  );
+}
+
+function ExtraInfoDialog({
+  account,
+  saving,
+  onSave,
+  onClose,
+}: {
+  account: OAuthAccountSummary;
+  saving: boolean;
+  onSave: (account: OAuthAccountSummary, extraInfo: string) => void;
+  onClose: () => void;
+}) {
+  const [value, setValue] = useState(account.extraInfo ?? "");
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    setValue(account.extraInfo ?? "");
+    setTimeout(() => textareaRef.current?.focus(), 50);
+  }, [account]);
+
+  return (
+    <div
+      style={{ position: "fixed", inset: 0, zIndex: 1200, background: "rgba(0,0,0,0.42)", display: "flex", alignItems: "center", justifyContent: "center" }}
+      onClick={(e) => { if (e.target === e.currentTarget && !saving) onClose(); }}
+    >
+      <div style={{ width: 520, maxWidth: "calc(100vw - 32px)", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 10, boxShadow: "0 10px 36px rgba(0,0,0,0.28)", overflow: "hidden" }}>
+        <div style={{ padding: "12px 14px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>Account details</div>
+            <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{account.displayName}</div>
+          </div>
+          <button type="button" disabled={saving} onClick={onClose} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: saving ? "not-allowed" : "pointer", fontSize: 20, lineHeight: 1, padding: "2px 6px" }}>×</button>
+        </div>
+        <div style={{ padding: 14, display: "flex", flexDirection: "column", gap: 8 }}>
+          <label style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600 }}>Extra information</label>
+          <textarea
+            ref={textareaRef}
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            disabled={saving}
+            placeholder="Add notes such as subscription owner, renewal notes, usage hints…"
+            style={{ minHeight: 120, resize: "vertical", padding: "9px 10px", background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: 8, color: "var(--text)", fontSize: 12, outline: "none", boxSizing: "border-box", lineHeight: 1.5 }}
+          />
+          <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.5 }}>Leave empty to clear this account&apos;s extra information.</div>
+        </div>
+        <div style={{ padding: "10px 14px", borderTop: "1px solid var(--border)", display: "flex", justifyContent: "flex-end", gap: 8 }}>
+          <button type="button" disabled={saving} onClick={onClose} style={{ padding: "6px 12px", background: "none", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text-muted)", cursor: saving ? "not-allowed" : "pointer", fontSize: 12 }}>Cancel</button>
+          <button type="button" disabled={saving} onClick={() => onSave(account, value)} style={{ padding: "6px 14px", background: saving ? "var(--bg-panel)" : "var(--accent)", border: "none", borderRadius: 6, color: saving ? "var(--text-dim)" : "#fff", cursor: saving ? "not-allowed" : "pointer", fontSize: 12, fontWeight: 700 }}>{saving ? "Saving…" : "Save"}</button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1212,6 +1345,9 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
   const [accountsError, setAccountsError] = useState<string | null>(null);
   const [activatingAccountId, setActivatingAccountId] = useState<string | null>(null);
   const [savingLabelAccountId, setSavingLabelAccountId] = useState<string | null>(null);
+  const [savingExtraInfoAccountId, setSavingExtraInfoAccountId] = useState<string | null>(null);
+  const [editingExtraInfoAccount, setEditingExtraInfoAccount] = useState<OAuthAccountSummary | null>(null);
+  const [refreshingQuotaAccountId, setRefreshingQuotaAccountId] = useState<string | null>(null);
   const [deletingAccountId, setDeletingAccountId] = useState<string | null>(null);
   const [addAccountDialogView, setAddAccountDialogView] = useState<"method" | "json" | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
@@ -1234,6 +1370,9 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
     setAccountsError(null);
     setActivatingAccountId(null);
     setSavingLabelAccountId(null);
+    setSavingExtraInfoAccountId(null);
+    setEditingExtraInfoAccount(null);
+    setRefreshingQuotaAccountId(null);
     setDeletingAccountId(null);
     setAddAccountDialogView(null);
     eventSourceRef.current?.close();
@@ -1273,6 +1412,7 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
       const res = await fetch(`/api/auth/quota/${encodeURIComponent(provider.id)}`);
       const data = await res.json() as SubscriptionQuota;
       setQuota(data);
+      void loadAccounts();
     } catch (error) {
       setQuota({
         tool: provider.id,
@@ -1286,7 +1426,7 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
     } finally {
       setQuotaLoading(false);
     }
-  }, [provider.id, provider.loggedIn]);
+  }, [provider.id, provider.loggedIn, loadAccounts]);
 
   useEffect(() => {
     if (provider.id === "openai-codex" && provider.loggedIn) {
@@ -1443,6 +1583,52 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
       setSavingLabelAccountId(null);
     }
   }, [provider.id]);
+
+  const handleEditAccountExtraInfo = useCallback((account: OAuthAccountSummary) => {
+    setEditingExtraInfoAccount(account);
+  }, []);
+
+  const handleSaveAccountExtraInfo = useCallback(async (account: OAuthAccountSummary, nextExtraInfo: string) => {
+    setSavingExtraInfoAccountId(account.accountId);
+    setAccountsError(null);
+    try {
+      const res = await fetch(`/api/auth/accounts/${encodeURIComponent(provider.id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accountId: account.accountId, extraInfo: nextExtraInfo }),
+      });
+      const data = await res.json().catch(() => ({})) as OAuthAccountsResponse & { error?: string };
+      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+      setAccounts(data.accounts ?? []);
+      setEditingExtraInfoAccount(null);
+      setLoginState({ phase: "success", message: nextExtraInfo.trim() ? "Account extra info saved." : "Account extra info cleared." });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to save account extra info";
+      setAccountsError(message);
+      setLoginState({ phase: "error", message });
+    } finally {
+      setSavingExtraInfoAccountId(null);
+    }
+  }, [provider.id]);
+
+  const handleRefreshAccountQuota = useCallback(async (account: OAuthAccountSummary) => {
+    setRefreshingQuotaAccountId(account.accountId);
+    setAccountsError(null);
+    try {
+      const res = await fetch(`/api/auth/quota/${encodeURIComponent(provider.id)}?accountId=${encodeURIComponent(account.accountId)}`);
+      const data = await res.json().catch(() => ({})) as SubscriptionQuota & { error?: string };
+      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+      if (account.active) setQuota(data);
+      await loadAccounts();
+      setLoginState({ phase: data.success ? "success" : "error", message: data.success ? "Account quota refreshed." : (data.error ?? "Quota query failed.") });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to refresh account quota";
+      setAccountsError(message);
+      setLoginState({ phase: "error", message });
+    } finally {
+      setRefreshingQuotaAccountId(null);
+    }
+  }, [loadAccounts, provider.id]);
 
   const handleDeleteAccount = useCallback(async (account: OAuthAccountSummary) => {
     if (!window.confirm(`Delete saved credentials for ${account.displayName}?\n\nThe account must be added again to restore it.`)) return;
@@ -1622,11 +1808,24 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
           error={accountsError}
           activatingAccountId={activatingAccountId}
           savingLabelAccountId={savingLabelAccountId}
+          savingExtraInfoAccountId={savingExtraInfoAccountId}
+          refreshingQuotaAccountId={refreshingQuotaAccountId}
           deletingAccountId={deletingAccountId}
           onRefresh={loadAccounts}
           onActivate={handleActivateAccount}
           onEditLabel={handleEditAccountLabel}
+          onEditExtraInfo={handleEditAccountExtraInfo}
+          onRefreshQuota={handleRefreshAccountQuota}
           onDelete={handleDeleteAccount}
+        />
+      )}
+
+      {provider.id === "openai-codex" && editingExtraInfoAccount && (
+        <ExtraInfoDialog
+          account={editingExtraInfoAccount}
+          saving={savingExtraInfoAccountId === editingExtraInfoAccount.accountId}
+          onSave={handleSaveAccountExtraInfo}
+          onClose={() => { if (!savingExtraInfoAccountId) setEditingExtraInfoAccount(null); }}
         />
       )}
 

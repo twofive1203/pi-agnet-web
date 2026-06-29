@@ -1,5 +1,6 @@
 import { AuthStorage } from "@earendil-works/pi-coding-agent";
-import { extractOpenAICodexAccountId, syncActiveOAuthAccountCredential } from "@/lib/oauth-accounts";
+import { getOAuthApiKey } from "@earendil-works/pi-ai/oauth";
+import { extractOpenAICodexAccountId, readOAuthAccountCredential, saveOAuthAccountCredential, syncActiveOAuthAccountCredential, updateOAuthAccountQuotaCache } from "@/lib/oauth-accounts";
 
 export type CredentialStatus = "valid" | "expired" | "not_found" | "parse_error";
 
@@ -21,8 +22,11 @@ export interface SubscriptionQuota {
 
 interface StoredOAuthCredential {
   type: "oauth";
-  access?: string;
+  access: string;
+  refresh: string;
+  expires: number;
   accountId?: string;
+  [key: string]: unknown;
 }
 
 interface CodexRateLimitWindow {
@@ -172,6 +176,24 @@ async function queryOpenAICodexQuota(accessToken: string, accountId: string | nu
  * @param provider OAuth provider 标识，目前仅支持 openai-codex。
  * @returns 标准订阅额度结果。
  */
+async function cacheAccountQuota(provider: string, accountId: string | null, quota: SubscriptionQuota): Promise<void> {
+  if (!accountId) return;
+  await updateOAuthAccountQuotaCache(provider, accountId, {
+    success: quota.success,
+    tiers: quota.tiers,
+    error: quota.error,
+    queriedAt: quota.queriedAt,
+  }).catch(() => {});
+}
+
+async function getSavedAccountAccessToken(provider: string, credential: StoredOAuthCredential): Promise<string | undefined> {
+  if (provider !== "openai-codex") return undefined;
+  const result = await getOAuthApiKey("openai-codex", { "openai-codex": credential });
+  if (!result?.apiKey) return undefined;
+  await saveOAuthAccountCredential(provider, { type: "oauth", ...result.newCredentials, accountId: credential.accountId }).catch(() => {});
+  return result.apiKey;
+}
+
 export async function getOAuthProviderSubscriptionQuota(provider: string): Promise<SubscriptionQuota> {
   if (provider !== "openai-codex") return quotaNotFound(provider);
 
@@ -194,9 +216,52 @@ export async function getOAuthProviderSubscriptionQuota(provider: string): Promi
   const accountId = refreshedCredential?.accountId ?? storedCredential.accountId ?? extractOpenAICodexAccountId(accessToken);
 
   try {
-    return await queryOpenAICodexQuota(accessToken, accountId);
+    const quota = await queryOpenAICodexQuota(accessToken, accountId);
+    await cacheAccountQuota(provider, accountId, quota);
+    return quota;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    return quotaError(provider, "valid", `Network error: ${message}`);
+    const quota = quotaError(provider, "valid", `Network error: ${message}`);
+    await cacheAccountQuota(provider, accountId, quota);
+    return quota;
+  }
+}
+
+export async function getOAuthAccountSubscriptionQuota(provider: string, accountId: string): Promise<SubscriptionQuota> {
+  if (provider !== "openai-codex") return quotaNotFound(provider);
+
+  let credential: Awaited<ReturnType<typeof readOAuthAccountCredential>>;
+  try {
+    credential = await readOAuthAccountCredential(provider, accountId);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return quotaError(provider, "not_found", message);
+  }
+
+  let accessToken: string | undefined;
+  try {
+    accessToken = await getSavedAccountAccessToken(provider, credential);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const quota = quotaError(provider, "expired", message);
+    await cacheAccountQuota(provider, credential.accountId, quota);
+    return quota;
+  }
+
+  if (!accessToken) {
+    const quota = quotaError(provider, "expired", "OAuth token unavailable. Please re-login.");
+    await cacheAccountQuota(provider, credential.accountId, quota);
+    return quota;
+  }
+
+  try {
+    const quota = await queryOpenAICodexQuota(accessToken, credential.accountId);
+    await cacheAccountQuota(provider, credential.accountId, quota);
+    return quota;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const quota = quotaError(provider, "valid", `Network error: ${message}`);
+    await cacheAccountQuota(provider, credential.accountId, quota);
+    return quota;
   }
 }

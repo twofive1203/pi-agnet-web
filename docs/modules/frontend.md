@@ -12,7 +12,7 @@
 | `components/BranchNavigator.tsx` | In-session branch switcher. |
 | `components/ChatMinimap.tsx` | Scroll minimap beside message list. |
 | `components/ToolPanel.tsx` | Tool presets and preset inference helpers. |
-| `components/ModelsConfig.tsx` | Modal for editing `models.json`, OAuth/API-key auth, and ChatGPT Plus/Pro saved-account add/import, activation, remarks, inactive-account deletion, and raw/CPA/SUB2API account JSON import via shared converters. |
+| `components/ModelsConfig.tsx` | Modal for editing `models.json`, OAuth/API-key auth, and ChatGPT Plus/Pro saved-account add/import, activation, remarks, extra-info dialog, cached quota reset display with inline mini usage pies, manual quota refresh, inactive-account deletion, and raw/CPA/SUB2API account JSON import via shared converters. |
 | `components/GitPanel.tsx` | Git status dropdown panel showing branch, commits, staged/unstaged changes, untracked files, and stash. |
 | `components/SkillsConfig.tsx` | Modal for browsing/installing skills. |
 | `components/SettingsConfig.tsx` | Settings modal for WorkTree defaults and optional Trellis panel settings in `pi-web.json`, including Trellis docs guidance, prerequisite/status inspection, install/init, update, and proxy controls. |
