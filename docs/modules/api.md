@@ -7,6 +7,7 @@ API routes live under `app/api/`. When adding, removing, or changing routes, upd
 | `sessions/` | GET | List sessions grouped by cwd (includes `archivedCwds` and `archivedCounts`). |
 | `sessions/[id]/` | GET/PATCH/DELETE | Read session detail, rename, delete. Returns `archived: true` for archived sessions. |
 | `sessions/[id]/context/` | GET | Get context for a specific `leafId`. |
+| `sessions/[id]/trellis-task/` | GET | Resolve the high-confidence Trellis task associated with one pi session, using session-local transcript evidence or exact per-session Trellis runtime pointers only. |
 | `sessions/[id]/export/` | GET | Export session as Markdown. |
 | `sessions/new/` | 410 | Deprecated route kept for compatibility. |
 | `agent/new/` | POST | Create a new session and send the first message. |

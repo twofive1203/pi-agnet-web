@@ -7,6 +7,7 @@ import type { TrellisTaskDetail, TrellisTaskProgressStage, TrellisTaskSummary, T
 interface TrellisPanelProps {
   cwd: string | null;
   includeArchivedDefault: boolean;
+  focusedTaskKey?: string | null;
   onOpenFile?: (filePath: string, fileName: string) => void;
 }
 
@@ -91,7 +92,7 @@ function buildDepth(task: TrellisTaskSummary, byDir: Map<string, TrellisTaskSumm
   return depth;
 }
 
-export function TrellisPanel({ cwd, includeArchivedDefault, onOpenFile }: TrellisPanelProps) {
+export function TrellisPanel({ cwd, includeArchivedDefault, focusedTaskKey, onOpenFile }: TrellisPanelProps) {
   const [includeArchived, setIncludeArchived] = useState(includeArchivedDefault);
   const [refreshKey, setRefreshKey] = useState(0);
   const [tasks, setTasks] = useState<TrellisTaskSummary[]>([]);
@@ -134,9 +135,12 @@ export function TrellisPanel({ cwd, includeArchivedDefault, onOpenFile }: Trelli
       setExists(data.exists);
       setArchivedCount(data.archivedCount);
       setReadErrors(data.errors);
-      setSelectedKey((current) => current && data.tasks.some((task) => task.key === current)
-        ? current
-        : data.tasks[0]?.key ?? null);
+      setSelectedKey((current) => {
+        if (focusedTaskKey && data.tasks.some((task) => task.key === focusedTaskKey)) return focusedTaskKey;
+        return current && data.tasks.some((task) => task.key === current)
+          ? current
+          : data.tasks[0]?.key ?? null;
+      });
     } catch (err) {
       if ((err as { name?: string }).name === "AbortError") return;
       setTasks([]);
@@ -145,7 +149,7 @@ export function TrellisPanel({ cwd, includeArchivedDefault, onOpenFile }: Trelli
     } finally {
       setLoading(false);
     }
-  }, [cwd, includeArchived]);
+  }, [cwd, includeArchived, focusedTaskKey]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -156,6 +160,12 @@ export function TrellisPanel({ cwd, includeArchivedDefault, onOpenFile }: Trelli
   useEffect(() => {
     setArtifactTab("overview");
   }, [selectedKey]);
+
+  useEffect(() => {
+    if (!focusedTaskKey) return;
+    if (!tasks.some((task) => task.key === focusedTaskKey)) return;
+    setSelectedKey((current) => current === focusedTaskKey ? current : focusedTaskKey);
+  }, [focusedTaskKey, tasks]);
 
   useEffect(() => {
     if (!cwd || !selectedKey) {

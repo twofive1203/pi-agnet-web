@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 20
+- **Total Sessions**: 21
 - **Last Active**: 2026-06-29
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~674 | Active |
+| `journal-1.md` | ~707 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 21 | 2026-06-29 | Trellis session progress widget | `45a91fb` | `pi/20260629-103000` |
 | 20 | 2026-06-29 | Trellis settings setup controls | `8f49dfd` | `pi/20260629-093756` |
 | 19 | 2026-06-29 | Trellis task detail panel fixes | `5c01e62` | `pi/20260629-085447` |
 | 18 | 2026-06-29 | Fix Git panel main branch lane | `9460b32` | `pi/20260629-084420` |

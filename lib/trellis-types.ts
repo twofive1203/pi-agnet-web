@@ -92,3 +92,24 @@ export interface TrellisTasksResponse {
   archivedCount: number;
   errors: TrellisTaskReadError[];
 }
+
+export type TrellisSessionTaskLinkSource = "session-transcript" | "session-runtime";
+
+export type TrellisSessionTaskLinkReason =
+  | "no-session"
+  | "trellis-disabled"
+  | "no-workspace"
+  | "no-evidence"
+  | "ambiguous"
+  | "task-not-found";
+
+export type TrellisSessionTaskLinkResult =
+  | {
+      task: TrellisTaskSummary;
+      source: TrellisSessionTaskLinkSource;
+      confidence: "high";
+    }
+  | {
+      task: null;
+      reason: TrellisSessionTaskLinkReason;
+    };

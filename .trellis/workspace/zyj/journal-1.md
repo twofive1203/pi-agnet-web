@@ -672,3 +672,36 @@ Added Trellis settings guidance, prerequisite/status inspection APIs, setup/upda
 ### Next Steps
 
 - None - task complete
+
+
+## Session 21: Trellis session progress widget
+
+**Date**: 2026-06-29
+**Task**: Trellis session progress widget
+**Branch**: `pi/20260629-103000`
+
+### Summary
+
+Implemented a session-scoped Trellis progress widget for pi-web: added high-confidence session task association API, draggable semi-transparent vertical progress widget, Trellis drawer focus support, docs, and frontend spec guidance. Validated with tsc and lint.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `45a91fb` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

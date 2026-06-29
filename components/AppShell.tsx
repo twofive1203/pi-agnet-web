@@ -12,6 +12,7 @@ import { UsageStatsModal } from "./UsageStatsModal";
 import { SubagentPanel } from "./SubagentPanel";
 import { SettingsConfig } from "./SettingsConfig";
 import { TrellisPanel } from "./TrellisPanel";
+import { TrellisSessionWidget } from "./TrellisSessionWidget";
 import { BranchNavigator } from "./BranchNavigator";
 import { GitPanel } from "./GitPanel";
 import { getRelativeFilePath } from "@/lib/file-paths";
@@ -19,6 +20,7 @@ import { formatWorkspaceTitle } from "@/lib/workspace-title";
 import { useTheme } from "@/hooks/useTheme";
 import type { GitInfo, SessionInfo, SessionTreeNode } from "@/lib/types";
 import type { PiWebConfig } from "@/lib/pi-web-config";
+import type { TrellisSessionTaskLinkResult } from "@/lib/trellis-types";
 import type { ChatInputHandle } from "./ChatInput";
 
 export function AppShell() {
@@ -127,6 +129,9 @@ export function AppShell() {
   const [activeFileTabId, setActiveFileTabId] = useState<string | null>(null);
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
   const [rightPanelMode, setRightPanelMode] = useState<"files" | "trellis">("files");
+  const [focusedTrellisTaskKey, setFocusedTrellisTaskKey] = useState<string | null>(null);
+  const [trellisSessionTask, setTrellisSessionTask] = useState<TrellisSessionTaskLinkResult | null>(null);
+  const [trellisSessionTaskRefreshKey, setTrellisSessionTaskRefreshKey] = useState(0);
 
   const handleAtMention = useCallback((relativePath: string) => {
     chatInputRef.current?.addFileReference(relativePath);
@@ -211,6 +216,7 @@ export function AppShell() {
     setRefreshKey((k) => k + 1);
     setExplorerRefreshKey((k) => k + 1);
     setGitRefreshKey((k) => k + 1);
+    setTrellisSessionTaskRefreshKey((k) => k + 1);
   }, []);
 
   const handleSessionForked = useCallback((newSessionId: string) => {
@@ -284,6 +290,49 @@ export function AppShell() {
   const trellisCwd = activeCwd ?? selectedSession?.cwd ?? newSessionCwd;
   const browserTitleCwd = selectedSession?.cwd ?? newSessionCwd ?? activeCwd;
   const browserTitleGit = selectedSession?.cwd === browserTitleCwd ? selectedSession.git : activeCwdGit;
+
+  const loadTrellisSessionTask = useCallback(async (signal?: AbortSignal) => {
+    if (!trellisEnabled || !selectedSession || selectedSession.archived) {
+      setTrellisSessionTask(null);
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/sessions/${encodeURIComponent(selectedSession.id)}/trellis-task`, { signal });
+      const data = await res.json() as TrellisSessionTaskLinkResult & { error?: string };
+      if (!res.ok || data.error) throw new Error(data.error ?? `HTTP ${res.status}`);
+      setTrellisSessionTask(data.task ? data : null);
+    } catch (error) {
+      if ((error as { name?: string }).name !== "AbortError") setTrellisSessionTask(null);
+    }
+  }, [selectedSession, trellisEnabled]);
+
+  useEffect(() => {
+    setFocusedTrellisTaskKey(null);
+  }, [selectedSession?.id]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void loadTrellisSessionTask(controller.signal);
+    return () => controller.abort();
+  }, [loadTrellisSessionTask, trellisSessionTaskRefreshKey]);
+
+  const trellisSessionTaskKey = trellisSessionTask?.task?.key ?? null;
+
+  useEffect(() => {
+    if (!trellisSessionTaskKey) return;
+    const interval = window.setInterval(() => {
+      setTrellisSessionTaskRefreshKey((key) => key + 1);
+    }, 10_000);
+    return () => window.clearInterval(interval);
+  }, [trellisSessionTaskKey]);
+
+  const handleOpenTrellisSessionTask = useCallback(() => {
+    if (!trellisSessionTask?.task) return;
+    setFocusedTrellisTaskKey(trellisSessionTask.task.key);
+    setRightPanelMode("trellis");
+    setRightPanelOpen(true);
+  }, [trellisSessionTask]);
 
   useEffect(() => {
     if (!trellisEnabled && rightPanelMode === "trellis") {
@@ -859,6 +908,9 @@ export function AppShell() {
               </div>
             )
           ) : null}
+          {showChat && trellisSessionTask?.task && !(rightPanelOpen && rightPanelMode === "trellis" && focusedTrellisTaskKey === trellisSessionTask.task.key) && (
+            <TrellisSessionWidget task={trellisSessionTask.task} onClick={handleOpenTrellisSessionTask} />
+          )}
         </div>
       </div>
 
@@ -904,7 +956,7 @@ export function AppShell() {
               {trellisCwd && <span title={trellisCwd} style={{ color: "var(--text-dim)", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{trellisCwd}</span>}
             </div>
             <div style={{ flex: 1, overflow: "hidden" }}>
-              <TrellisPanel cwd={trellisCwd} includeArchivedDefault={trellisIncludeArchivedDefault} onOpenFile={handleOpenFile} />
+              <TrellisPanel cwd={trellisCwd} includeArchivedDefault={trellisIncludeArchivedDefault} focusedTaskKey={focusedTrellisTaskKey} onOpenFile={handleOpenFile} />
             </div>
           </>
         )}

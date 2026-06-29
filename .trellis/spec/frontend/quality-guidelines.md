@@ -133,6 +133,89 @@ fetch(`/api/feature/read?path=${encodeURIComponent(userSuppliedPath)}`);
 fetch(`/api/feature/${encodeURIComponent(item.key)}?cwd=${encodeURIComponent(cwd)}`);
 ```
 
+### Scenario: Session-scoped Trellis task widgets
+
+### 1. Scope / Trigger
+
+Use this contract when adding UI that displays a Trellis task as related to a
+specific pi chat session. This is stricter than the normal Trellis task drawer:
+the association belongs to the session projection, not to Trellis task metadata.
+
+### 2. Signatures
+
+- Session association route:
+  `GET /api/sessions/[id]/trellis-task`.
+- Success response:
+  `{ task: TrellisTaskSummary, source: "session-transcript" | "session-runtime", confidence: "high" }`.
+- No-association response:
+  `{ task: null, reason: "no-session" | "trellis-disabled" | "no-workspace" | "no-evidence" | "ambiguous" | "task-not-found" }`.
+
+### 3. Contracts
+
+- Do not write session ids, backlinks, or UI-only association fields into
+  `task.json`.
+- The browser passes only a pi session id. The server resolves the session file,
+  reads the session cwd, validates it with allowed roots, and then reads Trellis
+  data through the existing Trellis reader.
+- Automatic display is high-confidence only:
+  - explicit current-session transcript/tool evidence naming a Trellis task path
+    or lifecycle output; or
+  - exact per-session runtime pointer keys that are deterministically tied to the
+    pi session.
+- Ignore workspace-level guesses, process/global runtime fallback pointers, and
+  "first active task" heuristics. On ambiguity, hide the widget.
+- Do not expose raw `.trellis/.runtime/sessions/*.json` contents to the browser.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required behavior |
+| --- | --- |
+| Trellis disabled | 403 JSON error; widget hidden. |
+| Session id not found | 404 JSON error. |
+| Session has no cwd | 200 `{ task: null, reason: "no-workspace" }`. |
+| Cwd outside allowed roots | 403 JSON error. |
+| No transcript/runtime evidence | 200 `{ task: null, reason: "no-evidence" }`. |
+| Multiple candidate tasks | 200 `{ task: null, reason: "ambiguous" }`. |
+| Evidence points to missing task | 200 `{ task: null, reason: "task-not-found" }`. |
+
+### 5. Good/Base/Bad Cases
+
+- Good: the current session contains `Active task: .trellis/tasks/06-29-foo`;
+  the route returns `active:06-29-foo`, and clicking the widget focuses the
+  existing Trellis drawer detail.
+- Base: the session has no Trellis evidence; the widget is hidden and the normal
+  Trellis drawer still works.
+- Bad: the UI selects the first `in_progress` workspace task or mutates
+  `task.json` to add a session backlink.
+
+### 6. Tests Required
+
+At minimum, verify these assertion points manually or with focused tests:
+
+- Disabled setting blocks the association route and hides the widget.
+- Explicit session transcript task path resolves to the matching task.
+- Exact `pi_<sessionId>` / `pi_transcript_<hash(sessionFile)>` runtime pointers
+  resolve, but `pi_process_*` does not.
+- Ambiguous transcript evidence returns no task.
+- Clicking the widget opens the Trellis drawer without losing file tabs.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```typescript
+// Workspace-level guess can show the wrong task in multi-session workflows.
+const task = tasks.find((item) => item.status === "in_progress") ?? tasks[0];
+```
+
+#### Correct
+
+```typescript
+// Session-owned projection: no high-confidence session evidence means no widget.
+const result = await fetch(`/api/sessions/${sessionId}/trellis-task`);
+if (result.task) showWidget(result.task);
+```
+
 ### Trellis task-detail display contracts
 
 When rendering the Trellis task drawer, keep these projections explicit:

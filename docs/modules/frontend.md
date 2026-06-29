@@ -16,7 +16,8 @@
 | `components/GitPanel.tsx` | Git status dropdown panel showing branch, commits, staged/unstaged changes, untracked files, and stash. |
 | `components/SkillsConfig.tsx` | Modal for browsing/installing skills. |
 | `components/SettingsConfig.tsx` | Settings modal for WorkTree defaults and optional Trellis panel settings in `pi-web.json`, including Trellis docs guidance, prerequisite/status inspection, install/init, update, and proxy controls. |
-| `components/TrellisPanel.tsx` | Read-only Trellis task drawer: task list, filters, details, artifacts, hierarchy, manifest/context counts, recorded task metadata, optional check-run state, and derived phase/progress. |
+| `components/TrellisPanel.tsx` | Read-only Trellis task drawer: task list, filters, details, artifacts, hierarchy, manifest/context counts, recorded task metadata, optional check-run state, derived phase/progress, and optional externally focused task selection. |
+| `components/TrellisSessionWidget.tsx` | Floating session-scoped Trellis progress widget shown only when the current chat session has a high-confidence associated task; clicking opens the Trellis drawer focused on that task. |
 | `components/UsageStatsModal.tsx` | Token/cost usage statistics modal. |
 | `components/FileExplorer.tsx` | File tree inside the sidebar. |
 | `components/FileViewer.tsx` | File content viewer in a tab. |
