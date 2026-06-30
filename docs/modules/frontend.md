@@ -8,7 +8,7 @@
 | `components/SessionSidebar.tsx` | Session tree sidebar, workspace/WorkTree picker actions grouped by main workspace, archive/unarchive actions, archived section, multi-select batch archive, and integrated file explorer. |
 | `components/ChatWindow.tsx` | Message list, SSE streaming, fork/navigate logic. Shows archived banner and disables input for archived sessions. |
 | `components/ChatInput.tsx` | Input bar, model dropdown, thinking level, tool preset, image upload. |
-| `components/ChatGptUsagePanel.tsx` | Optional semi-transparent top-bar ChatGPT/Codex quota panel; reads cached active-account usage, reloads accounts on expand, lists saved accounts with quick activation, supports manual quota refresh, and shows backend auto-refresh scheduler/lock maintenance state. |
+| `components/ChatGptUsagePanel.tsx` | Optional semi-transparent top-bar ChatGPT/Codex quota panel; reads and periodically revalidates cached active-account usage, reloads accounts on expand, lists saved accounts with quick activation, supports manual quota refresh, and shows backend auto-refresh scheduler/lock maintenance state. |
 | `components/MessageView.tsx` | Render user, assistant, tool-call, and tool-result messages. |
 | `components/BranchNavigator.tsx` | In-session branch switcher. |
 | `components/ChatMinimap.tsx` | Scroll minimap beside message list. |

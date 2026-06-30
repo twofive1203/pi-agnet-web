@@ -61,6 +61,8 @@ interface SchedulerStatus {
   error?: string;
 }
 
+const ACCOUNT_CACHE_POLL_INTERVAL_MS = 30_000;
+
 function UsagePie({ tier, label, size = 18 }: { tier: QuotaDisplayTier | null; label?: string; size?: number }) {
   const utilization = tier ? Math.min(Math.max(tier.utilization, 0), 100) : 0;
   const color = tier ? quotaColor(utilization) : "var(--text-dim)";
@@ -109,22 +111,28 @@ export function ChatGptUsagePanel() {
   const [schedulerError, setSchedulerError] = useState<string | null>(null);
   const [repairingLock, setRepairingLock] = useState(false);
 
-  const loadAccounts = useCallback(async (signal?: AbortSignal) => {
-    setAccountsLoading(true);
-    setAccountsError(null);
+  const loadAccounts = useCallback(async (signal?: AbortSignal, options?: { silent?: boolean }) => {
+    const silent = options?.silent === true;
+    if (!silent) {
+      setAccountsLoading(true);
+      setAccountsError(null);
+    }
     try {
       const res = await fetch("/api/auth/accounts/openai-codex", { signal });
       const data = await res.json().catch(() => ({})) as OAuthAccountsResponse;
       if (!res.ok || data.error) throw new Error(data.error ?? `HTTP ${res.status}`);
+      setAccountsError(null);
       setAccounts(data.accounts ?? []);
       setAccount(selectActiveAccount(data));
     } catch (error) {
       if ((error as { name?: string }).name === "AbortError") return;
-      setAccountsError(error instanceof Error ? error.message : String(error));
-      setAccounts([]);
-      setAccount(null);
+      if (!silent) {
+        setAccountsError(error instanceof Error ? error.message : String(error));
+        setAccounts([]);
+        setAccount(null);
+      }
     } finally {
-      setAccountsLoading(false);
+      if (!silent) setAccountsLoading(false);
     }
   }, []);
 
@@ -146,6 +154,30 @@ export function ChatGptUsagePanel() {
     const controller = new AbortController();
     void loadAccounts(controller.signal);
     return () => controller.abort();
+  }, [loadAccounts]);
+
+  useEffect(() => {
+    let controller: AbortController | null = null;
+    const refreshSilently = () => {
+      if (document.hidden) return;
+      controller?.abort();
+      controller = new AbortController();
+      void loadAccounts(controller.signal, { silent: true });
+    };
+
+    const interval = window.setInterval(refreshSilently, ACCOUNT_CACHE_POLL_INTERVAL_MS);
+    const handleVisibilityChange = () => {
+      if (!document.hidden) refreshSilently();
+    };
+    window.addEventListener("focus", refreshSilently);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("focus", refreshSilently);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      controller?.abort();
+    };
   }, [loadAccounts]);
 
   useEffect(() => {
