@@ -9,6 +9,7 @@
 | `components/ChatWindow.tsx` | Message list, SSE streaming, fork/navigate logic. Shows archived banner and disables input for archived sessions. |
 | `components/ChatInput.tsx` | Input bar, model dropdown, thinking level, tool preset, image upload. |
 | `components/ChatGptUsagePanel.tsx` | Optional semi-transparent top-bar ChatGPT/Codex quota panel; reads cached active-account usage, expands to account details, and supports manual quota refresh. |
+| `components/ChatGptWarmupDialog.tsx` | Manual ChatGPT/Codex account warmup dialog opened from the saved-account management area; supports multi-select saved accounts, runs warmup, and shows per-account results. |
 | `components/MessageView.tsx` | Render user, assistant, tool-call, and tool-result messages. |
 | `components/BranchNavigator.tsx` | In-session branch switcher. |
 | `components/ChatMinimap.tsx` | Scroll minimap beside message list. |

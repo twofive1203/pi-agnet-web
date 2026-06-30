@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import type { DeepSeekBalanceResult } from "@/lib/deepseek-balance";
 import { ACCOUNT_JSON_CONVERTERS, RAW_ACCOUNT_JSON_EXAMPLE, validateRawOAuthCredentialImport, type OAuthAccountImportMode } from "@/lib/oauth-account-converters";
 import { formatQuotaQueriedAt, formatResetCountdown, knownQuotaTiers, quotaColor, QUOTA_TIER_LABELS } from "@/lib/quota-display";
+import { ChatGptWarmupDialog } from "./ChatGptWarmupDialog";
 // Color icons (have their own fill colors — no background needed)
 import AnthropicIcon from "@lobehub/icons/es/Anthropic/components/Mono";
 import OpenAIIcon from "@lobehub/icons/es/OpenAI/components/Mono";
@@ -889,6 +890,7 @@ function OAuthAccountsView({
   onEditExtraInfo,
   onRefreshQuota,
   onDelete,
+  onWarmup,
 }: {
   accounts: OAuthAccountSummary[];
   loading: boolean;
@@ -904,6 +906,7 @@ function OAuthAccountsView({
   onEditExtraInfo: (account: OAuthAccountSummary) => void;
   onRefreshQuota: (account: OAuthAccountSummary) => void;
   onDelete: (account: OAuthAccountSummary) => void;
+  onWarmup: () => void;
 }) {
   return (
     <div style={{ border: "1px solid var(--border)", borderRadius: 6, background: "var(--bg-panel)", padding: 12, display: "flex", flexDirection: "column", gap: 10 }}>
@@ -912,20 +915,29 @@ function OAuthAccountsView({
           <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0 }}>Accounts</span>
           <span style={{ fontSize: 11, color: "var(--text-dim)" }}>{loading ? "Loading…" : `${accounts.length} saved`}</span>
         </div>
-        <button
-          onClick={onRefresh}
-          disabled={loading}
-          title="Refresh accounts"
-          aria-label="Refresh accounts"
-          style={{ width: 28, height: 28, border: "1px solid var(--border)", borderRadius: 5, background: "var(--bg)", color: loading ? "var(--text-dim)" : "var(--text-muted)", cursor: loading ? "default" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M21 12a9 9 0 0 1-9 9 8.8 8.8 0 0 1-6.36-2.64" />
-            <path d="M3 12a9 9 0 0 1 9-9 8.8 8.8 0 0 1 6.36 2.64" />
-            <path d="M3 4v8h8" />
-            <path d="M21 20v-8h-8" />
-          </svg>
-        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <button
+            onClick={onWarmup}
+            disabled={loading || accounts.length === 0}
+            style={{ padding: "5px 10px", border: "1px solid var(--border)", borderRadius: 5, background: "var(--bg)", color: loading || accounts.length === 0 ? "var(--text-dim)" : "var(--accent)", cursor: loading || accounts.length === 0 ? "not-allowed" : "pointer", fontSize: 11, fontWeight: 700 }}
+          >
+            Warm up
+          </button>
+          <button
+            onClick={onRefresh}
+            disabled={loading}
+            title="Refresh accounts"
+            aria-label="Refresh accounts"
+            style={{ width: 28, height: 28, border: "1px solid var(--border)", borderRadius: 5, background: "var(--bg)", color: loading ? "var(--text-dim)" : "var(--text-muted)", cursor: loading ? "default" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 12a9 9 0 0 1-9 9 8.8 8.8 0 0 1-6.36-2.64" />
+              <path d="M3 12a9 9 0 0 1 9-9 8.8 8.8 0 0 1 6.36 2.64" />
+              <path d="M3 4v8h8" />
+              <path d="M21 20v-8h-8" />
+            </svg>
+          </button>
+        </div>
       </div>
 
       {error && <div style={{ fontSize: 12, color: "#f87171", lineHeight: 1.5 }}>{error}</div>}
@@ -1300,6 +1312,7 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
   const [refreshingQuotaAccountId, setRefreshingQuotaAccountId] = useState<string | null>(null);
   const [deletingAccountId, setDeletingAccountId] = useState<string | null>(null);
   const [addAccountDialogView, setAddAccountDialogView] = useState<"method" | "json" | null>(null);
+  const [warmupDialogOpen, setWarmupDialogOpen] = useState(false);
   const eventSourceRef = useRef<EventSource | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -1325,6 +1338,7 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
     setRefreshingQuotaAccountId(null);
     setDeletingAccountId(null);
     setAddAccountDialogView(null);
+    setWarmupDialogOpen(false);
     eventSourceRef.current?.close();
     eventSourceRef.current = null;
   }, [provider.id]);
@@ -1767,6 +1781,15 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
           onEditExtraInfo={handleEditAccountExtraInfo}
           onRefreshQuota={handleRefreshAccountQuota}
           onDelete={handleDeleteAccount}
+          onWarmup={() => setWarmupDialogOpen(true)}
+        />
+      )}
+
+      {provider.id === "openai-codex" && warmupDialogOpen && (
+        <ChatGptWarmupDialog
+          accounts={accounts}
+          onComplete={loadAccounts}
+          onClose={() => setWarmupDialogOpen(false)}
         />
       )}
 

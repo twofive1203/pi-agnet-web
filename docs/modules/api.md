@@ -52,6 +52,7 @@ API routes live under `app/api/`. When adding, removing, or changing routes, upd
 | `auth/api-key/[provider]/` | GET | Get masked API-key status for a provider. |
 | `auth/balance/[provider]/` | GET | Query DeepSeek account balance. |
 | `auth/quota/[provider]/` | GET | Query OpenAI Codex subscription quota for the active account, or for a saved account with `?accountId=...`; queries update the saved account's cached quota reset metadata and refresh expired saved-account OAuth tokens when possible. |
+| `auth/warmup/openai-codex/` | POST | Warm selected saved ChatGPT/Codex OAuth accounts by sending a tiny real Codex request without activating them; returns per-account results and refreshes quota cache when possible. |
 
 ## Implementation Pointers
 

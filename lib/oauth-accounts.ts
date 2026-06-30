@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { access, chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { AuthStorage, getAgentDir, type OAuthCredential } from "@earendil-works/pi-coding-agent";
+import { getOAuthApiKey } from "@earendil-works/pi-ai/oauth";
 import { convertOAuthAccountCredential, type OAuthAccountImportMode } from "@/lib/oauth-account-converters";
 
 export const OPENAI_CODEX_PROVIDER_ID = "openai-codex";
@@ -461,6 +462,14 @@ export async function readOAuthAccountCredential(provider: string, accountId: st
     throw new OAuthAccountStoreError("Saved OAuth account credential is invalid", 500);
   }
   return normalizeCredentialAccountId(credential);
+}
+
+export async function getOAuthAccountAccessToken(provider: string, credential: NormalizedOpenAICodexCredential): Promise<string | undefined> {
+  assertSupportedProvider(provider);
+  const result = await getOAuthApiKey(OPENAI_CODEX_PROVIDER_ID, { [OPENAI_CODEX_PROVIDER_ID]: credential });
+  if (!result?.apiKey) return undefined;
+  await saveOAuthAccountCredential(provider, { type: "oauth", ...result.newCredentials, accountId: credential.accountId }).catch(() => {});
+  return result.apiKey;
 }
 
 export async function saveOAuthAccountCredential(

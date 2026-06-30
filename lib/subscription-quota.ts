@@ -1,6 +1,5 @@
 import { AuthStorage } from "@earendil-works/pi-coding-agent";
-import { getOAuthApiKey } from "@earendil-works/pi-ai/oauth";
-import { extractOpenAICodexAccountId, readOAuthAccountCredential, saveOAuthAccountCredential, syncActiveOAuthAccountCredential, updateOAuthAccountQuotaCache } from "@/lib/oauth-accounts";
+import { extractOpenAICodexAccountId, getOAuthAccountAccessToken, readOAuthAccountCredential, syncActiveOAuthAccountCredential, updateOAuthAccountQuotaCache } from "@/lib/oauth-accounts";
 
 export type CredentialStatus = "valid" | "expired" | "not_found" | "parse_error";
 
@@ -186,14 +185,6 @@ async function cacheAccountQuota(provider: string, accountId: string | null, quo
   }).catch(() => {});
 }
 
-async function getSavedAccountAccessToken(provider: string, credential: StoredOAuthCredential): Promise<string | undefined> {
-  if (provider !== "openai-codex") return undefined;
-  const result = await getOAuthApiKey("openai-codex", { "openai-codex": credential });
-  if (!result?.apiKey) return undefined;
-  await saveOAuthAccountCredential(provider, { type: "oauth", ...result.newCredentials, accountId: credential.accountId }).catch(() => {});
-  return result.apiKey;
-}
-
 export async function getOAuthProviderSubscriptionQuota(provider: string): Promise<SubscriptionQuota> {
   if (provider !== "openai-codex") return quotaNotFound(provider);
 
@@ -240,7 +231,7 @@ export async function getOAuthAccountSubscriptionQuota(provider: string, account
 
   let accessToken: string | undefined;
   try {
-    accessToken = await getSavedAccountAccessToken(provider, credential);
+    accessToken = await getOAuthAccountAccessToken(provider, credential);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const quota = quotaError(provider, "expired", message);
