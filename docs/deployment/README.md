@@ -41,6 +41,22 @@ pm2 start ecosystem.config.cjs
 
 Default proxy is `http://127.0.0.1:7897`; override with `PROXY_URL` or `SOCKS_PROXY_URL` where supported.
 
+## Repository Remotes
+
+The shared upstream repository is `git@github.com:twofive1203/pi-agnet-web.git`. Configure it once with:
+
+```bash
+git remote add upstream git@github.com:twofive1203/pi-agnet-web.git
+# or, if upstream already exists:
+git remote set-url upstream git@github.com:twofive1203/pi-agnet-web.git
+```
+
+Fetch upstream `main` with:
+
+```bash
+git fetch upstream main
+```
+
 ## Source Build
 
 - Clone the repository and install dependencies with `npm install`.
@@ -58,4 +74,5 @@ Default data directory is `~/.pi/agent/`; override with `PI_CODING_AGENT_DIR`.
 | `sessions/` | Session JSONL files. |
 | `models.json` | Model provider/model configuration. |
 | `settings.json` | pi settings, including default model. |
-| `pi-web.json` | Web UI settings, including WorkTree defaults. |
+| `pi-web.json` | Web UI settings, including WorkTree defaults, Usage scope, ChatGPT panel/auto-refresh settings, and Trellis settings. |
+| `chatgpt-usage-refresh.lock` | Backend ChatGPT usage auto-refresh lock file; stale locks can be repaired from the ChatGPT panel fault handler. |

@@ -56,6 +56,8 @@ export interface PiWebTrellisConfig {
   includeArchived: boolean;
   proxyEnabled: boolean;
   proxyUrl: string;
+  workflowAssistant: PiWebSubagentRunPolicy;
+  workflowAssistantFallback: PiWebSubagentRunPolicy;
   subagents: PiWebTrellisSubagentsConfig;
 }
 
@@ -72,6 +74,13 @@ export interface PiWebChatGptWarmupConfig {
 export interface PiWebChatGptConfig {
   usagePanelEnabled: boolean;
   warmup: PiWebChatGptWarmupConfig;
+  autoRefreshEnabled: boolean;
+  refreshCycleIntervalSeconds: number;
+  refreshCycleSaltMinSeconds: number;
+  refreshCycleSaltMaxSeconds: number;
+  refreshAccountIntervalSeconds: number;
+  refreshAccountSaltMinSeconds: number;
+  refreshAccountSaltMaxSeconds: number;
 }
 
 export interface PiWebConfig {
@@ -121,12 +130,27 @@ export const DEFAULT_PI_WEB_CONFIG: PiWebConfig = {
       accountIds: [],
       times: ["07:00", "13:00"],
     },
+    autoRefreshEnabled: false,
+    refreshCycleIntervalSeconds: 1800,
+    refreshCycleSaltMinSeconds: 0,
+    refreshCycleSaltMaxSeconds: 120,
+    refreshAccountIntervalSeconds: 20,
+    refreshAccountSaltMinSeconds: 0,
+    refreshAccountSaltMaxSeconds: 15,
   },
   trellis: {
     enabled: false,
     includeArchived: false,
     proxyEnabled: false,
     proxyUrl: "",
+    workflowAssistant: {
+      model: { mode: "followMain" },
+      thinking: "minimal",
+    },
+    workflowAssistantFallback: {
+      model: { mode: "piDefault" },
+      thinking: "minimal",
+    },
     subagents: {
       enabled: true,
       defaultPolicy: {
@@ -172,6 +196,10 @@ function readString(value: unknown, fallback: string): string {
 
 function readBoolean(value: unknown, fallback: boolean): boolean {
   return typeof value === "boolean" ? value : fallback;
+}
+
+function readInteger(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isInteger(value) ? value : fallback;
 }
 
 function readSessionDisplay(value: unknown, fallback: "separate" | "tag"): "separate" | "tag" {
@@ -345,12 +373,21 @@ function normalizePiWebConfig(raw: unknown): PiWebConfig {
     chatgpt: {
       usagePanelEnabled: readBoolean(chatgpt.usagePanelEnabled, defaults.chatgpt.usagePanelEnabled),
       warmup: readChatGptWarmupConfig(chatgpt.warmup, defaults.chatgpt.warmup),
+      autoRefreshEnabled: readBoolean(chatgpt.autoRefreshEnabled, defaults.chatgpt.autoRefreshEnabled),
+      refreshCycleIntervalSeconds: readInteger(chatgpt.refreshCycleIntervalSeconds, defaults.chatgpt.refreshCycleIntervalSeconds),
+      refreshCycleSaltMinSeconds: readInteger(chatgpt.refreshCycleSaltMinSeconds, defaults.chatgpt.refreshCycleSaltMinSeconds),
+      refreshCycleSaltMaxSeconds: readInteger(chatgpt.refreshCycleSaltMaxSeconds, defaults.chatgpt.refreshCycleSaltMaxSeconds),
+      refreshAccountIntervalSeconds: readInteger(chatgpt.refreshAccountIntervalSeconds, defaults.chatgpt.refreshAccountIntervalSeconds),
+      refreshAccountSaltMinSeconds: readInteger(chatgpt.refreshAccountSaltMinSeconds, defaults.chatgpt.refreshAccountSaltMinSeconds),
+      refreshAccountSaltMaxSeconds: readInteger(chatgpt.refreshAccountSaltMaxSeconds, defaults.chatgpt.refreshAccountSaltMaxSeconds),
     },
     trellis: {
       enabled: readBoolean(trellis.enabled, defaults.trellis.enabled),
       includeArchived: readBoolean(trellis.includeArchived, defaults.trellis.includeArchived),
       proxyEnabled: readBoolean(trellis.proxyEnabled, defaults.trellis.proxyEnabled),
       proxyUrl: typeof trellis.proxyUrl === "string" ? trellis.proxyUrl.trim() : defaults.trellis.proxyUrl,
+      workflowAssistant: readSubagentPolicy(trellis.workflowAssistant, defaults.trellis.workflowAssistant),
+      workflowAssistantFallback: readSubagentPolicy(trellis.workflowAssistantFallback, defaults.trellis.workflowAssistantFallback),
       subagents: readTrellisSubagentsConfig(trellis.subagents, defaults.trellis.subagents),
     },
   };
@@ -414,6 +451,25 @@ function requireBoolean(value: unknown, field: string): boolean {
     throw new PiWebConfigValidationError(`${field} must be a boolean`);
   }
   return value;
+}
+
+function requireIntegerInRange(value: unknown, field: string, min: number, max: number): number {
+  if (typeof value !== "number" || !Number.isInteger(value)) {
+    throw new PiWebConfigValidationError(`${field} must be an integer`);
+  }
+  if (value < min || value > max) {
+    throw new PiWebConfigValidationError(`${field} must be between ${min} and ${max}`);
+  }
+  return value;
+}
+
+function requireSaltRange(minValue: unknown, maxValue: unknown, minField: string, maxField: string, maxAllowed: number): { min: number; max: number } {
+  const min = requireIntegerInRange(minValue, minField, 0, maxAllowed);
+  const max = requireIntegerInRange(maxValue, maxField, 0, maxAllowed);
+  if (max < min) {
+    throw new PiWebConfigValidationError(`${maxField} must be greater than or equal to ${minField}`);
+  }
+  return { min, max };
 }
 
 function validateProxyUrl(value: unknown, enabled: boolean): string {
@@ -567,9 +623,18 @@ export function validatePiWebChatGptConfig(value: unknown): PiWebChatGptConfig {
   if (!isRecord(value)) {
     throw new PiWebConfigValidationError("chatgpt config must be an object");
   }
+  const cycleSalt = requireSaltRange(value.refreshCycleSaltMinSeconds, value.refreshCycleSaltMaxSeconds, "chatgpt.refreshCycleSaltMinSeconds", "chatgpt.refreshCycleSaltMaxSeconds", 3600);
+  const accountSalt = requireSaltRange(value.refreshAccountSaltMinSeconds, value.refreshAccountSaltMaxSeconds, "chatgpt.refreshAccountSaltMinSeconds", "chatgpt.refreshAccountSaltMaxSeconds", 300);
   return {
     usagePanelEnabled: requireBoolean(value.usagePanelEnabled, "chatgpt.usagePanelEnabled"),
     warmup: validateChatGptWarmupConfig(value.warmup),
+    autoRefreshEnabled: requireBoolean(value.autoRefreshEnabled, "chatgpt.autoRefreshEnabled"),
+    refreshCycleIntervalSeconds: requireIntegerInRange(value.refreshCycleIntervalSeconds, "chatgpt.refreshCycleIntervalSeconds", 300, 86400),
+    refreshCycleSaltMinSeconds: cycleSalt.min,
+    refreshCycleSaltMaxSeconds: cycleSalt.max,
+    refreshAccountIntervalSeconds: requireIntegerInRange(value.refreshAccountIntervalSeconds, "chatgpt.refreshAccountIntervalSeconds", 5, 3600),
+    refreshAccountSaltMinSeconds: accountSalt.min,
+    refreshAccountSaltMaxSeconds: accountSalt.max,
   };
 }
 
@@ -584,6 +649,12 @@ export function validatePiWebTrellisConfig(value: unknown): PiWebTrellisConfig {
     includeArchived: requireBoolean(value.includeArchived, "trellis.includeArchived"),
     proxyEnabled,
     proxyUrl: validateProxyUrl(proxyUrl, proxyEnabled),
+    workflowAssistant: value.workflowAssistant === undefined
+      ? DEFAULT_PI_WEB_CONFIG.trellis.workflowAssistant
+      : validateSubagentPolicy(value.workflowAssistant, "trellis.workflowAssistant"),
+    workflowAssistantFallback: value.workflowAssistantFallback === undefined
+      ? DEFAULT_PI_WEB_CONFIG.trellis.workflowAssistantFallback
+      : validateSubagentPolicy(value.workflowAssistantFallback, "trellis.workflowAssistantFallback"),
     subagents: value.subagents === undefined
       ? DEFAULT_PI_WEB_CONFIG.trellis.subagents
       : validateTrellisSubagentsConfig(value.subagents),
