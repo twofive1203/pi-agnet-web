@@ -65,6 +65,17 @@ export interface PiWebUsageConfig {
   includeArchived: boolean;
 }
 
+export type PiWebTerminalShell = "zsh" | "bash" | "sh" | "custom";
+
+export interface PiWebTerminalConfig {
+  enabled: boolean;
+  shell: PiWebTerminalShell;
+  customShellPath: string;
+  env: Record<string, string>;
+  envAssistant: PiWebSubagentRunPolicy;
+  envAssistantFallback: PiWebSubagentRunPolicy;
+}
+
 export interface PiWebChatGptConfig {
   usagePanelEnabled: boolean;
   autoRefreshEnabled: boolean;
@@ -80,6 +91,7 @@ export interface PiWebConfig {
   worktree: PiWebWorktreeConfig;
   trellis: PiWebTrellisConfig;
   usage: PiWebUsageConfig;
+  terminal: PiWebTerminalConfig;
   chatgpt: PiWebChatGptConfig;
 }
 
@@ -87,6 +99,7 @@ export interface PiWebConfigPatch {
   worktree?: unknown;
   trellis?: unknown;
   usage?: unknown;
+  terminal?: unknown;
   chatgpt?: unknown;
 }
 
@@ -115,6 +128,20 @@ export const DEFAULT_PI_WEB_CONFIG: PiWebConfig = {
   },
   usage: {
     includeArchived: true,
+  },
+  terminal: {
+    enabled: false,
+    shell: "zsh",
+    customShellPath: "",
+    env: {},
+    envAssistant: {
+      model: { mode: "piDefault" },
+      thinking: "minimal",
+    },
+    envAssistantFallback: {
+      model: { mode: "piDefault" },
+      thinking: "minimal",
+    },
   },
   chatgpt: {
     usagePanelEnabled: false,
@@ -192,6 +219,10 @@ function readInteger(value: unknown, fallback: number): number {
 
 function readSessionDisplay(value: unknown, fallback: "separate" | "tag"): "separate" | "tag" {
   return value === "separate" || value === "tag" ? value : fallback;
+}
+
+function readTerminalShell(value: unknown, fallback: PiWebTerminalShell): PiWebTerminalShell {
+  return value === "zsh" || value === "bash" || value === "sh" || value === "custom" ? value : fallback;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -299,7 +330,14 @@ function normalizePiWebConfig(raw: unknown): PiWebConfig {
   const worktree = isRecord(root.worktree) ? root.worktree : {};
   const trellis = isRecord(root.trellis) ? root.trellis : {};
   const usage = isRecord(root.usage) ? root.usage : {};
+  const terminal = isRecord(root.terminal) ? root.terminal : {};
   const chatgpt = isRecord(root.chatgpt) ? root.chatgpt : {};
+  const terminalEnv: Record<string, string> = {};
+  if (isRecord(terminal.env)) {
+    for (const [key, value] of Object.entries(terminal.env)) {
+      if (typeof value === "string") terminalEnv[key] = value;
+    }
+  }
   return {
     worktree: {
       baseRef: readString(worktree.baseRef, defaults.worktree.baseRef),
@@ -310,6 +348,14 @@ function normalizePiWebConfig(raw: unknown): PiWebConfig {
     },
     usage: {
       includeArchived: readBoolean(usage.includeArchived, defaults.usage.includeArchived),
+    },
+    terminal: {
+      enabled: readBoolean(terminal.enabled, defaults.terminal.enabled),
+      shell: readTerminalShell(terminal.shell, defaults.terminal.shell),
+      customShellPath: typeof terminal.customShellPath === "string" ? terminal.customShellPath.trim() : defaults.terminal.customShellPath,
+      env: terminalEnv,
+      envAssistant: readSubagentPolicy(terminal.envAssistant, defaults.terminal.envAssistant),
+      envAssistantFallback: readSubagentPolicy(terminal.envAssistantFallback, defaults.terminal.envAssistantFallback),
     },
     chatgpt: {
       usagePanelEnabled: readBoolean(chatgpt.usagePanelEnabled, defaults.chatgpt.usagePanelEnabled),
@@ -534,6 +580,45 @@ export function validatePiWebUsageConfig(value: unknown): PiWebUsageConfig {
   };
 }
 
+function validateTerminalShell(value: unknown): PiWebTerminalShell {
+  if (value === "zsh" || value === "bash" || value === "sh" || value === "custom") return value;
+  throw new PiWebConfigValidationError("terminal.shell must be zsh, bash, sh, or custom");
+}
+
+function validateTerminalEnv(value: unknown): Record<string, string> {
+  if (!isRecord(value)) throw new PiWebConfigValidationError("terminal.env must be an object");
+  const env: Record<string, string> = {};
+  for (const [key, rawValue] of Object.entries(value)) {
+    const cleanKey = key.trim();
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(cleanKey)) {
+      throw new PiWebConfigValidationError(`terminal.env contains invalid variable name: ${key}`);
+    }
+    if (typeof rawValue !== "string") {
+      throw new PiWebConfigValidationError(`terminal.env.${cleanKey} must be a string`);
+    }
+    env[cleanKey] = rawValue;
+  }
+  return env;
+}
+
+export function validatePiWebTerminalConfig(value: unknown): PiWebTerminalConfig {
+  if (!isRecord(value)) {
+    throw new PiWebConfigValidationError("terminal config must be an object");
+  }
+  return {
+    enabled: requireBoolean(value.enabled, "terminal.enabled"),
+    shell: validateTerminalShell(value.shell),
+    customShellPath: typeof value.customShellPath === "string" ? value.customShellPath.trim() : "",
+    env: validateTerminalEnv(value.env),
+    envAssistant: value.envAssistant === undefined
+      ? DEFAULT_PI_WEB_CONFIG.terminal.envAssistant
+      : validateSubagentPolicy(value.envAssistant, "terminal.envAssistant"),
+    envAssistantFallback: value.envAssistantFallback === undefined
+      ? DEFAULT_PI_WEB_CONFIG.terminal.envAssistantFallback
+      : validateSubagentPolicy(value.envAssistantFallback, "terminal.envAssistantFallback"),
+  };
+}
+
 export function validatePiWebChatGptConfig(value: unknown): PiWebChatGptConfig {
   if (!isRecord(value)) {
     throw new PiWebConfigValidationError("chatgpt config must be an object");
@@ -583,14 +668,16 @@ export function writePiWebConfigPatch(patch: PiWebConfigPatch): PiWebConfigReadR
   const hasWorktree = Object.prototype.hasOwnProperty.call(patch, "worktree");
   const hasTrellis = Object.prototype.hasOwnProperty.call(patch, "trellis");
   const hasUsage = Object.prototype.hasOwnProperty.call(patch, "usage");
+  const hasTerminal = Object.prototype.hasOwnProperty.call(patch, "terminal");
   const hasChatGpt = Object.prototype.hasOwnProperty.call(patch, "chatgpt");
-  if (!hasWorktree && !hasTrellis && !hasUsage && !hasChatGpt) {
+  if (!hasWorktree && !hasTrellis && !hasUsage && !hasTerminal && !hasChatGpt) {
     throw new PiWebConfigValidationError("no supported config sections provided");
   }
 
   const normalizedWorktree = hasWorktree ? validatePiWebWorktreeConfig(patch.worktree) : undefined;
   const normalizedTrellis = hasTrellis ? validatePiWebTrellisConfig(patch.trellis) : undefined;
   const normalizedUsage = hasUsage ? validatePiWebUsageConfig(patch.usage) : undefined;
+  const normalizedTerminal = hasTerminal ? validatePiWebTerminalConfig(patch.terminal) : undefined;
   const normalizedChatGpt = hasChatGpt ? validatePiWebChatGptConfig(patch.chatgpt) : undefined;
   const path = getPiWebConfigPath();
   const current = readRawConfigFile(path);
@@ -618,6 +705,14 @@ export function writePiWebConfigPatch(patch: PiWebConfigPatch): PiWebConfigReadR
     nextRaw.usage = {
       ...previousUsage,
       ...normalizedUsage,
+    };
+  }
+
+  if (normalizedTerminal) {
+    const previousTerminal = isRecord(raw.terminal) ? raw.terminal : {};
+    nextRaw.terminal = {
+      ...previousTerminal,
+      ...normalizedTerminal,
     };
   }
 

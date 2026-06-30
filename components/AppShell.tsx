@@ -16,6 +16,7 @@ import { TrellisPanel } from "./TrellisPanel";
 import { TrellisSessionWidget } from "./TrellisSessionWidget";
 import { BranchNavigator } from "./BranchNavigator";
 import { GitPanel } from "./GitPanel";
+import { TerminalPanel } from "./TerminalPanel";
 import { getRelativeFilePath } from "@/lib/file-paths";
 import { formatWorkspaceTitle } from "@/lib/workspace-title";
 import { useTheme } from "@/hooks/useTheme";
@@ -40,6 +41,9 @@ export function AppShell() {
   const [usageStatsOpen, setUsageStatsOpen] = useState(false);
   const [settingsConfigOpen, setSettingsConfigOpen] = useState(false);
   const [webConfig, setWebConfig] = useState<PiWebConfig | null>(null);
+  const [terminalOpen, setTerminalOpen] = useState(false);
+  const [terminalCollapsed, setTerminalCollapsed] = useState(false);
+  const [terminalDockCwd, setTerminalDockCwd] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const chatInputRef = useRef<ChatInputHandle | null>(null);
   const topBarRef = useRef<HTMLDivElement>(null);
@@ -153,6 +157,9 @@ export function AppShell() {
 
   const handleCwdChange = useCallback((cwd: string | null) => {
     setActiveCwd(cwd);
+    // Keep an already-open terminal pinned to the cwd captured when it was opened;
+    // terminal processes are ephemeral and should not be silently killed or retargeted
+    // just because the selected chat/workspace changed.
     // Skip if cwd is null (initial mount) or during the initial URL restore.
     if (!cwd || suppressCwdBumpRef.current) return;
     // Close any session that belongs to a different cwd — it no longer
@@ -287,8 +294,10 @@ export function AppShell() {
 
   const activeFileTab = fileTabs.find((t) => t.id === activeFileTabId) ?? null;
   const trellisEnabled = webConfig?.trellis.enabled ?? false;
+  const terminalEnabled = webConfig?.terminal.enabled ?? false;
   const trellisIncludeArchivedDefault = webConfig?.trellis.includeArchived ?? false;
   const trellisCwd = activeCwd ?? selectedSession?.cwd ?? newSessionCwd;
+  const terminalCwd = activeCwd ?? selectedSession?.cwd ?? newSessionCwd;
   const browserTitleCwd = selectedSession?.cwd ?? newSessionCwd ?? activeCwd;
   const browserTitleGit = selectedSession?.cwd === browserTitleCwd ? selectedSession.git : activeCwdGit;
 
@@ -341,6 +350,14 @@ export function AppShell() {
       if (fileTabs.length === 0) setRightPanelOpen(false);
     }
   }, [trellisEnabled, rightPanelMode, fileTabs.length]);
+
+  useEffect(() => {
+    if (!terminalEnabled || (!terminalCwd && !terminalDockCwd)) {
+      setTerminalOpen(false);
+      setTerminalCollapsed(false);
+      setTerminalDockCwd(null);
+    }
+  }, [terminalEnabled, terminalCwd, terminalDockCwd]);
 
   useEffect(() => {
     if (!activeCwd) {
@@ -728,6 +745,49 @@ export function AppShell() {
               </button>
             </div>
           )}
+          {terminalEnabled && terminalCwd && (
+            <button
+              onClick={() => {
+                if (!terminalOpen) {
+                  setTerminalDockCwd(terminalCwd);
+                  setTerminalOpen(true);
+                  setTerminalCollapsed(false);
+                  return;
+                }
+                if (terminalDockCwd && terminalDockCwd !== terminalCwd) {
+                  if (!window.confirm("Close the current terminal dock and terminate its sessions before opening a terminal for the selected workspace?")) return;
+                  setTerminalOpen(false);
+                  setTerminalCollapsed(false);
+                  window.setTimeout(() => {
+                    setTerminalDockCwd(terminalCwd);
+                    setTerminalOpen(true);
+                  }, 0);
+                  return;
+                }
+                setTerminalCollapsed((collapsed) => !collapsed);
+              }}
+              title={terminalOpen && terminalDockCwd && terminalDockCwd !== terminalCwd ? "Open terminal for selected workspace" : "Open web terminal"}
+              style={{
+                display: "flex", alignItems: "center", gap: 6,
+                height: "100%", padding: "0 12px",
+                background: terminalOpen ? "var(--bg-selected)" : "none",
+                border: "none",
+                borderTop: terminalOpen ? "2px solid var(--accent)" : "2px solid transparent",
+                borderRight: "1px solid var(--border)",
+                cursor: "pointer",
+                color: terminalOpen ? "var(--text)" : "var(--text-muted)",
+                fontSize: 11, whiteSpace: "nowrap", transition: "color 0.1s, background 0.1s",
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.color = terminalOpen ? "var(--text)" : "var(--text-muted)"; }}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                <polyline points="4 17 10 11 4 5" />
+                <line x1="12" y1="19" x2="20" y2="19" />
+              </svg>
+              <span>Terminal</span>
+            </button>
+          )}
           {/* Session stats — right-aligned in top bar */}
           {showChat && (sessionStats || contextUsage) && (() => {
             const t = sessionStats?.tokens;
@@ -876,8 +936,9 @@ export function AppShell() {
 
         </div>
 
-        {/* Chat content */}
-        <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>
+        {/* Chat content + optional bottom terminal dock */}
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
+          <div style={{ flex: 1, overflow: "hidden", position: "relative", minHeight: 0 }}>
           {showChat ? (
             <ChatWindow
               key={sessionKey}
@@ -916,6 +977,19 @@ export function AppShell() {
           ) : null}
           {showChat && trellisSessionTask?.task && !(rightPanelOpen && rightPanelMode === "trellis" && focusedTrellisTaskKey === trellisSessionTask.task.key) && (
             <TrellisSessionWidget task={trellisSessionTask.task} onClick={handleOpenTrellisSessionTask} />
+          )}
+          </div>
+          {terminalOpen && terminalEnabled && terminalDockCwd && (
+            <TerminalPanel
+              cwd={terminalDockCwd}
+              collapsed={terminalCollapsed}
+              onToggleCollapsed={() => setTerminalCollapsed((collapsed) => !collapsed)}
+              onClose={() => {
+                setTerminalOpen(false);
+                setTerminalDockCwd(null);
+                setTerminalCollapsed(false);
+              }}
+            />
           )}
         </div>
       </div>
