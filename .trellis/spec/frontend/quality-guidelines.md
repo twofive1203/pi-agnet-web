@@ -418,3 +418,101 @@ When rendering the Trellis task drawer, keep these projections explicit:
 {task.baseBranch && <MetadataLine label="记录的基准分支" value={task.baseBranch} />}
 {missingMetadata.length > 0 && <div>未记录：{missingMetadata.join("、")}</div>}
 ```
+
+### Scenario: OAuth quota metadata mutations
+
+#### 1. Scope / Trigger
+
+Use this contract when extending OAuth quota data across `lib/`,
+`app/api/auth/quota/[provider]/route.ts`, saved account metadata, and quota UI
+surfaces. This includes adding read-only quota fields or mutation actions such
+as consuming OpenAI Codex reset credits.
+
+#### 2. Signatures
+
+- Quota read route: `GET /api/auth/quota/openai-codex` and
+  `GET /api/auth/quota/openai-codex?accountId=<saved-account-id>`.
+- Quota mutation route: `POST /api/auth/quota/openai-codex` with optional JSON
+  body `{ "accountId": "<saved-account-id>" }`.
+- Shared result shape must include defaulted fields for every outcome:
+  `success`, `tiers`, `error`, `queriedAt`, `resetCreditsAvailableCount`,
+  `resetCredits`, and `resetCreditsError`.
+- Saved account cache shape mirrors browser-safe quota metadata only; it must
+  never include OAuth tokens or raw credential payloads.
+
+#### 3. Contracts
+
+- Browser code calls only pi-web server routes. It must not call ChatGPT
+  backend APIs directly and must not receive access tokens.
+- Active-account and saved-account paths must share credential semantics with
+  quota refresh: no `accountId` uses the active credential, while non-empty
+  `accountId` resolves the saved account credential.
+- Metadata-only sub-requests, such as Codex reset-credit lookup, must degrade
+  independently from the main quota request when the main quota request
+  succeeds.
+- Mutation routes must return a user-visible failure when the external consume
+  call returns non-2xx, and must refresh quota/cache after successful consume.
+- UI actions that spend an external account resource must be confirmed with the
+  user and must disable duplicate refresh/reset actions while the mutation is
+  in flight.
+
+#### 4. Validation & Error Matrix
+
+| Condition | Required behavior |
+| --- | --- |
+| Missing active OAuth credential | Return a not-found shaped quota result with default metadata fields. |
+| Saved `accountId` does not exist | Return a not-found/error shaped quota result; do not mutate account metadata. |
+| Main quota `/wham/usage` fails | Return `success: false` with a readable quota `error`. |
+| Reset-credit lookup fails after usage succeeds | Return `success: true`, preserve quota tiers, set reset-credit count to fallback/null, empty details, and `resetCreditsError`. |
+| Reset-credit payload is malformed | Treat only reset-credit metadata as invalid; do not fail the whole quota response. |
+| Consume endpoint returns non-2xx | Return a failed quota result and display the error in the UI. |
+| Consume succeeds but refresh fails | Surface a readable warning/error; do not claim a fresh quota cache. |
+
+#### 5. Good/Base/Bad Cases
+
+- Good: `POST /api/auth/quota/openai-codex` consumes one reset credit on the
+  server, reuses the same saved-account credential path as GET, refreshes the
+  cache, and returns the normalized quota result.
+- Base: the reset-credit endpoint is unavailable; quota bars still render and
+  reset-credit availability displays as unknown with a non-blocking warning.
+- Bad: a component calls `https://chatgpt.com/backend-api/...` directly or hides
+  quota tiers because the reset-credit endpoint returned a malformed payload.
+
+#### 6. Tests Required
+
+At minimum, verify these assertion points manually or with focused tests:
+
+- GET active and saved-account quota responses contain reset-credit fields on
+  both success and error results.
+- Reset-credit lookup failure does not change a successful quota response into a
+  failed quota response.
+- POST with and without `accountId` uses the expected credential path and returns
+  a refreshed quota result after consume.
+- Saved account metadata files missing new fields still normalize to safe
+  defaults.
+- UI reset buttons appear only when the available count is greater than zero,
+  ask for confirmation, and disable refresh/reset controls while in flight.
+
+#### 7. Wrong vs Correct
+
+##### Wrong
+
+```typescript
+// Browser receives or uses provider tokens and calls the third-party API.
+await fetch("https://chatgpt.com/backend-api/wham/rate-limit-reset-credits/consume", {
+  method: "POST",
+  headers: { Authorization: `Bearer ${accessToken}` },
+});
+```
+
+##### Correct
+
+```typescript
+// Browser calls the pi-web route; server-side lib code owns credentials and
+// third-party request details.
+await fetch("/api/auth/quota/openai-codex", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ accountId }),
+});
+```

@@ -14,10 +14,10 @@ Shared logic lives under `lib/`. Prefer adding behavior here when it is used by 
 | `lib/cwd.ts` | Cwd validation and normalization helpers. |
 | `lib/git-worktree.ts` | Git worktree creation, status, archive, and removal helpers. |
 | `lib/deepseek-balance.ts` | Query DeepSeek account balance. |
-| `lib/quota-display.ts` | Shared ChatGPT/Codex quota display helpers: tier labels, utilization colors, reset countdowns, relative refresh time, and known-tier filtering. |
-| `lib/oauth-accounts.ts` | Persist, import raw/converted credential JSON, sanitize, sync, label, activate, and soft-delete saved `openai-codex` OAuth accounts without exposing tokens. |
+| `lib/quota-display.ts` | Shared ChatGPT/Codex quota display helpers: tier labels, utilization colors, quota/reset-credit countdowns, earliest reset-credit expiration, relative refresh time, and known-tier filtering. |
+| `lib/oauth-accounts.ts` | Persist, import raw/converted credential JSON, sanitize, sync, label, activate, quota/reset-credit cache metadata, and soft-delete saved `openai-codex` OAuth accounts without exposing tokens. |
 | `lib/oauth-account-converters.ts` | Shared OAuth account import mode registry, raw credential validation, and CPA/SUB2API-to-raw conversion used by the UI and account import API; SUB2API exports may convert to multiple raw credentials. |
-| `lib/subscription-quota.ts` | Query OpenAI Codex subscription quota. |
+| `lib/subscription-quota.ts` | Query OpenAI Codex subscription quota, degrade reset-credit lookup failures without blocking quota results, consume Codex reset credits server-side, and update saved-account quota/reset-credit caches. |
 | `lib/openai-codex-warmup.ts` | Send minimal real Codex warmup requests for selected saved `openai-codex` OAuth accounts without changing the active account, then refresh per-account quota cache. |
 | `lib/openai-codex-warmup-history.ts` | Persist bounded manual/scheduled ChatGPT warmup run history separately from credentials and `pi-web.json`, including duplicate scheduled-run keys. |
 | `lib/openai-codex-warmup-scheduler.ts` | Local in-process ChatGPT warmup scheduler guarded by `globalThis`, reading `pi-web.json` each tick and running due saved schedules once per local date/time key. |

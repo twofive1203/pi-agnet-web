@@ -4,6 +4,13 @@ export interface QuotaDisplayTier {
   resetsAt: string | null;
 }
 
+export interface CodexResetCreditDisplay {
+  id: string;
+  status: string;
+  grantedAt: string;
+  expiresAt: string;
+}
+
 export const QUOTA_TIER_LABELS: Record<string, string> = {
   five_hour: "5h",
   seven_day: "7d",
@@ -61,4 +68,14 @@ export function formatQuotaQueriedAt(timestamp: number | null): string {
   if (diffSeconds < 3600) return `${Math.floor(diffSeconds / 60)}m ago`;
   if (diffSeconds < 86400) return `${Math.floor(diffSeconds / 3600)}h ago`;
   return `${Math.floor(diffSeconds / 86400)}d ago`;
+}
+
+export function earliestResetCreditExpiration(credits: CodexResetCreditDisplay[]): string | null {
+  let earliest: { time: number; value: string } | null = null;
+  for (const credit of credits) {
+    const time = new Date(credit.expiresAt).getTime();
+    if (!Number.isFinite(time)) continue;
+    if (!earliest || time < earliest.time) earliest = { time, value: credit.expiresAt };
+  }
+  return earliest?.value ?? null;
 }
