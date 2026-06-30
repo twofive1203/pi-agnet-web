@@ -14,13 +14,16 @@ Shared logic lives under `lib/`. Prefer adding behavior here when it is used by 
 | `lib/cwd.ts` | Cwd validation and normalization helpers. |
 | `lib/git-worktree.ts` | Git worktree creation, status, archive, and removal helpers. |
 | `lib/deepseek-balance.ts` | Query DeepSeek account balance. |
-| `lib/quota-display.ts` | Shared ChatGPT/Codex quota display helpers: tier labels, utilization colors, reset countdowns, relative refresh time, and known-tier filtering. |
-| `lib/oauth-accounts.ts` | Persist, import raw/converted credential JSON, sanitize, sync, label, activate, and soft-delete saved `openai-codex` OAuth accounts without exposing tokens. |
+| `lib/quota-display.ts` | Shared ChatGPT/Codex quota display helpers: tier labels, utilization colors, quota/reset-credit countdowns, earliest reset-credit expiration, relative refresh time, and known-tier filtering. |
+| `lib/oauth-accounts.ts` | Persist, import raw/converted credential JSON, sanitize, sync, label, activate, quota/reset-credit cache metadata, and soft-delete saved `openai-codex` OAuth accounts without exposing tokens. |
 | `lib/oauth-account-converters.ts` | Shared OAuth account import mode registry, raw credential validation, and CPA/SUB2API-to-raw conversion used by the UI and account import API; SUB2API exports may convert to multiple raw credentials. |
-| `lib/subscription-quota.ts` | Query OpenAI Codex subscription quota. |
+| `lib/subscription-quota.ts` | Query OpenAI Codex subscription quota, degrade reset-credit lookup failures without blocking quota results, consume Codex reset credits server-side, and update saved-account quota/reset-credit caches. |
+| `lib/openai-codex-warmup.ts` | Send minimal real Codex warmup requests for selected saved `openai-codex` OAuth accounts without changing the active account, then refresh per-account quota cache. |
+| `lib/openai-codex-warmup-history.ts` | Persist bounded manual/scheduled ChatGPT warmup run history separately from credentials and `pi-web.json`, including duplicate scheduled-run keys. |
+| `lib/openai-codex-warmup-scheduler.ts` | Local in-process ChatGPT warmup scheduler guarded by `globalThis`, reading `pi-web.json` each tick and running due saved schedules once per local date/time key. |
 | `lib/npx.ts` | Cross-platform `npx` wrapper that avoids shell quoting issues. |
 | `lib/usage-stats.ts` | Aggregate token/cost across configured active-only or active-plus-archived sessions by day, model, provider, and session. |
-| `lib/pi-web-config.ts` | Read/write/validate `~/.pi/agent/pi-web.json` for WorkTree, Usage scan scope, Web Terminal settings and env assistant model policy, ChatGPT usage panel settings, and Trellis panel settings, including Trellis install/update proxy options, workflow assistant primary/fallback model policy, and Trellis subagent model policy. |
+| `lib/pi-web-config.ts` | Read/write/validate `~/.pi/agent/pi-web.json` for WorkTree, Usage scan scope, Web Terminal settings and env assistant model policy, ChatGPT usage panel, warmup schedule, and backend auto-refresh settings, and Trellis panel settings, including Trellis install/update proxy options, workflow assistant primary/fallback model policy, and Trellis subagent model policy. |
 | `lib/allowed-roots.ts` | Shared authorized-workspace root discovery and path checks for file and Trellis APIs. |
 | `lib/terminal-manager.ts` | Web Terminal PTY manager: setting-gated session creation, cwd authorization, shell/custom path resolution, env injection, SSE subscription fan-out, input/resize handling, and process cleanup. |
 | `lib/trellis-manager.ts` | Trellis setup/status/update helper: prerequisite checks, CLI/version inspection, proxy-scoped child-process environment, and fixed Trellis/npm command execution. |

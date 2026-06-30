@@ -1,6 +1,6 @@
+import { randomUUID } from "node:crypto";
 import { AuthStorage } from "@earendil-works/pi-coding-agent";
-import { getOAuthApiKey } from "@earendil-works/pi-ai/oauth";
-import { extractOpenAICodexAccountId, readOAuthAccountCredential, saveOAuthAccountCredential, syncActiveOAuthAccountCredential, updateOAuthAccountQuotaCache } from "@/lib/oauth-accounts";
+import { extractOpenAICodexAccountId, getOAuthAccountAccessToken, readOAuthAccountCredential, syncActiveOAuthAccountCredential, updateOAuthAccountQuotaCache } from "@/lib/oauth-accounts";
 
 export type CredentialStatus = "valid" | "expired" | "not_found" | "parse_error";
 
@@ -8,6 +8,13 @@ export interface QuotaTier {
   name: string;
   utilization: number;
   resetsAt: string | null;
+}
+
+export interface CodexRateLimitResetCredit {
+  id: string;
+  status: string;
+  grantedAt: string;
+  expiresAt: string;
 }
 
 export interface SubscriptionQuota {
@@ -18,6 +25,9 @@ export interface SubscriptionQuota {
   tiers: QuotaTier[];
   error: string | null;
   queriedAt: number | null;
+  resetCreditsAvailableCount: number | null;
+  resetCredits: CodexRateLimitResetCredit[];
+  resetCreditsError: string | null;
 }
 
 interface StoredOAuthCredential {
@@ -40,7 +50,37 @@ interface CodexUsageResponse {
     primary_window?: CodexRateLimitWindow;
     secondary_window?: CodexRateLimitWindow;
   };
+  rate_limit_reset_credits?: CodexResetCreditsCountPayload;
+  rateLimitResetCredits?: CodexResetCreditsCountPayload;
 }
+
+interface CodexResetCreditsCountPayload {
+  available_count?: unknown;
+  availableCount?: unknown;
+}
+
+interface CodexResetCreditsSummary {
+  availableCount: number | null;
+  credits: CodexRateLimitResetCredit[];
+  error: string | null;
+}
+
+interface CodexResetCreditsParseResult {
+  availableCount: number | null;
+  credits: CodexRateLimitResetCredit[];
+  invalidPayload: boolean;
+}
+
+interface ResolvedActiveCredential {
+  accessToken: string;
+  accountId: string | null;
+}
+
+const OPENAI_CODEX_PROVIDER = "openai-codex";
+const OPENAI_CODEX_USER_AGENT = "codex_cli_rs/0.76.0 (Debian 13.0.0; x86_64) WindowsTerminal";
+const OPENAI_CODEX_USAGE_URL = "https://chatgpt.com/backend-api/wham/usage";
+const OPENAI_CODEX_RESET_CREDITS_URL = "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits";
+const OPENAI_CODEX_RESET_CREDITS_CONSUME_URL = "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits/consume";
 
 /**
  * 获取当前毫秒时间戳。
@@ -49,6 +89,24 @@ interface CodexUsageResponse {
  */
 function nowMillis(): number {
   return Date.now();
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function normalizeNumber(value: unknown): number | null {
+  if (value === undefined || value === null) return null;
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) ? numberValue : null;
+}
+
+function defaultResetCreditFields(): Pick<SubscriptionQuota, "resetCreditsAvailableCount" | "resetCredits" | "resetCreditsError"> {
+  return {
+    resetCreditsAvailableCount: null,
+    resetCredits: [],
+    resetCreditsError: null,
+  };
 }
 
 /**
@@ -66,6 +124,7 @@ function quotaNotFound(tool: string): SubscriptionQuota {
     tiers: [],
     error: null,
     queriedAt: null,
+    ...defaultResetCreditFields(),
   };
 }
 
@@ -86,6 +145,7 @@ function quotaError(tool: string, status: CredentialStatus, message: string): Su
     tiers: [],
     error: message,
     queriedAt: nowMillis(),
+    ...defaultResetCreditFields(),
   };
 }
 
@@ -115,6 +175,122 @@ function unixSecondsToIso(timestampSeconds: number): string | null {
   return new Date(timestampSeconds * 1000).toISOString();
 }
 
+function openAICodexHeaders(accessToken: string, accountId: string | null, extra?: Record<string, string>): Record<string, string> {
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${accessToken}`,
+    "Content-Type": "application/json",
+    "User-Agent": OPENAI_CODEX_USER_AGENT,
+    ...(extra ?? {}),
+  };
+  if (accountId) headers["ChatGPT-Account-Id"] = accountId;
+  return headers;
+}
+
+function resetCreditsAvailableCountFromUsage(body: CodexUsageResponse): number | null {
+  const raw = body.rate_limit_reset_credits ?? body.rateLimitResetCredits;
+  if (!raw) return null;
+  return normalizeNumber(raw.available_count ?? raw.availableCount);
+}
+
+function normalizeResetCredit(raw: unknown): CodexRateLimitResetCredit | null {
+  if (!isRecord(raw)) return null;
+  const resetType = String(raw.reset_type ?? raw.resetType ?? "").trim();
+  if (resetType !== "codex_rate_limits") return null;
+
+  const status = String(raw.status ?? "").trim();
+  if (status !== "available") return null;
+
+  const expiresAt = String(raw.expires_at ?? raw.expiresAt ?? "").trim();
+  if (!expiresAt) return null;
+
+  return {
+    id: String(raw.id ?? "").trim(),
+    status,
+    grantedAt: String(raw.granted_at ?? raw.grantedAt ?? "").trim(),
+    expiresAt,
+  };
+}
+
+function parseResetCreditsPayload(payload: unknown): CodexResetCreditsParseResult {
+  let value = payload;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return { availableCount: null, credits: [], invalidPayload: true };
+    try {
+      value = JSON.parse(trimmed) as unknown;
+    } catch {
+      return { availableCount: null, credits: [], invalidPayload: true };
+    }
+  }
+
+  if (!isRecord(value)) return { availableCount: null, credits: [], invalidPayload: true };
+
+  const hasExpectedShape = "credits" in value || "available_count" in value || "availableCount" in value;
+  const creditsPayloadInvalid = "credits" in value && !Array.isArray(value.credits);
+  const credits = Array.isArray(value.credits)
+    ? value.credits.map(normalizeResetCredit).filter((credit): credit is CodexRateLimitResetCredit => Boolean(credit))
+    : [];
+  const parsedAvailableCount = normalizeNumber(value.available_count ?? value.availableCount);
+  const availableCount = hasExpectedShape
+    ? parsedAvailableCount ?? (Array.isArray(value.credits) ? credits.length : null)
+    : null;
+
+  return {
+    availableCount,
+    credits,
+    invalidPayload: !hasExpectedShape || creditsPayloadInvalid,
+  };
+}
+
+async function queryOpenAICodexResetCredits(accessToken: string, accountId: string | null): Promise<CodexResetCreditsSummary> {
+  const response = await fetch(OPENAI_CODEX_RESET_CREDITS_URL, {
+    method: "GET",
+    headers: openAICodexHeaders(accessToken, accountId, {
+      Accept: "application/json",
+      "OpenAI-Beta": "codex-1",
+      Originator: "Codex Desktop",
+    }),
+    signal: AbortSignal.timeout(8000),
+  });
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    const suffix = body.trim() ? `: ${body.trim()}` : "";
+    return { availableCount: null, credits: [], error: `Reset credits API error (HTTP ${response.status})${suffix}` };
+  }
+
+  const text = await response.text().catch(() => "");
+  const parsed = parseResetCreditsPayload(text);
+  return {
+    availableCount: parsed.availableCount,
+    credits: parsed.credits,
+    error: parsed.invalidPayload ? "Invalid reset credits payload" : null,
+  };
+}
+
+function createRedeemRequestId(): string {
+  try {
+    return randomUUID();
+  } catch {
+    return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+  }
+}
+
+async function consumeOpenAICodexResetCredit(accessToken: string, accountId: string | null): Promise<void> {
+  const response = await fetch(OPENAI_CODEX_RESET_CREDITS_CONSUME_URL, {
+    method: "POST",
+    headers: openAICodexHeaders(accessToken, accountId),
+    body: JSON.stringify({ redeem_request_id: createRedeemRequestId() }),
+    signal: AbortSignal.timeout(15000),
+  });
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    const suffix = body.trim() ? `: ${body.trim()}` : "";
+    throw new Error(`Reset credit consume failed (HTTP ${response.status})${suffix}`);
+  }
+}
+
 /**
  * 查询 ChatGPT Plus/Pro 的 Codex 订阅额度。
  *
@@ -123,26 +299,19 @@ function unixSecondsToIso(timestampSeconds: number): string | null {
  * @returns 标准订阅额度结果。
  */
 async function queryOpenAICodexQuota(accessToken: string, accountId: string | null): Promise<SubscriptionQuota> {
-  const headers: Record<string, string> = {
-    Authorization: `Bearer ${accessToken}`,
-    Accept: "application/json",
-    "User-Agent": "pi-web",
-  };
-  if (accountId) headers["ChatGPT-Account-Id"] = accountId;
-
-  const response = await fetch("https://chatgpt.com/backend-api/wham/usage", {
+  const response = await fetch(OPENAI_CODEX_USAGE_URL, {
     method: "GET",
-    headers,
+    headers: openAICodexHeaders(accessToken, accountId),
     signal: AbortSignal.timeout(15000),
   });
 
   if (response.status === 401 || response.status === 403) {
-    return quotaError("openai-codex", "expired", `Authentication failed (HTTP ${response.status}). Please re-login.`);
+    return quotaError(OPENAI_CODEX_PROVIDER, "expired", `Authentication failed (HTTP ${response.status}). Please re-login.`);
   }
 
   if (!response.ok) {
     const body = await response.text().catch(() => "");
-    return quotaError("openai-codex", "valid", `API error (HTTP ${response.status}): ${body}`);
+    return quotaError(OPENAI_CODEX_PROVIDER, "valid", `API error (HTTP ${response.status}): ${body}`);
   }
 
   const body = (await response.json()) as CodexUsageResponse;
@@ -151,8 +320,22 @@ async function queryOpenAICodexQuota(accessToken: string, accountId: string | nu
     body.rate_limit?.secondary_window,
   ].filter((window): window is CodexRateLimitWindow => Boolean(window));
 
+  const usageResetCreditsAvailableCount = resetCreditsAvailableCountFromUsage(body);
+  let resetCreditsAvailableCount = usageResetCreditsAvailableCount;
+  let resetCredits: CodexRateLimitResetCredit[] = [];
+  let resetCreditsError: string | null = null;
+
+  try {
+    const resetSummary = await queryOpenAICodexResetCredits(accessToken, accountId);
+    resetCreditsAvailableCount = resetSummary.availableCount ?? usageResetCreditsAvailableCount;
+    resetCredits = resetSummary.credits;
+    resetCreditsError = resetSummary.error;
+  } catch (error) {
+    resetCreditsError = error instanceof Error ? error.message : String(error);
+  }
+
   return {
-    tool: "openai-codex",
+    tool: OPENAI_CODEX_PROVIDER,
     credentialStatus: "valid",
     credentialMessage: null,
     success: true,
@@ -167,6 +350,9 @@ async function queryOpenAICodexQuota(accessToken: string, accountId: string | nu
       })),
     error: null,
     queriedAt: nowMillis(),
+    resetCreditsAvailableCount,
+    resetCredits,
+    resetCreditsError,
   };
 }
 
@@ -183,19 +369,14 @@ async function cacheAccountQuota(provider: string, accountId: string | null, quo
     tiers: quota.tiers,
     error: quota.error,
     queriedAt: quota.queriedAt,
+    resetCreditsAvailableCount: quota.resetCreditsAvailableCount,
+    resetCredits: quota.resetCredits,
+    resetCreditsError: quota.resetCreditsError,
   }).catch(() => {});
 }
 
-async function getSavedAccountAccessToken(provider: string, credential: StoredOAuthCredential): Promise<string | undefined> {
-  if (provider !== "openai-codex") return undefined;
-  const result = await getOAuthApiKey("openai-codex", { "openai-codex": credential });
-  if (!result?.apiKey) return undefined;
-  await saveOAuthAccountCredential(provider, { type: "oauth", ...result.newCredentials, accountId: credential.accountId }).catch(() => {});
-  return result.apiKey;
-}
-
-export async function getOAuthProviderSubscriptionQuota(provider: string): Promise<SubscriptionQuota> {
-  if (provider !== "openai-codex") return quotaNotFound(provider);
+async function resolveActiveOpenAICodexCredential(provider: string): Promise<ResolvedActiveCredential | SubscriptionQuota> {
+  if (provider !== OPENAI_CODEX_PROVIDER) return quotaNotFound(provider);
 
   const authStorage = AuthStorage.create();
   const storedCredential = authStorage.get(provider) as StoredOAuthCredential | undefined;
@@ -211,24 +392,35 @@ export async function getOAuthProviderSubscriptionQuota(provider: string): Promi
 
   if (!accessToken) return quotaError(provider, "expired", "OAuth token unavailable. Please re-login.");
 
-  const refreshedCredential = authStorage.get(provider) as StoredOAuthCredential | undefined;
   await syncActiveOAuthAccountCredential(provider, authStorage).catch(() => {});
+  const refreshedCredential = authStorage.get(provider) as StoredOAuthCredential | undefined;
   const accountId = refreshedCredential?.accountId ?? storedCredential.accountId ?? extractOpenAICodexAccountId(accessToken);
 
+  return { accessToken, accountId };
+}
+
+function isSubscriptionQuota(value: ResolvedActiveCredential | SubscriptionQuota): value is SubscriptionQuota {
+  return "success" in value;
+}
+
+export async function getOAuthProviderSubscriptionQuota(provider: string): Promise<SubscriptionQuota> {
+  const resolved = await resolveActiveOpenAICodexCredential(provider);
+  if (isSubscriptionQuota(resolved)) return resolved;
+
   try {
-    const quota = await queryOpenAICodexQuota(accessToken, accountId);
-    await cacheAccountQuota(provider, accountId, quota);
+    const quota = await queryOpenAICodexQuota(resolved.accessToken, resolved.accountId);
+    await cacheAccountQuota(provider, resolved.accountId, quota);
     return quota;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const quota = quotaError(provider, "valid", `Network error: ${message}`);
-    await cacheAccountQuota(provider, accountId, quota);
+    await cacheAccountQuota(provider, resolved.accountId, quota);
     return quota;
   }
 }
 
 export async function getOAuthAccountSubscriptionQuota(provider: string, accountId: string): Promise<SubscriptionQuota> {
-  if (provider !== "openai-codex") return quotaNotFound(provider);
+  if (provider !== OPENAI_CODEX_PROVIDER) return quotaNotFound(provider);
 
   let credential: Awaited<ReturnType<typeof readOAuthAccountCredential>>;
   try {
@@ -240,7 +432,7 @@ export async function getOAuthAccountSubscriptionQuota(provider: string, account
 
   let accessToken: string | undefined;
   try {
-    accessToken = await getSavedAccountAccessToken(provider, credential);
+    accessToken = await getOAuthAccountAccessToken(provider, credential);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const quota = quotaError(provider, "expired", message);
@@ -263,5 +455,56 @@ export async function getOAuthAccountSubscriptionQuota(provider: string, account
     const quota = quotaError(provider, "valid", `Network error: ${message}`);
     await cacheAccountQuota(provider, credential.accountId, quota);
     return quota;
+  }
+}
+
+export async function consumeOAuthProviderResetCredit(provider: string): Promise<SubscriptionQuota> {
+  const resolved = await resolveActiveOpenAICodexCredential(provider);
+  if (isSubscriptionQuota(resolved)) return resolved;
+
+  let consumed = false;
+  try {
+    await consumeOpenAICodexResetCredit(resolved.accessToken, resolved.accountId);
+    consumed = true;
+    const quota = await queryOpenAICodexQuota(resolved.accessToken, resolved.accountId);
+    await cacheAccountQuota(provider, resolved.accountId, quota);
+    return quota;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return quotaError(provider, "valid", consumed ? `Reset consumed, but quota refresh failed: ${message}` : `Reset failed: ${message}`);
+  }
+}
+
+export async function consumeOAuthAccountResetCredit(provider: string, accountId: string): Promise<SubscriptionQuota> {
+  if (provider !== OPENAI_CODEX_PROVIDER) return quotaNotFound(provider);
+
+  let credential: Awaited<ReturnType<typeof readOAuthAccountCredential>>;
+  try {
+    credential = await readOAuthAccountCredential(provider, accountId);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return quotaError(provider, "not_found", message);
+  }
+
+  let accessToken: string | undefined;
+  try {
+    accessToken = await getOAuthAccountAccessToken(provider, credential);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return quotaError(provider, "expired", message);
+  }
+
+  if (!accessToken) return quotaError(provider, "expired", "OAuth token unavailable. Please re-login.");
+
+  let consumed = false;
+  try {
+    await consumeOpenAICodexResetCredit(accessToken, credential.accountId);
+    consumed = true;
+    const quota = await queryOpenAICodexQuota(accessToken, credential.accountId);
+    await cacheAccountQuota(provider, credential.accountId, quota);
+    return quota;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return quotaError(provider, "valid", consumed ? `Reset consumed, but quota refresh failed: ${message}` : `Reset failed: ${message}`);
   }
 }

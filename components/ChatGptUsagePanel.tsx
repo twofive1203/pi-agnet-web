@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { formatQuotaQueriedAt, formatResetCountdown, knownQuotaTiers, quotaColor, QUOTA_TIER_LABELS, type QuotaDisplayTier } from "@/lib/quota-display";
+import { earliestResetCreditExpiration, formatQuotaQueriedAt, formatResetCountdown, knownQuotaTiers, quotaColor, QUOTA_TIER_LABELS, type CodexResetCreditDisplay, type QuotaDisplayTier } from "@/lib/quota-display";
 
 type CredentialStatus = "valid" | "expired" | "not_found" | "parse_error";
 
@@ -10,6 +10,9 @@ interface OAuthAccountQuotaCache {
   tiers: QuotaDisplayTier[];
   error: string | null;
   queriedAt: number | null;
+  resetCreditsAvailableCount: number | null;
+  resetCredits: CodexResetCreditDisplay[];
+  resetCreditsError: string | null;
 }
 
 interface OAuthAccountSummary {
@@ -37,6 +40,9 @@ interface SubscriptionQuota {
   tiers: QuotaDisplayTier[];
   error: string | null;
   queriedAt: number | null;
+  resetCreditsAvailableCount: number | null;
+  resetCredits: CodexResetCreditDisplay[];
+  resetCreditsError: string | null;
 }
 
 interface SchedulerStatus {
@@ -88,9 +94,11 @@ function accountQuotaSummary(account: OAuthAccountSummary): string {
   const cache = account.quotaCache;
   if (!cache?.queriedAt) return "No quota cache";
   if (cache.error) return cache.error;
+  const resetCreditsText = typeof cache.resetCreditsAvailableCount === "number" ? `Credits ${cache.resetCreditsAvailableCount}` : null;
   const tiers = knownQuotaTiers(cache.tiers ?? []);
-  if (tiers.length === 0) return formatQuotaQueriedAt(cache.queriedAt);
-  return tiers.map((tier) => `${QUOTA_TIER_LABELS[tier.name]} ${Math.round(tier.utilization)}%`).join(" · ");
+  if (tiers.length === 0) return resetCreditsText ? `${formatQuotaQueriedAt(cache.queriedAt)} · ${resetCreditsText}` : formatQuotaQueriedAt(cache.queriedAt);
+  const tiersText = tiers.map((tier) => `${QUOTA_TIER_LABELS[tier.name]} ${Math.round(tier.utilization)}%`).join(" · ");
+  return resetCreditsText ? `${tiersText} · ${resetCreditsText}` : tiersText;
 }
 
 function formatTime(value: number | null): string {
@@ -105,6 +113,7 @@ export function ChatGptUsagePanel() {
   const [accountsLoading, setAccountsLoading] = useState(true);
   const [accountsError, setAccountsError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [resetting, setResetting] = useState(false);
   const [activatingAccountId, setActivatingAccountId] = useState<string | null>(null);
   const [quotaResult, setQuotaResult] = useState<SubscriptionQuota | null>(null);
   const [schedulerStatus, setSchedulerStatus] = useState<SchedulerStatus | null>(null);
@@ -189,6 +198,7 @@ export function ChatGptUsagePanel() {
   }, [open, loadAccounts, loadSchedulerStatus]);
 
   const refreshQuota = useCallback(async () => {
+    if (resetting) return;
     setRefreshing(true);
     setQuotaResult(null);
     try {
@@ -205,11 +215,49 @@ export function ChatGptUsagePanel() {
         tiers: [],
         error: error instanceof Error ? error.message : "Usage query failed",
         queriedAt: Date.now(),
+        resetCreditsAvailableCount: null,
+        resetCredits: [],
+        resetCreditsError: null,
       });
     } finally {
       setRefreshing(false);
     }
-  }, [loadAccounts]);
+  }, [loadAccounts, resetting]);
+
+  const resetQuota = useCallback(async () => {
+    if (!account || resetting) return;
+    const ok = window.confirm("将消耗一次 Codex 重置机会，确认继续？");
+    if (!ok) return;
+
+    setResetting(true);
+    setQuotaResult(null);
+    try {
+      const res = await fetch("/api/auth/quota/openai-codex", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accountId: account.accountId }),
+      });
+      const data = await res.json().catch(() => ({})) as SubscriptionQuota & { error?: string };
+      if (!res.ok || !data.success) throw new Error(data.error ?? data.credentialMessage ?? `HTTP ${res.status}`);
+      setQuotaResult(data);
+      await loadAccounts();
+    } catch (error) {
+      setQuotaResult({
+        tool: "openai-codex",
+        credentialStatus: "valid",
+        credentialMessage: error instanceof Error ? error.message : String(error),
+        success: false,
+        tiers: [],
+        error: error instanceof Error ? error.message : "Reset failed",
+        queriedAt: Date.now(),
+        resetCreditsAvailableCount: null,
+        resetCredits: [],
+        resetCreditsError: null,
+      });
+    } finally {
+      setResetting(false);
+    }
+  }, [account, loadAccounts, resetting]);
 
   const activateAccount = useCallback(async (accountId: string) => {
     setActivatingAccountId(accountId);
@@ -254,9 +302,15 @@ export function ChatGptUsagePanel() {
   }, []);
 
   const quotaCache = account?.quotaCache ?? null;
-  const knownTiers = useMemo(() => knownQuotaTiers(quotaCache?.tiers ?? []), [quotaCache?.tiers]);
-  const refreshText = quotaCache?.queriedAt ? formatQuotaQueriedAt(quotaCache.queriedAt) : "Unknown";
-  const compactStatus = accountsLoading ? "Loading" : accountsError ? "Error" : !account ? "No account" : quotaCache?.error ? "Error" : refreshText;
+  const displayedQuota = quotaResult?.success ? quotaResult : quotaCache;
+  const knownTiers = useMemo(() => knownQuotaTiers(displayedQuota?.tiers ?? []), [displayedQuota?.tiers]);
+  const refreshText = displayedQuota?.queriedAt ? formatQuotaQueriedAt(displayedQuota.queriedAt) : "Unknown";
+  const compactStatus = accountsLoading ? "Loading" : accountsError ? "Error" : !account ? "No account" : displayedQuota?.error ? "Error" : refreshText;
+  const resetCreditsAvailableCount = displayedQuota?.resetCreditsAvailableCount ?? null;
+  const resetCredits = displayedQuota?.resetCredits ?? [];
+  const resetCreditsError = displayedQuota?.resetCreditsError ?? null;
+  const resetExpiresAt = earliestResetCreditExpiration(resetCredits);
+  const resetExpiresCountdown = formatResetCountdown(resetExpiresAt);
 
   return (
     <div style={{ position: "relative", display: "flex", alignItems: "center", height: "100%" }}>
@@ -318,9 +372,16 @@ export function ChatGptUsagePanel() {
               <div style={{ color: "var(--text)", fontSize: 13, fontWeight: 800 }}>ChatGPT usage</div>
               <div style={{ marginTop: 3, color: "var(--text-dim)", fontSize: 11 }}>Updated: {refreshText}</div>
             </div>
-            <button type="button" onClick={refreshQuota} disabled={refreshing} title="Refresh active account usage" aria-label="Refresh active account usage" style={{ width: 30, height: 30, border: "1px solid var(--border)", borderRadius: 7, background: "var(--bg)", color: refreshing ? "var(--text-dim)" : "var(--accent)", cursor: refreshing ? "default" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, flexShrink: 0 }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 0 1-9 9 8.8 8.8 0 0 1-6.36-2.64" /><path d="M3 12a9 9 0 0 1 9-9 8.8 8.8 0 0 1 6.36 2.64" /><path d="M3 4v8h8" /><path d="M21 20v-8h-8" /></svg>
-            </button>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              {account && (resetCreditsAvailableCount ?? 0) > 0 && (
+                <button type="button" onClick={resetQuota} disabled={refreshing || resetting} title={resetExpiresCountdown ? `Consumes one reset credit. Earliest expires in ${resetExpiresCountdown}` : "Consumes one Codex reset credit"} style={{ height: 30, padding: "0 9px", border: "1px solid rgba(34,197,94,0.45)", borderRadius: 7, background: "var(--bg)", color: refreshing || resetting ? "var(--text-dim)" : "#22c55e", cursor: refreshing || resetting ? "default" : "pointer", fontSize: 11, fontWeight: 800, flexShrink: 0 }}>
+                  {resetting ? "Resetting…" : "Reset limit"}
+                </button>
+              )}
+              <button type="button" onClick={refreshQuota} disabled={refreshing || resetting} title="Refresh active account usage" aria-label="Refresh active account usage" style={{ width: 30, height: 30, border: "1px solid var(--border)", borderRadius: 7, background: "var(--bg)", color: refreshing || resetting ? "var(--text-dim)" : "var(--accent)", cursor: refreshing || resetting ? "default" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, flexShrink: 0 }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 0 1-9 9 8.8 8.8 0 0 1-6.36-2.64" /><path d="M3 12a9 9 0 0 1 9-9 8.8 8.8 0 0 1 6.36 2.64" /><path d="M3 4v8h8" /><path d="M21 20v-8h-8" /></svg>
+              </button>
+            </div>
           </div>
 
           {accountsLoading ? <div style={{ color: "var(--text-muted)", fontSize: 12 }}>Loading cached accounts…</div> : accountsError ? <div style={{ color: "#f87171", fontSize: 12, lineHeight: 1.45 }}>{accountsError}</div> : !account ? <div style={{ color: "var(--text-dim)", fontSize: 12, lineHeight: 1.45 }}>No active ChatGPT/Codex saved account. Add or activate one in Models.</div> : (
@@ -337,6 +398,14 @@ export function ChatGptUsagePanel() {
 
               {quotaResult && !quotaResult.success && <div style={{ color: quotaResult.credentialStatus === "expired" ? "#fb923c" : "#f87171", fontSize: 12, lineHeight: 1.45 }}>{quotaResult.error ?? quotaResult.credentialMessage ?? "Usage query failed."}</div>}
               {quotaCache?.error && <div style={{ color: "#fb923c", fontSize: 12, lineHeight: 1.45 }}>{quotaCache.error}</div>}
+              {resetCreditsAvailableCount !== null && (
+                <div style={{ padding: 9, borderRadius: 9, border: "1px solid var(--border)", background: "rgba(148,163,184,0.08)", display: "flex", flexDirection: "column", gap: 2 }}>
+                  <span style={{ color: "var(--text)", fontSize: 12, fontWeight: 800 }}>Reset credits: {resetCreditsAvailableCount}</span>
+                  <span style={{ color: resetCreditsError ? "#fb923c" : "var(--text-dim)", fontSize: 10, lineHeight: 1.4 }}>
+                    {resetCreditsError ? resetCreditsError : resetExpiresCountdown ? `Earliest expires in ${resetExpiresCountdown}` : resetExpiresAt ? `Earliest expires ${new Date(resetExpiresAt).toLocaleDateString()}` : "No credit expiration details"}
+                  </span>
+                </div>
+              )}
 
               {knownTiers.length === 0 ? (
                 <div style={{ display: "flex", alignItems: "center", gap: 10, padding: 10, borderRadius: 9, background: "rgba(148,163,184,0.08)", border: "1px solid var(--border)" }}>

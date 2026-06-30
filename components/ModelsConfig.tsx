@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import type { DeepSeekBalanceResult } from "@/lib/deepseek-balance";
 import { ACCOUNT_JSON_CONVERTERS, RAW_ACCOUNT_JSON_EXAMPLE, validateRawOAuthCredentialImport, type OAuthAccountImportMode } from "@/lib/oauth-account-converters";
-import { formatQuotaQueriedAt, formatResetCountdown, knownQuotaTiers, quotaColor, QUOTA_TIER_LABELS } from "@/lib/quota-display";
+import { earliestResetCreditExpiration, formatQuotaQueriedAt, formatResetCountdown, knownQuotaTiers, quotaColor, QUOTA_TIER_LABELS, type CodexResetCreditDisplay } from "@/lib/quota-display";
+import { ChatGptWarmupDialog } from "./ChatGptWarmupDialog";
 // Color icons (have their own fill colors — no background needed)
 import AnthropicIcon from "@lobehub/icons/es/Anthropic/components/Mono";
 import OpenAIIcon from "@lobehub/icons/es/OpenAI/components/Mono";
@@ -98,6 +99,9 @@ interface OAuthAccountQuotaCache {
   tiers: QuotaTier[];
   error: string | null;
   queriedAt: number | null;
+  resetCreditsAvailableCount: number | null;
+  resetCredits: CodexResetCreditDisplay[];
+  resetCreditsError: string | null;
 }
 
 interface OAuthAccountSummary {
@@ -155,6 +159,9 @@ interface SubscriptionQuota {
   tiers: QuotaTier[];
   error: string | null;
   queriedAt: number | null;
+  resetCreditsAvailableCount: number | null;
+  resetCredits: CodexResetCreditDisplay[];
+  resetCreditsError: string | null;
 }
 
 interface ModelEntry {
@@ -764,16 +771,27 @@ function OAuthQuotaView({
   quota,
   loading,
   account,
+  resetting,
   onRefresh,
+  onReset,
 }: {
   quota: SubscriptionQuota | null;
   loading: boolean;
   account: OAuthAccountSummary | null;
+  resetting: boolean;
   onRefresh: () => void;
+  onReset: () => void;
 }) {
   if (!quota && !loading && !account) return null;
 
-  const knownTiers = knownQuotaTiers(quota?.tiers ?? []);
+  const displayedQuota = quota?.success ? quota : account?.quotaCache;
+  const knownTiers = knownQuotaTiers(displayedQuota?.tiers ?? []);
+  const resetCreditsAvailableCount = displayedQuota?.resetCreditsAvailableCount ?? null;
+  const resetCredits = displayedQuota?.resetCredits ?? [];
+  const resetCreditsError = displayedQuota?.resetCreditsError ?? null;
+  const resetExpiresAt = earliestResetCreditExpiration(resetCredits);
+  const resetExpiresCountdown = formatResetCountdown(resetExpiresAt);
+  const canReset = Boolean(account) && (resetCreditsAvailableCount ?? 0) > 0;
 
   return (
     <div style={{ border: "1px solid var(--border)", borderRadius: 6, background: "var(--bg-panel)", padding: 12, display: "flex", flexDirection: "column", gap: 10 }}>
@@ -781,15 +799,15 @@ function OAuthQuotaView({
         <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
           <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0 }}>Usage</span>
           <span style={{ fontSize: 11, color: "var(--text-dim)" }}>
-            {loading ? "Refreshing…" : `Updated ${formatQuotaQueriedAt(quota?.queriedAt ?? null)}`}
+            {loading ? "Refreshing…" : `Updated ${formatQuotaQueriedAt(displayedQuota?.queriedAt ?? null)}`}
           </span>
         </div>
         <button
           onClick={() => onRefresh()}
-          disabled={loading}
+          disabled={loading || resetting}
           title="Refresh usage"
           aria-label="Refresh usage"
-          style={{ width: 28, height: 28, border: "1px solid var(--border)", borderRadius: 5, background: "var(--bg)", color: loading ? "var(--text-dim)" : "var(--text-muted)", cursor: loading ? "default" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}
+          style={{ width: 28, height: 28, border: "1px solid var(--border)", borderRadius: 5, background: "var(--bg)", color: loading || resetting ? "var(--text-dim)" : "var(--text-muted)", cursor: loading || resetting ? "default" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M21 12a9 9 0 0 1-9 9 8.8 8.8 0 0 1-6.36-2.64" />
@@ -811,6 +829,28 @@ function OAuthQuotaView({
           <span style={{ fontSize: 11, color: account.active ? "#4ade80" : "var(--text-dim)", fontWeight: 600, flexShrink: 0 }}>
             {account.active ? "active account" : "temporary view"}
           </span>
+        </div>
+      )}
+
+      {resetCreditsAvailableCount !== null && (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "8px 9px", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 5 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
+            <span style={{ fontSize: 12, color: "var(--text)", fontWeight: 700 }}>Reset credits: {resetCreditsAvailableCount}</span>
+            <span style={{ fontSize: 10, color: resetCreditsError ? "#fb923c" : "var(--text-dim)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {resetCreditsError ? resetCreditsError : resetExpiresCountdown ? `Earliest expires in ${resetExpiresCountdown}` : resetExpiresAt ? `Earliest expires ${new Date(resetExpiresAt).toLocaleDateString()}` : "No credit expiration details"}
+            </span>
+          </div>
+          {canReset && (
+            <button
+              type="button"
+              onClick={() => onReset()}
+              disabled={loading || resetting}
+              title={resetExpiresCountdown ? `Consumes one reset credit. Earliest expires in ${resetExpiresCountdown}` : "Consumes one Codex reset credit"}
+              style={{ padding: "5px 10px", border: "1px solid rgba(34,197,94,0.45)", borderRadius: 5, background: "transparent", color: loading || resetting ? "var(--text-dim)" : "#22c55e", cursor: loading || resetting ? "default" : "pointer", fontSize: 11, fontWeight: 700, flexShrink: 0 }}
+            >
+              {resetting ? "Resetting…" : "Reset limit"}
+            </button>
+          )}
         </div>
       )}
 
@@ -859,12 +899,15 @@ function OAuthQuotaView({
 }
 
 function accountQuotaResetText(account: OAuthAccountSummary): string {
+  const resetCreditsAvailableCount = account.quotaCache?.resetCreditsAvailableCount;
+  const resetCreditsText = typeof resetCreditsAvailableCount === "number" ? `Credits ${resetCreditsAvailableCount}` : null;
   const tiers = knownQuotaTiers(account.quotaCache?.tiers ?? []).filter((tier) => tier.resetsAt);
-  if (tiers.length === 0) return account.quotaCache?.queriedAt ? "No reset time" : "No quota cache";
-  return tiers.map((tier) => {
+  if (tiers.length === 0) return resetCreditsText ?? (account.quotaCache?.queriedAt ? "No reset time" : "No quota cache");
+  const windowsText = tiers.map((tier) => {
     const countdown = formatResetCountdown(tier.resetsAt);
     return `${QUOTA_TIER_LABELS[tier.name]} ${countdown ?? "due"}`;
   }).join(" · ");
+  return resetCreditsText ? `${windowsText} · ${resetCreditsText}` : windowsText;
 }
 
 function AccountQuotaMiniCharts({ account }: { account: OAuthAccountSummary }) {
@@ -898,6 +941,7 @@ function OAuthAccountsView({
   savingLabelAccountId,
   savingExtraInfoAccountId,
   refreshingQuotaAccountId,
+  quotaResetting,
   deletingAccountId,
   selectedAccountId,
   onRefresh,
@@ -907,6 +951,7 @@ function OAuthAccountsView({
   onEditExtraInfo,
   onRefreshQuota,
   onDelete,
+  onWarmup,
 }: {
   accounts: OAuthAccountSummary[];
   loading: boolean;
@@ -915,6 +960,7 @@ function OAuthAccountsView({
   savingLabelAccountId: string | null;
   savingExtraInfoAccountId: string | null;
   refreshingQuotaAccountId: string | null;
+  quotaResetting: boolean;
   deletingAccountId: string | null;
   selectedAccountId: string | null;
   onRefresh: () => void;
@@ -924,6 +970,7 @@ function OAuthAccountsView({
   onEditExtraInfo: (account: OAuthAccountSummary) => void;
   onRefreshQuota: (account: OAuthAccountSummary) => void;
   onDelete: (account: OAuthAccountSummary) => void;
+  onWarmup: () => void;
 }) {
   return (
     <div style={{ border: "1px solid var(--border)", borderRadius: 6, background: "var(--bg-panel)", padding: 12, display: "flex", flexDirection: "column", gap: 10 }}>
@@ -932,20 +979,29 @@ function OAuthAccountsView({
           <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0 }}>Accounts</span>
           <span style={{ fontSize: 11, color: "var(--text-dim)" }}>{loading ? "Loading…" : `${accounts.length} saved`}</span>
         </div>
-        <button
-          onClick={onRefresh}
-          disabled={loading}
-          title="Refresh accounts"
-          aria-label="Refresh accounts"
-          style={{ width: 28, height: 28, border: "1px solid var(--border)", borderRadius: 5, background: "var(--bg)", color: loading ? "var(--text-dim)" : "var(--text-muted)", cursor: loading ? "default" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M21 12a9 9 0 0 1-9 9 8.8 8.8 0 0 1-6.36-2.64" />
-            <path d="M3 12a9 9 0 0 1 9-9 8.8 8.8 0 0 1 6.36 2.64" />
-            <path d="M3 4v8h8" />
-            <path d="M21 20v-8h-8" />
-          </svg>
-        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <button
+            onClick={onWarmup}
+            disabled={loading || accounts.length === 0}
+            style={{ padding: "5px 10px", border: "1px solid var(--border)", borderRadius: 5, background: "var(--bg)", color: loading || accounts.length === 0 ? "var(--text-dim)" : "var(--accent)", cursor: loading || accounts.length === 0 ? "not-allowed" : "pointer", fontSize: 11, fontWeight: 700 }}
+          >
+            Warm up
+          </button>
+          <button
+            onClick={onRefresh}
+            disabled={loading}
+            title="Refresh accounts"
+            aria-label="Refresh accounts"
+            style={{ width: 28, height: 28, border: "1px solid var(--border)", borderRadius: 5, background: "var(--bg)", color: loading ? "var(--text-dim)" : "var(--text-muted)", cursor: loading ? "default" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 12a9 9 0 0 1-9 9 8.8 8.8 0 0 1-6.36-2.64" />
+              <path d="M3 12a9 9 0 0 1 9-9 8.8 8.8 0 0 1 6.36 2.64" />
+              <path d="M3 4v8h8" />
+              <path d="M21 20v-8h-8" />
+            </svg>
+          </button>
+        </div>
       </div>
 
       {error && <div style={{ fontSize: 12, color: "#f87171", lineHeight: 1.5 }}>{error}</div>}
@@ -974,8 +1030,8 @@ function OAuthAccountsView({
                 </div>
                 <button
                   onClick={() => onSelect(account)}
-                  disabled={selected || Boolean(refreshingQuotaAccountId)}
-                  style={{ padding: "4px 9px", background: selected ? "var(--accent)" : "none", border: selected ? "1px solid var(--accent)" : "1px solid var(--border)", borderRadius: 4, color: selected ? "#fff" : "var(--accent)", cursor: selected || refreshingQuotaAccountId ? "default" : "pointer", fontSize: 11, fontWeight: 600 }}
+                  disabled={selected || Boolean(refreshingQuotaAccountId) || quotaResetting}
+                  style={{ padding: "4px 9px", background: selected ? "var(--accent)" : "none", border: selected ? "1px solid var(--accent)" : "1px solid var(--border)", borderRadius: 4, color: selected ? "#fff" : quotaResetting ? "var(--text-dim)" : "var(--accent)", cursor: selected || refreshingQuotaAccountId || quotaResetting ? "default" : "pointer", fontSize: 11, fontWeight: 600 }}
                 >
                   {selected ? "Viewing" : "View"}
                 </button>
@@ -1015,10 +1071,10 @@ function OAuthAccountsView({
                 )}
                 <button
                   onClick={() => onRefreshQuota(account)}
-                  disabled={Boolean(refreshingQuotaAccountId)}
+                  disabled={Boolean(refreshingQuotaAccountId) || quotaResetting}
                   title="Refresh this account quota reset time"
                   aria-label="Refresh this account quota reset time"
-                  style={{ width: 28, height: 28, padding: 0, background: "none", border: "1px solid var(--border)", borderRadius: 4, color: quotaRefreshing ? "var(--text-dim)" : "var(--accent)", cursor: refreshingQuotaAccountId ? "default" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+                  style={{ width: 28, height: 28, padding: 0, background: "none", border: "1px solid var(--border)", borderRadius: 4, color: quotaRefreshing || quotaResetting ? "var(--text-dim)" : "var(--accent)", cursor: refreshingQuotaAccountId || quotaResetting ? "default" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
                 >
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M21 12a9 9 0 0 1-9 9 8.8 8.8 0 0 1-6.36-2.64" />
@@ -1318,6 +1374,7 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
   const [inputValue, setInputValue] = useState("");
   const [quota, setQuota] = useState<SubscriptionQuota | null>(null);
   const [quotaLoading, setQuotaLoading] = useState(false);
+  const [quotaResetting, setQuotaResetting] = useState(false);
   const [accounts, setAccounts] = useState<OAuthAccountSummary[]>([]);
   const [accountsLoading, setAccountsLoading] = useState(false);
   const [accountsError, setAccountsError] = useState<string | null>(null);
@@ -1329,6 +1386,7 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
   const [refreshingQuotaAccountId, setRefreshingQuotaAccountId] = useState<string | null>(null);
   const [deletingAccountId, setDeletingAccountId] = useState<string | null>(null);
   const [addAccountDialogView, setAddAccountDialogView] = useState<"method" | "json" | null>(null);
+  const [warmupDialogOpen, setWarmupDialogOpen] = useState(false);
   const eventSourceRef = useRef<EventSource | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -1344,6 +1402,7 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
     setInputValue("");
     setQuota(null);
     setQuotaLoading(false);
+    setQuotaResetting(false);
     setAccounts([]);
     setAccountsLoading(false);
     setAccountsError(null);
@@ -1355,6 +1414,7 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
     setRefreshingQuotaAccountId(null);
     setDeletingAccountId(null);
     setAddAccountDialogView(null);
+    setWarmupDialogOpen(false);
     eventSourceRef.current?.close();
     eventSourceRef.current = null;
   }, [provider.id]);
@@ -1413,6 +1473,9 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
         tiers: [],
         error: error instanceof Error ? error.message : "Usage query failed",
         queriedAt: Date.now(),
+        resetCreditsAvailableCount: null,
+        resetCredits: [],
+        resetCreditsError: null,
       });
     } finally {
       setQuotaLoading(false);
@@ -1610,6 +1673,7 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
   }, [provider.id]);
 
   const handleRefreshAccountQuota = useCallback(async (account: OAuthAccountSummary) => {
+    if (quotaResetting) return;
     setRefreshingQuotaAccountId(account.accountId);
     setAccountsError(null);
     try {
@@ -1626,7 +1690,35 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
     } finally {
       setRefreshingQuotaAccountId(null);
     }
-  }, [loadAccounts, provider.id, selectedQuotaAccountId]);
+  }, [loadAccounts, provider.id, quotaResetting, selectedQuotaAccountId]);
+
+  const handleResetQuota = useCallback(async () => {
+    const quotaAccountId = selectedQuotaAccountId;
+    if (!quotaAccountId || quotaResetting) return;
+    const ok = window.confirm("将消耗一次 Codex 重置机会，确认继续？");
+    if (!ok) return;
+
+    setQuotaResetting(true);
+    setAccountsError(null);
+    try {
+      const res = await fetch(`/api/auth/quota/${encodeURIComponent(provider.id)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accountId: quotaAccountId }),
+      });
+      const data = await res.json().catch(() => ({})) as SubscriptionQuota & { error?: string };
+      if (!res.ok || !data.success) throw new Error(data.error ?? data.credentialMessage ?? `HTTP ${res.status}`);
+      setQuota(data);
+      await loadAccounts();
+      setLoginState({ phase: "success", message: "Codex rate limit reset." });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to reset Codex rate limit";
+      setAccountsError(message);
+      setLoginState({ phase: "error", message });
+    } finally {
+      setQuotaResetting(false);
+    }
+  }, [loadAccounts, provider.id, quotaResetting, selectedQuotaAccountId]);
 
   const handleDeleteAccount = useCallback(async (account: OAuthAccountSummary) => {
     if (!window.confirm(`Delete saved credentials for ${account.displayName}?\n\nThe account must be added again to restore it.`)) return;
@@ -1800,7 +1892,7 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
       </div>
 
       {provider.id === "openai-codex" && provider.loggedIn && (
-        <OAuthQuotaView quota={quota} loading={quotaLoading} account={selectedQuotaAccount} onRefresh={loadQuota} />
+        <OAuthQuotaView quota={quota} loading={quotaLoading} account={selectedQuotaAccount} resetting={quotaResetting} onRefresh={loadQuota} onReset={handleResetQuota} />
       )}
 
       {provider.id === "openai-codex" && (
@@ -1812,6 +1904,7 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
           savingLabelAccountId={savingLabelAccountId}
           savingExtraInfoAccountId={savingExtraInfoAccountId}
           refreshingQuotaAccountId={refreshingQuotaAccountId}
+          quotaResetting={quotaResetting}
           deletingAccountId={deletingAccountId}
           selectedAccountId={selectedQuotaAccount?.accountId ?? null}
           onRefresh={loadAccounts}
@@ -1821,6 +1914,15 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
           onEditExtraInfo={handleEditAccountExtraInfo}
           onRefreshQuota={handleRefreshAccountQuota}
           onDelete={handleDeleteAccount}
+          onWarmup={() => setWarmupDialogOpen(true)}
+        />
+      )}
+
+      {provider.id === "openai-codex" && warmupDialogOpen && (
+        <ChatGptWarmupDialog
+          accounts={accounts}
+          onComplete={loadAccounts}
+          onClose={() => setWarmupDialogOpen(false)}
         />
       )}
 

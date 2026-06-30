@@ -71,3 +71,71 @@ Implemented Git panel branch preview so selecting a local branch refreshes the c
 ### Next Steps
 
 - None - task complete
+
+
+## Session 29: ChatGPT account warmup
+
+**Date**: 2026-06-30
+**Task**: ChatGPT account warmup
+**Branch**: `main`
+
+### Summary
+
+Implemented manual ChatGPT/Codex account warmup for saved accounts, then added scheduled warmup management with persisted schedule config, local scheduler, and run history.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `1e55311` | (see git log) |
+| `dd522d4` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 30: Codex reset credits
+
+**Date**: 2026-06-30
+**Task**: Codex reset credits
+**Branch**: `main`
+
+### Summary
+
+Implemented Codex reset-credit lookup and consume support in quota API/lib flows, displayed/reset credits in Models and ChatGPT usage panel, updated docs/specs, and recorded Trellis planning artifacts.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d4e4953` | (see git log) |
+| `67a4613` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

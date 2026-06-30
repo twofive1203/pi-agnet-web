@@ -1078,7 +1078,7 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
                     <div>
                       <h3 style={{ margin: 0, color: "var(--text)", fontSize: 15 }}>ChatGPT</h3>
                       <p style={{ margin: "5px 0 0", color: "var(--text-muted)", fontSize: 12, lineHeight: 1.5 }}>
-                        控制 ChatGPT/Codex 账号相关显示。保存到 <code style={{ fontFamily: "var(--font-mono)", color: "var(--text)", overflowWrap: "anywhere" }}>{configPath}</code>
+                        控制 ChatGPT/Codex 账号相关显示。账号预热计划在 Models 的 Warm up 弹窗中管理，并同样保存到 <code style={{ fontFamily: "var(--font-mono)", color: "var(--text)", overflowWrap: "anywhere" }}>{configPath}</code>
                         {exists ? "" : "（保存时会自动创建）"}
                       </p>
                     </div>

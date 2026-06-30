@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { access, chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { AuthStorage, getAgentDir, type OAuthCredential } from "@earendil-works/pi-coding-agent";
+import { getOAuthApiKey } from "@earendil-works/pi-ai/oauth";
 import { convertOAuthAccountCredential, type OAuthAccountImportMode } from "@/lib/oauth-account-converters";
 
 export const OPENAI_CODEX_PROVIDER_ID = "openai-codex";
@@ -34,11 +35,21 @@ export interface OAuthAccountQuotaCacheTier {
   resetsAt: string | null;
 }
 
+export interface OAuthAccountQuotaResetCredit {
+  id: string;
+  status: string;
+  grantedAt: string;
+  expiresAt: string;
+}
+
 export interface OAuthAccountQuotaCache {
   success: boolean;
   tiers: OAuthAccountQuotaCacheTier[];
   error: string | null;
   queriedAt: number | null;
+  resetCreditsAvailableCount: number | null;
+  resetCredits: OAuthAccountQuotaResetCredit[];
+  resetCreditsError: string | null;
 }
 
 interface OAuthAccountMetadataEntry {
@@ -166,6 +177,16 @@ async function writeJsonFile(provider: string, path: string, value: unknown): Pr
   await chmod(path, JSON_FILE_MODE).catch(() => {});
 }
 
+function normalizeQuotaResetCredit(value: unknown): OAuthAccountQuotaResetCredit | null {
+  if (!isRecord(value)) return null;
+  return {
+    id: typeof value.id === "string" ? value.id : "",
+    status: typeof value.status === "string" ? value.status : "available",
+    grantedAt: typeof value.grantedAt === "string" ? value.grantedAt : "",
+    expiresAt: typeof value.expiresAt === "string" ? value.expiresAt : "",
+  };
+}
+
 function normalizeQuotaCache(value: unknown): OAuthAccountQuotaCache | undefined {
   if (!isRecord(value)) return undefined;
   const tiers = Array.isArray(value.tiers)
@@ -175,12 +196,18 @@ function normalizeQuotaCache(value: unknown): OAuthAccountQuotaCache | undefined
       resetsAt: typeof tier.resetsAt === "string" ? tier.resetsAt : null,
     }))
     : [];
+  const resetCredits = Array.isArray(value.resetCredits)
+    ? value.resetCredits.map(normalizeQuotaResetCredit).filter((credit): credit is OAuthAccountQuotaResetCredit => Boolean(credit))
+    : [];
 
   return {
     success: value.success === true,
     tiers,
     error: typeof value.error === "string" ? value.error : null,
     queriedAt: typeof value.queriedAt === "number" && Number.isFinite(value.queriedAt) ? value.queriedAt : null,
+    resetCreditsAvailableCount: typeof value.resetCreditsAvailableCount === "number" && Number.isFinite(value.resetCreditsAvailableCount) ? value.resetCreditsAvailableCount : null,
+    resetCredits,
+    resetCreditsError: typeof value.resetCreditsError === "string" ? value.resetCreditsError : null,
   };
 }
 
@@ -461,6 +488,14 @@ export async function readOAuthAccountCredential(provider: string, accountId: st
     throw new OAuthAccountStoreError("Saved OAuth account credential is invalid", 500);
   }
   return normalizeCredentialAccountId(credential);
+}
+
+export async function getOAuthAccountAccessToken(provider: string, credential: NormalizedOpenAICodexCredential): Promise<string | undefined> {
+  assertSupportedProvider(provider);
+  const result = await getOAuthApiKey(OPENAI_CODEX_PROVIDER_ID, { [OPENAI_CODEX_PROVIDER_ID]: credential });
+  if (!result?.apiKey) return undefined;
+  await saveOAuthAccountCredential(provider, { type: "oauth", ...result.newCredentials, accountId: credential.accountId }).catch(() => {});
+  return result.apiKey;
 }
 
 export async function saveOAuthAccountCredential(
