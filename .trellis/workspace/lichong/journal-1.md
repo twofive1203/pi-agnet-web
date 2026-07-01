@@ -304,3 +304,36 @@ Added shared diff modal/view components, default side-by-side diff mode, and ref
 ### Next Steps
 
 - None - task complete
+
+
+## Session 36: Side-by-side diff linked scrolling
+
+**Date**: 2026-07-01
+**Task**: Side-by-side diff linked scrolling
+**Branch**: `main`
+
+### Summary
+
+Implemented IDE-style side-by-side diff scrolling with independent left/right pane scrollbars and synchronized scrolling, then archived the completed Trellis task.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `014162d` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
