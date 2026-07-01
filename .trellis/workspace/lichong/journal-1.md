@@ -271,3 +271,36 @@ Implemented Git panel commit inspection: selectable commit graph rows, commit me
 ### Next Steps
 
 - None - task complete
+
+
+## Session 35: Git diff side-by-side viewer
+
+**Date**: 2026-07-01
+**Task**: Git diff side-by-side viewer
+**Branch**: `main`
+
+### Summary
+
+Added shared diff modal/view components, default side-by-side diff mode, and refactored Git commit plus session file diff entry points to reuse the shared viewer.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ee76c2b` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
