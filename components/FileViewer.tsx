@@ -1381,11 +1381,7 @@ function TextFileViewer({ filePath, cwd, initialLine, editorConfig, onAddChat, o
       )}
 
       {/* Content area */}
-<<<<<<< HEAD
-      <div ref={contentRef} className="file-viewer-content" style={{ flex: 1, overflow: "auto", background: "var(--bg)" }} onMouseUp={handleMouseUp}>
-=======
       <div style={{ flex: 1, overflow: "hidden", background: "var(--bg)" }}>
->>>>>>> friend/main
         {viewMode === "diff" && hasDiff ? (
           <div style={{ height: "100%", overflow: "auto" }}>
             <DiffView oldContent={prevContent!} newContent={data.content} language={data.language} />
