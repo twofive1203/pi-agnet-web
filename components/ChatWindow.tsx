@@ -9,6 +9,7 @@ import { useAgentSession, type AgentPhase } from "@/hooks/useAgentSession";
 import { useAudio } from "@/hooks/useAudio";
 import { useAutoScroll } from "@/hooks/useAutoScroll";
 import { useDragDrop } from "@/hooks/useDragDrop";
+import { SessionChangesFloatingPanel } from "./SessionChangesFloatingPanel";
 
 interface Props {
   session: SessionInfo | null;
@@ -258,6 +259,9 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
       onDrop={handleDrop}
     >
       {archivedBannerElement}
+      {session?.id && (
+        <SessionChangesFloatingPanel sessionId={session.id} agentRunning={agentRunning} />
+      )}
       {isDragOver && (
         <div className="pointer-events-none absolute inset-0 z-50 flex animate-[drop-zone-in_0.15s_ease_both] items-center justify-center bg-[rgba(37,99,235,0.06)] backdrop-blur-[1px]">
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">

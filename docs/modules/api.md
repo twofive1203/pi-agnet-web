@@ -7,14 +7,19 @@ API routes live under `app/api/`. When adding, removing, or changing routes, upd
 | `sessions/` | GET | List sessions grouped by cwd (includes `archivedCwds` and `archivedCounts`). |
 | `sessions/[id]/` | GET/PATCH/DELETE | Read session detail, rename, delete. Returns `archived: true` for archived sessions. |
 | `sessions/[id]/context/` | GET | Get context for a specific `leafId`. |
+| `sessions/[id]/changes/` | GET | List files changed by tracked agent file tools in this session from non-Git sidecar data. |
+| `sessions/[id]/changes/file/` | GET | Return the stored unified diff or metadata-only reason for one tracked session-changed file. |
 | `sessions/[id]/trellis-task/` | GET | Resolve the high-confidence Trellis task associated with one pi session, using session-local transcript evidence or exact per-session Trellis runtime pointers only. |
 | `sessions/[id]/export/` | GET | Export session as Markdown. |
 | `sessions/new/` | 410 | Deprecated route kept for compatibility. |
 | `agent/new/` | POST | Create a new session and send the first message. |
 | `agent/[id]/` | GET/POST | Get agent state or send a command. |
 | `agent/[id]/events/` | GET | SSE event stream. |
-| `files/[...path]/` | GET | Read file contents for the file viewer. |
+| `files/[...path]/` | GET/PUT | List/read/watch/preview workspace files for the file viewer and safely save existing editable text files. |
 | `files/search/` | GET | Search files in the selected workspace. |
+| `files/definitions/` | GET | Lightweight workspace text/code symbol definition search for editor drill-down actions. |
+| `files/implementations/` | GET | Lightweight workspace search for Java symbol implementations/references used by the Monaco file editor. |
+| `files/references/` | GET | Lightweight workspace text/code symbol reference search for editor “find usages” actions. |
 | `files/upload/` | POST | Upload files for chat/file workflows. |
 | `models/` | GET | List available models and default model. |
 | `models-config/` | GET/POST | Read/write `~/.pi/agent/models.json`. |
@@ -34,7 +39,7 @@ API routes live under `app/api/`. When adding, removing, or changing routes, upd
 | `git/status/` | GET | Return detailed Git status (branch, commits, staged/unstaged changes, untracked files, stash) for a cwd. |
 | `git/graph/` | GET | Return decorated commit graph data (commits, parents, refs, local branches) for the Git panel branch visualization; optional `branch` previews one validated local branch. |
 | `git/switch/` | POST | Switch the current workspace to a local branch. Validates cwd, branch existence, and working tree cleanliness before executing `git switch`. Returns `switchedTo` on success or an error message. |
-| `web-config/` | GET/PUT | Read/write `~/.pi/agent/pi-web.json` for WorkTree defaults, Usage scan scope, Web Terminal settings, ChatGPT usage panel/warmup schedule settings, optional Trellis panel settings, setup proxy, and Trellis subagent model policy; also lazily ensures the local ChatGPT warmup scheduler. |
+| `web-config/` | GET/PUT | Read/write `~/.pi/agent/pi-web.json` for WorkTree defaults, Usage scan scope, Web Terminal settings, ChatGPT usage panel/warmup schedule settings, Editor implementation/shortcut settings, optional Trellis panel settings, setup proxy, and Trellis subagent model policy; also lazily ensures the local ChatGPT warmup scheduler. |
 | `terminal/env/assist/` | POST | Use the configured Terminal env assistant model to parse complex raw env text into normalized key-value env entries. |
 | `terminal/sessions/` | POST | Create a local Web Terminal session for an authorized workspace cwd when the Terminal setting is enabled. |
 | `terminal/sessions/[id]/` | DELETE | Close a Web Terminal session and terminate its process. |

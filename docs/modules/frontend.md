@@ -17,15 +17,23 @@
 | `components/ModelsConfig.tsx` | Modal for editing `models.json`, OAuth/API-key auth, and ChatGPT Plus/Pro saved-account add/import, activation, temporary account selection for the subscription/usage panel, remarks, extra-info dialog, cached quota reset display with inline mini usage pies, manual quota refresh, inactive-account deletion, and raw/CPA/SUB2API account JSON import via shared converters. |
 | `components/GitPanel.tsx` | Git status dropdown panel showing branch, previewable commit graph by selected local branch, staged/unstaged changes, untracked files, stash, and local branch switching with an explicit Switch button. |
 | `components/SkillsConfig.tsx` | Modal for browsing/installing skills. |
+<<<<<<< HEAD
 | `components/SettingsConfig.tsx` | Settings modal for WorkTree defaults, Usage scan scope, Web Terminal enablement/shell/env settings including Unix and Windows shell choices plus raw/AI env parsing model controls, ChatGPT usage panel and backend auto-refresh settings, and optional Trellis panel settings in `pi-web.json`, including Trellis docs guidance, prerequisite/status inspection, install/init, update, proxy controls, Trellis workflow assistant primary/fallback model controls, and Trellis subagent model policy controls. ChatGPT warmup schedule is managed from `ChatGptWarmupDialog` and preserved by settings saves. |
+=======
+| `components/SettingsConfig.tsx` | Settings modal for WorkTree defaults, Usage scan scope, Web Terminal enablement/shell/env settings plus raw/AI env parsing model controls, ChatGPT usage panel and backend auto-refresh settings, Editor implementation/shortcut settings, and optional Trellis panel settings in `pi-web.json`, including Trellis docs guidance, prerequisite/status inspection, install/init, update, proxy controls, Trellis workflow assistant primary/fallback model controls, and Trellis subagent model policy controls. ChatGPT warmup schedule is managed from `ChatGptWarmupDialog` and preserved by settings saves. |
+>>>>>>> friend/main
 | `components/SubagentPanel.tsx` | Top-bar subagent activity panel, including nested subagent inspection and compact model/thinking metadata chips when subagent routing or result metadata is available. |
 | `components/TrellisPanel.tsx` | Read-only Trellis task drawer: top-level task list with expandable child task groups, filters, details, artifacts, hierarchy, manifest/context counts, recorded task metadata, optional check-run state, derived phase/progress, optional externally focused task selection, and a join-chat action that adds active tasks as chat context blocks without mutating Trellis files. |
 | `components/TrellisWorkflowVisualizer.tsx` | Large read-only Settings → Trellis modal that visualizes `.trellis/workflow.md` phases, steps, workflow-state blocks, source line ranges, parser warnings, Markdown/raw guidance text, and model-assisted Chinese reading summaries as a foundation for future workflow editing. |
 | `components/TrellisSessionWidget.tsx` | Floating session-scoped Trellis progress widget shown only when the current chat session has a high-confidence associated task; includes compact child-task progress when present, and clicking opens the Trellis drawer focused on that task. |
+| `components/SessionChangesFloatingPanel.tsx` | Floating chat-session file-change panel that lists tracked edit/write file changes and opens per-file diffs. |
+| `components/FileDiffModal.tsx` | Read-only modal for one session-changed file, including loading/error/metadata-only states and unified diff display. |
+| `components/UnifiedDiffView.tsx` | Theme-aware unified diff renderer for added, removed, hunk, header, and context lines. |
 | `components/TerminalPanel.tsx` | Bottom-dock Web Terminal workspace using xterm; manages ephemeral multi-tab terminal sessions, per-pane tab strips, tab renaming, nested drag-to-split panes, pane and dock resizing, minimize/restore, app-local fullscreen, and destructive close confirmation while reusing existing terminal session APIs per tab. |
 | `components/UsageStatsModal.tsx` | Token/cost usage statistics modal with active/archive scan counts and rounded M-token conversions. |
 | `components/FileExplorer.tsx` | File tree inside the sidebar. |
-| `components/FileViewer.tsx` | File content viewer in a tab. |
+| `components/FileViewer.tsx` | File content viewer/editor in a tab; routes media/document previews, orchestrates text editing state, and exposes Java implementation lookup results. |
+| `components/MonacoFileEditor.tsx` | Monaco-backed source editor for text files, including language mapping, basic completions, word wrap, theme, and line-selection callbacks. |
 | `components/FileIcons.tsx` | Monochrome SVG icons for files/folders. |
 | `components/MarkdownBody.tsx` | Markdown, KaTeX, Mermaid, and syntax highlighting renderer. |
 | `components/TabBar.tsx` | Chat and open-file tab bar. |
