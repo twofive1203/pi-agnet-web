@@ -337,3 +337,36 @@ Implemented IDE-style side-by-side diff scrolling with independent left/right pa
 ### Next Steps
 
 - None - task complete
+
+
+## Session 37: Auto-collapse chat auxiliary panels
+
+**Date**: 2026-07-03
+**Task**: Auto-collapse chat auxiliary panels
+**Branch**: `main`
+
+### Summary
+
+Implemented auto-collapse behavior for top chat auxiliary panels: outside pointer/focus closes Branches, System, Subagents, and Git panels while preserving tab toggling, panel interaction, and Escape close. Validated with lint and TypeScript.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a5e661f` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
