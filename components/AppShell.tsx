@@ -26,6 +26,14 @@ import type { TrellisSessionTaskLinkResult, TrellisTaskDetail } from "@/lib/trel
 import { trellisTaskDetailToChatContext, type TrellisTaskChatContext } from "@/lib/trellis-chat-context";
 import type { ChatInputHandle } from "./ChatInput";
 
+const TOP_PANEL_SAFE_SELECTOR = ".app-top-aux-panel, .app-top-aux-tab, .branch-navigator-inline";
+
+function isTopPanelSafeTarget(target: EventTarget | null): boolean {
+  if (target instanceof Element) return Boolean(target.closest(TOP_PANEL_SAFE_SELECTOR));
+  if (target instanceof Node) return Boolean(target.parentElement?.closest(TOP_PANEL_SAFE_SELECTOR));
+  return false;
+}
+
 export function AppShell() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -117,6 +125,29 @@ export function AppShell() {
   const toggleTopPanel = useCallback((panel: "branches" | "system" | "subagents" | "git") => {
     setActiveTopPanel((cur) => cur === panel ? null : panel);
   }, []);
+
+  useEffect(() => {
+    if (!activeTopPanel) return;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!isTopPanelSafeTarget(event.target)) setActiveTopPanel(null);
+    };
+    const handleFocusIn = (event: FocusEvent) => {
+      if (!isTopPanelSafeTarget(event.target)) setActiveTopPanel(null);
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setActiveTopPanel(null);
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown, true);
+    document.addEventListener("focusin", handleFocusIn, true);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown, true);
+      document.removeEventListener("focusin", handleFocusIn, true);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [activeTopPanel]);
 
   useEffect(() => {
     if (!activeTopPanel || !topBarRef.current) return;
@@ -689,6 +720,7 @@ export function AppShell() {
               />
               <button
                 ref={systemBtnRef}
+                className="app-top-aux-tab"
                 onClick={() => toggleTopPanel("system")}
                 style={{
                   display: "flex", alignItems: "center", gap: 6,
@@ -713,6 +745,7 @@ export function AppShell() {
                 <span className="app-top-label">System</span>
               </button>
               <button
+                className="app-top-aux-tab"
                 onClick={() => toggleTopPanel("subagents")}
                 style={{
                   display: "flex", alignItems: "center", gap: 6,
@@ -758,6 +791,7 @@ export function AppShell() {
                 })()}
               </button>
               <button
+                className="app-top-aux-tab"
                 onClick={() => toggleTopPanel("git")}
                 style={{
                   display: "flex", alignItems: "center", gap: 6,
@@ -926,7 +960,7 @@ export function AppShell() {
           )}
           {/* Top panel dropdown — shared, only one active at a time */}
           {activeTopPanel && topPanelPos && (
-            <div style={{
+            <div className="app-top-aux-panel" style={{
               position: "fixed",
               top: topPanelPos.top,
               left: topPanelPos.left,

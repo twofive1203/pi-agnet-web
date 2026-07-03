@@ -299,7 +299,7 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, cont
           <span>Branches</span>
         </button>
         {open && dropdownPos && (
-          <div style={{
+          <div className="app-top-aux-panel" style={{
             position: "fixed",
             top: dropdownPos.top,
             left: dropdownPos.left,
