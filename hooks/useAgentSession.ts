@@ -260,6 +260,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [compactError, setCompactError] = useState<string | null>(null);
   const [agentPhase, setAgentPhase] = useState<AgentPhase>(null);
   const [subagentRuns, setSubagentRuns] = useState<SubagentRun[]>([]);
+  const [sessionChangesRefreshKey, setSessionChangesRefreshKey] = useState(0);
 
   const eventSourceRef = useRef<EventSource | null>(null);
   const sessionIdRef = useRef<string | null>(session?.id ?? null);
@@ -531,6 +532,11 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           setCompactError(event.errorMessage as string);
         } else if (!event.aborted) {
           if (sessionIdRef.current) loadSession(sessionIdRef.current);
+        }
+        break;
+      case "session_file_changes_update":
+        if (event.sessionId === sessionIdRef.current) {
+          setSessionChangesRefreshKey((value) => value + 1);
         }
         break;
     }
@@ -888,6 +894,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     retryInfo, contextUsage, systemPrompt, forkingEntryId,
     isCompacting, compactError, currentModel, displayModel, sessionStats,
     agentPhase, subagentRuns,
+    sessionChangesRefreshKey,
     isNew,
     // Refs
     sessionIdRef, eventSourceRef, messagesEndRef, scrollContainerRef,

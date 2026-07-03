@@ -7,6 +7,7 @@ import { FileDiffModal } from "./FileDiffModal";
 interface Props {
   sessionId: string;
   agentRunning: boolean;
+  refreshKey?: number;
 }
 
 function statusBadge(file: SessionChangedFileSummary): { label: string; color: string } {
@@ -24,6 +25,29 @@ function fileCountLabel(count: number): string {
   return count === 1 ? "1 file changed" : `${count} files changed`;
 }
 
+/**
+ * Produce a stable string signature for a list of changed-file summaries.
+ * Used to avoid calling setFiles when the data hasn't meaningfully changed.
+ */
+function changesSignature(files: SessionChangedFileSummary[]): string {
+  return files
+    .map((file) =>
+      [
+        file.path,
+        file.status,
+        file.additions,
+        file.deletions,
+        file.diffAvailable ? "1" : "0",
+        file.reason ?? "",
+        file.firstChangedAt ?? "",
+        file.lastChangedAt ?? "",
+        [...(file.toolNames ?? [])].sort().join(","),
+        [...(file.sourceKinds ?? [])].sort().join(","),
+      ].join("\u001f"),
+    )
+    .join("\u001e");
+}
+
 interface WidgetPosition {
   left: number;
   top: number;
@@ -33,6 +57,7 @@ const STORAGE_KEY = "pi-web:session-changes-widget-position";
 const DEFAULT_MARGIN = 18;
 const DEFAULT_BOTTOM = 92;
 const DRAG_THRESHOLD_PX = 4;
+const POLL_INTERVAL_MS = 10_000;
 
 function clampPosition(position: WidgetPosition, parent: HTMLElement, widget: HTMLElement): WidgetPosition {
   const maxLeft = Math.max(DEFAULT_MARGIN, parent.clientWidth - widget.offsetWidth - DEFAULT_MARGIN);
@@ -61,14 +86,16 @@ function writeStoredPosition(position: WidgetPosition): void {
   }
 }
 
-export function SessionChangesFloatingPanel({ sessionId, agentRunning }: Props) {
+export function SessionChangesFloatingPanel({ sessionId, agentRunning, refreshKey }: Props) {
   const [files, setFiles] = useState<SessionChangedFileSummary[]>([]);
   const [open, setOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<SessionChangedFileSummary | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [position, setPosition] = useState<WidgetPosition | null>(null);
   const [dragging, setDragging] = useState(false);
+
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const positionRef = useRef<WidgetPosition | null>(null);
   const suppressClickRef = useRef(false);
@@ -81,35 +108,146 @@ export function SessionChangesFloatingPanel({ sessionId, agentRunning }: Props) 
     dragged: boolean;
   } | null>(null);
 
-  const loadChanges = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/changes`);
-      const body = await res.json() as SessionChangesSummaryResponse | { error?: string };
-      if (!res.ok) throw new Error((body as { error?: string }).error ?? `HTTP ${res.status}`);
-      setFiles((body as SessionChangesSummaryResponse).files ?? []);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setLoading(false);
-    }
-  }, [sessionId]);
+  // Concurrent-fetch protection refs.
+  const currentSessionIdRef = useRef<string>(sessionId);
+  const abortRef = useRef<AbortController | null>(null);
+  const inFlightRef = useRef(false);
+  const queuedRefreshRef = useRef(false);
+  const requestSeqRef = useRef(0);
+  const filesSignatureRef = useRef<string>("");
+  const lastRefreshKeyRef = useRef<number | undefined>(undefined);
+  const prevAgentRunningRef = useRef(false);
 
+  type LoadMode = "initial" | "event" | "poll" | "final";
+
+  const loadChanges = useCallback(
+    async (mode: LoadMode = "poll") => {
+      const sid = currentSessionIdRef.current;
+
+      // If a request is already in flight, decide what to do.
+      if (inFlightRef.current) {
+        if (mode === "poll") return; // skip polling while busy
+        // event/final: queue a follow-up after current request finishes
+        queuedRefreshRef.current = true;
+        return;
+      }
+
+      if (mode === "initial") {
+        setInitialLoading(true);
+      } else {
+        setRefreshing(true);
+      }
+
+      const seq = ++requestSeqRef.current;
+      const controller = new AbortController();
+      abortRef.current = controller;
+      inFlightRef.current = true;
+
+      try {
+        const res = await fetch(
+          `/api/sessions/${encodeURIComponent(sid)}/changes`,
+          { signal: controller.signal },
+        );
+        const body = await res.json() as SessionChangesSummaryResponse | { error?: string };
+
+        // Ignore stale responses.
+        if (sid !== currentSessionIdRef.current) return;
+        if (seq !== requestSeqRef.current) return;
+
+        if (!res.ok) {
+          throw new Error((body as { error?: string }).error ?? `HTTP ${res.status}`);
+        }
+
+        const nextFiles = ((body as SessionChangesSummaryResponse).files ?? [])
+          .slice()
+          .sort((a, b) => a.path.localeCompare(b.path));
+
+        const nextSig = changesSignature(nextFiles);
+        if (nextSig !== filesSignatureRef.current) {
+          filesSignatureRef.current = nextSig;
+          setFiles(nextFiles);
+        }
+        setError(null);
+      } catch (err) {
+        if ((err as Error).name === "AbortError") return;
+        if (sid !== currentSessionIdRef.current) return;
+        // Keep last successful files list; only surface error in the panel.
+        setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        if (seq === requestSeqRef.current) {
+          inFlightRef.current = false;
+          abortRef.current = null;
+        }
+        if (mode === "initial") setInitialLoading(false);
+        else setRefreshing(false);
+
+        // If a refresh was queued while we were in-flight, fire it now.
+        if (queuedRefreshRef.current && currentSessionIdRef.current === sid) {
+          queuedRefreshRef.current = false;
+          void loadChanges("event");
+        }
+      }
+    },
+    [],
+  );
+
+  // Session change: abort old, reset state, initial load.
   useEffect(() => {
-    void loadChanges();
-  }, [loadChanges, agentRunning]);
+    // Abort any pending request from the previous session.
+    abortRef.current?.abort();
+    abortRef.current = null;
+    inFlightRef.current = false;
+    queuedRefreshRef.current = false;
 
+    currentSessionIdRef.current = sessionId;
+    filesSignatureRef.current = "";
+    // NOTE: Do NOT reset requestSeqRef here. Keeping it monotonically increasing
+    // prevents a race where an old aborted request's finally block matches the new
+    // request's seq after a session switch (e.g. old seq=1, reset to 0, new seq=1).
+
+    setFiles([]);
+    setError(null);
+    setOpen(false);
+    setSelectedFile(null);
+
+    void loadChanges("initial");
+  }, [sessionId, loadChanges]);
+
+  // SSE-driven refresh via refreshKey from useAgentSession.
+  useEffect(() => {
+    if (refreshKey === undefined) return;
+    // Skip the initial render to avoid duplicating the sessionId effect.
+    if (lastRefreshKeyRef.current === undefined) {
+      lastRefreshKeyRef.current = refreshKey;
+      return;
+    }
+    if (refreshKey === lastRefreshKeyRef.current) return;
+    lastRefreshKeyRef.current = refreshKey;
+    void loadChanges("event");
+  }, [refreshKey, loadChanges]);
+
+  // Fallback polling while agent is running (10s interval).
   useEffect(() => {
     if (!agentRunning) return;
-    const interval = setInterval(() => void loadChanges(), 2000);
+    const interval = setInterval(() => void loadChanges("poll"), POLL_INTERVAL_MS);
     return () => clearInterval(interval);
   }, [agentRunning, loadChanges]);
 
+  // Final refresh when agent stops (covers missed SSE events).
   useEffect(() => {
-    setOpen(false);
-    setSelectedFile(null);
-  }, [sessionId]);
+    const wasRunning = prevAgentRunningRef.current;
+    prevAgentRunningRef.current = agentRunning;
+    if (wasRunning && !agentRunning) {
+      void loadChanges("final");
+    }
+  }, [agentRunning, loadChanges]);
+
+  // Abort in-flight request on unmount.
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+    };
+  }, []);
 
   useEffect(() => {
     positionRef.current = position;
@@ -218,6 +356,10 @@ export function SessionChangesFloatingPanel({ sessionId, agentRunning }: Props) 
 
   if (files.length === 0 && !open) return null;
 
+  const buttonTitle = refreshing
+    ? "Drag to move; refreshing changed files"
+    : "Drag to move; click to show changed files";
+
   return (
     <>
       <div
@@ -265,7 +407,9 @@ export function SessionChangesFloatingPanel({ sessionId, agentRunning }: Props) 
             </div>
 
             <div style={{ maxHeight: 288, overflowY: "auto", padding: 6 }}>
-              {error ? (
+              {initialLoading && files.length === 0 ? (
+                <div style={{ padding: 10, color: "var(--text-muted)", fontSize: 12 }}>Loading changed files…</div>
+              ) : error ? (
                 <div style={{ padding: 10, color: "#dc2626", fontSize: 12 }}>{error}</div>
               ) : files.length === 0 ? (
                 <div style={{ padding: 10, color: "var(--text-muted)", fontSize: 12 }}>No tracked edit/write changes yet.</div>
@@ -275,7 +419,9 @@ export function SessionChangesFloatingPanel({ sessionId, agentRunning }: Props) 
                   <button
                     key={file.path}
                     type="button"
-                    onClick={() => setSelectedFile(file)}
+                    onClick={() => file.diffAvailable ? setSelectedFile(file) : undefined}
+                    aria-disabled={file.diffAvailable ? undefined : true}
+                    title={file.diffAvailable ? undefined : (file.reason ?? "metadata only")}
                     style={{
                       width: "100%",
                       display: "flex",
@@ -317,6 +463,9 @@ export function SessionChangesFloatingPanel({ sessionId, agentRunning }: Props) 
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
           onPointerCancel={handlePointerUp}
+          aria-expanded={open}
+          aria-label={open ? `Hide changed files, ${fileCountLabel(files.length)}` : `Show changed files, ${fileCountLabel(files.length)}`}
+          title={buttonTitle}
           style={{
             display: "flex",
             alignItems: "center",
@@ -333,12 +482,11 @@ export function SessionChangesFloatingPanel({ sessionId, agentRunning }: Props) 
             fontWeight: 800,
             touchAction: "none",
             userSelect: "none",
+            minWidth: "7.5em",
           }}
-          aria-expanded={open}
-          title="Drag to move; click to show changed files"
         >
           <span>▦</span>
-          <span>{loading && agentRunning ? "Changes updating…" : fileCountLabel(files.length)}</span>
+          <span>{fileCountLabel(files.length)}</span>
         </button>
       </div>
 

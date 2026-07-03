@@ -101,7 +101,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
     agentRunning, modelNames, modelList, modelThinkingLevels, modelThinkingLevelMaps, toolPreset, thinkingLevel,
     retryInfo, contextUsage, forkingEntryId,
     isCompacting, compactError, displayModel: displayModelValue, sessionStats,
-    agentPhase,
+    agentPhase, sessionChangesRefreshKey,
     isNew,
     messagesEndRef, scrollContainerRef,
     lastUserMsgRef,
@@ -261,7 +261,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
     >
       {archivedBannerElement}
       {session?.id && (
-        <SessionChangesFloatingPanel sessionId={session.id} agentRunning={agentRunning} />
+        <SessionChangesFloatingPanel sessionId={session.id} agentRunning={agentRunning} refreshKey={sessionChangesRefreshKey} />
       )}
       {isDragOver && (
         <div className="pointer-events-none absolute inset-0 z-50 flex animate-[drop-zone-in_0.15s_ease_both] items-center justify-center bg-[rgba(37,99,235,0.06)] backdrop-blur-[1px]">
