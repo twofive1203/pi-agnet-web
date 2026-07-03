@@ -796,7 +796,7 @@ function normalizeRoutingConfig(raw: unknown): SubagentRoutingConfig {
   const rawAgents = isObj(root.agents) ? root.agents : {};
   for (const [agent, rawConfig] of Object.entries(rawAgents)) {
     if (!isObj(rawConfig)) continue;
-    const strategy = rawConfig.strategy === "default" || rawConfig.strategy === "fixed" || rawConfig.strategy === "disabled" ? rawConfig.strategy : "default";
+    const strategy = rawConfig.strategy === "default" || rawConfig.strategy === "route" || rawConfig.strategy === "fixed" || rawConfig.strategy === "disabled" ? rawConfig.strategy : "default";
     agents[agent] = {
       strategy,
       fixed: rawConfig.fixed ? readPolicy(rawConfig.fixed, fallback.defaultPolicy) : undefined,

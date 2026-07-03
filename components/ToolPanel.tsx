@@ -12,22 +12,24 @@ export type ToolPreset = "none" | "default" | "full" | "subagent";
 export const PRESET_NONE: string[] = [];
 export const PRESET_DEFAULT: string[] = ["read", "bash", "edit", "write"];
 export const PRESET_FULL: string[] = ["bash", "read", "edit", "write", "grep", "find", "ls"];
-export const PRESET_SUBAGENT: string[] = ["bash", "read", "edit", "write", "grep", "find", "ls", "subagent"];
+export const PRESET_SUBAGENT: string[] = [...PRESET_FULL, "subagent", "trellis_subagent"];
+const SUBAGENT_TOOL_NAMES = new Set(["subagent", "trellis_subagent"]);
 const BUILTIN_TOOL_NAMES = new Set(PRESET_SUBAGENT);
 
 export function getPresetFromTools(tools: ToolEntry[]): ToolPreset {
   const activeTools = tools.filter(t => t.active);
   if (activeTools.length === 0) return "none";
 
-  const active = activeTools
-    .map(t => t.name)
+  const activeNames = activeTools.map(t => t.name);
+  if (activeNames.some(name => SUBAGENT_TOOL_NAMES.has(name))) return "subagent";
+
+  const active = activeNames
     .filter(name => BUILTIN_TOOL_NAMES.has(name))
     .sort()
     .join(",");
 
   if (active === [...PRESET_DEFAULT].sort().join(",")) return "default";
   if (active === [...PRESET_FULL].sort().join(",")) return "full";
-  if (active === [...PRESET_SUBAGENT].sort().join(",")) return "subagent";
   return "default"; // closest match
 }
 
@@ -41,7 +43,7 @@ const PRESETS: { id: ToolPreset; label: string; desc: string; tools: string[] }[
   { id: "none",    label: "Off",  desc: "No tools",                                tools: PRESET_NONE },
   { id: "default", label: "Low",  desc: "read · bash · edit · write",              tools: PRESET_DEFAULT },
   { id: "full",    label: "High", desc: "read · bash · edit · write · grep · find · ls", tools: PRESET_FULL },
-  { id: "subagent", label: "Agent", desc: "High + subagent delegation", tools: PRESET_SUBAGENT },
+  { id: "subagent", label: "Agent", desc: "High + subagent / Trellis delegation", tools: PRESET_SUBAGENT },
 ];
 
 export function ToolPanel({ tools, onPreset, onClose }: Props) {
