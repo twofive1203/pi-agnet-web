@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 37
+- **Total Sessions**: 38
 - **Last Active**: 2026-07-03
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~372 | Active |
+| `journal-1.md` | ~405 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 38 | 2026-07-03 | Enable Trellis subagent web preset | `7deb37b` | `main` |
 | 37 | 2026-07-03 | Auto-collapse chat auxiliary panels | `a5e661f` | `main` |
 | 36 | 2026-07-01 | Side-by-side diff linked scrolling | `014162d` | `main` |
 | 35 | 2026-07-01 | Git diff side-by-side viewer | `ee76c2b` | `main` |

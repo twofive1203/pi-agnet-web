@@ -370,3 +370,36 @@ Implemented auto-collapse behavior for top chat auxiliary panels: outside pointe
 ### Next Steps
 
 - None - task complete
+
+
+## Session 38: Enable Trellis subagent web preset
+
+**Date**: 2026-07-03
+**Task**: Enable Trellis subagent web preset
+**Branch**: `main`
+
+### Summary
+
+Enabled the web Agent/subagent tool preset to activate Trellis' trellis_subagent tool, updated related UI text, and fixed Trellis subagent routing config parsing for strategy route.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `7deb37b` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
