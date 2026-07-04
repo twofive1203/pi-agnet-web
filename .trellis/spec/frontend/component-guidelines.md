@@ -207,13 +207,38 @@ playDoneSoundRef.current = playDoneSound;
 playDoneSoundRef.current();
 ```
 
+## Mobile Floating Panels
+
+Bottom-toolbar menus in `components/ChatInput.tsx` must not render as `position: absolute` inside `.chat-input-controls`. On mobile, that controls row uses horizontal scrolling and ancestors use `overflow: hidden`, so menus can be clipped or fail to remain tappable.
+
+Use the existing ChatInput pattern instead:
+
+```typescript
+const rect = button.getBoundingClientRect();
+setDropdownRect({ top: rect.top, left: rect.left, width: rect.width });
+
+return createPortal(
+  <div className="chat-input-dropdown-panel" style={{ position: "fixed", bottom, left }}>
+    ...
+  </div>,
+  document.body,
+);
+```
+
+**Rules:**
+- Capture the trigger `getBoundingClientRect()` before opening.
+- Render the panel through `createPortal(..., document.body)` when it belongs to a mobile-scrollable toolbar.
+- Use pointer events (`onPointerDown`) for touch reliability, and keep keyboard `Enter`/`Space` handling for accessibility.
+- Include the portal panel ref in outside-click detection so selecting an option is not treated as an outside tap.
+
 ## Common Mistakes
 
 1. **Don't import pi session lifecycle code into components** — use `lib/rpc-manager.ts` and `hooks/useAgentSession.ts` as boundaries
 2. **Don't duplicate path encoding logic** — use `lib/file-paths.ts` (`encodeFilePathForApi`, `getRelativeFilePath`)
 3. **Don't hardcode theme colors** — always use CSS variables like `var(--bg)` instead of hardcoded hex values
 4. **Don't put business logic in render functions** — extract to helpers or move to `lib/`
-5. **Don't forget to update `AGENTS.md`** when adding new components to the Components table
+5. **Don't render mobile toolbar dropdowns as absolute children of scroll containers** — portal fixed panels to `document.body` instead
+6. **Don't forget to update `AGENTS.md`** when adding new components to the Components table
 
 ## Accessibility
 
