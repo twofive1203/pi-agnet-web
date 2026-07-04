@@ -403,3 +403,36 @@ Enabled the web Agent/subagent tool preset to activate Trellis' trellis_subagent
 ### Next Steps
 
 - None - task complete
+
+
+## Session 39: Fix mobile chat dropdowns
+
+**Date**: 2026-07-04
+**Task**: Fix mobile chat dropdowns
+**Branch**: `main`
+
+### Summary
+
+Analyzed chat tool presets, fixed mobile model/thinking/tool dropdowns by portaling fixed panels to document.body with pointer-event triggers, updated frontend component guidelines, and validated lint/type-check.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `91afe07` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
