@@ -16,6 +16,50 @@ export interface AgentEvent {
 
 type EventListener = (event: AgentEvent) => void;
 
+export type ToolPresetMode = "all" | "read-only" | "none";
+
+interface ToolSelection {
+  preset?: ToolPresetMode;
+  names?: string[];
+}
+
+const READ_ONLY_TOOL_NAMES = new Set(["read", "grep", "find", "ls"]);
+
+function isToolPresetMode(value: unknown): value is ToolPresetMode {
+  return value === "all" || value === "read-only" || value === "none";
+}
+
+function getToolNamesForPreset(session: AgentSessionLike, preset: ToolPresetMode): string[] {
+  if (preset === "none") return [];
+
+  const allToolNames = session.getAllTools().map((tool) => tool.name);
+  if (preset === "all") return allToolNames;
+  return allToolNames.filter((name) => READ_ONLY_TOOL_NAMES.has(name));
+}
+
+function applyActiveTools(session: AgentSessionLike, names: string[]): void {
+  session.setActiveToolsByName(names);
+  // pi's buildSystemPrompt can remain non-empty with no tools; clear it so Off
+  // is a true no-tool mode in the web UI.
+  if (names.length === 0 && session.agent.state) {
+    session.agent.state.systemPrompt = "";
+  }
+}
+
+function applyToolSelection(session: AgentSessionLike, selection?: ToolSelection): void {
+  if (selection?.preset) {
+    applyActiveTools(session, getToolNamesForPreset(session, selection.preset));
+    return;
+  }
+
+  if (selection?.names) {
+    applyActiveTools(session, selection.names);
+    return;
+  }
+
+  applyActiveTools(session, getToolNamesForPreset(session, "all"));
+}
+
 // ============================================================================
 // AgentSessionWrapper
 // Wraps AgentSession with the same interface the rest of the app expects
@@ -232,7 +276,12 @@ export class AgentSessionWrapper {
       }
 
       case "set_tools": {
-        this.inner.setActiveToolsByName(command.toolNames as string[]);
+        const preset = command.toolPreset;
+        if (isToolPresetMode(preset)) {
+          applyToolSelection(this.inner, { preset });
+        } else {
+          applyToolSelection(this.inner, { names: command.toolNames as string[] });
+        }
         return null;
       }
 
@@ -333,13 +382,14 @@ export function destroyRpcSessionsForCwd(cwd: string): string[] {
 /**
  * Get or create an AgentSession for the given session.
  * For new sessions (sessionFile === ""), pi generates its own id.
- * Pass toolNames to pre-configure active tools (empty array = all tools disabled).
+ * Pass a tool selection to pre-configure active tools. Without one, web sessions
+ * default to all currently loaded built-in, extension, and custom tools.
  */
 export async function startRpcSession(
   sessionId: string,
   sessionFile: string,
   cwd: string,
-  toolNames?: string[]
+  toolSelection?: ToolSelection
 ): Promise<{ session: AgentSessionWrapper; realSessionId: string }> {
   const registry = getRegistry();
   const locks = getLocks();
@@ -368,18 +418,7 @@ export async function startRpcSession(
       sessionManager,
     });
 
-    // If specific tool names were requested (non-empty), narrow active tools now
-    if (toolNames && toolNames.length > 0) {
-      inner.setActiveToolsByName(toolNames);
-    }
-
-    // When all tools are disabled, deactivate everything and clear system prompt.
-    // pi's buildSystemPrompt always produces a non-empty prompt even with no tools;
-    // the only way to truly clear it is to call agent.setSystemPrompt directly.
-    if (toolNames?.length === 0) {
-      inner.setActiveToolsByName([]);
-      inner.agent.state.systemPrompt = "";
-    }
+    applyToolSelection(inner, toolSelection);
 
     const wrapper = new AgentSessionWrapper(inner, cwd);
     wrapper.start();

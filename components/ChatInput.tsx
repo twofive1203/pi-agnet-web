@@ -4,6 +4,7 @@ import React, { useRef, useState, useCallback, useEffect, useImperativeHandle, f
 import { createPortal } from "react-dom";
 import type { SlashCommandEntry } from "@/app/api/commands/route";
 import type { AttachedFile } from "@/lib/types";
+import type { ToolPreset } from "@/components/ToolPanel";
 import { encodeFilePathForApi, getFileName, getRelativeFilePath, joinFilePath } from "@/lib/file-paths";
 import { buildTrellisTaskResumePrompt, type TrellisTaskChatContext } from "@/lib/trellis-chat-context";
 
@@ -34,8 +35,8 @@ interface Props {
   onAbortCompaction?: () => void;
   isCompacting?: boolean;
   compactError?: string | null;
-  toolPreset?: "none" | "default" | "full" | "subagent";
-  onToolPresetChange?: (preset: "none" | "default" | "full" | "subagent") => void;
+  toolPreset?: ToolPreset;
+  onToolPresetChange?: (preset: ToolPreset) => void;
   thinkingLevel?: "auto" | "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
   onThinkingLevelChange?: (level: "auto" | "off" | "minimal" | "low" | "medium" | "high" | "xhigh") => void;
   availableThinkingLevels?: string[] | null;
@@ -56,8 +57,16 @@ export interface ChatInputHandle {
   addTrellisTaskContext: (context: TrellisTaskChatContext) => void;
 }
 
-const TOOL_PRESETS = ["off", "default", "full", "subagent"] as const;
-const TOOL_PRESET_MAP: Record<"off" | "default" | "full" | "subagent", "none" | "default" | "full" | "subagent"> = { off: "none", default: "default", full: "full", subagent: "subagent" };
+const TOOL_PRESET_OPTIONS = [
+  { preset: "all", label: "All", desc: "所有当前加载的工具" },
+  { preset: "read-only", label: "Read-only", desc: "只读工具" },
+  { preset: "none", label: "Off", desc: "无工具，纯聊天" },
+] as const satisfies readonly { preset: ToolPreset; label: string; desc: string }[];
+const TOOL_PRESET_LABELS: Record<ToolPreset, string> = {
+  all: "All",
+  "read-only": "Read-only",
+  none: "Off",
+};
 const COMPOSITION_END_ENTER_GRACE_MS = 100;
 
 const THINKING_LEVELS = ["auto", "off", "minimal", "low", "medium", "high", "xhigh"] as const;
@@ -1816,7 +1825,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
                   </svg>
-                  <span>{Object.entries(TOOL_PRESET_MAP).find(([, v]) => v === (toolPreset ?? "default"))?.[0] ?? "default"}</span>
+                  <span>{TOOL_PRESET_LABELS[toolPreset ?? "all"]}</span>
                 </button>
                 {toolDropdownOpen && toolDropdownRect && typeof document !== "undefined" && (() => {
                   const { bottom, right, maxHeight } = getDropdownPanelMetrics(toolDropdownRect);
@@ -1825,16 +1834,14 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                     position: "fixed", bottom, right,
                     zIndex: 500, background: "var(--bg)", border: "1px solid var(--border)",
                     borderRadius: 8, boxShadow: "0 -4px 16px rgba(0,0,0,0.10)",
-                    overflow: "hidden", minWidth: 120, maxHeight, overflowY: "auto",
+                    overflow: "hidden", minWidth: 220, maxHeight, overflowY: "auto",
                   }}>
-                    {TOOL_PRESETS.map((lvl) => {
-                      const preset = TOOL_PRESET_MAP[lvl];
-                      const isActive = (toolPreset ?? "default") === preset;
-                      const desc = lvl === "off" ? "无工具，纯聊天" : lvl === "default" ? "4 项内置工具" : lvl === "subagent" ? "全部工具 + subagent/Trellis 委派" : "全部内置工具";
+                    {TOOL_PRESET_OPTIONS.map((option) => {
+                      const isActive = (toolPreset ?? "all") === option.preset;
                       return (
                         <button
-                          key={lvl}
-                          onClick={() => { setToolDropdownOpen(false); if (!isActive) onToolPresetChange(preset); }}
+                          key={option.preset}
+                          onClick={() => { setToolDropdownOpen(false); if (!isActive) onToolPresetChange(option.preset); }}
                           style={{
                             display: "flex", alignItems: "center", gap: 8,
                             width: "100%", padding: "7px 12px",
@@ -1851,8 +1858,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                           {isActive
                             ? <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><polyline points="1.5 5 4 7.5 8.5 2.5" /></svg>
                             : <span style={{ width: 10, flexShrink: 0 }} />}
-                          <span style={{ flex: 1 }}>{lvl}</span>
-                          <span style={{ fontSize: 11, color: "var(--text-dim)", marginLeft: 8 }}>{desc}</span>
+                          <span style={{ flex: 1 }}>{option.label}</span>
+                          <span style={{ fontSize: 11, color: "var(--text-dim)", marginLeft: 8 }}>{option.desc}</span>
                         </button>
                       );
                     })}

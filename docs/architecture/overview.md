@@ -76,8 +76,9 @@ The archive directory is scanned separately from `SessionManager.listAll()` (whi
 ### Models and tools
 
 - `GET /api/models` returns `defaultModel` from `~/.pi/agent/settings.json`.
-- New-session tool names are passed to `POST /api/agent/new` as `toolNames[]`.
-- Existing sessions infer presets via `get_tools` and `getPresetFromTools()`.
+- New-session tool selection is passed to `POST /api/agent/new` as `toolPreset`: `all`, `read-only`, or `none`; legacy `toolNames[]` remains supported.
+- Web sessions default to `all`, which expands dynamically through `getAllTools()` so built-in, extension, and custom tools are enabled without editing preset constants. `read-only` enables whichever of `read`, `grep`, `find`, and `ls` are loaded.
+- Existing live sessions infer presets via `get_tools` and `getPresetFromTools()`.
 - Auth changes call `reloadRpcAuthState()` so live AgentSessions reload auth/model state. The same path also cleans pi-ai session resources because OpenAI Codex keeps reusable WebSockets keyed by session id, and those sockets must reconnect after ChatGPT account activation to pick up new auth headers.
 - ChatGPT usage auto-refresh is backend-owned, not browser-tab-owned. The scheduler state lives on `globalThis.__piChatGptUsageRefreshScheduler` and uses `~/.pi/agent/chatgpt-usage-refresh.lock` to reduce duplicate refresh loops across Node processes. Stale lock detection follows the configured refresh cycle dynamically.
 - Trellis subagent child processes resolve model policy from `pi-web.json` `trellis.subagents`: explicit tool input wins, then per-agent fixed policy, then optional route table policy, then default policy, then `.pi/agents/*` frontmatter, then Pi CLI defaults. Automatic routing is opt-in and classifies `text`/`multimodal` plus `simple`/`standard`/`complex`/`critical`; router failures fall back to configured safe route/default behavior. The default policy follows the main session model when the Pi extension context exposes it; otherwise it safely falls back to Pi default. If the selected child model process fails, existing `.pi/agents/*` `fallbackModels` frontmatter entries are retried in order; if those also fail and the main session model is known, the child finally falls back to the main session model.

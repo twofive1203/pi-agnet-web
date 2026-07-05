@@ -8,42 +8,29 @@ export interface ToolEntry {
   active: boolean;
 }
 
-export type ToolPreset = "none" | "default" | "full" | "subagent";
-export const PRESET_NONE: string[] = [];
-export const PRESET_DEFAULT: string[] = ["read", "bash", "edit", "write"];
-export const PRESET_FULL: string[] = ["bash", "read", "edit", "write", "grep", "find", "ls"];
-export const PRESET_SUBAGENT: string[] = [...PRESET_FULL, "subagent", "trellis_subagent"];
-const SUBAGENT_TOOL_NAMES = new Set(["subagent", "trellis_subagent"]);
-const BUILTIN_TOOL_NAMES = new Set(PRESET_SUBAGENT);
+export type ToolPreset = "all" | "read-only" | "none";
+
+const READ_ONLY_TOOL_NAMES = new Set(["read", "grep", "find", "ls"]);
 
 export function getPresetFromTools(tools: ToolEntry[]): ToolPreset {
   const activeTools = tools.filter(t => t.active);
   if (activeTools.length === 0) return "none";
+  if (activeTools.length === tools.length) return "all";
 
-  const activeNames = activeTools.map(t => t.name);
-  if (activeNames.some(name => SUBAGENT_TOOL_NAMES.has(name))) return "subagent";
-
-  const active = activeNames
-    .filter(name => BUILTIN_TOOL_NAMES.has(name))
-    .sort()
-    .join(",");
-
-  if (active === [...PRESET_DEFAULT].sort().join(",")) return "default";
-  if (active === [...PRESET_FULL].sort().join(",")) return "full";
-  return "default"; // closest match
+  const hasOnlyReadOnlyTools = activeTools.every(t => READ_ONLY_TOOL_NAMES.has(t.name));
+  return hasOnlyReadOnlyTools ? "read-only" : "all";
 }
 
 interface Props {
   tools: ToolEntry[];
-  onPreset: (preset: ToolPreset, toolNames: string[]) => void;
+  onPreset: (preset: ToolPreset) => void;
   onClose: () => void;
 }
 
-const PRESETS: { id: ToolPreset; label: string; desc: string; tools: string[] }[] = [
-  { id: "none",    label: "Off",  desc: "No tools",                                tools: PRESET_NONE },
-  { id: "default", label: "Low",  desc: "read · bash · edit · write",              tools: PRESET_DEFAULT },
-  { id: "full",    label: "High", desc: "read · bash · edit · write · grep · find · ls", tools: PRESET_FULL },
-  { id: "subagent", label: "Agent", desc: "High + subagent / Trellis delegation", tools: PRESET_SUBAGENT },
+const PRESETS: { id: ToolPreset; label: string; desc: string }[] = [
+  { id: "all", label: "All", desc: "All currently loaded tools" },
+  { id: "read-only", label: "Read-only", desc: "read · grep · find · ls, if available" },
+  { id: "none", label: "Off", desc: "No tools" },
 ];
 
 export function ToolPanel({ tools, onPreset, onClose }: Props) {
@@ -95,7 +82,7 @@ export function ToolPanel({ tools, onPreset, onClose }: Props) {
           return (
             <button
               key={preset.id}
-              onClick={() => { onPreset(preset.id, preset.tools); onClose(); }}
+              onClick={() => { onPreset(preset.id); onClose(); }}
               style={{
                 padding: "5px 0",
                 borderRadius: 6,

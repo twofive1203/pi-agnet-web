@@ -25,10 +25,17 @@ export async function POST(req: Request) {
     }
 
     // Use a one-time key so startRpcSession's lock doesn't conflict with real session ids
-    const { provider, modelId, toolNames, thinkingLevel, ...promptCommand } = command as { provider?: string; modelId?: string; toolNames?: string[]; thinkingLevel?: string; [key: string]: unknown };
+    const { provider, modelId, toolNames, toolPreset, thinkingLevel, ...promptCommand } = command as {
+      provider?: string;
+      modelId?: string;
+      toolNames?: string[];
+      toolPreset?: "all" | "read-only" | "none";
+      thinkingLevel?: string;
+      [key: string]: unknown;
+    };
 
     const tempKey = `__new__${Date.now()}`;
-    const { session, realSessionId } = await startRpcSession(tempKey, "", canonicalCwd, toolNames);
+    const { session, realSessionId } = await startRpcSession(tempKey, "", canonicalCwd, { preset: toolPreset, names: toolNames });
 
     // Keep allowed workspace roots in sync so brand-new cwd file/Trellis
     // requests do not have to wait for a session-list cache refresh.

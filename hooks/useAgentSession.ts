@@ -4,7 +4,7 @@ import { useState, useCallback, useRef, useEffect, useReducer } from "react";
 import type { AgentMessage, SessionInfo, SessionTreeNode } from "@/lib/types";
 import { normalizeToolCalls } from "@/lib/normalize";
 import { sendAgentCommand } from "@/lib/agent-client";
-import type { ToolEntry } from "@/components/ToolPanel";
+import type { ToolEntry, ToolPreset } from "@/components/ToolPanel";
 import type { TrellisTaskChatContext } from "@/lib/trellis-chat-context";
 
 export interface SessionData {
@@ -137,7 +137,7 @@ export interface UseAgentSessionOptions {
   onSubagentChange?: OnSubagentChange;
   autoScrollEnabled?: boolean;
   setNewSessionModel?: (model: { provider: string; modelId: string } | null) => void;
-  setToolPreset?: (preset: "none" | "default" | "full" | "subagent") => void;
+  setToolPreset?: (preset: ToolPreset) => void;
 }
 
 export type ThinkingLevelOption = "auto" | "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
@@ -248,7 +248,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [modelThinkingLevels, setModelThinkingLevels] = useState<Record<string, string[]>>({});
   const [modelThinkingLevelMaps, setModelThinkingLevelMaps] = useState<Record<string, Record<string, string | null>>>({});
   const [newSessionModel, setNewSessionModelState] = useState<{ provider: string; modelId: string } | null>(null);
-  const [toolPreset, setToolPreset] = useState<"none" | "default" | "full" | "subagent">("default");
+  const [toolPreset, setToolPreset] = useState<ToolPreset>("all");
   const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevelOption>("auto");
   const [retryInfo, setRetryInfo] = useState<{ attempt: number; maxAttempts: number; errorMessage?: string } | null>(null);
   const [contextUsage, setContextUsage] = useState<{ percent: number | null; contextWindow: number; tokens: number | null } | null>(null);
@@ -567,8 +567,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       if (isNew && newSessionCwd) {
         const selectedModel = newSessionModel;
         if (selectedModel) setPendingModel(selectedModel);
-        const { PRESET_NONE, PRESET_DEFAULT, PRESET_FULL, PRESET_SUBAGENT } = await import("@/components/ToolPanel");
-        const toolNames = toolPreset === "none" ? PRESET_NONE : toolPreset === "default" ? PRESET_DEFAULT : toolPreset === "subagent" ? PRESET_SUBAGENT : PRESET_FULL;
         const res = await fetch("/api/agent/new", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -576,7 +574,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
             cwd: newSessionCwd,
             type: "prompt",
             message,
-            toolNames,
+            toolPreset,
             ...(piImages?.length ? { images: piImages } : {}),
             ...(selectedModel ? { provider: selectedModel.provider, modelId: selectedModel.modelId } : {}),
             ...(thinkingLevel !== "auto" ? { thinkingLevel } : {}),
@@ -745,14 +743,12 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     }
   }, []);
 
-  const handleToolPresetChange = useCallback(async (preset: "none" | "default" | "full" | "subagent") => {
-    const { PRESET_NONE, PRESET_DEFAULT, PRESET_FULL, PRESET_SUBAGENT } = await import("@/components/ToolPanel");
-    const toolNames = preset === "none" ? PRESET_NONE : preset === "default" ? PRESET_DEFAULT : preset === "subagent" ? PRESET_SUBAGENT : PRESET_FULL;
+  const handleToolPresetChange = useCallback(async (preset: ToolPreset) => {
     setToolPresetState(preset);
     const sid = sessionIdRef.current;
     if (!sid) return;
     try {
-      await sendAgentCommand(sid, { type: "set_tools", toolNames });
+      await sendAgentCommand(sid, { type: "set_tools", toolPreset: preset });
     } catch (e) {
       console.error("Failed to set tools:", e);
     }
