@@ -436,3 +436,36 @@ Analyzed chat tool presets, fixed mobile model/thinking/tool dropdowns by portal
 ### Next Steps
 
 - None - task complete
+
+
+## Session 40: Provider model discovery
+
+**Date**: 2026-07-07
+**Task**: Provider model discovery
+**Branch**: `main`
+
+### Summary
+
+Added server-side OpenAI-compatible provider model discovery, searchable grouped import UI with staged add/remove, and route/module documentation updates.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `fd34d7d` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
