@@ -22,7 +22,8 @@ API routes live under `app/api/`. When adding, removing, or changing routes, upd
 | `files/references/` | GET | Lightweight workspace text/code symbol reference search for editor “find usages” actions. |
 | `files/upload/` | POST | Upload files for chat/file workflows. |
 | `models/` | GET | List available models and default model. |
-| `models-config/` | GET/POST | Read/write `~/.pi/agent/models.json`. |
+| `models-config/` | GET/PUT | Read/write `~/.pi/agent/models.json`. |
+| `models-config/discover/` | POST | Fetch an OpenAI-compatible draft provider's remote `/models` list server-side and return selectable model candidates without mutating `models.json`. |
 | `models-config/test/` | POST | Test a model config with a completion request. |
 | `skills/` | GET | List installed skills for a cwd. |
 | `skills/search/` | GET | Search skills.sh for available skills. |

@@ -197,6 +197,32 @@ type ModelTestState =
   | { phase: "success"; latencyMs?: number; status?: number; responseText?: string }
   | { phase: "error"; message: string; latencyMs?: number; status?: number };
 
+interface DiscoveredModelCandidate {
+  id: string;
+  name?: string;
+  ownedBy?: string;
+}
+
+type DiscoverModelsResponse =
+  | { ok: true; url: string; triedUrls: string[]; models: DiscoveredModelCandidate[] }
+  | { ok: false; error: string; triedUrls?: string[]; status?: number; responseText?: string };
+
+type ModelDiscoveryState =
+  | { phase: "idle" }
+  | { phase: "loading" }
+  | { phase: "success"; url: string; triedUrls: string[]; models: DiscoveredModelCandidate[]; searchQuery: string; collapsedGroups: Record<string, boolean>; message?: string }
+  | { phase: "error"; message: string; triedUrls?: string[]; status?: number; responseText?: string };
+
+interface DiscoveredModelGroup {
+  owner: string;
+  models: DiscoveredModelCandidate[];
+}
+
+interface DiscoveredModelChangeResult {
+  ok: boolean;
+  message?: string;
+}
+
 type Selection =
   | { type: "provider"; name: string }
   | { type: "model"; providerName: string; index: number }
@@ -204,6 +230,7 @@ type Selection =
   | { type: "apikey"; providerId: string };
 
 const API_OPTIONS = ["openai-completions", "openai-responses", "anthropic-messages", "google-generative-ai"] as const;
+const discoveredModelCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 
 // ── Form field helpers ────────────────────────────────────────────────────────
 
@@ -338,13 +365,46 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
   return <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 2 }}>{children}</div>;
 }
 
+function getDiscoveredModelOwner(candidate: DiscoveredModelCandidate): string {
+  const owner = candidate.ownedBy?.trim();
+  return owner || "unknown";
+}
+
+function filterDiscoveredModels(models: DiscoveredModelCandidate[], query: string): DiscoveredModelCandidate[] {
+  const normalized = query.trim().toLowerCase();
+  if (!normalized) return models;
+  return models.filter((candidate) => {
+    const owner = getDiscoveredModelOwner(candidate).toLowerCase();
+    return candidate.id.toLowerCase().includes(normalized)
+      || owner.includes(normalized)
+      || (candidate.name?.toLowerCase().includes(normalized) ?? false);
+  });
+}
+
+function groupDiscoveredModels(models: DiscoveredModelCandidate[]): DiscoveredModelGroup[] {
+  const groups = new Map<string, DiscoveredModelCandidate[]>();
+  for (const candidate of models) {
+    const owner = getDiscoveredModelOwner(candidate);
+    groups.set(owner, [...(groups.get(owner) ?? []), candidate]);
+  }
+  return [...groups.entries()]
+    .map(([owner, items]) => ({
+      owner,
+      models: items.sort((a, b) => discoveredModelCollator.compare(a.id, b.id)),
+    }))
+    .sort((a, b) => discoveredModelCollator.compare(a.owner, b.owner));
+}
+
 // ── Provider detail ───────────────────────────────────────────────────────────
 
-function ProviderDetail({ name, provider, onChange, onRename, onDelete }: {
+function ProviderDetail({ name, provider, onChange, onRename, onDelete, onAddDiscoveredModel, onRemoveDiscoveredModel }: {
   name: string; provider: ProviderEntry;
   onChange: (p: ProviderEntry) => void; onRename: (n: string) => void; onDelete: () => void;
+  onAddDiscoveredModel: (candidate: DiscoveredModelCandidate) => DiscoveredModelChangeResult;
+  onRemoveDiscoveredModel: (modelId: string) => DiscoveredModelChangeResult;
 }) {
   const [editingName, setEditingName] = useState(name);
+  const [discoveryState, setDiscoveryState] = useState<ModelDiscoveryState>({ phase: "idle" });
   useEffect(() => setEditingName(name), [name]);
   const set = <K extends keyof ProviderEntry>(k: K, v: ProviderEntry[K]) => onChange({ ...provider, [k]: v });
 
@@ -352,6 +412,102 @@ function ProviderDetail({ name, provider, onChange, onRename, onDelete }: {
     if (!provider.api) onChange({ ...provider, api: "openai-completions" });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [provider.api]);
+
+  useEffect(() => {
+    setDiscoveryState({ phase: "idle" });
+  }, [name, provider.baseUrl, provider.api, provider.apiKey]);
+
+  const providerModelIds = new Set((provider.models ?? []).map((model) => model.id).filter(Boolean));
+  const isOpenAICompatible = provider.api === "openai-completions" || provider.api === "openai-responses";
+  const discoveryDisabledReason = !isOpenAICompatible
+    ? "Model discovery is available for OpenAI-compatible providers only."
+    : !provider.baseUrl?.trim()
+      ? "Set a Base URL before fetching models."
+      : !provider.apiKey?.trim()
+        ? "Set an API key before fetching models."
+        : null;
+  const discoveryModels = discoveryState.phase === "success" ? discoveryState.models : [];
+  const discoverySearchQuery = discoveryState.phase === "success" ? discoveryState.searchQuery : "";
+  const filteredDiscoveryModels = discoveryState.phase === "success" ? filterDiscoveredModels(discoveryState.models, discoverySearchQuery) : [];
+  const discoveryGroups = groupDiscoveredModels(filteredDiscoveryModels);
+
+  const formatDiscoveryFailure = useCallback((data: DiscoverModelsResponse, status: number): string => {
+    if (data.ok) return "";
+    return [
+      data.error || `HTTP ${status}`,
+      data.status !== undefined ? `remote HTTP ${data.status}` : null,
+      data.triedUrls?.length ? `tried ${data.triedUrls.join(", ")}` : null,
+      data.responseText ? `response: ${data.responseText}` : null,
+    ].filter(Boolean).join(" · ");
+  }, []);
+
+  const handleDiscoverModels = useCallback(async () => {
+    if (discoveryState.phase === "loading") return;
+    if (discoveryDisabledReason) {
+      setDiscoveryState({ phase: "error", message: discoveryDisabledReason });
+      return;
+    }
+
+    setDiscoveryState({ phase: "loading" });
+    try {
+      const res = await fetch("/api/models-config/discover", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ providerName: name, provider }),
+      });
+      const data = await res.json().catch((): DiscoverModelsResponse => ({ ok: false, error: `HTTP ${res.status}` })) as DiscoverModelsResponse;
+      if (!res.ok || !data.ok) {
+        setDiscoveryState({
+          phase: "error",
+          message: formatDiscoveryFailure(data, res.status),
+          ...(!data.ok && data.triedUrls ? { triedUrls: data.triedUrls } : {}),
+          ...(!data.ok && data.status !== undefined ? { status: data.status } : {}),
+          ...(!data.ok && data.responseText ? { responseText: data.responseText } : {}),
+        });
+        return;
+      }
+
+      setDiscoveryState({
+        phase: "success",
+        url: data.url,
+        triedUrls: data.triedUrls,
+        models: data.models,
+        searchQuery: "",
+        collapsedGroups: {},
+        message: data.models.length === 0 ? "Fetched the model list, but no models were returned." : undefined,
+      });
+    } catch (error) {
+      setDiscoveryState({ phase: "error", message: error instanceof Error ? error.message : String(error) });
+    }
+  }, [discoveryDisabledReason, discoveryState.phase, formatDiscoveryFailure, name, provider]);
+
+  const handleAddDiscoveredModel = useCallback((candidate: DiscoveredModelCandidate) => {
+    if (discoveryState.phase !== "success") return;
+    const result = onAddDiscoveredModel(candidate);
+    setDiscoveryState({
+      ...discoveryState,
+      message: result.message ?? (result.ok ? `Added ${candidate.id}. Click Save to persist it.` : "Could not add the selected model."),
+    });
+  }, [discoveryState, onAddDiscoveredModel]);
+
+  const handleRemoveDiscoveredModel = useCallback((modelId: string) => {
+    if (discoveryState.phase !== "success") return;
+    const result = onRemoveDiscoveredModel(modelId);
+    setDiscoveryState({
+      ...discoveryState,
+      message: result.message ?? (result.ok ? `Removed ${modelId}. Click Save to persist it.` : "Could not remove the selected model."),
+    });
+  }, [discoveryState, onRemoveDiscoveredModel]);
+
+  const setDiscoverySearchQuery = useCallback((query: string) => {
+    setDiscoveryState((prev) => prev.phase === "success" ? { ...prev, searchQuery: query, message: undefined } : prev);
+  }, []);
+
+  const toggleDiscoveryGroup = useCallback((owner: string) => {
+    setDiscoveryState((prev) => prev.phase === "success"
+      ? { ...prev, collapsedGroups: { ...prev.collapsedGroups, [owner]: !prev.collapsedGroups[owner] } }
+      : prev);
+  }, []);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -389,6 +545,107 @@ function ProviderDetail({ name, provider, onChange, onRename, onDelete }: {
       <Field label="API">
         <Select value={provider.api ?? "openai-completions"} onChange={(v) => set("api", v)} options={API_OPTIONS} required />
       </Field>
+
+      <div style={{ border: "1px solid var(--border)", borderRadius: 6, background: "var(--bg-panel)", padding: 12, display: "flex", flexDirection: "column", gap: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            <SectionTitle>Discover models</SectionTitle>
+            <span style={{ fontSize: 11, color: "var(--text-dim)" }}>Fetches the provider&apos;s OpenAI-compatible model list. Additions stay staged until Save.</span>
+          </div>
+          <button
+            type="button"
+            onClick={handleDiscoverModels}
+            disabled={Boolean(discoveryDisabledReason) || discoveryState.phase === "loading"}
+            style={{ padding: "5px 11px", background: !discoveryDisabledReason && discoveryState.phase !== "loading" ? "var(--accent)" : "var(--bg)", border: "1px solid var(--border)", borderRadius: 5, color: !discoveryDisabledReason && discoveryState.phase !== "loading" ? "#fff" : "var(--text-dim)", cursor: !discoveryDisabledReason && discoveryState.phase !== "loading" ? "pointer" : "not-allowed", fontSize: 11, fontWeight: 600, flexShrink: 0 }}
+          >
+            {discoveryState.phase === "loading" ? "Fetching…" : "Fetch models"}
+          </button>
+        </div>
+
+        {discoveryDisabledReason && (
+          <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.5 }}>{discoveryDisabledReason}</div>
+        )}
+
+        {discoveryState.phase === "loading" && (
+          <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5 }}>Fetching remote model list…</div>
+        )}
+
+        {discoveryState.phase === "error" && (
+          <div style={{ fontSize: 12, color: "#f87171", lineHeight: 1.5 }}>{discoveryState.message}</div>
+        )}
+
+        {discoveryState.phase === "success" && (
+          <>
+            <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5 }}>
+              {discoveryModels.length === 0 ? "No models returned." : `Fetched ${discoveryModels.length} model${discoveryModels.length === 1 ? "" : "s"} from ${discoveryState.url}`}
+            </div>
+            {discoveryModels.length > 0 && (
+              <>
+                <Field label="Search models">
+                  <TextInput
+                    value={discoverySearchQuery}
+                    onChange={setDiscoverySearchQuery}
+                    placeholder="Model ID, name, or owner"
+                    mono
+                  />
+                </Field>
+                <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.4 }}>
+                  Showing {filteredDiscoveryModels.length} of {discoveryModels.length} model{discoveryModels.length === 1 ? "" : "s"}
+                </div>
+                {discoveryGroups.length === 0 ? (
+                  <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.5 }}>No models match the search.</div>
+                ) : (
+                  <div style={{ border: "1px solid var(--border)", borderRadius: 6, overflow: "hidden", background: "var(--bg)", maxHeight: 360, overflowY: "auto" }}>
+                    {discoveryGroups.map((group) => {
+                      const collapsed = discoveryState.collapsedGroups[group.owner] ?? false;
+                      return (
+                        <div key={group.owner}>
+                          <button
+                            type="button"
+                            onClick={() => toggleDiscoveryGroup(group.owner)}
+                            style={{ width: "100%", padding: "8px 10px", border: "none", borderBottom: collapsed ? "1px solid var(--border)" : "1px solid var(--border)", background: "var(--bg-hover)", color: "var(--text)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, textAlign: "left" }}
+                          >
+                            <span style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                              <span style={{ color: "var(--accent)", fontSize: 14, lineHeight: 1 }}>{collapsed ? "›" : "⌄"}</span>
+                              <span style={{ fontSize: 12, fontWeight: 700, color: "var(--accent)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{group.owner}</span>
+                            </span>
+                            <span style={{ fontSize: 11, color: "var(--text-muted)", border: "1px solid var(--border)", borderRadius: 999, padding: "2px 7px", flexShrink: 0 }}>{group.models.length} model{group.models.length === 1 ? "" : "s"}</span>
+                          </button>
+                          {!collapsed && group.models.map((candidate) => {
+                            const added = providerModelIds.has(candidate.id);
+                            return (
+                              <div key={`${group.owner}:${candidate.id}`} style={{ display: "grid", gridTemplateColumns: "1fr 34px", gap: 10, alignItems: "center", padding: "9px 10px", borderBottom: "1px solid var(--border)" }}>
+                                <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 3 }}>
+                                  <span title={candidate.id} style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", fontFamily: "var(--font-mono)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{candidate.id}</span>
+                                  <span style={{ fontSize: 11, color: "var(--text-dim)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                    owned by {group.owner}{candidate.name && candidate.name !== candidate.id ? ` · ${candidate.name}` : ""}{added ? " · added" : ""}
+                                  </span>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => added ? handleRemoveDiscoveredModel(candidate.id) : handleAddDiscoveredModel(candidate)}
+                                  aria-label={added ? `Remove ${candidate.id}` : `Add ${candidate.id}`}
+                                  title={added ? "Remove from staged models" : "Add to staged models"}
+                                  style={{ width: 30, height: 30, padding: 0, border: "1px solid var(--border)", borderRadius: 6, background: "var(--bg-panel)", color: added ? "#fb7185" : "#34d399", cursor: "pointer", fontSize: 17, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", lineHeight: 1 }}
+                                >
+                                  {added ? "-" : "+"}
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
+            )}
+            {discoveryState.message && (
+              <div style={{ fontSize: 12, color: discoveryState.message.includes("already exists") ? "#fb923c" : "var(--text-dim)", lineHeight: 1.5 }}>{discoveryState.message}</div>
+            )}
+          </>
+        )}
+      </div>
     </div>
   );
 }
@@ -2515,6 +2772,62 @@ export function ModelsConfig({ onClose }: { onClose: () => void }) {
     });
   }, []);
 
+  const addDiscoveredModel = useCallback((providerName: string, candidate: DiscoveredModelCandidate): DiscoveredModelChangeResult => {
+    const provider = config.providers?.[providerName];
+    if (!provider) return { ok: false, message: `Provider not found: ${providerName}` };
+
+    const models = provider.models ?? [];
+    if (models.some((model) => model.id === candidate.id)) {
+      return { ok: false, message: `Model "${candidate.id}" already exists under this provider.` };
+    }
+
+    const model: ModelEntry = candidate.name ? { id: candidate.id, name: candidate.name } : { id: candidate.id };
+    setConfig((prev) => {
+      const currentProvider = prev.providers?.[providerName] ?? {};
+      const currentModels = currentProvider.models ?? [];
+      if (currentModels.some((existing) => existing.id === candidate.id)) return prev;
+      return {
+        ...prev,
+        providers: {
+          ...(prev.providers ?? {}),
+          [providerName]: { ...currentProvider, models: [...currentModels, model] },
+        },
+      };
+    });
+    return { ok: true, message: `Added ${candidate.id}. Select it from the model list to review it, then click Save to persist it.` };
+  }, [config.providers]);
+
+  const removeDiscoveredModel = useCallback((providerName: string, modelId: string): DiscoveredModelChangeResult => {
+    const provider = config.providers?.[providerName];
+    if (!provider) return { ok: false, message: `Provider not found: ${providerName}` };
+
+    const models = provider.models ?? [];
+    const index = models.findIndex((model) => model.id === modelId);
+    if (index === -1) return { ok: false, message: `Model "${modelId}" is not currently added under this provider.` };
+
+    setConfig((prev) => {
+      const currentProvider = prev.providers?.[providerName] ?? {};
+      const currentModels = [...(currentProvider.models ?? [])];
+      const currentIndex = currentModels.findIndex((model) => model.id === modelId);
+      if (currentIndex === -1) return prev;
+      currentModels.splice(currentIndex, 1);
+      return {
+        ...prev,
+        providers: {
+          ...(prev.providers ?? {}),
+          [providerName]: { ...currentProvider, models: currentModels.length ? currentModels : undefined },
+        },
+      };
+    });
+    setSelection((prev) => {
+      if (!prev || prev.type !== "model" || prev.providerName !== providerName) return prev;
+      if (prev.index === index) return { type: "provider", name: providerName };
+      if (prev.index > index) return { ...prev, index: prev.index - 1 };
+      return prev;
+    });
+    return { ok: true, message: `Removed ${modelId}. Click Save to persist it.` };
+  }, [config.providers]);
+
   const updateModel = useCallback((providerName: string, index: number, m: ModelEntry) => {
     setConfig((prev) => {
       const provider = prev.providers?.[providerName] ?? {};
@@ -2582,6 +2895,8 @@ export function ModelsConfig({ onClose }: { onClose: () => void }) {
           onChange={(p) => updateProvider(selection.name, p)}
           onRename={(n) => renameProvider(selection.name, n)}
           onDelete={() => deleteProvider(selection.name)}
+          onAddDiscoveredModel={(candidate) => addDiscoveredModel(selection.name, candidate)}
+          onRemoveDiscoveredModel={(modelId) => removeDiscoveredModel(selection.name, modelId)}
         />
       );
     }
