@@ -177,23 +177,40 @@ function filterSlashCommands(commands: SlashCommandEntry[], query: string): Slas
       const name = command.name.toLowerCase();
       const bareSkillName = command.source === "skill" ? name.replace(/^skill:/, "") : name;
 
-      if (!normalizedQuery) return { ...command, priority: command.source === "prompt" ? 0 : 1 };
+      if (!normalizedQuery) return { ...command, priority: command.source === "extension" ? 0 : command.source === "prompt" ? 1 : 2 };
       if (skillPrefixQuery) {
         return name.startsWith(normalizedQuery) ? { ...command, priority: 0 } : null;
       }
-      if (command.source === "prompt" && name.startsWith(normalizedQuery)) return { ...command, priority: 0 };
-      if (command.source === "skill" && bareSkillName.startsWith(normalizedQuery)) return { ...command, priority: 1 };
-      if (command.source === "prompt" && name.includes(normalizedQuery)) return { ...command, priority: 2 };
-      if (command.source === "skill" && bareSkillName.includes(normalizedQuery)) return { ...command, priority: 3 };
+      if (command.source === "extension" && name.startsWith(normalizedQuery)) return { ...command, priority: 0 };
+      if (command.source === "prompt" && name.startsWith(normalizedQuery)) return { ...command, priority: 1 };
+      if (command.source === "skill" && bareSkillName.startsWith(normalizedQuery)) return { ...command, priority: 2 };
+      if (command.source === "extension" && name.includes(normalizedQuery)) return { ...command, priority: 3 };
+      if (command.source === "prompt" && name.includes(normalizedQuery)) return { ...command, priority: 4 };
+      if (command.source === "skill" && bareSkillName.includes(normalizedQuery)) return { ...command, priority: 5 };
       return null;
     })
     .filter((command): command is SlashCommandOption => command !== null)
     .sort((a, b) => {
       if (a.priority !== b.priority) return a.priority - b.priority;
-      if (a.source !== b.source) return a.source === "prompt" ? -1 : 1;
+      if (a.source !== b.source) {
+        const order = { extension: 0, prompt: 1, skill: 2 } as const;
+        return order[a.source] - order[b.source];
+      }
       return a.name.localeCompare(b.name);
     })
     .slice(0, MAX_SLASH_COMMANDS);
+}
+
+function describeSlashCommand(command: SlashCommandEntry): string {
+  if (command.description) return command.description;
+  if (command.source === "extension") return "Pi extension command";
+  if (command.source === "skill") return "Pi skill";
+  return "Prompt template";
+}
+
+function slashCommandSourceLabel(command: SlashCommandEntry): string {
+  const label = command.source === "extension" ? "extension" : command.source === "skill" ? "skill" : "template";
+  return `${label}${command.location ? ` · ${command.location}` : ""}`;
 }
 
 const THINKING_LEVEL_DESC: Record<typeof THINKING_LEVELS[number], string> = {
@@ -1240,14 +1257,14 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               }}
             >
               <div style={{ padding: "7px 10px", fontSize: 11, color: "var(--text-dim)", borderBottom: "1px solid var(--border)" }}>
-                Slash commands · skills and prompt templates
+                Slash commands · extensions, skills and prompt templates
               </div>
               {slashCommandsLoading ? (
                 <div style={{ padding: "10px 12px", fontSize: 12, color: "var(--text-muted)" }}>Loading commands…</div>
               ) : slashCommandsError ? (
                 <div style={{ padding: "10px 12px", fontSize: 12, color: "#ef4444" }}>Failed to load commands: {slashCommandsError}</div>
               ) : filteredSlashCommands.length === 0 ? (
-                <div style={{ padding: "10px 12px", fontSize: 12, color: "var(--text-muted)" }}>No matching skill or template commands</div>
+                <div style={{ padding: "10px 12px", fontSize: 12, color: "var(--text-muted)" }}>No matching extension, skill or template commands</div>
               ) : (
                 filteredSlashCommands.map((command, index) => {
                   const selected = index === slashSelectedIndex;
@@ -1282,10 +1299,10 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                           {command.argumentHint && (
                             <span style={{ color: "var(--text)", fontFamily: "var(--font-mono)", marginRight: 8 }}>{command.argumentHint}</span>
                           )}
-                          {command.description || (command.source === "skill" ? "Pi skill" : "Prompt template")}
+                          {describeSlashCommand(command)}
                         </span>
                         <span style={{ fontSize: 10, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                          {command.source === "skill" ? "skill" : "template"}{command.location ? ` · ${command.location}` : ""}
+                          {slashCommandSourceLabel(command)}
                         </span>
                       </span>
                     </button>

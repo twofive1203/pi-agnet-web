@@ -3,6 +3,8 @@ import { cleanupSessionResources } from "@earendil-works/pi-ai";
 import { cacheSessionPath } from "./session-reader";
 import { recordSessionFileChangeEvent } from "./session-file-changes";
 import { canonicalizeCwd } from "./cwd";
+import { preparePiRuntimeEnvironment } from "./pi-runtime-resolver";
+import { ExtensionWebUiBridge } from "./extension-web-ui";
 import type { AgentSessionLike, ToolInfo } from "./pi-types";
 
 // ============================================================================
@@ -70,9 +72,15 @@ export class AgentSessionWrapper {
   private unsubscribe: (() => void) | null = null;
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
   private onDestroyCallback: (() => void) | null = null;
+  private extensionUiBridge: ExtensionWebUiBridge;
   private _alive = true;
 
-  constructor(public readonly inner: AgentSessionLike, public readonly cwd: string) {}
+  constructor(public readonly inner: AgentSessionLike, public readonly cwd: string) {
+    this.extensionUiBridge = new ExtensionWebUiBridge(
+      (event) => this.emitEvent(event),
+      () => this.listeners.length > 0,
+    );
+  }
 
   get sessionId(): string {
     return this.inner.sessionId;
@@ -122,10 +130,55 @@ export class AgentSessionWrapper {
 
   onEvent(listener: EventListener): () => void {
     this.listeners.push(listener);
+    for (const event of this.extensionUiBridge.getPendingEvents()) listener(event);
     return () => {
       const i = this.listeners.indexOf(listener);
       if (i !== -1) this.listeners.splice(i, 1);
     };
+  }
+
+  emitEvent(event: AgentEvent): void {
+    for (const listener of this.listeners) listener(event);
+  }
+
+  async bindExtensions(): Promise<void> {
+    if (!this.inner.bindExtensions) return;
+
+    await this.inner.bindExtensions({
+      uiContext: this.extensionUiBridge.createContext(),
+      mode: "rpc",
+      commandContextActions: {
+        waitForIdle: async () => {
+          await this.inner.agent.waitForIdle?.();
+        },
+        newSession: async () => {
+          this.emitEvent({ type: "extension_error", extensionPath: "<webui-extension-host>", event: "newSession", error: "Extension-driven new sessions are not supported in WebUI yet" });
+          return { cancelled: true };
+        },
+        fork: async () => {
+          this.emitEvent({ type: "extension_error", extensionPath: "<webui-extension-host>", event: "fork", error: "Extension-driven forks are not supported in WebUI yet" });
+          return { cancelled: true };
+        },
+        navigateTree: async (targetId: string, options?: { summarize?: boolean; customInstructions?: string; replaceInstructions?: boolean; label?: string }) => {
+          const result = await this.inner.navigateTree(targetId, {
+            summarize: options?.summarize,
+          });
+          return { cancelled: result.cancelled };
+        },
+        switchSession: async () => {
+          this.emitEvent({ type: "extension_error", extensionPath: "<webui-extension-host>", event: "switchSession", error: "Extension-driven session switching is not supported in WebUI yet" });
+          return { cancelled: true };
+        },
+        reload: async () => {
+          await this.inner.reload?.();
+          this.emitEvent({ type: "extension_ui_request", id: `reload-${Date.now()}`, method: "notify", message: "Pi extensions, skills, prompts, and themes reloaded.", notifyType: "info" });
+        },
+      },
+      shutdownHandler: () => this.destroy(),
+      onError: (error: { extensionPath: string; event: string; error: string }) => {
+        this.emitEvent({ type: "extension_error", extensionPath: error.extensionPath, event: error.event, error: error.error });
+      },
+    });
   }
 
   onDestroy(cb: () => void): void {
@@ -285,6 +338,11 @@ export class AgentSessionWrapper {
         return null;
       }
 
+      case "extension_ui_response": {
+        const handled = this.extensionUiBridge.respond(command as { id: string; cancelled?: boolean; value?: string; confirmed?: boolean });
+        return { handled };
+      }
+
       case "abort_compaction": {
         this.inner.abortCompaction();
         return null;
@@ -305,6 +363,7 @@ export class AgentSessionWrapper {
     this._alive = false;
     if (this.idleTimer) clearTimeout(this.idleTimer);
     this.unsubscribe?.();
+    this.extensionUiBridge.rejectAll();
     try {
       this.inner.dispose?.();
     } catch {
@@ -403,6 +462,7 @@ export async function startRpcSession(
   const starting = (async () => {
     const { SessionManager, getAgentDir } = await import("@earendil-works/pi-coding-agent");
     const agentDir = getAgentDir();
+    preparePiRuntimeEnvironment({ cwd, agentDir });
 
     const sessionManager = sessionFile
       ? SessionManager.open(sessionFile, undefined)
@@ -412,16 +472,20 @@ export async function startRpcSession(
     // The `tools` param acts as a global allowlist that filters out extension
     // tools (e.g. `subagent` from pi-subagents). Instead, let all built-in and
     // extension tools load, then control activation via setActiveToolsByName.
-    const { session: inner } = await createAgentSession({
+    const { session: inner, extensionsResult } = await createAgentSession({
       cwd,
       agentDir,
       sessionManager,
     });
 
-    applyToolSelection(inner, toolSelection);
-
     const wrapper = new AgentSessionWrapper(inner, cwd);
     wrapper.start();
+    await wrapper.bindExtensions();
+    for (const error of extensionsResult.errors ?? []) {
+      wrapper.emitEvent({ type: "extension_error", extensionPath: error.path, event: "load", error: error.error });
+    }
+
+    applyToolSelection(inner, toolSelection);
 
     const realSessionId = inner.sessionId as string;
     const realSessionFile = inner.sessionFile as string | undefined;

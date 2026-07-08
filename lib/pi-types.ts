@@ -127,7 +127,7 @@ export interface AgentSessionLike {
   };
   readonly sessionManager: SessionManager;
   readonly settingsManager: SettingsManager;
-  readonly agent: { state?: { systemPrompt?: string; thinkingLevel?: string } };
+  readonly agent: { state?: { systemPrompt?: string; thinkingLevel?: string }; waitForIdle?: () => Promise<void> };
   readonly extensionRunner: ExtensionRunnerLike;
   readonly promptTemplates: readonly PromptTemplateLike[];
   readonly resourceLoader: ResourceLoaderLike;
@@ -155,5 +155,7 @@ export interface AgentSessionLike {
   setActiveToolsByName(names: string[]): void;
   abortCompaction(): void;
   getContextUsage(): ContextUsage | undefined;
+  reload?(options?: { beforeSessionStart?: () => Promise<void> | void }): Promise<void>;
+  bindExtensions?(bindings: unknown): Promise<void>;
   dispose?(): void;
 }

@@ -117,6 +117,38 @@ function resultIndexForRun(runId: string, toolCallId: string): number | null {
   return null;
 }
 
+type ExtensionUiRequestEvent = AgentEvent & {
+  id: string;
+  method: string;
+  title?: string;
+  message?: string;
+  notifyType?: "info" | "warning" | "error";
+  options?: string[];
+  placeholder?: string;
+  prefill?: string;
+  statusKey?: string;
+  statusText?: string;
+  widgetKey?: string;
+  widgetLines?: string[];
+  titleText?: string;
+  text?: string;
+};
+
+function formatExtensionNotification(event: ExtensionUiRequestEvent): string {
+  const prefix = event.notifyType && event.notifyType !== "info" ? `[${event.notifyType}] ` : "";
+  return `${prefix}${event.message ?? ""}`;
+}
+
+function selectExtensionOption(title: string, options: string[]): string | undefined {
+  if (options.length === 0) return undefined;
+  const promptText = `${title}\n\n${options.map((option, index) => `${index + 1}. ${option}`).join("\n")}\n\nEnter a number or exact value:`;
+  const value = window.prompt(promptText);
+  if (value === null) return undefined;
+  const index = Number(value.trim());
+  if (Number.isInteger(index) && index >= 1 && index <= options.length) return options[index - 1];
+  return options.find((option) => option === value.trim());
+}
+
 export type AgentPhase =
   | { kind: "waiting_model" }
   | { kind: "running_tools"; tools: { id: string; name: string }[] }
@@ -230,6 +262,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const {
     session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked,
     modelsRefreshKey, onBranchDataChange, onSystemPromptChange, onSubagentChange,
+    chatInputRef,
     autoScrollEnabled = true,
   } = opts;
 
@@ -403,6 +436,57 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
 
   const handleAgentEvent = useCallback((event: AgentEvent) => {
     switch (event.type) {
+      case "extension_ui_request": {
+        const request = event as ExtensionUiRequestEvent;
+        const sid = sessionIdRef.current;
+        const respond = (response: Record<string, unknown>) => {
+          if (!sid) return;
+          sendAgentCommand(sid, { type: "extension_ui_response", id: request.id, ...response }).catch((error) => {
+            console.error("Failed to respond to extension UI request:", error);
+          });
+        };
+
+        if (request.method === "notify") {
+          window.setTimeout(() => window.alert(formatExtensionNotification(request)), 0);
+          break;
+        }
+        if (request.method === "confirm") {
+          const confirmed = window.confirm(`${request.title ?? "Confirm"}\n\n${request.message ?? ""}`);
+          respond({ confirmed });
+          break;
+        }
+        if (request.method === "select") {
+          const value = selectExtensionOption(request.title ?? "Select an option", request.options ?? []);
+          respond(value === undefined ? { cancelled: true } : { value });
+          break;
+        }
+        if (request.method === "input") {
+          const value = window.prompt(request.title ?? "Input", request.placeholder ?? "");
+          respond(value === null ? { cancelled: true } : { value });
+          break;
+        }
+        if (request.method === "editor") {
+          const value = window.prompt(request.title ?? "Edit", request.prefill ?? "");
+          respond(value === null ? { cancelled: true } : { value });
+          break;
+        }
+        if (request.method === "setTitle" && typeof request.title === "string") {
+          document.title = request.title;
+          break;
+        }
+        if (request.method === "set_editor_text" && typeof request.text === "string") {
+          chatInputRef?.current?.insertIfEmpty(request.text);
+          break;
+        }
+        if (request.method === "setStatus" || request.method === "setWidget") {
+          console.info("Pi extension UI update", request);
+          break;
+        }
+        break;
+      }
+      case "extension_error":
+        console.error("Pi extension error", event);
+        break;
       case "agent_start":
         setAgentRunning(true);
         setAgentPhase({ kind: "waiting_model" });
@@ -540,7 +624,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         }
         break;
     }
-  }, [loadSession, onAgentEnd]);
+  }, [chatInputRef, loadSession, onAgentEnd]);
   handleAgentEventRef.current = handleAgentEvent;
 
   const handleSend = useCallback(async (message: string, images?: AttachedImage[]) => {

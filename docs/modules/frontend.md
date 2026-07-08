@@ -7,7 +7,7 @@
 | `components/AppShell.tsx` | Top-level layout, URL state, tab management, Web Terminal bottom-dock toggling, right drawer mode switching between files and optional Trellis tasks, and Trellis-task-to-chat context block insertion. |
 | `components/SessionSidebar.tsx` | Session tree sidebar, workspace/WorkTree picker actions grouped by main workspace, archive/unarchive actions, archived section, multi-select batch archive, and integrated file explorer. |
 | `components/ChatWindow.tsx` | Message list, SSE streaming, fork/navigate logic. Shows archived banner and disables input for archived sessions. |
-| `components/ChatInput.tsx` | Input bar, model dropdown, thinking level, tool preset, image upload, file-reference chips, and serialized Trellis task context blocks. |
+| `components/ChatInput.tsx` | Input bar, model dropdown, thinking level, tool preset, image upload, file-reference chips, serialized Trellis task context blocks, and slash-command autocomplete for extension commands, prompts, and skills. |
 | `components/ChatGptUsagePanel.tsx` | Optional semi-transparent top-bar ChatGPT/Codex quota panel; reads and periodically revalidates cached active-account usage and reset-credit availability, reloads accounts on expand, lists saved accounts with quick activation, supports manual quota refresh and confirmed reset-credit consumption for the active account, and shows backend auto-refresh scheduler/lock maintenance state. |
 | `components/ChatGptWarmupDialog.tsx` | ChatGPT/Codex warmup management dialog opened from the saved-account management area; supports manual multi-select warmup, scheduled warmup account/time settings, and recent manual/scheduled run history. |
 | `components/MessageView.tsx` | Render user, assistant, tool-call, and tool-result messages. |
@@ -43,7 +43,7 @@
 
 | File | Purpose |
 | --- | --- |
-| `hooks/useAgentSession.ts` | Central chat/session hook: data loading, SSE, streaming state, commands, tools, models, thinking levels, and subagent run/routing metadata. |
+| `hooks/useAgentSession.ts` | Central chat/session hook: data loading, SSE, streaming state, commands, tools, models, thinking levels, subagent run/routing metadata, and simple browser-mediated Pi extension UI requests. |
 | `hooks/useTheme.ts` | Dark/light theme toggle with view-transition animation. |
 | `hooks/useDragDrop.ts` | Drag-and-drop image attachment handler. |
 | `hooks/useAudio.ts` | Sound toggle and completion chime playback. |
