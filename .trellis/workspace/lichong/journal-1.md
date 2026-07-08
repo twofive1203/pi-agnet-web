@@ -469,3 +469,36 @@ Added server-side OpenAI-compatible provider model discovery, searchable grouped
 ### Next Steps
 
 - None - task complete
+
+
+## Session 41: Local Pi extensions in WebUI
+
+**Date**: 2026-07-08
+**Task**: Local Pi extensions in WebUI
+**Branch**: `main`
+
+### Summary
+
+Implemented WebUI support for locally installed Pi extensions: extension command discovery, diagnostics endpoint, Web/RPC extension UI binding, simple browser dialogs, reload/error forwarding, and documentation updates.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e046fe1` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
