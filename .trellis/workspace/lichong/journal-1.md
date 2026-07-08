@@ -502,3 +502,36 @@ Implemented WebUI support for locally installed Pi extensions: extension command
 ### Next Steps
 
 - None - task complete
+
+
+## Session 42: Native Yolk Workflow
+
+**Date**: 2026-07-08
+**Task**: Native Yolk Workflow
+**Branch**: `main`
+
+### Summary
+
+Implemented native Yolk Workflow setup APIs, managed project-local resources, task panel, chat context chips, and prompt-template based chat task creation.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e99912f` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
