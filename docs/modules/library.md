@@ -36,6 +36,11 @@ Shared logic lives under `lib/`. Prefer adding behavior here when it is used by 
 | `lib/trellis-workflow-types.ts` | Wire types for Trellis workflow visualization API responses and UI consumers. |
 | `lib/trellis-session-link.ts` | Session-scoped Trellis task association resolver for the floating widget; uses high-confidence session transcript evidence and exact per-session runtime pointers without mutating Trellis task metadata. |
 | `lib/trellis-chat-context.ts` | Pure helpers for converting Trellis task details into compact chat-composer context payloads and serializing those blocks into resume prompts recognized by session-task linking. |
+| `lib/yolk-types.ts` | Wire types for native Yolk Workflow setup/status, managed files, conflicts, task summaries/details, task creation, and markdown artifact payloads. |
+| `lib/yolk-workflow-templates.ts` | Central managed template catalog and allowlisted project-local Yolk Workflow resource paths under `.yolk/` and yolk-prefixed `.pi/` resources, including the project-local `yolk_task` tool and `/yolk-new-task` prompt template. |
+| `lib/yolk-workflow-manager.ts` | Native Yolk Workflow setup/status/update helper: canonicalizes workspace paths, computes managed template hashes, provisions only allowlisted files, records manifest metadata, disables non-destructively, and reports conflicts without overwriting user-authored changes. |
+| `lib/yolk-reader.ts` | Native Yolk task reader/writer for `.yolk/tasks`: safe task listing, bounded artifact reads, strict task-key validation, and minimal task creation. |
+| `lib/yolk-chat-context.ts` | Pure helpers for converting Yolk task details into chat-composer context payloads and serializing them into continuation prompts. |
 | `lib/trellis-setup-types.ts` | Wire types for Trellis setup status and setup/update command API responses. |
 | `lib/trellis-types.ts` | Wire types for Trellis task list/detail API responses and UI consumers. |
 | `lib/workspace-title.ts` | Shared workspace title formatting from cwd and Git metadata. |

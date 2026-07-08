@@ -54,6 +54,7 @@ npm run dev     # http://localhost:30141
 | --- | --- | --- |
 | Session browsing/parsing | `lib/session-reader.ts`, `app/api/sessions/**` | `docs/architecture/overview.md`, `docs/modules/api.md` |
 | Session changed-file overlay | `lib/session-file-changes.ts`, `components/SessionChangesFloatingPanel.tsx`, `app/api/sessions/[id]/changes/**` | `docs/architecture/overview.md`, `docs/modules/api.md`, `docs/modules/frontend.md`, `docs/modules/library.md` |
+| Native Yolk Workflow | `lib/yolk-workflow-manager.ts`, `lib/yolk-reader.ts`, `components/YolkWorkflowPanel.tsx`, `app/api/yolk/**` | `docs/architecture/overview.md`, `docs/modules/api.md`, `docs/modules/frontend.md`, `docs/modules/library.md` |
 | Agent command lifecycle | `lib/rpc-manager.ts`, `app/api/agent/**` | `docs/architecture/overview.md` |
 | Chat/session UI state | `hooks/useAgentSession.ts`, `components/ChatWindow.tsx`, `components/ChatInput.tsx` | `docs/modules/frontend.md` |
 | Tool-call normalization | `lib/normalize.ts` | `docs/architecture/overview.md`, `docs/modules/library.md` |

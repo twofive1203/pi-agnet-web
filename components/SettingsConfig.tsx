@@ -17,6 +17,7 @@ import type {
   PiWebWorktreeConfig,
 } from "@/lib/pi-web-config";
 import type { TrellisCommandResponse, TrellisSetupStatus } from "@/lib/trellis-setup-types";
+import type { YolkWorkflowActionResponse, YolkWorkflowStatus } from "@/lib/yolk-types";
 
 interface WebConfigResponse {
   config: PiWebConfig;
@@ -34,6 +35,11 @@ interface TrellisStatusResponse {
 
 interface TrellisActionResponse extends TrellisCommandResponse {
   config?: PiWebConfig;
+}
+
+interface YolkWorkflowStatusResponse {
+  status?: YolkWorkflowStatus;
+  error?: string;
 }
 
 interface ModelListItem {
@@ -70,7 +76,7 @@ const TEMPLATE_VARIABLES = [
   { token: "{yyyyMMdd-HHmmss}", description: "创建时刻，格式如 20260625-153012" },
 ];
 
-type SettingsSection = "worktree" | "usage" | "terminal" | "chatgpt" | "editor" | "trellis";
+type SettingsSection = "worktree" | "usage" | "terminal" | "chatgpt" | "editor" | "yolkWorkflow" | "trellis";
 type SubagentThinkingOption = PiWebSubagentRunPolicy["thinking"];
 
 const SUBAGENT_AGENT_NAMES = ["trellis-implement", "trellis-check", "trellis-research"];
@@ -353,6 +359,19 @@ function formatRecommendedAction(status: TrellisSetupStatus): string {
   return "请选择工作区。";
 }
 
+function formatYolkWorkflowStatus(status: YolkWorkflowStatus["status"]): string {
+  if (status === "missing") return "未安装";
+  if (status === "ready") return "已启用";
+  if (status === "disabled") return "已禁用";
+  if (status === "outdated") return "可更新";
+  if (status === "conflict") return "有冲突";
+  return "已阻塞";
+}
+
+function yolkWorkflowStatusOk(status: YolkWorkflowStatus["status"]): boolean {
+  return status === "ready" || status === "disabled" || status === "outdated";
+}
+
 function worktreeConfigsEqual(a: PiWebWorktreeConfig | null, b: PiWebWorktreeConfig | null): boolean {
   if (!a || !b) return a === b;
   return a.baseRef === b.baseRef
@@ -416,6 +435,11 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
   const [trellisAction, setTrellisAction] = useState<"init" | "update" | null>(null);
   const [trellisOutput, setTrellisOutput] = useState<string | null>(null);
   const [trellisWorkflowOpen, setTrellisWorkflowOpen] = useState(false);
+  const [yolkWorkflowStatus, setYolkWorkflowStatus] = useState<YolkWorkflowStatus | null>(null);
+  const [yolkWorkflowStatusLoading, setYolkWorkflowStatusLoading] = useState(false);
+  const [yolkWorkflowStatusError, setYolkWorkflowStatusError] = useState<string | null>(null);
+  const [yolkWorkflowAction, setYolkWorkflowAction] = useState<"enable" | "disable" | "update" | null>(null);
+  const [yolkWorkflowOutput, setYolkWorkflowOutput] = useState<string | null>(null);
   const [modelList, setModelList] = useState<ModelListItem[]>([]);
   const [modelsError, setModelsError] = useState<string | null>(null);
   const [developerName, setDeveloperName] = useState("");
@@ -499,6 +523,29 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
     }
   }, [cwd, developerNameTouched]);
 
+  const loadYolkWorkflowStatus = useCallback(async (signal?: AbortSignal) => {
+    if (!cwd) {
+      setYolkWorkflowStatus(null);
+      setYolkWorkflowStatusError(null);
+      setYolkWorkflowStatusLoading(false);
+      return;
+    }
+    setYolkWorkflowStatusLoading(true);
+    setYolkWorkflowStatusError(null);
+    try {
+      const res = await fetch(`/api/yolk/workflow/status?cwd=${encodeURIComponent(cwd)}`, { signal });
+      const data = await res.json() as YolkWorkflowStatusResponse;
+      if (!res.ok || data.error || !data.status) throw new Error(data.error ?? `HTTP ${res.status}`);
+      setYolkWorkflowStatus(data.status);
+    } catch (err) {
+      if ((err as { name?: string }).name === "AbortError") return;
+      setYolkWorkflowStatus(null);
+      setYolkWorkflowStatusError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setYolkWorkflowStatusLoading(false);
+    }
+  }, [cwd]);
+
   useEffect(() => {
     const controller = new AbortController();
     void loadConfig(controller.signal);
@@ -509,15 +556,17 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
     setDeveloperName("");
     setDeveloperNameTouched(false);
     setTrellisOutput(null);
+    setYolkWorkflowOutput(null);
   }, [cwd]);
 
   useEffect(() => {
-    if (section !== "trellis" && section !== "terminal") return;
+    if (section !== "trellis" && section !== "terminal" && section !== "yolkWorkflow") return;
     const controller = new AbortController();
     if (section === "trellis") void loadTrellisStatus(controller.signal);
-    void loadModels(controller.signal);
+    if (section === "yolkWorkflow") void loadYolkWorkflowStatus(controller.signal);
+    if (section === "trellis" || section === "terminal") void loadModels(controller.signal);
     return () => controller.abort();
-  }, [section, loadModels, loadTrellisStatus]);
+  }, [section, loadModels, loadTrellisStatus, loadYolkWorkflowStatus]);
 
   const updateWorktree = useCallback((patch: Partial<PiWebWorktreeConfig>) => {
     setWorktree((prev) => prev ? { ...prev, ...patch } : prev);
@@ -803,6 +852,34 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
     }
   }, [cwd, developerName, dirty, loadTrellisStatus, onConfigChange, saveConfig, trellis]);
 
+  const runYolkWorkflowAction = useCallback(async (action: "enable" | "disable" | "update") => {
+    if (!cwd) return;
+    setYolkWorkflowAction(action);
+    setError(null);
+    setNotice(null);
+    setYolkWorkflowOutput(null);
+    try {
+      const res = await fetch(`/api/yolk/workflow/${action}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cwd }),
+      });
+      const data = await res.json() as YolkWorkflowActionResponse;
+      if (!res.ok || data.error || !data.status) throw new Error(data.error ?? `HTTP ${res.status}`);
+      setYolkWorkflowStatus(data.status);
+      setYolkWorkflowOutput(data.output ?? "操作完成。");
+      onConfigChange?.();
+      setNotice(action === "disable"
+        ? "Yolk Workflow 已禁用；项目文件保留。"
+        : "Yolk Workflow 已写入项目资源。新会话会加载这些资源，已有会话可能需要刷新或新建。"
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setYolkWorkflowAction(null);
+    }
+  }, [cwd, onConfigChange]);
+
   const renderSectionButton = (id: SettingsSection, label: string, description: string) => {
     const active = section === id;
     return (
@@ -891,6 +968,7 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
             {renderSectionButton("terminal", "Terminal", "Web 终端设置")}
             {renderSectionButton("chatgpt", "ChatGPT", "ChatGPT 用量悬浮面板")}
             {renderSectionButton("editor", "Editor", "文件编辑器和快捷键")}
+            {renderSectionButton("yolkWorkflow", "Yolk Workflow", "项目本地 yolk 开发工作流")}
             {renderSectionButton("trellis", "Trellis", "Trellis 面板开关")}
           </div>
 
@@ -1236,6 +1314,111 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
                       </div>
                       <div style={{ marginTop: 8 }}>这些是 Monaco 自带编辑行为，不写入 yolk pi web 配置；上面的开关只控制 yolk pi web 额外接管的快捷键/鼠标手势。</div>
                     </div>
+                  </div>
+                ) : section === "yolkWorkflow" ? (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                    <div style={{ padding: 12, borderRadius: 10, background: "var(--bg-subtle)", border: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: 8 }}>
+                      <div>
+                        <h3 style={{ margin: 0, color: "var(--text)", fontSize: 15 }}>Yolk Workflow</h3>
+                        <p style={{ margin: "5px 0 0", color: "var(--text-muted)", fontSize: 12, lineHeight: 1.5 }}>
+                          原生项目开发工作流，写入当前工作区的 <code style={{ fontFamily: "var(--font-mono)", color: "var(--text)" }}>.yolk/</code> 和 yolk 前缀 <code style={{ fontFamily: "var(--font-mono)", color: "var(--text)" }}>.pi/</code> 资源。不会调用 Trellis CLI。
+                        </p>
+                      </div>
+                      <div style={{ color: "var(--text-dim)", fontSize: 11, overflowWrap: "anywhere" }}>
+                        当前工作区：{cwd ? <code style={{ fontFamily: "var(--font-mono)", color: "var(--text-muted)" }}>{cwd}</code> : "未选择"}
+                      </div>
+                    </div>
+
+                    <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: 12, borderRadius: 10, background: "var(--bg-subtle)", border: "1px solid var(--border)" }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                        <div>
+                          <div style={{ color: "var(--text)", fontSize: 13, fontWeight: 800 }}>工作区状态</div>
+                          <div style={{ color: "var(--text-muted)", fontSize: 11, marginTop: 3, lineHeight: 1.45 }}>
+                            {yolkWorkflowStatus ? yolkWorkflowStatus.message : (cwd ? "正在检查当前工作区…" : "选择工作区后可启用 Yolk Workflow。")}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => void loadYolkWorkflowStatus()}
+                          disabled={!cwd || yolkWorkflowStatusLoading || !!yolkWorkflowAction}
+                          style={{ padding: "6px 10px", borderRadius: 7, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-muted)", cursor: !cwd || yolkWorkflowStatusLoading || yolkWorkflowAction ? "not-allowed" : "pointer", fontSize: 12 }}
+                        >
+                          {yolkWorkflowStatusLoading ? "检查中…" : "重新检查"}
+                        </button>
+                      </div>
+
+                      {yolkWorkflowStatusError && <div style={{ padding: "8px 10px", borderRadius: 8, background: "rgba(239,68,68,0.12)", color: "#f87171", fontSize: 12, overflowWrap: "anywhere" }}>{yolkWorkflowStatusError}</div>}
+                      {yolkWorkflowStatus && (
+                        <div>
+                          <StatusRow label="状态" value={formatYolkWorkflowStatus(yolkWorkflowStatus.status)} ok={yolkWorkflowStatusOk(yolkWorkflowStatus.status)} />
+                          <StatusRow label="启用" value={yolkWorkflowStatus.enabled ? "enabled" : "disabled"} ok={yolkWorkflowStatus.enabled || yolkWorkflowStatus.status === "disabled" || yolkWorkflowStatus.status === "missing"} />
+                          <StatusRow label="版本" value={yolkWorkflowStatus.workflowVersion} ok={yolkWorkflowStatus.status !== "blocked"} />
+                          <StatusRow label="目录" value={yolkWorkflowStatus.pathLabel} ok={yolkWorkflowStatus.status !== "blocked"} />
+                        </div>
+                      )}
+                    </div>
+
+                    <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                      <button
+                        type="button"
+                        onClick={() => void runYolkWorkflowAction("enable")}
+                        disabled={!cwd || !!yolkWorkflowAction || yolkWorkflowStatusLoading || yolkWorkflowStatus?.status === "blocked" || yolkWorkflowStatus?.status === "conflict" || yolkWorkflowStatus?.status === "ready"}
+                        style={{ padding: "8px 12px", borderRadius: 8, border: "none", background: cwd && !yolkWorkflowAction && !yolkWorkflowStatusLoading && yolkWorkflowStatus?.status !== "blocked" && yolkWorkflowStatus?.status !== "conflict" && yolkWorkflowStatus?.status !== "ready" ? "var(--accent)" : "var(--border)", color: "white", cursor: cwd && !yolkWorkflowAction && !yolkWorkflowStatusLoading && yolkWorkflowStatus?.status !== "blocked" && yolkWorkflowStatus?.status !== "conflict" && yolkWorkflowStatus?.status !== "ready" ? "pointer" : "not-allowed", fontSize: 12, fontWeight: 700 }}
+                      >
+                        {yolkWorkflowAction === "enable" ? "正在启用…" : "启用"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void runYolkWorkflowAction("update")}
+                        disabled={!cwd || !!yolkWorkflowAction || yolkWorkflowStatusLoading || !(yolkWorkflowStatus?.status === "outdated" || yolkWorkflowStatus?.status === "ready")}
+                        style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--bg)", color: cwd && !yolkWorkflowAction && !yolkWorkflowStatusLoading && (yolkWorkflowStatus?.status === "outdated" || yolkWorkflowStatus?.status === "ready") ? "var(--text)" : "var(--text-dim)", cursor: cwd && !yolkWorkflowAction && !yolkWorkflowStatusLoading && (yolkWorkflowStatus?.status === "outdated" || yolkWorkflowStatus?.status === "ready") ? "pointer" : "not-allowed", fontSize: 12, fontWeight: 700 }}
+                      >
+                        {yolkWorkflowAction === "update" ? "正在更新…" : "更新模板"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void runYolkWorkflowAction("disable")}
+                        disabled={!cwd || !!yolkWorkflowAction || yolkWorkflowStatusLoading || !yolkWorkflowStatus?.manifest || yolkWorkflowStatus.status === "disabled"}
+                        style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--bg)", color: cwd && !yolkWorkflowAction && !yolkWorkflowStatusLoading && yolkWorkflowStatus?.manifest && yolkWorkflowStatus.status !== "disabled" ? "var(--text)" : "var(--text-dim)", cursor: cwd && !yolkWorkflowAction && !yolkWorkflowStatusLoading && yolkWorkflowStatus?.manifest && yolkWorkflowStatus.status !== "disabled" ? "pointer" : "not-allowed", fontSize: 12, fontWeight: 700 }}
+                      >
+                        {yolkWorkflowAction === "disable" ? "正在禁用…" : "禁用"}
+                      </button>
+                    </div>
+
+                    <div style={{ padding: 12, borderRadius: 10, background: "var(--bg-subtle)", border: "1px solid var(--border)", color: "var(--text-dim)", fontSize: 11, lineHeight: 1.55 }}>
+                      启用/更新会创建或刷新托管资源：<code style={{ fontFamily: "var(--font-mono)", color: "var(--text-muted)" }}>.yolk/manifest.json</code>、<code style={{ fontFamily: "var(--font-mono)", color: "var(--text-muted)" }}>.yolk/workflow.json</code>、<code style={{ fontFamily: "var(--font-mono)", color: "var(--text-muted)" }}>.yolk/tasks/</code>，以及 <code style={{ fontFamily: "var(--font-mono)", color: "var(--text-muted)" }}>.pi/</code> 下的 yolk-workflow/yolk-* 资源。更新到新版模板后，新会话会获得 <code style={{ fontFamily: "var(--font-mono)", color: "var(--text-muted)" }}>yolk_task</code> 工具和 <code style={{ fontFamily: "var(--font-mono)", color: "var(--text-muted)" }}>/yolk-new-task</code> 命令；已有会话需要刷新或新建。
+                    </div>
+
+                    {yolkWorkflowStatus?.conflicts && yolkWorkflowStatus.conflicts.length > 0 && (
+                      <div style={{ padding: 12, borderRadius: 10, background: "rgba(239,68,68,0.10)", border: "1px solid rgba(239,68,68,0.25)", color: "#f87171", fontSize: 12, display: "flex", flexDirection: "column", gap: 7 }}>
+                        <div style={{ fontWeight: 800 }}>冲突</div>
+                        {yolkWorkflowStatus.conflicts.map((conflict) => (
+                          <div key={`${conflict.path}:${conflict.reason}`} style={{ overflowWrap: "anywhere" }}>
+                            <code style={{ fontFamily: "var(--font-mono)" }}>{conflict.path}</code> · {conflict.reason} · {conflict.detail}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {yolkWorkflowStatus?.managedFiles && yolkWorkflowStatus.managedFiles.length > 0 && (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: 12, borderRadius: 10, background: "var(--bg-subtle)", border: "1px solid var(--border)" }}>
+                        <div style={{ color: "var(--text)", fontSize: 13, fontWeight: 800 }}>托管文件</div>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                          {yolkWorkflowStatus.managedFiles.map((file) => (
+                            <div key={file.path} style={{ display: "grid", gridTemplateColumns: "1fr max-content", gap: 8, alignItems: "center", color: "var(--text-muted)", fontSize: 11 }}>
+                              <code style={{ fontFamily: "var(--font-mono)", overflowWrap: "anywhere" }}>{file.path}</code>
+                              <span style={{ color: file.changed ? "#f87171" : file.exists ? "#22c55e" : "var(--text-dim)", fontWeight: 700 }}>{file.changed ? "modified" : file.exists ? "ok" : "missing"}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {yolkWorkflowOutput && (
+                      <pre style={{ margin: 0, maxHeight: 160, overflow: "auto", padding: 10, borderRadius: 8, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-muted)", fontSize: 11, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+                        {yolkWorkflowOutput}
+                      </pre>
+                    )}
                   </div>
                 ) : (
                   <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>

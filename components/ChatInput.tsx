@@ -7,6 +7,7 @@ import type { AttachedFile } from "@/lib/types";
 import type { ToolPreset } from "@/components/ToolPanel";
 import { encodeFilePathForApi, getFileName, getRelativeFilePath, joinFilePath } from "@/lib/file-paths";
 import { buildTrellisTaskResumePrompt, type TrellisTaskChatContext } from "@/lib/trellis-chat-context";
+import { buildYolkTaskResumePrompt, type YolkTaskChatContext } from "@/lib/yolk-chat-context";
 
 export interface AttachedImage {
   data: string;   // base64, no prefix
@@ -55,6 +56,7 @@ export interface ChatInputHandle {
   addFiles: (files: File[]) => void;
   addFileReference: (relativePath: string, lines?: { startLine: number; endLine: number }) => void;
   addTrellisTaskContext: (context: TrellisTaskChatContext) => void;
+  addYolkTaskContext: (context: YolkTaskChatContext) => void;
 }
 
 const TOOL_PRESET_OPTIONS = [
@@ -343,6 +345,88 @@ function trellisTaskContextFromElement(node: HTMLElement): TrellisTaskChatContex
   };
 }
 
+function createYolkTaskContextBlock(context: YolkTaskChatContext): HTMLElement {
+  const block = document.createElement("span");
+  block.contentEditable = "false";
+  block.dataset.chip = "yolk-task";
+  block.dataset.context = JSON.stringify(context);
+  block.style.cssText = [
+    "display: inline-flex",
+    "flex-direction: column",
+    "gap: 3px",
+    "max-width: min(420px, 100%)",
+    "padding: 8px 10px",
+    "border-radius: 10px",
+    "border: 1px solid color-mix(in srgb, var(--accent) 38%, var(--border))",
+    "background: color-mix(in srgb, var(--accent) 10%, var(--bg-panel))",
+    "color: var(--text)",
+    "font-size: 12px",
+    "line-height: 1.35",
+    "cursor: default",
+    "user-select: none",
+    "vertical-align: middle",
+  ].join("; ");
+
+  const label = document.createElement("span");
+  label.textContent = "Yolk 继续任务";
+  label.style.cssText = "color: var(--accent); font-size: 11px; font-weight: 700";
+
+  const title = document.createElement("span");
+  title.textContent = `${context.title} · ${context.status}`;
+  title.style.cssText = "font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap";
+
+  const path = document.createElement("span");
+  path.textContent = `.yolk/tasks/${context.key}`;
+  path.style.cssText = "color: var(--text-dim); font-family: var(--font-mono); font-size: 11px; overflow-wrap: anywhere";
+
+  block.append(label, title, path);
+  return block;
+}
+
+function yolkTaskContextFromElement(node: HTMLElement): YolkTaskChatContext | null {
+  const raw = node.dataset.context;
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as YolkTaskChatContext;
+    if (!parsed.key || !parsed.title || !parsed.status || !parsed.pathLabel || !Array.isArray(parsed.documents)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function contextBlockInsertAtCursor(container: HTMLElement, block: HTMLElement): void {
+  const wasFocused = document.activeElement === container;
+  container.focus();
+  const sel = window.getSelection();
+  const appendToEnd = !wasFocused || !sel || !sel.rangeCount || !container.contains(sel.getRangeAt(0).commonAncestorContainer);
+
+  if (appendToEnd) {
+    if (hasContent(container)) container.appendChild(document.createTextNode("\n"));
+    container.appendChild(block);
+    container.appendChild(document.createTextNode("\n"));
+    const range = document.createRange();
+    range.selectNodeContents(container);
+    range.collapse(false);
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+    return;
+  }
+
+  const range = sel.getRangeAt(0);
+  range.deleteContents();
+  const fragment = document.createDocumentFragment();
+  if (hasContent(container)) fragment.appendChild(document.createTextNode("\n"));
+  fragment.appendChild(block);
+  const after = document.createTextNode("\n");
+  fragment.appendChild(after);
+  range.insertNode(fragment);
+  range.setStartAfter(after);
+  range.collapse(true);
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+
 function trellisTaskInsertAtCursor(container: HTMLElement, context: TrellisTaskChatContext): void {
   const block = createTrellisTaskContextBlock(context);
   const wasFocused = document.activeElement === container;
@@ -410,6 +494,9 @@ function serializeNodes(nodes: NodeListOf<ChildNode>): string {
     } else if (node instanceof HTMLElement && node.dataset.chip === "trellis-task") {
       const context = trellisTaskContextFromElement(node);
       if (context) text += buildTrellisTaskResumePrompt(context);
+    } else if (node instanceof HTMLElement && node.dataset.chip === "yolk-task") {
+      const context = yolkTaskContextFromElement(node);
+      if (context) text += buildYolkTaskResumePrompt(context);
     } else if (node instanceof HTMLElement) {
       text += serializeNodes(node.childNodes);
     }
@@ -790,6 +877,13 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       const el = inputRef.current;
       if (!el) return;
       trellisTaskInsertAtCursor(el, context);
+      syncFromDom();
+      resizeInput();
+    },
+    addYolkTaskContext(context: YolkTaskChatContext) {
+      const el = inputRef.current;
+      if (!el) return;
+      contextBlockInsertAtCursor(el, createYolkTaskContextBlock(context));
       syncFromDom();
       resizeInput();
     },

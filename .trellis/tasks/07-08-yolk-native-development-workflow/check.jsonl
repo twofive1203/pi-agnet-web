@@ -1,0 +1,11 @@
+{"file":"docs/standards/code-style.md","reason":"Minimum validation commands and no direct next build rule."}
+{"file":"docs/modules/api.md","reason":"Ensure API docs are updated for new /api/yolk routes."}
+{"file":"docs/modules/frontend.md","reason":"Ensure frontend docs are updated for Settings section, Workflow panel, and ChatInput chip."}
+{"file":"docs/modules/library.md","reason":"Ensure new lib/yolk-* modules are documented."}
+{"file":"components/SettingsConfig.tsx","reason":"Check existing Settings behavior and Trellis section remain intact."}
+{"file":"components/AppShell.tsx","reason":"Check file/Trellis right panel modes are not regressed by Yolk Workflow mode."}
+{"file":"components/ChatInput.tsx","reason":"Check Trellis chip behavior remains intact while adding yolk-task chip."}
+{"file":"lib/yolk-workflow-manager.ts","reason":"After implementation, verify path safety, allowlist enforcement, hashes, and conflict semantics."}
+{"file":"lib/yolk-reader.ts","reason":"After implementation, verify safe reads/writes, task id validation, and artifact limits."}
+{"file":"app/api/yolk/workflow/status/route.ts","reason":"After implementation, verify allowed-root and canonical cwd checks."}
+{"file":"app/api/yolk/tasks/route.ts","reason":"After implementation, verify create/list task API validation and disabled/missing behavior."}

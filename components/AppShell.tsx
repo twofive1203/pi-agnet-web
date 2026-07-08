@@ -13,6 +13,7 @@ import { ChatGptUsagePanel } from "./ChatGptUsagePanel";
 import { SubagentPanel } from "./SubagentPanel";
 import { SettingsConfig } from "./SettingsConfig";
 import { TrellisPanel } from "./TrellisPanel";
+import { YolkWorkflowPanel } from "./YolkWorkflowPanel";
 import { TrellisSessionWidget } from "./TrellisSessionWidget";
 import { BranchNavigator } from "./BranchNavigator";
 import { GitPanel } from "./GitPanel";
@@ -23,7 +24,9 @@ import { useTheme } from "@/hooks/useTheme";
 import type { GitInfo, SessionInfo, SessionTreeNode } from "@/lib/types";
 import type { PiWebConfig } from "@/lib/pi-web-config";
 import type { TrellisSessionTaskLinkResult, TrellisTaskDetail } from "@/lib/trellis-types";
+import type { YolkTaskDetail, YolkWorkflowStatus } from "@/lib/yolk-types";
 import { trellisTaskDetailToChatContext, type TrellisTaskChatContext } from "@/lib/trellis-chat-context";
+import { yolkTaskDetailToChatContext, type YolkTaskChatContext } from "@/lib/yolk-chat-context";
 import type { ChatInputHandle } from "./ChatInput";
 
 const TOP_PANEL_SAFE_SELECTOR = ".app-top-aux-panel, .app-top-aux-tab, .branch-navigator-inline";
@@ -46,6 +49,7 @@ export function AppShell() {
   const [explorerRefreshKey, setExplorerRefreshKey] = useState(0);
   const [modelsConfigOpen, setModelsConfigOpen] = useState(false);
   const [modelsRefreshKey, setModelsRefreshKey] = useState(0);
+  const [yolkWorkflowRefreshKey, setYolkWorkflowRefreshKey] = useState(0);
   const [skillsConfigOpen, setSkillsConfigOpen] = useState(false);
   const [usageStatsOpen, setUsageStatsOpen] = useState(false);
   const [settingsConfigOpen, setSettingsConfigOpen] = useState(false);
@@ -165,11 +169,14 @@ export function AppShell() {
   const [fileTabs, setFileTabs] = useState<Tab[]>([]);
   const [activeFileTabId, setActiveFileTabId] = useState<string | null>(null);
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
-  const [rightPanelMode, setRightPanelMode] = useState<"files" | "trellis">("files");
+  const [rightPanelMode, setRightPanelMode] = useState<"files" | "trellis" | "yolkWorkflow">("files");
   const [focusedTrellisTaskKey, setFocusedTrellisTaskKey] = useState<string | null>(null);
+  const [focusedYolkTaskKey, setFocusedYolkTaskKey] = useState<string | null>(null);
   const [trellisSessionTask, setTrellisSessionTask] = useState<TrellisSessionTaskLinkResult | null>(null);
   const [trellisSessionTaskRefreshKey, setTrellisSessionTaskRefreshKey] = useState(0);
   const [pendingTrellisTaskContext, setPendingTrellisTaskContext] = useState<TrellisTaskChatContext | null>(null);
+  const [pendingYolkTaskContext, setPendingYolkTaskContext] = useState<YolkTaskChatContext | null>(null);
+  const [yolkWorkflowStatus, setYolkWorkflowStatus] = useState<YolkWorkflowStatus | null>(null);
 
   const handleAtMention = useCallback((relativePath: string) => {
     chatInputRef.current?.addFileReference(relativePath);
@@ -336,9 +343,33 @@ export function AppShell() {
   const terminalEnabled = webConfig?.terminal.enabled ?? false;
   const trellisIncludeArchivedDefault = webConfig?.trellis.includeArchived ?? false;
   const trellisCwd = activeCwd ?? selectedSession?.cwd ?? newSessionCwd;
+  const yolkCwd = activeCwd ?? selectedSession?.cwd ?? newSessionCwd;
   const terminalCwd = activeCwd ?? selectedSession?.cwd ?? newSessionCwd;
   const browserTitleCwd = selectedSession?.cwd ?? newSessionCwd ?? activeCwd;
   const browserTitleGit = selectedSession?.cwd === browserTitleCwd ? selectedSession.git : activeCwdGit;
+  const yolkWorkflowEnabled = yolkWorkflowStatus?.enabled ?? false;
+  const rightTogglePadding = 48 + (trellisEnabled ? 36 : 0) + (yolkWorkflowEnabled ? 36 : 0);
+
+  const loadYolkWorkflowStatus = useCallback(async (signal?: AbortSignal) => {
+    if (!yolkCwd) {
+      setYolkWorkflowStatus(null);
+      return;
+    }
+    try {
+      const res = await fetch(`/api/yolk/workflow/status?cwd=${encodeURIComponent(yolkCwd)}`, { signal });
+      const data = await res.json() as { status?: YolkWorkflowStatus; error?: string };
+      if (!res.ok || data.error || !data.status) throw new Error(data.error ?? `HTTP ${res.status}`);
+      setYolkWorkflowStatus(data.status);
+    } catch (error) {
+      if ((error as { name?: string }).name !== "AbortError") setYolkWorkflowStatus(null);
+    }
+  }, [yolkCwd]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void loadYolkWorkflowStatus(controller.signal);
+    return () => controller.abort();
+  }, [loadYolkWorkflowStatus, yolkWorkflowRefreshKey]);
 
   const loadTrellisSessionTask = useCallback(async (signal?: AbortSignal) => {
     if (!trellisEnabled || !selectedSession || selectedSession.archived) {
@@ -358,6 +389,7 @@ export function AppShell() {
 
   useEffect(() => {
     setFocusedTrellisTaskKey(null);
+    setFocusedYolkTaskKey(null);
   }, [selectedSession?.id]);
 
   useEffect(() => {
@@ -401,6 +433,25 @@ export function AppShell() {
     }
   }, [router, selectedSession, trellisCwd]);
 
+  const handleJoinYolkTaskChat = useCallback((task: YolkTaskDetail) => {
+    if (!yolkCwd) return;
+
+    const context = yolkTaskDetailToChatContext(task);
+    setFocusedYolkTaskKey(task.key);
+    setPendingYolkTaskContext(context);
+
+    if (!selectedSession || selectedSession.cwd !== yolkCwd || selectedSession.archived) {
+      setSelectedSession(null);
+      setNewSessionCwd(yolkCwd);
+      setSessionKey((key) => key + 1);
+      setBranchTree([]);
+      setBranchActiveLeafId(null);
+      setSystemPrompt(null);
+      setActiveTopPanel(null);
+      router.replace("/", { scroll: false });
+    }
+  }, [router, selectedSession, yolkCwd]);
+
   useEffect(() => {
     if (!pendingTrellisTaskContext || !showChat) return;
 
@@ -422,11 +473,38 @@ export function AppShell() {
   }, [pendingTrellisTaskContext, sessionKey, showChat]);
 
   useEffect(() => {
+    if (!pendingYolkTaskContext || !showChat) return;
+
+    let cancelled = false;
+    let attempts = 0;
+    const tryInsert = () => {
+      if (cancelled) return;
+      if (chatInputRef.current) {
+        chatInputRef.current.addYolkTaskContext(pendingYolkTaskContext);
+        setPendingYolkTaskContext(null);
+        return;
+      }
+      attempts += 1;
+      if (attempts < 12) window.requestAnimationFrame(tryInsert);
+    };
+
+    window.requestAnimationFrame(tryInsert);
+    return () => { cancelled = true; };
+  }, [pendingYolkTaskContext, sessionKey, showChat]);
+
+  useEffect(() => {
     if (!trellisEnabled && rightPanelMode === "trellis") {
       setRightPanelMode("files");
       if (fileTabs.length === 0) setRightPanelOpen(false);
     }
   }, [trellisEnabled, rightPanelMode, fileTabs.length]);
+
+  useEffect(() => {
+    if (!yolkWorkflowEnabled && rightPanelMode === "yolkWorkflow") {
+      setRightPanelMode("files");
+      if (fileTabs.length === 0) setRightPanelOpen(false);
+    }
+  }, [yolkWorkflowEnabled, rightPanelMode, fileTabs.length]);
 
   useEffect(() => {
     if (!terminalEnabled || (!terminalCwd && !terminalDockCwd)) {
@@ -906,7 +984,7 @@ export function AppShell() {
                   marginLeft: "auto",
                   display: "flex", alignItems: "center", gap: 10,
                   paddingLeft: 12,
-                  paddingRight: webConfig?.chatgpt.usagePanelEnabled ? 12 : (rightPanelOpen ? 12 : (trellisEnabled ? 84 : 48)),
+                  paddingRight: webConfig?.chatgpt.usagePanelEnabled ? 12 : (rightPanelOpen ? 12 : rightTogglePadding),
                   height: "100%",
                   fontSize: 11, color: "var(--text-muted)",
                   whiteSpace: "nowrap", cursor: "default",
@@ -954,7 +1032,7 @@ export function AppShell() {
             );
           })()}
           {webConfig?.chatgpt.usagePanelEnabled && (
-            <div className="app-top-usage-panel" style={{ marginLeft: showChat && (sessionStats || contextUsage) ? 0 : "auto", paddingRight: rightPanelOpen ? 12 : (trellisEnabled ? 84 : 48), height: "100%", display: "flex", alignItems: "center", flexShrink: 0 }}>
+            <div className="app-top-usage-panel" style={{ marginLeft: showChat && (sessionStats || contextUsage) ? 0 : "auto", paddingRight: rightPanelOpen ? 12 : rightTogglePadding, height: "100%", display: "flex", alignItems: "center", flexShrink: 0 }}>
               <ChatGptUsagePanel />
             </div>
           )}
@@ -1110,7 +1188,7 @@ export function AppShell() {
               )}
             </div>
           </>
-        ) : (
+        ) : rightPanelMode === "trellis" ? (
           <>
             <div style={{ display: "flex", alignItems: "center", flexShrink: 0, background: "var(--bg-panel)", borderBottom: "1px solid var(--border)", height: 36, padding: "0 12px", gap: 8 }}>
               <span style={{ color: "var(--text)", fontSize: 13, fontWeight: 700 }}>Trellis</span>
@@ -1120,10 +1198,20 @@ export function AppShell() {
               <TrellisPanel cwd={trellisCwd} includeArchivedDefault={trellisIncludeArchivedDefault} focusedTaskKey={focusedTrellisTaskKey} onOpenFile={handleOpenFile} onJoinTaskChat={handleJoinTrellisTaskChat} />
             </div>
           </>
+        ) : (
+          <>
+            <div style={{ display: "flex", alignItems: "center", flexShrink: 0, background: "var(--bg-panel)", borderBottom: "1px solid var(--border)", height: 36, padding: "0 12px", gap: 8 }}>
+              <span style={{ color: "var(--text)", fontSize: 13, fontWeight: 700 }}>Yolk Workflow</span>
+              {yolkCwd && <span title={yolkCwd} style={{ color: "var(--text-dim)", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{yolkCwd}</span>}
+            </div>
+            <div style={{ flex: 1, overflow: "hidden" }}>
+              <YolkWorkflowPanel cwd={yolkCwd} focusedTaskKey={focusedYolkTaskKey} onJoinTaskChat={handleJoinYolkTaskChat} />
+            </div>
+          </>
         )}
       </div>
     </div>
-    {/* Right panel mode toggles — Preview first, optional Trellis to its right. */}
+    {/* Right panel mode toggles — Preview first, optional workflow panels to its right. */}
     <div className="right-panel-toggle-strip" style={{ position: "fixed", top: 0, right: 0, zIndex: 300, display: "flex", flexDirection: "row" }}>
       <button
         onClick={() => {
@@ -1150,6 +1238,31 @@ export function AppShell() {
           <circle cx="12" cy="12" r="3" />
         </svg>
       </button>
+      {yolkWorkflowEnabled && (
+        <button
+          onClick={() => {
+            if (rightPanelOpen && rightPanelMode === "yolkWorkflow") setRightPanelOpen(false);
+            else {
+              setRightPanelMode("yolkWorkflow");
+              setRightPanelOpen(true);
+            }
+          }}
+          title={rightPanelOpen && rightPanelMode === "yolkWorkflow" ? "隐藏 Yolk Workflow 面板" : "显示 Yolk Workflow 面板"}
+          aria-label={rightPanelOpen && rightPanelMode === "yolkWorkflow" ? "隐藏 Yolk Workflow 面板" : "显示 Yolk Workflow 面板"}
+          style={{
+            display: "flex", alignItems: "center", justifyContent: "center",
+            width: 36, height: 36, padding: 0,
+            background: "var(--bg-panel)", border: "none", borderLeft: "1px solid var(--border)", borderBottom: "1px solid var(--border)",
+            color: rightPanelOpen && rightPanelMode === "yolkWorkflow" ? "var(--accent)" : "var(--text-muted)",
+            cursor: "pointer", transition: "color 0.12s",
+            fontSize: 12, fontWeight: 800,
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.color = "var(--accent)"; }}
+          onMouseLeave={(e) => { e.currentTarget.style.color = rightPanelOpen && rightPanelMode === "yolkWorkflow" ? "var(--accent)" : "var(--text-muted)"; }}
+        >
+          Y
+        </button>
+      )}
       {trellisEnabled && (
         <button
           onClick={() => {
@@ -1186,8 +1299,8 @@ export function AppShell() {
     {settingsConfigOpen && (
       <SettingsConfig
         cwd={trellisCwd}
-        onConfigChange={() => { void loadWebConfig(); }}
-        onClose={() => { setSettingsConfigOpen(false); void loadWebConfig(); }}
+        onConfigChange={() => { void loadWebConfig(); setYolkWorkflowRefreshKey((key) => key + 1); }}
+        onClose={() => { setSettingsConfigOpen(false); void loadWebConfig(); setYolkWorkflowRefreshKey((key) => key + 1); }}
       />
     )}
     </>

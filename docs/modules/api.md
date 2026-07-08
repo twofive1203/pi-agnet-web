@@ -52,6 +52,12 @@ API routes live under `app/api/`. When adding, removing, or changing routes, upd
 | `terminal/sessions/[id]/resize/` | POST | Resize a Web Terminal PTY. |
 | `trellis/tasks/` | GET | List read-only Trellis task summaries for an authorized workspace cwd when the Trellis panel setting is enabled. |
 | `trellis/tasks/[taskKey]/` | GET | Read one Trellis task detail, artifacts, manifest counts, hierarchy, and derived phase/progress. |
+| `yolk/workflow/status/` | GET | Inspect selected-workspace native Yolk Workflow installation state from `.yolk/manifest.json` and managed yolk-prefixed resources. |
+| `yolk/workflow/enable/` | POST | Enable native Yolk Workflow for an authorized workspace by safely provisioning allowlisted `.yolk/` and yolk-prefixed `.pi/` files. |
+| `yolk/workflow/disable/` | POST | Mark native Yolk Workflow disabled in `.yolk/manifest.json` without deleting project-local resources. |
+| `yolk/workflow/update/` | POST | Update unchanged managed Yolk Workflow templates and report conflicts instead of overwriting modified/user-authored files. |
+| `yolk/tasks/` | GET/POST | List `.yolk/tasks` task summaries for an enabled workspace, or create a minimal task with `task.json` and `prd.md`. |
+| `yolk/tasks/[taskKey]/` | GET | Read one Yolk task detail and bounded markdown artifacts from `.yolk/tasks/<task-id>/`. |
 | `trellis/workflow/` | GET | Read and parse the selected workspace `.trellis/workflow.md` into a read-only workflow visualization projection with phases, steps, workflow-state blocks, source line ranges, and parser warnings. |
 | `trellis/workflow/assist/` | POST | Use the configured Trellis workflow assistant model to translate and summarize one selected workflow node's guidance text without mutating `.trellis/workflow.md`. |
 | `trellis/setup/status/` | GET | Inspect Trellis prerequisites, CLI availability, and selected-workspace initialization state without requiring the panel setting to be enabled. |

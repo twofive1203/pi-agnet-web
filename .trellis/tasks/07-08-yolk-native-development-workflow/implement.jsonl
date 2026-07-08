@@ -1,0 +1,15 @@
+{"file":"docs/modules/frontend.md","reason":"Frontend component and hook map for Settings, AppShell, ChatInput, and panels."}
+{"file":"docs/modules/api.md","reason":"API route map and documentation update target for new /api/yolk routes."}
+{"file":"docs/modules/library.md","reason":"Library module map and documentation update target for new lib/yolk-* modules."}
+{"file":"docs/architecture/overview.md","reason":"Runtime/session/resource discovery invariants and extension loading behavior."}
+{"file":"docs/standards/code-style.md","reason":"Validation commands and code style constraints."}
+{"file":"components/SettingsConfig.tsx","reason":"Existing Settings section pattern and Trellis setup controls to mirror without coupling."}
+{"file":"components/AppShell.tsx","reason":"Right panel modes, Trellis panel integration, and chat context insertion flow."}
+{"file":"components/ChatInput.tsx","reason":"Existing Trellis context chip rendering and serialization pattern."}
+{"file":"components/TrellisPanel.tsx","reason":"Reference for task list/detail panel behavior to adapt for YolkWorkflowPanel."}
+{"file":"lib/trellis-manager.ts","reason":"Reference for workspace-aware setup/status safety, but do not call Trellis CLI."}
+{"file":"lib/trellis-reader.ts","reason":"Reference for safe task directory reading and artifact byte limits."}
+{"file":"lib/trellis-chat-context.ts","reason":"Reference for context payload and resume prompt serialization."}
+{"file":"app/api/trellis/setup/status/route.ts","reason":"Allowed-root/canonical cwd guard pattern for setup status route."}
+{"file":"app/api/commands/route.ts","reason":"Resource discovery path for prompts and extension commands after provisioning."}
+{"file":"app/api/pi/resources/route.ts","reason":"Resource diagnostics endpoint for verifying project-local yolk resources."}
