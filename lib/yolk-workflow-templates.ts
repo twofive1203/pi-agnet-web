@@ -1,6 +1,6 @@
 import type { YolkTaskDocumentName, YolkWorkflowDefinition } from "./yolk-types";
 
-export const YOLK_WORKFLOW_VERSION = "0.1.2";
+export const YOLK_WORKFLOW_VERSION = "0.1.3";
 export const YOLK_MANIFEST_PATH = ".yolk/manifest.json";
 export const YOLK_TASKS_PATH = ".yolk/tasks";
 
@@ -23,6 +23,7 @@ export const DEFAULT_YOLK_WORKFLOW: YolkWorkflowDefinition = {
 const WORKFLOW_EXTENSION = String.raw`import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
+import { Type } from "typebox";
 
 type JsonObject = Record<string, unknown>;
 
@@ -33,6 +34,7 @@ interface ToolResult {
 }
 
 interface ExtensionContext {
+  cwd?: string;
   ui?: { notify?: (message: string, type?: "info" | "warning" | "error") => void };
 }
 
@@ -168,6 +170,10 @@ function toolText(text: string, details?: unknown): ToolResult {
   return { content: [{ type: "text", text }], details };
 }
 
+function workspaceRoot(ctx?: ExtensionContext): string {
+  return typeof ctx?.cwd === "string" && ctx.cwd ? ctx.cwd : process.cwd();
+}
+
 function buildContext(root: string): string {
   if (!enabled(root)) return "";
   const workflow = readJson(join(root, ".yolk", "workflow.json"));
@@ -189,9 +195,18 @@ function buildContext(root: string): string {
   return parts.join("\n");
 }
 
-export default function yolkWorkflowExtension(pi: ExtensionApi): void {
-  const root = process.cwd();
+const YOLK_TASK_PARAMS = Type.Object({
+  action: Type.Optional(Type.Union([Type.Literal("create"), Type.Literal("list"), Type.Literal("read"), Type.Literal("update_status")], { description: "Task operation." })),
+  title: Type.Optional(Type.String({ description: "Task title for create." })),
+  taskId: Type.Optional(Type.String({ description: "Yolk task id for read or update_status." })),
+  status: Type.Optional(Type.Union([Type.Literal("planning"), Type.Literal("in_progress"), Type.Literal("review"), Type.Literal("completed")], { description: "New status for update_status." })),
+  priority: Type.Optional(Type.Union([Type.Literal("P0"), Type.Literal("P1"), Type.Literal("P2"), Type.Literal("P3")], { description: "Priority for create." })),
+  assignee: Type.Optional(Type.String({ description: "Optional assignee for create." })),
+  prd: Type.Optional(Type.String({ description: "Optional initial prd.md content for create." })),
+  notes: Type.Optional(Type.String({ description: "Optional task notes." })),
+});
 
+export default function yolkWorkflowExtension(pi: ExtensionApi): void {
   pi.registerTool?.({
     name: "yolk_task",
     label: "Yolk Task",
@@ -202,22 +217,10 @@ export default function yolkWorkflowExtension(pi: ExtensionApi): void {
       "Use yolk_task instead of direct file writes for creating or updating .yolk task metadata.",
       "Do not use Trellis CLI or .trellis task state for Yolk workflow tasks."
     ],
-    parameters: {
-      type: "object",
-      properties: {
-        action: { type: "string", enum: ["create", "list", "read", "update_status"], description: "Task operation." },
-        title: { type: "string", description: "Task title for create." },
-        taskId: { type: "string", description: "Yolk task id for read or update_status." },
-        status: { type: "string", enum: ["planning", "in_progress", "review", "completed"], description: "New status for update_status." },
-        priority: { type: "string", enum: ["P0", "P1", "P2", "P3"], description: "Priority for create." },
-        assignee: { type: "string", description: "Optional assignee for create." },
-        prd: { type: "string", description: "Optional initial prd.md content for create." },
-        notes: { type: "string", description: "Optional task notes." }
-      },
-      required: ["action"]
-    },
-    execute: async (_id: string, input: YolkTaskInput) => {
-      if (!enabled(root)) return toolText("Yolk workflow is not enabled for this workspace.", { enabled: false });
+    parameters: YOLK_TASK_PARAMS,
+    execute: async (_id: string, input: YolkTaskInput, _signal: AbortSignal | undefined, _onUpdate: unknown, ctx: ExtensionContext) => {
+      const root = workspaceRoot(ctx);
+      if (!enabled(root)) return toolText("Yolk workflow is not enabled for this workspace.", { enabled: false, cwd: root });
       const action = input.action || "list";
       if (action === "create") {
         const task = createTask(root, input);
@@ -250,6 +253,7 @@ export default function yolkWorkflowExtension(pi: ExtensionApi): void {
   pi.registerCommand?.("yolk-status", {
     description: "Show project-local Yolk workflow status",
     handler: async (_args, ctx) => {
+      const root = workspaceRoot(ctx);
       const active = enabled(root);
       const message = active
         ? "Yolk workflow is enabled for this workspace."
@@ -260,10 +264,12 @@ export default function yolkWorkflowExtension(pi: ExtensionApi): void {
   });
 
   pi.on?.("session_start", (_event, ctx) => {
+    const root = workspaceRoot(ctx);
     if (enabled(root)) ctx?.ui?.notify?.("Yolk workflow context is available. Use /yolk-new-task <title> or let the agent call yolk_task for new work.", "info");
   });
 
-  pi.on?.("before_agent_start", (event) => {
+  pi.on?.("before_agent_start", (event, ctx) => {
+    const root = workspaceRoot(ctx);
     const context = buildContext(root);
     if (!context) return undefined;
     const current = (event as { systemPrompt?: string }).systemPrompt ?? "";
