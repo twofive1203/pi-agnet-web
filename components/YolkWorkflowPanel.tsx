@@ -44,6 +44,18 @@ function formatStatus(status: string): string {
   return STATUS_LABELS[status] ?? status;
 }
 
+function matchesStatusFilter(task: YolkTaskSummary, statusFilter: string): boolean {
+  if (statusFilter === "all") return true;
+  if (statusFilter === "unfinished") return task.status !== "completed";
+  return task.status === statusFilter;
+}
+
+function formatStatusFilter(status: string): string {
+  if (status === "unfinished") return "未完成";
+  if (status === "all") return "全部";
+  return formatStatus(status);
+}
+
 function statusColor(status: string): string {
   if (status === "in_progress") return "#60a5fa";
   if (status === "review") return "#a78bfa";
@@ -72,7 +84,7 @@ export function YolkWorkflowPanel({ cwd, focusedTaskKey, onJoinTaskChat }: YolkW
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("unfinished");
   const [artifactTab, setArtifactTab] = useState<ArtifactTab>("overview");
   const [newTaskOpen, setNewTaskOpen] = useState(false);
   const [newTitle, setNewTitle] = useState("");
@@ -103,8 +115,9 @@ export function YolkWorkflowPanel({ cwd, focusedTaskKey, onJoinTaskChat }: YolkW
       setEnabled(data.enabled);
       setReadErrors(data.errors);
       setSelectedKey((current) => {
-        if (focusedTaskKey && data.tasks.some((task) => task.key === focusedTaskKey)) return focusedTaskKey;
-        return current && data.tasks.some((task) => task.key === current) ? current : data.tasks[0]?.key ?? null;
+        const visibleTasks = data.tasks.filter((task) => matchesStatusFilter(task, statusFilter));
+        if (focusedTaskKey && visibleTasks.some((task) => task.key === focusedTaskKey)) return focusedTaskKey;
+        return current && visibleTasks.some((task) => task.key === current) ? current : visibleTasks[0]?.key ?? null;
       });
     } catch (err) {
       if ((err as { name?: string }).name === "AbortError") return;
@@ -114,7 +127,7 @@ export function YolkWorkflowPanel({ cwd, focusedTaskKey, onJoinTaskChat }: YolkW
     } finally {
       setLoading(false);
     }
-  }, [cwd, focusedTaskKey]);
+  }, [cwd, focusedTaskKey, statusFilter]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -128,8 +141,11 @@ export function YolkWorkflowPanel({ cwd, focusedTaskKey, onJoinTaskChat }: YolkW
 
   useEffect(() => {
     if (!focusedTaskKey) return;
-    if (tasks.some((task) => task.key === focusedTaskKey)) setSelectedKey(focusedTaskKey);
-  }, [focusedTaskKey, tasks]);
+    const focusedTask = tasks.find((task) => task.key === focusedTaskKey);
+    if (!focusedTask) return;
+    if (!matchesStatusFilter(focusedTask, statusFilter)) setStatusFilter("all");
+    setSelectedKey(focusedTaskKey);
+  }, [focusedTaskKey, statusFilter, tasks]);
 
   useEffect(() => {
     if (!cwd || !selectedKey || !enabled) {
@@ -157,15 +173,23 @@ export function YolkWorkflowPanel({ cwd, focusedTaskKey, onJoinTaskChat }: YolkW
     return () => controller.abort();
   }, [cwd, enabled, selectedKey]);
 
-  const statusOptions = useMemo(() => ["all", ...new Set(tasks.map((task) => task.status))], [tasks]);
+  const statusOptions = useMemo(() => ["unfinished", "all", ...new Set(tasks.map((task) => task.status).filter((status) => status !== "unfinished" && status !== "all"))], [tasks]);
   const filteredTasks = useMemo(() => {
     const q = query.trim().toLowerCase();
     return tasks.filter((task) => {
-      if (statusFilter !== "all" && task.status !== statusFilter) return false;
+      if (!matchesStatusFilter(task, statusFilter)) return false;
       if (!q) return true;
       return [task.title, task.id, task.status, task.priority, task.assignee].filter(Boolean).some((value) => value!.toLowerCase().includes(q));
     });
   }, [query, statusFilter, tasks]);
+
+  const changeStatusFilter = useCallback((nextStatusFilter: string) => {
+    setStatusFilter(nextStatusFilter);
+    setSelectedKey((current) => {
+      if (current && tasks.some((task) => task.key === current && matchesStatusFilter(task, nextStatusFilter))) return current;
+      return tasks.find((task) => matchesStatusFilter(task, nextStatusFilter))?.key ?? null;
+    });
+  }, [tasks]);
 
   const createTask = useCallback(async () => {
     if (!cwd || !newTitle.trim()) return;
@@ -209,8 +233,8 @@ export function YolkWorkflowPanel({ cwd, focusedTaskKey, onJoinTaskChat }: YolkW
           spellCheck={false}
           style={{ flex: 1, minWidth: 0, height: 28, padding: "0 9px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text)", fontSize: 12, outline: "none" }}
         />
-        <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} style={{ height: 28, borderRadius: 8, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-muted)", fontSize: 11 }}>
-          {statusOptions.map((status) => <option key={status} value={status}>{status === "all" ? "全部" : formatStatus(status)}</option>)}
+        <select value={statusFilter} onChange={(event) => changeStatusFilter(event.target.value)} aria-label="Yolk 任务状态筛选" style={{ height: 28, borderRadius: 8, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-muted)", fontSize: 11 }}>
+          {statusOptions.map((status) => <option key={status} value={status}>{formatStatusFilter(status)}</option>)}
         </select>
         <button type="button" onClick={() => setNewTaskOpen((open) => !open)} style={{ height: 28, padding: "0 9px", borderRadius: 8, border: "1px solid var(--border)", background: newTaskOpen ? "var(--bg-selected)" : "var(--bg)", color: newTaskOpen ? "var(--accent)" : "var(--text-muted)", cursor: "pointer", fontSize: 11, whiteSpace: "nowrap" }}>
           新任务
