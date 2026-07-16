@@ -502,3 +502,36 @@ Implemented WebUI support for locally installed Pi extensions: extension command
 ### Next Steps
 
 - None - task complete
+
+
+## Session 42: Rename Yolk branding to Snail
+
+**Date**: 2026-07-16
+**Task**: Rename Yolk branding to Snail
+**Branch**: `self-run`
+
+### Summary
+
+Renamed the product to 蜗牛派 (Snail Pi Web), moved the npm package to @twofive/snail-pi-web with spi CLI, added a snail/pi SVG logo, and updated UI, docs, metadata, and runtime labels. Lint, type-check, stale-brand search, SVG validation, and diff checks passed.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a30603a` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
