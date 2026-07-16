@@ -70,7 +70,6 @@ const TOOL_PRESET_LABELS: Record<ToolPreset, string> = {
 const COMPOSITION_END_ENTER_GRACE_MS = 100;
 
 const THINKING_LEVELS = ["auto", "off", "minimal", "low", "medium", "high", "xhigh"] as const;
-const MAX_SLASH_COMMANDS = 8;
 
 interface SlashCommandMatch {
   start: number;
@@ -197,8 +196,7 @@ function filterSlashCommands(commands: SlashCommandEntry[], query: string): Slas
         return order[a.source] - order[b.source];
       }
       return a.name.localeCompare(b.name);
-    })
-    .slice(0, MAX_SLASH_COMMANDS);
+    });
 }
 
 function describeSlashCommand(command: SlashCommandEntry): string {
@@ -452,6 +450,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const [uploadingFiles, setUploadingFiles] = useState(false);
 
   const inputRef = useRef<HTMLDivElement>(null);
+  const slashSelectedItemRef = useRef<HTMLButtonElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const modelDropdownPanelRef = useRef<HTMLDivElement>(null);
   const toolDropdownRef = useRef<HTMLDivElement>(null);
@@ -499,6 +498,11 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   useEffect(() => {
     setSlashSelectedIndex(0);
   }, [slashMatch?.query, filteredSlashCommands.length]);
+
+  useEffect(() => {
+    if (!slashMenuVisible) return;
+    slashSelectedItemRef.current?.scrollIntoView({ block: "nearest" });
+  }, [slashMenuVisible, slashSelectedIndex, slashMatch?.query]);
 
   useEffect(() => {
     setAtSelectedIndex(0);
@@ -1266,48 +1270,75 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               ) : filteredSlashCommands.length === 0 ? (
                 <div style={{ padding: "10px 12px", fontSize: 12, color: "var(--text-muted)" }}>No matching extension, skill or template commands</div>
               ) : (
-                filteredSlashCommands.map((command, index) => {
-                  const selected = index === slashSelectedIndex;
-                  return (
-                    <button
-                      key={`${command.source}:${command.name}:${command.path ?? ""}`}
-                      type="button"
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        insertSlashCommand(command);
-                      }}
-                      onMouseEnter={() => setSlashSelectedIndex(index)}
-                      style={{
-                        width: "100%",
-                        display: "flex",
-                        alignItems: "flex-start",
-                        gap: 10,
-                        padding: "8px 10px",
-                        border: "none",
-                        borderTop: index > 0 ? "1px solid color-mix(in srgb, var(--border) 55%, transparent)" : "none",
-                        background: selected ? "var(--bg-selected)" : "transparent",
-                        color: "var(--text)",
-                        cursor: "pointer",
-                        textAlign: "left",
-                      }}
-                    >
-                      <span style={{ color: "var(--accent)", fontFamily: "var(--font-mono)", fontSize: 12, whiteSpace: "nowrap" }}>
-                        /{command.name}
-                      </span>
-                      <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
-                        <span style={{ fontSize: 12, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          {command.argumentHint && (
-                            <span style={{ color: "var(--text)", fontFamily: "var(--font-mono)", marginRight: 8 }}>{command.argumentHint}</span>
-                          )}
-                          {describeSlashCommand(command)}
+                <div style={{ maxHeight: "min(260px, calc(100vh - 180px))", overflowY: "auto", overscrollBehavior: "contain" }}>
+                  {filteredSlashCommands.map((command, index) => {
+                    const selected = index === slashSelectedIndex;
+                    const sourceLabel = slashCommandSourceLabel(command);
+                    return (
+                      <button
+                        ref={selected ? slashSelectedItemRef : undefined}
+                        key={`${command.source}:${command.name}:${command.path ?? ""}`}
+                        type="button"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          insertSlashCommand(command);
+                        }}
+                        onMouseEnter={() => setSlashSelectedIndex(index)}
+                        style={{
+                          width: "100%",
+                          display: "flex",
+                          alignItems: "flex-start",
+                          gap: 10,
+                          padding: "8px 10px",
+                          border: "none",
+                          borderTop: index > 0 ? "1px solid color-mix(in srgb, var(--border) 55%, transparent)" : "none",
+                          background: selected ? "var(--bg-selected)" : "transparent",
+                          color: "var(--text)",
+                          cursor: "pointer",
+                          textAlign: "left",
+                        }}
+                      >
+                        <span
+                          title={`/${command.name}`}
+                          style={{
+                            maxWidth: "42%",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            color: "var(--accent)",
+                            fontFamily: "var(--font-mono)",
+                            fontSize: 12,
+                            whiteSpace: "nowrap",
+                            flexShrink: 0,
+                          }}
+                        >
+                          /{command.name}
                         </span>
-                        <span style={{ fontSize: 10, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                          {slashCommandSourceLabel(command)}
+                        <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
+                          <span style={{ fontSize: 12, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {command.argumentHint && (
+                              <span style={{ color: "var(--text)", fontFamily: "var(--font-mono)", marginRight: 8 }}>{command.argumentHint}</span>
+                            )}
+                            {describeSlashCommand(command)}
+                          </span>
+                          <span
+                            title={sourceLabel}
+                            style={{
+                              fontSize: 10,
+                              color: "var(--text-dim)",
+                              textTransform: "uppercase",
+                              letterSpacing: "0.05em",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {sourceLabel}
+                          </span>
                         </span>
-                      </span>
-                    </button>
-                  );
-                })
+                      </button>
+                    );
+                  })}
+                </div>
               )}
             </div>
           )}
