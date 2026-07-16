@@ -60,3 +60,4 @@ handoff/
 # .trellis/spec/ .trellis/tasks/ .trellis/workflow.md etc. are team-shared (tracked)
 # The .trellis/.gitignore already excludes developer/runtime artifacts
 .idea/
+/.pi-subagents
