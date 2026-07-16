@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { earliestResetCreditExpiration, formatQuotaQueriedAt, formatResetCountdown, knownQuotaTiers, quotaColor, QUOTA_TIER_LABELS, type CodexResetCreditDisplay, type QuotaDisplayTier } from "@/lib/quota-display";
 
 type CredentialStatus = "valid" | "expired" | "not_found" | "parse_error";
@@ -108,6 +109,9 @@ function formatTime(value: number | null): string {
 
 export function ChatGptUsagePanel() {
   const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [panelPosition, setPanelPosition] = useState<{ top: number; right: number } | null>(null);
   const [account, setAccount] = useState<OAuthAccountSummary | null>(null);
   const [accounts, setAccounts] = useState<OAuthAccountSummary[]>([]);
   const [accountsLoading, setAccountsLoading] = useState(true);
@@ -119,6 +123,15 @@ export function ChatGptUsagePanel() {
   const [schedulerStatus, setSchedulerStatus] = useState<SchedulerStatus | null>(null);
   const [schedulerError, setSchedulerError] = useState<string | null>(null);
   const [repairingLock, setRepairingLock] = useState(false);
+
+  const updatePanelPosition = useCallback(() => {
+    const rect = triggerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    setPanelPosition({
+      top: rect.bottom,
+      right: Math.max(8, window.innerWidth - rect.right),
+    });
+  }, []);
 
   const loadAccounts = useCallback(async (signal?: AbortSignal, options?: { silent?: boolean }) => {
     const silent = options?.silent === true;
@@ -196,6 +209,38 @@ export function ChatGptUsagePanel() {
     void loadSchedulerStatus(controller.signal);
     return () => controller.abort();
   }, [open, loadAccounts, loadSchedulerStatus]);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const handleOutsideInteraction = (event: Event) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (triggerRef.current?.contains(target) || panelRef.current?.contains(target)) return;
+      setOpen(false);
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+
+    updatePanelPosition();
+    document.addEventListener("pointerdown", handleOutsideInteraction, true);
+    document.addEventListener("focusin", handleOutsideInteraction, true);
+    document.addEventListener("scroll", updatePanelPosition, true);
+    window.addEventListener("resize", updatePanelPosition);
+    window.visualViewport?.addEventListener("resize", updatePanelPosition);
+    window.visualViewport?.addEventListener("scroll", updatePanelPosition);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handleOutsideInteraction, true);
+      document.removeEventListener("focusin", handleOutsideInteraction, true);
+      document.removeEventListener("scroll", updatePanelPosition, true);
+      window.removeEventListener("resize", updatePanelPosition);
+      window.visualViewport?.removeEventListener("resize", updatePanelPosition);
+      window.visualViewport?.removeEventListener("scroll", updatePanelPosition);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open, updatePanelPosition]);
 
   const refreshQuota = useCallback(async () => {
     if (resetting) return;
@@ -315,11 +360,16 @@ export function ChatGptUsagePanel() {
   return (
     <div style={{ position: "relative", display: "flex", alignItems: "center", height: "100%" }}>
       <button
+        ref={triggerRef}
         type="button"
-        onClick={() => setOpen((value) => !value)}
+        onClick={() => {
+          if (!open) updatePanelPosition();
+          setOpen((value) => !value);
+        }}
         title="ChatGPT usage"
         aria-label="ChatGPT usage"
         aria-expanded={open}
+        aria-controls="chatgpt-usage-popover"
         style={{
           height: 26,
           display: "flex",
@@ -346,15 +396,20 @@ export function ChatGptUsagePanel() {
         </span>
       </button>
 
-      {open && (
+      {open && panelPosition && typeof document !== "undefined" && createPortal((
         <div
+          ref={panelRef}
+          id="chatgpt-usage-popover"
+          className="chatgpt-usage-popover"
+          role="dialog"
+          aria-label="ChatGPT usage details"
           style={{
-            position: "absolute",
-            top: 31,
-            right: 0,
+            position: "fixed",
+            top: panelPosition.top,
+            right: panelPosition.right,
             zIndex: 550,
             width: 380,
-            maxHeight: "min(680px, calc(100vh - 80px))",
+            maxHeight: `min(680px, calc(100dvh - ${panelPosition.top + 8}px))`,
             overflow: "auto",
             border: "1px solid rgba(148,163,184,0.30)",
             borderRadius: 12,
@@ -471,7 +526,7 @@ export function ChatGptUsagePanel() {
             </button>
           </div>
         </div>
-      )}
+      ), document.body)}
     </div>
   );
 }

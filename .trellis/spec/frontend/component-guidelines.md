@@ -209,9 +209,9 @@ playDoneSoundRef.current();
 
 ## Mobile Floating Panels
 
-Bottom-toolbar menus in `components/ChatInput.tsx` must not render as `position: absolute` inside `.chat-input-controls`. On mobile, that controls row uses horizontal scrolling and ancestors use `overflow: hidden`, so menus can be clipped or fail to remain tappable.
+Menus and popovers belonging to horizontally scrollable mobile toolbars must not render as `position: absolute` children of those toolbars. This applies to bottom controls in `components/ChatInput.tsx` and top-bar panels in `components/AppShell.tsx`, `components/BranchNavigator.tsx`, and `components/ChatGptUsagePanel.tsx`. Their scroll containers use overflow clipping, so descendant panels can be hidden or fail to remain tappable.
 
-Use the existing ChatInput pattern instead:
+Use the existing fixed body-portal pattern instead:
 
 ```typescript
 const rect = button.getBoundingClientRect();
@@ -228,8 +228,10 @@ return createPortal(
 **Rules:**
 - Capture the trigger `getBoundingClientRect()` before opening.
 - Render the panel through `createPortal(..., document.body)` when it belongs to a mobile-scrollable toolbar.
-- Use pointer events (`onPointerDown`) for touch reliability, and keep keyboard `Enter`/`Space` handling for accessibility.
-- Include the portal panel ref in outside-click detection so selecting an option is not treated as an outside tap.
+- Give mobile panels viewport-safe width and height limits in `app/globals.css`; long content must scroll inside the panel.
+- Use pointer events (`onPointerDown`) for touch reliability, and keep keyboard `Enter`/`Space` handling for accessibility when implementing custom selector triggers.
+- Include the portal panel ref or stable panel class in outside-click detection so selecting an option is not treated as an outside tap.
+- Recalculate or close fixed panels when resize, visual viewport, or relevant toolbar scroll changes can invalidate captured coordinates.
 
 ## Common Mistakes
 
@@ -237,7 +239,7 @@ return createPortal(
 2. **Don't duplicate path encoding logic** — use `lib/file-paths.ts` (`encodeFilePathForApi`, `getRelativeFilePath`)
 3. **Don't hardcode theme colors** — always use CSS variables like `var(--bg)` instead of hardcoded hex values
 4. **Don't put business logic in render functions** — extract to helpers or move to `lib/`
-5. **Don't render mobile toolbar dropdowns as absolute children of scroll containers** — portal fixed panels to `document.body` instead
+5. **Don't render mobile toolbar dropdowns or popovers as children of scroll containers** — portal fixed panels to `document.body` instead
 6. **Don't forget to update `AGENTS.md`** when adding new components to the Components table
 
 ## Accessibility

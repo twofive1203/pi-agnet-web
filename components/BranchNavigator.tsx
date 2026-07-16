@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import type { SessionEntry, SessionTreeNode } from "@/lib/types";
 
 interface Props {
@@ -298,7 +299,7 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, cont
           {branchIcon}
           <span>Branches</span>
         </button>
-        {open && dropdownPos && (
+        {open && dropdownPos && typeof document !== "undefined" && createPortal((
           <div className="app-top-aux-panel" style={{
             position: "fixed",
             top: dropdownPos.top,
@@ -328,7 +329,7 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, cont
               </div>
             )}
           </div>
-        )}
+        ), document.body)}
       </div>
     );
   }

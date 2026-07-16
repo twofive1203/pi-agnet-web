@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
 import { SessionSidebar } from "./SessionSidebar";
 import { ChatWindow } from "./ChatWindow";
@@ -959,7 +960,7 @@ export function AppShell() {
             </div>
           )}
           {/* Top panel dropdown — shared, only one active at a time */}
-          {activeTopPanel && topPanelPos && (
+          {activeTopPanel && activeTopPanel !== "branches" && topPanelPos && typeof document !== "undefined" && createPortal((
             <div className="app-top-aux-panel" style={{
               position: "fixed",
               top: topPanelPos.top,
@@ -1013,7 +1014,7 @@ export function AppShell() {
                 </div>
               )}
             </div>
-          )}
+          ), document.body)}
 
         </div>
 
