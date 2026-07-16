@@ -39,7 +39,7 @@ const { values: cliArgs } = parseArgs({
   strict: false,
 });
 
-const port       = cliArgs.port     ?? process.env.PORT     ?? "30141";
+const port       = cliArgs.port     ?? process.env.PORT     ?? "62666";
 const hostname   = cliArgs.hostname ?? process.env.HOSTNAME ?? null;
 const httpProxy  = cliArgs.proxy ?? process.env.PROXY_URL ?? process.env.HTTP_PROXY ?? process.env.http_proxy ?? null;
 const socksProxy = cliArgs["socks-proxy"] ?? process.env.SOCKS_PROXY_URL ?? process.env.ALL_PROXY ?? process.env.all_proxy ?? null;

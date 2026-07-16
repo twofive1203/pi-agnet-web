@@ -33,7 +33,7 @@ npm install -g @twofive/snail-pi-web
 spi
 ```
 
-启动后打开 [http://localhost:30141](http://localhost:30141)。CLI 会在服务就绪后尝试自动打开浏览器。
+启动后打开 [http://localhost:62666](http://localhost:62666)。CLI 会在服务就绪后尝试自动打开浏览器。
 
 ## 启动参数
 
@@ -109,7 +109,7 @@ npm install
 npm run dev
 ```
 
-本地开发端口为 [http://localhost:30141](http://localhost:30141)。
+本地开发端口为 [http://localhost:62666](http://localhost:62666)。
 
 生产构建和启动：
 

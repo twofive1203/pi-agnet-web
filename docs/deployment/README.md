@@ -33,7 +33,7 @@ npm install -g @twofive/snail-pi-web
 spi
 ```
 
-Default URL: `http://localhost:30141`. The CLI attempts to open the browser after the server is ready.
+Default URL: `http://localhost:62666`. The CLI attempts to open the browser after the server is ready.
 
 ### CLI Options
 
@@ -84,7 +84,7 @@ Session path format:
 
 ```bash
 npm install
-npm run dev      # http://localhost:30141
+npm run dev      # http://localhost:62666
 ```
 
 Use `npm run dev` for development. Do not run `next build` directly during dev.
@@ -100,7 +100,7 @@ node_modules/.bin/tsc --noEmit
 
 ```bash
 npm run build    # runs scripts/build-next.js
-npm run start    # serves on port 30141
+npm run start    # serves on port 62666
 ```
 
 `npm run build` uses `scripts/build-next.js`, which sets `HOME` and `USERPROFILE` to `.next-build-home/` to avoid protected Windows home junction issues. Do not run `next build` directly for project validation.
@@ -115,7 +115,7 @@ PORT=8080 npm run start
 
 ## PM2
 
-`ecosystem.config.cjs` runs `node_modules/.bin/next start -p 30141` with:
+`ecosystem.config.cjs` runs `node_modules/.bin/next start -p 62666` with:
 
 - recommended process name `snail-pi-web` (existing generic `pi-web` setups may remain unchanged)
 - auto-restart enabled
@@ -188,5 +188,5 @@ After publishing, verify the package:
 
 ```bash
 npm view @twofive/snail-pi-web version --prefer-online
-npx @twofive/snail-pi-web@latest --port 30141
+npx @twofive/snail-pi-web@latest --port 62666
 ```

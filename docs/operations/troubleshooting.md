@@ -2,7 +2,7 @@
 
 ## Common Checks
 
-- Confirm the server is on port `30141` unless `--port` or `PORT` overrides it.
+- Confirm the server is on port `62666` unless `--port` or `PORT` overrides it.
 - Confirm `PI_CODING_AGENT_DIR` when sessions or config appear missing.
 - Check `~/.pi/agent/sessions/` for raw session JSONL files.
 - For PM2 deployments, inspect `logs/pi-web-out.log` and `logs/pi-web-error.log`.

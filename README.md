@@ -33,7 +33,7 @@ npm install -g @twofive/snail-pi-web
 spi
 ```
 
-默认监听 `http://localhost:30141`。服务就绪后，CLI 会尝试自动打开浏览器。
+默认监听 `http://localhost:62666`。服务就绪后，CLI 会尝试自动打开浏览器。
 
 ## 常用启动参数
 
@@ -97,7 +97,7 @@ npm install
 npm run dev
 ```
 
-开发服务器默认端口：`http://localhost:30141`。
+开发服务器默认端口：`http://localhost:62666`。
 
 生产构建和启动：
 

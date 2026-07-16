@@ -6,16 +6,16 @@ This file is the AI working entrypoint, documentation map, and project contract 
 
 ```bash
 npm install
-npm run dev     # http://localhost:30141
+npm run dev     # http://localhost:62666
 ```
 
 | Command | Purpose |
 | --- | --- |
-| `npm run dev` | Start the dev server on port 30141. |
+| `npm run dev` | Start the dev server on port 62666. |
 | `npm run lint` | Run ESLint. |
 | `node_modules/.bin/tsc --noEmit` | Type-check without emitting. |
 | `npm run build` | Production/release build through `scripts/build-next.js`. Do not use for routine dev work. |
-| `npm run start` | Start the production server on port 30141. |
+| `npm run start` | Start the production server on port 62666. |
 
 > Never run `next build` directly during development. It pollutes `.next/` and can break `npm run dev`; use `npm run build` only for release/publish validation.
 
@@ -38,7 +38,7 @@ npm run dev     # http://localhost:30141
 | Path | Purpose | Details |
 | --- | --- | --- |
 | `app/` | Next.js app routes, layout, global styles. | `README.md`, `docs/modules/api.md` |
-| `app/api/` | API route handlers for sessions, agent RPC/SSE, files, models, skills, auth, usage, Git/worktrees, and config. | `docs/modules/api.md` |
+| `app/api/` | API route handlers for sessions, agent RPC/SSE, files, models, skills, auth, usage, Git/worktrees, native subagent settings, and config. | `docs/modules/api.md` |
 | `components/` | React UI components. | `docs/modules/frontend.md` |
 | `hooks/` | Client hooks for session state, theme, drag/drop, audio. | `docs/modules/frontend.md` |
 | `lib/` | Shared server/client utilities, parsing, lifecycle, config, provider helpers. | `docs/modules/library.md` |
@@ -58,7 +58,7 @@ npm run dev     # http://localhost:30141
 | Chat/session UI state | `hooks/useAgentSession.ts`, `components/ChatWindow.tsx`, `components/ChatInput.tsx` | `docs/modules/frontend.md` |
 | Tool-call normalization | `lib/normalize.ts` | `docs/architecture/overview.md`, `docs/modules/library.md` |
 | Workspace files and Git context | `app/api/files/**`, `app/api/git/**`, `lib/file-paths.ts`, `lib/git-worktree.ts`, `lib/workspace-title.ts` | `docs/modules/api.md`, `docs/modules/library.md` |
-| Models, skills, auth, usage | `app/api/models*`, `app/api/skills/**`, `app/api/auth/**`, `app/api/usage/route.ts` | `docs/modules/api.md`, `docs/integrations/README.md` |
+| Models, native subagents, skills, auth, usage | `app/api/models*`, `app/api/subagents/config/**`, `app/api/skills/**`, `app/api/auth/**`, `app/api/usage/route.ts` | `docs/modules/api.md`, `docs/integrations/README.md` |
 
 ## Project Invariants
 
@@ -109,8 +109,8 @@ node_modules/.bin/tsc --noEmit
 | Data dir override | `PI_CODING_AGENT_DIR` |
 | Session files | `~/.pi/agent/sessions/<encoded-cwd>/<timestamp>_<uuid>.jsonl` |
 | Model config | `~/.pi/agent/models.json` |
-| Settings/default model | `~/.pi/agent/settings.json` |
-| Web UI settings (WorkTree, Usage, Web Terminal, ChatGPT panel, Editor, Trellis) | `~/.pi/agent/pi-web.json` |
+| Settings/default model/native subagents | `~/.pi/agent/settings.json`, project override `<cwd>/.pi/settings.json` |
+| Web UI settings (WorkTree, Usage, Web Terminal, ChatGPT panel, Editor, Trellis routing) | `~/.pi/agent/pi-web.json` |
 
 ## Archive Rules
 

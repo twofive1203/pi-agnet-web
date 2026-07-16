@@ -33,9 +33,9 @@
     "package.json"
   ],
   "scripts": {
-    "dev": "next dev -p 30141",
+    "dev": "next dev -p 62666",
     "build": "node scripts/build-next.js",
-    "start": "next start -p 30141",
+    "start": "next start -p 62666",
     "lint": "eslint .",
     "prepublishOnly": "npm run lint && tsc --noEmit && npm run build",
     "release:patch": "npm version patch && npm publish --access public",
