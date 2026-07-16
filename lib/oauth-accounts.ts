@@ -342,7 +342,7 @@ async function fetchOpenAICodexAccountLabel(accessToken: string, accountId: stri
           Authorization: `Bearer ${accessToken}`,
           Accept: "application/json",
           "ChatGPT-Account-Id": accountId,
-          "User-Agent": "yolk-pi-web",
+          "User-Agent": "snail-pi-web",
         },
         signal: AbortSignal.timeout(4000),
       });

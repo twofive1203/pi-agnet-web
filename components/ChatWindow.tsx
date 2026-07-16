@@ -311,8 +311,8 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
               }}
             >
               <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0, flex: 1, lineHeight: 1.4 }}>
-                <Image src="/yolk-pi-logo.png" alt="yolk pi web" width={42} height={42} style={{ flexShrink: 0, borderRadius: 10 }} priority />
-                <span style={{ fontSize: 22, color: "var(--text)", fontWeight: 800, letterSpacing: "-0.02em", textTransform: "lowercase" }}>yolk pi web</span>
+                <Image src="/snail-pi-logo.svg" alt="蜗牛派" width={42} height={42} style={{ flexShrink: 0 }} priority />
+                <span style={{ fontSize: 22, color: "var(--text)", fontWeight: 800, letterSpacing: "-0.02em" }}>蜗牛派</span>
                 <span style={{ fontSize: 14, minWidth: 0, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>
                   <Typewriter phrases={TYPEWRITER_PHRASES} />
                 </span>

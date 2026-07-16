@@ -1,7 +1,7 @@
 {
-  "name": "@alan-zhao/yolk-pi-web",
+  "name": "@twofive/snail-pi-web",
   "version": "0.7.1",
-  "description": "yolk pi web WebChat workspace for the pi coding agent",
+  "description": "Snail Pi Web (蜗牛派) workspace for the pi coding agent",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -19,7 +19,7 @@
     "nextjs"
   ],
   "bin": {
-    "ypi": "bin/pi-web.js"
+    "spi": "bin/pi-web.js"
   },
   "files": [
     "bin",

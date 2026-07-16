@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Start yolk pi web with proxy settings that Node/Next can actually use.
+# Start Snail Pi Web with proxy settings that Node/Next can actually use.
 # Usage:
 #   ./start-pi-web-proxy.sh
 # Optional overrides:
@@ -29,7 +29,7 @@ case " ${NODE_OPTIONS:-} " in
 esac
 
 cat <<EOF
-== yolk pi web proxy startup ==
+== Snail Pi Web proxy startup ==
 HTTP_PROXY=$HTTP_PROXY
 HTTPS_PROXY=$HTTPS_PROXY
 ALL_PROXY=$ALL_PROXY

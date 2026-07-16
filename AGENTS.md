@@ -1,4 +1,4 @@
-# yolk pi web — Agent Guide
+# 蜗牛派 (Snail Pi Web) — Agent Guide
 
 This file is the AI working entrypoint, documentation map, and project contract for the pi coding agent web UI. Keep detailed material in `docs/`; this file only says where to read, where to archive, and which rules must be followed.
 
@@ -42,7 +42,7 @@ npm run dev     # http://localhost:30141
 | `components/` | React UI components. | `docs/modules/frontend.md` |
 | `hooks/` | Client hooks for session state, theme, drag/drop, audio. | `docs/modules/frontend.md` |
 | `lib/` | Shared server/client utilities, parsing, lifecycle, config, provider helpers. | `docs/modules/library.md` |
-| `bin/` | npm-published `ypi` entrypoint. | `docs/deployment/README.md` |
+| `bin/` | npm-published `spi` entrypoint. | `docs/deployment/README.md` |
 | `scripts/` | Build and operational helpers. | `docs/deployment/README.md` |
 | `public/` | Static assets. | Inspect files directly. |
 | `docs/` | Project knowledge base and archive target. | This file's archive rules. |
@@ -97,7 +97,7 @@ node_modules/.bin/tsc --noEmit
 | Local development, production build/start, PM2, proxy scripts, npm package | `docs/deployment/README.md` |
 | Runtime troubleshooting | `docs/operations/troubleshooting.md` |
 | Third-party packages and pi SDK docs | `docs/integrations/README.md` |
-| Published binary | `bin/pi-web.js` exposed as `ypi` |
+| Published binary | `bin/pi-web.js` exposed as `spi` |
 | Build wrapper | `scripts/build-next.js` |
 | PM2 config | `ecosystem.config.cjs` |
 

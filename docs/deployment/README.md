@@ -1,6 +1,6 @@
 # Deployment and Runtime Guide
 
-This guide covers local runtime, npm installation, source builds, production deployment, and npm release operations for `yolk pi web`.
+This guide covers local runtime, npm installation, source builds, production deployment, and npm release operations for 蜗牛派 (Snail Pi Web).
 
 ## Runtime Requirements
 
@@ -16,21 +16,21 @@ Web Terminal uses `@lydell/node-pty` as the server-side PTY dependency. If a tar
 
 ## npm Package Runtime
 
-Published npm package name: `@alan-zhao/yolk-pi-web`
+Published npm package name: `@twofive/snail-pi-web`
 
-CLI command: `ypi`
+CLI command: `spi`
 
 Run without installing:
 
 ```bash
-npx @alan-zhao/yolk-pi-web@latest
+npx @twofive/snail-pi-web@latest
 ```
 
 Install globally:
 
 ```bash
-npm install -g @alan-zhao/yolk-pi-web
-ypi
+npm install -g @twofive/snail-pi-web
+spi
 ```
 
 Default URL: `http://localhost:30141`. The CLI attempts to open the browser after the server is ready.
@@ -38,21 +38,21 @@ Default URL: `http://localhost:30141`. The CLI attempts to open the browser afte
 ### CLI Options
 
 ```bash
-ypi --port 8080              # custom port
-ypi --hostname 127.0.0.1     # bind to localhost only
-ypi -p 8080 -H 127.0.0.1     # short options
-PORT=8080 ypi                # environment variable is also supported
-ypi --proxy http://127.0.0.1:7897                 # HTTP_PROXY/HTTPS_PROXY
-ypi --socks-proxy socks5://127.0.0.1:7897         # ALL_PROXY/SOCKS proxy
+spi --port 8080              # custom port
+spi --hostname 127.0.0.1     # bind to localhost only
+spi -p 8080 -H 127.0.0.1     # short options
+PORT=8080 spi                # environment variable is also supported
+spi --proxy http://127.0.0.1:7897                 # HTTP_PROXY/HTTPS_PROXY
+spi --socks-proxy socks5://127.0.0.1:7897         # ALL_PROXY/SOCKS proxy
 ```
 
 `npx` accepts the same options:
 
 ```bash
-npx @alan-zhao/yolk-pi-web@latest --port 8080
+npx @twofive/snail-pi-web@latest --port 8080
 ```
 
-When proxy options or proxy environment variables are present, `ypi` forwards
+When proxy options or proxy environment variables are present, `spi` forwards
 `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY`, and appends
 `--use-env-proxy` to `NODE_OPTIONS` so Node/Next server-side fetch calls use the
 proxy. It also accepts the same environment aliases as the proxy startup scripts:
@@ -63,7 +63,7 @@ proxy. It also accepts the same environment aliases as the proxy startup scripts
 Default data directory is `~/.pi/agent/`; override it with `PI_CODING_AGENT_DIR`:
 
 ```bash
-PI_CODING_AGENT_DIR=/path/to/pi-agent-data ypi
+PI_CODING_AGENT_DIR=/path/to/pi-agent-data spi
 ```
 
 | File/dir | Purpose |
@@ -117,7 +117,7 @@ PORT=8080 npm run start
 
 `ecosystem.config.cjs` runs `node_modules/.bin/next start -p 30141` with:
 
-- process name `yolk-pi-web` (or legacy `pi-web` for existing PM2 setups)
+- recommended process name `snail-pi-web` (existing generic `pi-web` setups may remain unchanged)
 - auto-restart enabled
 - max memory restart at 1 GB
 - logs under `logs/pi-web-out.log` and `logs/pi-web-error.log`
@@ -130,7 +130,7 @@ pm2 start ecosystem.config.cjs
 
 ## Proxy Startup
 
-- `scripts/start-pi-web-proxy.sh` starts yolk pi web with `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, and `NODE_OPTIONS=--use-env-proxy`.
+- `scripts/start-pi-web-proxy.sh` starts Snail Pi Web with `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, and `NODE_OPTIONS=--use-env-proxy`.
 - `scripts/start-pi-web-proxy.ps1` provides the same proxy startup flow for PowerShell.
 - The proxy scripts default to the production command `npm run start`; use `PI_WEB_CMD="npm run dev"` for development.
 
@@ -180,13 +180,13 @@ If publishing with a token, configure npm carefully and never commit tokens:
 
 ```bash
 npm config set registry https://registry.npmjs.org/
-npm config set @alan-zhao:registry https://registry.npmjs.org/
+npm config set @twofive:registry https://registry.npmjs.org/
 npm config set //registry.npmjs.org/:_authToken "<token>"
 ```
 
 After publishing, verify the package:
 
 ```bash
-npm view @alan-zhao/yolk-pi-web version --prefer-online
-npx @alan-zhao/yolk-pi-web@latest --port 30141
+npm view @twofive/snail-pi-web version --prefer-online
+npx @twofive/snail-pi-web@latest --port 30141
 ```

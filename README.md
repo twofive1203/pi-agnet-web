@@ -1,10 +1,10 @@
-# yolk pi web
+# 蜗牛派（Snail Pi Web）
 
-`yolk pi web` 是面向 `pi` 编程智能体的本地 WebChat 工作台。它把本地会话、实时对话、分支切换、模型配置、文件浏览、Git/WorkTree 辅助和可选 Web 终端集中到浏览器里，适合在桌面或服务器环境中长期运行。
+蜗牛派（Snail Pi Web）是面向 `pi` 编程智能体的本地 WebChat 工作台。它把本地会话、实时对话、分支切换、模型配置、文件浏览、Git/WorkTree 辅助和可选 Web 终端集中到浏览器里，适合在桌面或服务器环境中长期运行。
 
-npm 包名：`@alan-zhao/yolk-pi-web`
+npm 包名：`@twofive/snail-pi-web`
 
-命令行入口：`ypi`
+命令行入口：`spi`
 
 ## 运行环境
 
@@ -23,14 +23,14 @@ npm 包名：`@alan-zhao/yolk-pi-web`
 无需安装，直接运行最新版本：
 
 ```bash
-npx @alan-zhao/yolk-pi-web@latest
+npx @twofive/snail-pi-web@latest
 ```
 
-或全局安装后使用 `ypi`：
+或全局安装后使用 `spi`：
 
 ```bash
-npm install -g @alan-zhao/yolk-pi-web
-ypi
+npm install -g @twofive/snail-pi-web
+spi
 ```
 
 默认监听 `http://localhost:30141`。服务就绪后，CLI 会尝试自动打开浏览器。
@@ -38,24 +38,24 @@ ypi
 ## 常用启动参数
 
 ```bash
-ypi --port 8080              # 自定义端口
-ypi --hostname 127.0.0.1     # 仅本机访问
-ypi -p 8080 -H 127.0.0.1     # 短参数组合
-PORT=8080 ypi                # 也支持 PORT 环境变量
-ypi --proxy http://127.0.0.1:7897                 # HTTP/HTTPS 代理
-ypi --socks-proxy socks5://127.0.0.1:7897         # ALL_PROXY/SOCKS 代理
+spi --port 8080              # 自定义端口
+spi --hostname 127.0.0.1     # 仅本机访问
+spi -p 8080 -H 127.0.0.1     # 短参数组合
+PORT=8080 spi                # 也支持 PORT 环境变量
+spi --proxy http://127.0.0.1:7897                 # HTTP/HTTPS 代理
+spi --socks-proxy socks5://127.0.0.1:7897         # ALL_PROXY/SOCKS 代理
 ```
 
 `npx` 同样支持这些参数：
 
 ```bash
-npx @alan-zhao/yolk-pi-web@latest --port 8080
+npx @twofive/snail-pi-web@latest --port 8080
 ```
 
-如果 shell 中已有 `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` / `NO_PROXY`，`ypi` 会继承并自动为 Node 追加 `--use-env-proxy`。也可以用 `PROXY_URL` 和 `SOCKS_PROXY_URL`：
+如果 shell 中已有 `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` / `NO_PROXY`，`spi` 会继承并自动为 Node 追加 `--use-env-proxy`。也可以用 `PROXY_URL` 和 `SOCKS_PROXY_URL`：
 
 ```bash
-PROXY_URL=http://127.0.0.1:7897 SOCKS_PROXY_URL=socks5://127.0.0.1:7897 ypi
+PROXY_URL=http://127.0.0.1:7897 SOCKS_PROXY_URL=socks5://127.0.0.1:7897 spi
 ```
 
 ## 数据与配置
@@ -63,7 +63,7 @@ PROXY_URL=http://127.0.0.1:7897 SOCKS_PROXY_URL=socks5://127.0.0.1:7897 ypi
 默认读取 `~/.pi/agent/`。如需使用其他数据目录：
 
 ```bash
-PI_CODING_AGENT_DIR=/path/to/pi-agent-data ypi
+PI_CODING_AGENT_DIR=/path/to/pi-agent-data spi
 ```
 
 | 路径 | 用途 |
@@ -123,7 +123,7 @@ components/   # 浏览器端 UI 组件
 hooks/        # 会话状态、主题、拖拽、音频等 React hooks
 lib/          # 会话解析、RPC 生命周期、路径/配置/提供商等共享逻辑
 scripts/      # 构建和运维脚本
-bin/          # ypi CLI 入口
+bin/          # spi CLI 入口
 public/       # 静态资源
 docs/         # 架构、模块、部署和运维文档
 ```
