@@ -535,3 +535,37 @@ Renamed the product to 蜗牛派 (Snail Pi Web), moved the npm package to @twofi
 ### Next Steps
 
 - None - task complete
+
+
+## Session 43: Release Snail Pi Web 0.7.2
+
+**Date**: 2026-07-16
+**Task**: Release Snail Pi Web 0.7.2
+**Branch**: `self-run`
+
+### Summary
+
+Published @twofive/snail-pi-web@0.7.2 publicly under the latest tag from a clean isolated worktree after lint, type-check, wrapped production build, dry-run bundle inspection, and registry download verification. Preserved unrelated SDK dependency work and also archived the completed slash-command menu scrolling task.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8af1104` | (see git log) |
+| `f5622a2` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

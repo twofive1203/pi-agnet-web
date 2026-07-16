@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 42
+- **Total Sessions**: 43
 - **Last Active**: 2026-07-16
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~537 | Active |
+| `journal-1.md` | ~571 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 43 | 2026-07-16 | Release Snail Pi Web 0.7.2 | `8af1104`, `f5622a2` | `self-run` |
 | 42 | 2026-07-16 | Rename Yolk branding to Snail | `a30603a` | `self-run` |
 | 41 | 2026-07-08 | Local Pi extensions in WebUI | `e046fe1` | `main` |
 | 40 | 2026-07-07 | Provider model discovery | `fd34d7d` | `main` |
