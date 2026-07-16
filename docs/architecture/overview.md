@@ -84,6 +84,37 @@ The archive directory is scanned separately from `SessionManager.listAll()` (whi
 - ChatGPT usage auto-refresh is backend-owned, not browser-tab-owned. The scheduler state lives on `globalThis.__piChatGptUsageRefreshScheduler` and uses `~/.pi/agent/chatgpt-usage-refresh.lock` to reduce duplicate refresh loops across Node processes. Stale lock detection follows the configured refresh cycle dynamically.
 - Before creating an SDK `AgentSession`, `lib/pi-runtime-resolver.ts` prepares a local `pi` shim under `~/.pi/agent/pi-web-runtime/bin/`, prepends it to `PATH`, and makes the WebUI's pi package resolvable from the agent npm directory. Unix-like runtimes also receive `PI_SUBAGENT_PI_BINARY` when unset; Windows relies on package resolution because shell-less Node spawns cannot execute `.cmd` shims directly.
 - Web sessions bind Pi extensions in RPC mode through `lib/extension-web-ui.ts`. Simple extension UI requests (`notify`, `confirm`, `select`, `input`, `editor`, status/widget/title/editor text updates) are forwarded through the existing SSE stream; browser responses are returned with `extension_ui_response`. TUI-only APIs degrade with `extension_error` diagnostics instead of blocking silently.
+## Configuration Boundary: Native Pi vs Trellis Routing
+
+The Web UI supports two independent subagent configuration systems:
+
+| System | File | Managed By | Purpose |
+|--------|------|------------|---------|
+| Native pi-subagents | `settings.json → subagents` | Settings → Agents | pi-subagents extension native model config (defaultModel, agentOverrides) |
+| Trellis routing | `pi-web.json → trellis.subagents` | Settings → Trellis | Web UI Trellis workflow routing policy only |
+
+Each system is edited through its own Settings section and does not affect the
+other. The native config persists to `~/.pi/agent/settings.json` (user) or
+`<cwd>/.pi/settings.json` (project); the Trellis routing config persists to
+`~/.pi/agent/pi-web.json`.
+
+### Pi Settings Precedence
+
+Effective model for a subagent child (highest to lowest):
+
+1. Runtime tool-call override (`model` in subagent() call)
+2. Chain step / parallel task override
+3. Agent frontmatter (`model:` in `.md`)
+4. Settings `agentOverrides.<name>.model` (project scope)
+5. Settings `agentOverrides.<name>.model` (user scope)
+6. Settings `defaultModel` (project scope)
+7. Settings `defaultModel` (user scope)
+8. Parent session model
+
+Clearing a scope-level field removes the key and restores normal inheritance.
+The UI marks inherited values clearly and does not claim selected-scope values
+are the final runtime model.
+
 - Trellis subagent child processes run through the local pi package CLI (`node node_modules/@earendil-works/pi-coding-agent/dist/cli.js`) when available, or an explicit `TRELLIS_PI_CLI_JS`; they do not silently rely on a bare `pi` command that may be missing from the WebUI process `PATH`.
 - Trellis subagent child processes resolve model policy from `pi-web.json` `trellis.subagents`: explicit tool input wins, then per-agent fixed policy, then optional route table policy, then default policy, then `.pi/agents/*` frontmatter, then Pi CLI defaults. Automatic routing is opt-in and classifies `text`/`multimodal` plus `simple`/`standard`/`complex`/`critical`; router failures fall back to configured safe route/default behavior. The default policy follows the main session model when the Pi extension context exposes it; otherwise it safely falls back to Pi default. If the selected child model process fails, existing `.pi/agents/*` `fallbackModels` frontmatter entries are retried in order; if those also fail and the main session model is known, the child finally falls back to the main session model.
 - Session-scoped Trellis task association remains high-confidence only (session transcript evidence or exact per-session runtime pointers). When evidence identifies a child task, the web projection promotes it to the nearest available parent task so the floating widget represents the main task context without mutating Trellis metadata.

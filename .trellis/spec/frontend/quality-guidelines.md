@@ -573,3 +573,95 @@ await fetch("/api/auth/quota/openai-codex", {
   body: JSON.stringify({ accountId }),
 });
 ```
+
+### Scenario: Managed namespaces in native Pi settings
+
+#### 1. Scope / Trigger
+
+Use this contract when a browser settings panel reads or edits one extension-owned
+namespace inside Pi `settings.json`, such as `settings.json → subagents`, at user
+or selected-project scope.
+
+#### 2. Signatures
+
+- Read route: `GET /api/subagents/config?scope=user|project&cwd=<workspace>`.
+- Write route: `PUT /api/subagents/config?scope=user|project&cwd=<workspace>`.
+- Write body: `{ expectedRevision, defaultModel?, agentOverrides? }`; omitted
+  fields are unchanged and `null` deletes one managed field.
+- Project target: `<canonical cwd>/.pi/settings.json`; user target comes only
+  from `getAgentDir()`.
+
+#### 3. Contracts
+
+- Keep extension-native settings separate from Web UI policy files. Native
+  `subagents` configuration belongs in Pi `settings.json`; Trellis routing stays
+  in `pi-web.json → trellis.subagents`.
+- Project paths must pass shared allowed-root checks, and existing `.pi` or
+  settings symlinks must resolve inside the authorized workspace.
+- Strict reads surface malformed JSON, non-object namespaces, and malformed
+  managed fields. A write must never normalize those errors into empty defaults.
+- Writes merge only fields explicitly present in the patch. Preserve unrelated
+  root settings, unmanaged namespace fields, and unmanaged fields in the same
+  per-Agent override object.
+- Use optimistic revision checking and same-directory temporary-file rename for
+  the durability boundary.
+- Validate newly changed model ids against Pi's available registry. Treat the
+  value as `provider/<complete model id>`: model ids may themselves contain `/`,
+  for example `openrouter/anthropic/claude-sonnet`.
+- A settings-only override name remains visible even when discovery no longer
+  returns that Agent, so stale values can be cleared.
+
+#### 4. Validation & Error Matrix
+
+| Condition | Required behavior |
+| --- | --- |
+| Invalid scope/body/Agent name/thinking/model | 400 JSON error; no write. |
+| Project `cwd` missing or not a directory | 400 JSON error. |
+| Project `cwd` outside allowed roots or symlink escape | 403 JSON error. |
+| Malformed target JSON or managed namespace | 409 JSON error; require manual repair. |
+| Revision changed since GET | 409 conflict; keep browser draft visible. |
+| Model not in current Pi registry or duplicate fallback | 400 JSON error. |
+| Missing settings file | 200 empty projection; create safely on first valid save. |
+| Valid patch | Preserve unmanaged data and return a fresh revision/projection. |
+
+#### 5. Good/Base/Bad Cases
+
+- Good: clearing `reviewer.model` deletes only that field while preserving
+  `reviewer.disabled`, `subagents.modelScope`, and root `theme`.
+- Base: `pi-subagents` is unavailable; settings remain readable and configured-only
+  Agent names remain clearable with a discovery diagnostic.
+- Bad: the browser sends a whole replacement `settings.json`, or the server
+  treats malformed `subagents` as `{}` and overwrites it.
+
+#### 6. Tests Required
+
+At minimum, verify these assertion points with temporary files and API/browser checks:
+
+- User and project targets resolve to the intended files and project scope is
+  blocked outside allowed roots.
+- Unknown root/namespace/per-Agent fields survive set and clear patches.
+- Malformed JSON and malformed managed fields block writes.
+- A stale revision returns 409 without changing the file.
+- Qualified registry models whose model id contains `/` are accepted; unknown
+  models and duplicate fallback entries are rejected.
+- Agent discovery is disposed after use, and missing-extension diagnostics do
+  not prevent settings-only entries from rendering.
+- Native Agents dirty/save state is isolated from the modal's `pi-web.json`
+  Save/Reset controls.
+
+#### 7. Wrong vs Correct
+
+##### Wrong
+
+```typescript
+// Replaces unrelated Pi and extension settings and loses concurrent changes.
+writeFileSync(settingsPath, JSON.stringify({ subagents: request.body }));
+```
+
+##### Correct
+
+```typescript
+// The server re-reads strictly, checks the revision, validates changed models,
+// merges only present managed fields, then atomically returns a fresh projection.
+const result = applySubagentsPatch(settingsPath, patch, availableModelIds);
+```

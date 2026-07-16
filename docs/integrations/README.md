@@ -35,3 +35,57 @@ Skill search/install/list routes live under `app/api/skills/`; slash-command dis
 The WebUI uses the pi SDK in-process, and SDK resource discovery is the source of truth for installed Pi packages/extensions in `PI_CODING_AGENT_DIR` / `getAgentDir()`. Extension tools such as the official `pi-subagents` package may spawn nested Pi runtimes; `lib/pi-runtime-resolver.ts` prepares a local `pi` shim, package-resolution link, and Unix `PI_SUBAGENT_PI_BINARY` before SDK sessions start so those child processes use the project/package Pi CLI instead of relying on the server process `PATH`.
 
 Web sessions call `AgentSession.bindExtensions()` with a Web/RPC UI adapter so extension commands, lifecycle events, simple dialogs/notifications, and diagnostics are available without shelling out to the local CLI. Use `/api/pi/resources?cwd=...` to inspect loaded extensions, tools, extension commands, skills, prompts, and load diagnostics.
+
+## Native Pi Subagent Settings
+
+The Web UI supports direct management of native pi-subagents model configuration
+through a dedicated **Agents** section in Settings, independent of Trellis workflow
+routing.
+
+### Configuration Boundary
+
+Two separate subagent configuration systems exist:
+
+| System | File | Scope | Purpose |
+|--------|------|-------|---------|
+| Native pi-subagents | `settings.json → subagents` | User/Project | pi-subagents extension native model config (defaultModel, agentOverrides) |
+| Trellis routing | `pi-web.json → trellis.subagents` | User | Web UI Trellis workflow routing policy only |
+
+### Settings Precedence (Native)
+
+Per `pi-subagents` resolver, effective model order (highest to lowest):
+
+1. Runtime tool-call override (`model` in subagent() call)
+2. Chain step / parallel task override
+3. Agent frontmatter (`model:` in `.md`)
+4. Settings `agentOverrides.<name>.model` (project scope)
+5. Settings `agentOverrides.<name>.model` (user scope)
+6. Settings `defaultModel` (project scope)
+7. Settings `defaultModel` (user scope)
+8. Parent session model
+
+### Supported Managed Fields
+
+The Web UI's Agents section manages these fields in `settings.json → subagents`:
+
+- `defaultModel` — global fallback for agents without explicit model
+- `agentOverrides.<name>.model` — per-agent primary model
+- `agentOverrides.<name>.thinking` — per-agent thinking level (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`)
+- `agentOverrides.<name>.fallbackModels` — ordered list of fallback models
+
+Clearing a field removes the selected-scope key and restores normal inheritance.
+The UI never writes placeholder model ids.
+
+### API
+
+| Route | Description |
+|-------|-------------|
+| `GET /api/subagents/config?scope=user|project&cwd=...` | Read managed settings, inherited user values, and discovered agents |
+| `PUT /api/subagents/config?scope=user|project&cwd=...` | Apply managed-field patch with revision conflict detection |
+
+### Discovery
+
+Agent discovery uses the installed pi-subagents extension's public management
+tool surface (not filesystem scanning). When the extension is unavailable or
+its `list` output cannot be parsed, the API returns a browser-safe diagnostic
+and still shows settings-only override names so stale entries can be cleared.

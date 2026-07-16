@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { TrellisWorkflowVisualizer } from "./TrellisWorkflowVisualizer";
+import { AgentsConfig } from "./AgentsConfig";
 import type {
   PiWebChatGptConfig,
   PiWebConfig,
@@ -70,7 +71,7 @@ const TEMPLATE_VARIABLES = [
   { token: "{yyyyMMdd-HHmmss}", description: "创建时刻，格式如 20260625-153012" },
 ];
 
-type SettingsSection = "worktree" | "usage" | "terminal" | "chatgpt" | "editor" | "trellis";
+type SettingsSection = "worktree" | "usage" | "terminal" | "chatgpt" | "editor" | "agents" | "trellis";
 type SubagentThinkingOption = PiWebSubagentRunPolicy["thinking"];
 
 const SUBAGENT_AGENT_NAMES = ["trellis-implement", "trellis-check", "trellis-research"];
@@ -891,7 +892,8 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
             {renderSectionButton("terminal", "Terminal", "Web 终端设置")}
             {renderSectionButton("chatgpt", "ChatGPT", "ChatGPT 用量悬浮面板")}
             {renderSectionButton("editor", "Editor", "文件编辑器和快捷键")}
-            {renderSectionButton("trellis", "Trellis", "Trellis 面板开关")}
+            {renderSectionButton("agents", "Agents", "Pi 原生 subagent 模型设置")}
+            {renderSectionButton("trellis", "Trellis", "Trellis 面板开关与工作流路由")}
           </div>
 
           <div style={{ padding: 18, overflow: "auto", flex: 1 }}>
@@ -1237,6 +1239,8 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
                       <div style={{ marginTop: 8 }}>这些是 Monaco 自带编辑行为，不写入蜗牛派配置；上面的开关只控制蜗牛派额外接管的快捷键/鼠标手势。</div>
                     </div>
                   </div>
+                ) : section === "agents" ? (
+                  <AgentsConfig cwd={cwd} />
                 ) : (
                   <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
                     <div style={{ padding: 12, borderRadius: 10, background: "var(--bg-subtle)", border: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: 8 }}>
@@ -1333,8 +1337,10 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
 
                     <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: 12, borderRadius: 10, background: "var(--bg-subtle)", border: "1px solid var(--border)" }}>
                       <div>
-                        <div style={{ color: "var(--text)", fontSize: 13, fontWeight: 800 }}>子代理模型</div>
+                        <div style={{ color: "var(--text)", fontSize: 13, fontWeight: 800 }}>Trellis 工作流子代理模型路由</div>
                         <div style={{ color: "var(--text-muted)", fontSize: 11, marginTop: 3, lineHeight: 1.45 }}>
+                          这是 Trellis 工作流路由策略（pi-web.json → trellis.subagents），仅影响 Trellis 派出的子代理。
+                          如需配置原生 pi-subagents 模型设置，请使用上方「Agents」面板。
                           给 Trellis 派出去的子代理单独选模型。默认跟随当前聊天使用的主模型；如果某次工具调用里手动指定了模型，会优先使用手动指定。
                         </div>
                       </div>
@@ -1553,29 +1559,43 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
         </div>
 
         <div style={{ padding: "12px 18px", borderTop: "1px solid var(--border)", display: "flex", justifyContent: "space-between", gap: 10 }}>
-          <button
-            onClick={resetToDefaults}
-            disabled={!defaults || loading || saving}
-            style={{ padding: "7px 12px", borderRadius: 7, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-muted)", cursor: !defaults || loading || saving ? "not-allowed" : "pointer", fontSize: 12 }}
-          >
-            恢复默认值
-          </button>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            {dirty && <span style={{ fontSize: 12, color: "var(--text-dim)" }}>有未保存更改</span>}
-            <button
-              onClick={onClose}
-              style={{ padding: "7px 12px", borderRadius: 7, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-muted)", cursor: "pointer", fontSize: 12 }}
-            >
-              取消
-            </button>
-            <button
-              onClick={() => void handleSave()}
-              disabled={!worktree || !trellis || !usage || !terminal || !chatgpt || loading || saving || !dirty}
-              style={{ padding: "7px 14px", borderRadius: 7, border: "none", background: !worktree || !trellis || !usage || !terminal || !chatgpt || loading || saving || !dirty ? "var(--border)" : "var(--accent)", color: "white", cursor: !worktree || !trellis || !usage || !terminal || !chatgpt || loading || saving || !dirty ? "not-allowed" : "pointer", fontSize: 12, fontWeight: 600 }}
-            >
-              {saving ? "正在保存…" : "保存"}
-            </button>
-          </div>
+          {section === "agents" ? (
+            <>
+              <span style={{ color: "var(--text-dim)", fontSize: 12 }}>Agents 面板保存到 Pi settings.json；请使用面板内的保存/重新加载按钮。</span>
+              <button
+                onClick={onClose}
+                style={{ padding: "7px 12px", borderRadius: 7, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-muted)", cursor: "pointer", fontSize: 12 }}
+              >
+                关闭
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                onClick={resetToDefaults}
+                disabled={!defaults || loading || saving}
+                style={{ padding: "7px 12px", borderRadius: 7, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-muted)", cursor: !defaults || loading || saving ? "not-allowed" : "pointer", fontSize: 12 }}
+              >
+                恢复默认值
+              </button>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                {dirty && <span style={{ fontSize: 12, color: "var(--text-dim)" }}>有未保存更改</span>}
+                <button
+                  onClick={onClose}
+                  style={{ padding: "7px 12px", borderRadius: 7, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-muted)", cursor: "pointer", fontSize: 12 }}
+                >
+                  取消
+                </button>
+                <button
+                  onClick={() => void handleSave()}
+                  disabled={!worktree || !trellis || !usage || !terminal || !chatgpt || loading || saving || !dirty}
+                  style={{ padding: "7px 14px", borderRadius: 7, border: "none", background: !worktree || !trellis || !usage || !terminal || !chatgpt || loading || saving || !dirty ? "var(--border)" : "var(--accent)", color: "white", cursor: !worktree || !trellis || !usage || !terminal || !chatgpt || loading || saving || !dirty ? "not-allowed" : "pointer", fontSize: 12, fontWeight: 600 }}
+                >
+                  {saving ? "正在保存…" : "保存"}
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>
