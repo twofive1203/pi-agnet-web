@@ -1,0 +1,2 @@
+{"file":"docs/deployment/README.md","reason":"Verify the release follows documented npm validation and publication operations."}
+{"file":"docs/standards/code-style.md","reason":"Verify lint, type-check, wrapped build, and project validation rules."}
