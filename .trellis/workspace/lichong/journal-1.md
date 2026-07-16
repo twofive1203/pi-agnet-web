@@ -569,3 +569,37 @@ Published @twofive/snail-pi-web@0.7.2 publicly under the latest tag from a clean
 ### Next Steps
 
 - None - task complete
+
+
+## Session 44: Native subagent model management and port 62666
+
+**Date**: 2026-07-16
+**Task**: Native subagent model management and port 62666
+**Branch**: `self-run`
+
+### Summary
+
+Added independent user/project native pi-subagents model configuration with safe settings preservation, Agent discovery, model/thinking/fallback controls, documentation, and changed the default web/CLI port to 62666.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3285e81` | (see git log) |
+| `3dd82cd` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
