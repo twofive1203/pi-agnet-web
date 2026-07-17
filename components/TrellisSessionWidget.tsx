@@ -96,20 +96,33 @@ function useIsMobileWidget(): boolean {
   return isMobile;
 }
 
+function TrellisCapsuleContent({ task, color }: { task: TrellisTaskSummary; color: string }) {
+  return (
+    <>
+      <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 22, height: 22, borderRadius: "50%", background: "rgba(37,99,235,0.14)", color: "var(--accent)", fontSize: 11, fontWeight: 900 }}>T</span>
+      <span style={{ width: 7, height: 7, borderRadius: "50%", background: color, flexShrink: 0 }} />
+      <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12, fontWeight: 800 }}>Trellis</span>
+      <span style={{ color: "var(--text-muted)", fontSize: 11, fontWeight: 800 }}>{task.progress.percent}%</span>
+    </>
+  );
+}
+
 function TrellisTaskProgressContent({
   task,
   color,
   childText,
   childSegments,
+  reserveCollapseSpace = false,
 }: {
   task: TrellisTaskSummary;
   color: string;
   childText: string | null;
   childSegments: Array<{ label: string; value: number; color: string }>;
+  reserveCollapseSpace?: boolean;
 }) {
   return (
     <>
-      <div style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 12px 8px" }}>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: reserveCollapseSpace ? "10px 46px 8px 12px" : "10px 12px 8px" }}>
         <span style={{
           display: "flex",
           alignItems: "center",
@@ -208,6 +221,7 @@ export function TrellisSessionWidget({ task, onClick }: TrellisSessionWidgetProp
   } | null>(null);
   const [position, setPosition] = useState<WidgetPosition | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [desktopCollapsed, setDesktopCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const isMobile = useIsMobileWidget();
   const storageKey = isMobile ? MOBILE_STORAGE_KEY : STORAGE_KEY;
@@ -240,12 +254,17 @@ export function TrellisSessionWidget({ task, onClick }: TrellisSessionWidgetProp
     resizeObserver.observe(parent);
     resizeObserver.observe(widget);
     return () => resizeObserver.disconnect();
-  }, [isMobile, storageKey]);
+  }, [desktopCollapsed, isMobile, storageKey]);
 
   const handleActivate = useCallback(() => {
-    if (isMobile) setMobileOpen(true);
-    else onClick();
-  }, [isMobile, onClick]);
+    if (isMobile) {
+      setMobileOpen(true);
+    } else if (desktopCollapsed) {
+      setDesktopCollapsed(false);
+    } else {
+      onClick();
+    }
+  }, [desktopCollapsed, isMobile, onClick]);
 
   const moveToPointer = useCallback((event: PointerEvent<HTMLElement>) => {
     const drag = dragRef.current;
@@ -349,10 +368,7 @@ export function TrellisSessionWidget({ task, onClick }: TrellisSessionWidgetProp
             touchAction: "none",
           }}
         >
-          <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 22, height: 22, borderRadius: "50%", background: "rgba(37,99,235,0.14)", color: "var(--accent)", fontSize: 11, fontWeight: 900 }}>T</span>
-          <span style={{ width: 7, height: 7, borderRadius: "50%", background: color, flexShrink: 0 }} />
-          <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12, fontWeight: 800 }}>Trellis</span>
-          <span style={{ color: "var(--text-muted)", fontSize: 11, fontWeight: 800 }}>{task.progress.percent}%</span>
+          <TrellisCapsuleContent task={task} color={color} />
         </button>
 
         {mobileOpen && (
@@ -410,17 +426,52 @@ export function TrellisSessionWidget({ task, onClick }: TrellisSessionWidgetProp
     );
   }
 
+  if (desktopCollapsed) {
+    return (
+      <button
+        ref={(node) => { widgetRef.current = node; }}
+        type="button"
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
+        onKeyDown={handleKeyDown}
+        title="拖动 Trellis 胶囊；点击展开任务进度"
+        aria-label="拖动 Trellis 胶囊；点击展开任务进度"
+        aria-expanded="false"
+        style={{
+          position: "absolute",
+          ...(position ? { left: position.left, top: position.top } : { right: DEFAULT_MARGIN, top: DEFAULT_MARGIN }),
+          zIndex: 120,
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 7,
+          maxWidth: "calc(100% - 36px)",
+          height: 38,
+          padding: "0 12px",
+          border: "1px solid color-mix(in srgb, var(--border) 78%, transparent)",
+          borderRadius: 999,
+          background: "color-mix(in srgb, var(--bg-panel) 90%, transparent)",
+          boxShadow: "0 10px 26px rgba(0,0,0,0.18)",
+          backdropFilter: "blur(12px)",
+          color: "var(--text)",
+          cursor: dragging ? "grabbing" : "grab",
+          userSelect: "none",
+          touchAction: "none",
+        }}
+      >
+        <TrellisCapsuleContent task={task} color={color} />
+      </button>
+    );
+  }
+
   return (
     <div
       ref={(node) => { widgetRef.current = node; }}
-      role="button"
-      tabIndex={0}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerUp}
-      onKeyDown={handleKeyDown}
-      title="拖动悬浮窗；点击打开关联 Trellis 任务详情"
       style={{
         position: "absolute",
         ...(position ? { left: position.left, top: position.top } : { right: DEFAULT_MARGIN, top: DEFAULT_MARGIN }),
@@ -439,7 +490,45 @@ export function TrellisSessionWidget({ task, onClick }: TrellisSessionWidgetProp
         touchAction: "none",
       }}
     >
-      <TrellisTaskProgressContent task={task} color={color} childText={childText} childSegments={childSegments} />
+      <div
+        role="button"
+        tabIndex={0}
+        onKeyDown={handleKeyDown}
+        title="拖动悬浮窗；点击打开关联 Trellis 任务详情"
+      >
+        <TrellisTaskProgressContent task={task} color={color} childText={childText} childSegments={childSegments} reserveCollapseSpace />
+      </div>
+      <button
+        type="button"
+        onPointerDown={(event) => event.stopPropagation()}
+        onClick={(event) => {
+          event.stopPropagation();
+          setDesktopCollapsed(true);
+        }}
+        title="收起 Trellis 悬浮窗"
+        aria-label="收起 Trellis 悬浮窗"
+        aria-expanded="true"
+        style={{
+          position: "absolute",
+          top: 7,
+          right: 8,
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          width: 28,
+          height: 28,
+          padding: 0,
+          border: "1px solid var(--border)",
+          borderRadius: 9,
+          background: "color-mix(in srgb, var(--bg) 82%, transparent)",
+          color: "var(--text-muted)",
+          cursor: "pointer",
+          fontSize: 16,
+          lineHeight: 1,
+        }}
+      >
+        −
+      </button>
     </div>
   );
 }
