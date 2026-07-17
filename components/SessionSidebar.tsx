@@ -34,8 +34,8 @@ function formatRelativeTime(dateStr: string): string {
   return date.toLocaleDateString();
 }
 
-/** Return the 5 most recently active cwds across all sessions */
-function getRecentCwds(sessions: SessionInfo[], extraCwds: string[] = []): string[] {
+/** Return all known cwds, keeping pinned entries ahead of recent-session order. */
+function getOrderedCwds(sessions: SessionInfo[], extraCwds: string[] = []): string[] {
   const latestByCwd = new Map<string, string>(); // cwd -> most recent modified
   for (const s of sessions) {
     if (!s.cwd) continue;
@@ -47,7 +47,7 @@ function getRecentCwds(sessions: SessionInfo[], extraCwds: string[] = []): strin
   const recent = [...latestByCwd.entries()]
     .sort((a, b) => b[1].localeCompare(a[1]))
     .map(([cwd]) => cwd);
-  return [...extraCwds, ...recent.filter((cwd) => !extraCwds.includes(cwd))].slice(0, 5);
+  return [...extraCwds, ...recent.filter((cwd) => !extraCwds.includes(cwd))];
 }
 
 function shortenCwd(cwd: string, homeDir?: string): string {
@@ -146,13 +146,13 @@ interface CwdPickerRow {
   syntheticParent?: boolean;
 }
 
-function buildCwdPickerRows(recentCwds: string[], worktreeByCwd: Map<string, WorktreeInfo>): CwdPickerRow[] {
+function buildCwdPickerRows(orderedCwds: string[], worktreeByCwd: Map<string, WorktreeInfo>): CwdPickerRow[] {
   const projectOrder: string[] = [];
   const syntheticParents = new Set<string>();
   const worktreesByParent = new Map<string, Array<{ cwd: string; worktree: WorktreeInfo }>>();
   const seenProjects = new Set<string>();
   const seenWorktrees = new Set<string>();
-  const recentCwdSet = new Set(recentCwds);
+  const orderedCwdSet = new Set(orderedCwds);
 
   const pushProject = (cwd: string, syntheticParent = false) => {
     if (seenProjects.has(cwd)) {
@@ -172,14 +172,14 @@ function buildCwdPickerRows(recentCwds: string[], worktreeByCwd: Map<string, Wor
     worktreesByParent.set(parentCwd, group);
   };
 
-  for (const cwd of recentCwds) {
+  for (const cwd of orderedCwds) {
     const worktree = worktreeByCwd.get(cwd);
     const parentCwd = worktree?.mainWorktreePath && worktree.mainWorktreePath !== cwd
       ? worktree.mainWorktreePath
       : null;
 
     if (worktree && parentCwd) {
-      pushProject(parentCwd, !recentCwdSet.has(parentCwd));
+      pushProject(parentCwd, !orderedCwdSet.has(parentCwd));
       pushWorktree(parentCwd, cwd, worktree);
     } else {
       pushProject(cwd);
@@ -190,6 +190,31 @@ function buildCwdPickerRows(recentCwds: string[], worktreeByCwd: Map<string, Wor
     { kind: "project" as const, cwd, syntheticParent: syntheticParents.has(cwd) },
     ...(worktreesByParent.get(cwd) ?? []).map((entry) => ({ kind: "worktree" as const, ...entry })),
   ]);
+}
+
+function groupCwdPickerRows(rows: CwdPickerRow[]): CwdPickerRow[][] {
+  const groups: CwdPickerRow[][] = [];
+  for (const row of rows) {
+    if (row.kind === "project") {
+      groups.push([row]);
+    } else {
+      groups[groups.length - 1]?.push(row);
+    }
+  }
+  return groups;
+}
+
+function filterCwdPickerGroups(groups: CwdPickerRow[][], query: string): CwdPickerRow[][] {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) return groups;
+
+  return groups.flatMap((group) => {
+    const [project, ...worktrees] = group;
+    if (!project) return [];
+    if (project.cwd.toLowerCase().includes(normalizedQuery)) return [group];
+    const matchingWorktrees = worktrees.filter((row) => row.cwd.toLowerCase().includes(normalizedQuery));
+    return matchingWorktrees.length > 0 ? [[project, ...matchingWorktrees]] : [];
+  });
 }
 
 interface SessionTreeNode {
@@ -311,11 +336,14 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const [selectedCwd, setSelectedCwd] = useState<string | null>(null);
   const [homeDir, setHomeDir] = useState<string>("");
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [allProjectsOpen, setAllProjectsOpen] = useState(false);
+  const [cwdSearch, setCwdSearch] = useState("");
   const [customPathOpen, setCustomPathOpen] = useState(false);
   const [customPathValue, setCustomPathValue] = useState("");
   const [customPathError, setCustomPathError] = useState<string | null>(null);
   const [customPathValidating, setCustomPathValidating] = useState(false);
   const customPathInputRef = useRef<HTMLInputElement>(null);
+  const cwdSearchInputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false);
   const workspaceMenuRef = useRef<HTMLDivElement>(null);
@@ -340,6 +368,16 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const [archivedExpanded, setArchivedExpanded] = useState(false);
   const sessionRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const explorerRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const resetCwdPickerView = useCallback(() => {
+    setAllProjectsOpen(false);
+    setCwdSearch("");
+  }, []);
+
+  const closeCwdPicker = useCallback(() => {
+    setDropdownOpen(false);
+    resetCwdPickerView();
+  }, [resetCwdPickerView]);
 
   const loadSessions = useCallback(async (showLoading = false) => {
     try {
@@ -534,7 +572,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         // Session not found — notify parent so it can show the placeholder
         onInitialRestoreDone?.();
       }
-      const cwds = getRecentCwds(allSessions);
+      const cwds = getOrderedCwds(allSessions);
       if (cwds.length > 0) setSelectedCwd(cwds[0]);
     }
   }, [allSessions, selectedCwd, initialSessionId, onSelectSession, onInitialRestoreDone]);
@@ -559,13 +597,13 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       setSelectedCwd(data.cwd ?? path);
       setCustomPathOpen(false);
       setCustomPathValue("");
-      setDropdownOpen(false);
+      closeCwdPicker();
     } catch (e) {
       setCustomPathError(e instanceof Error ? e.message : String(e));
     } finally {
       setCustomPathValidating(false);
     }
-  }, [customPathValue, customPathValidating]);
+  }, [closeCwdPicker, customPathValue, customPathValidating]);
 
   const handleDefaultCwd = useCallback(async () => {
     try {
@@ -576,12 +614,12 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         setCustomPathOpen(false);
         setCustomPathValue("");
         setCustomPathError(null);
-        setDropdownOpen(false);
+        closeCwdPicker();
       }
     } catch {
       // ignore
     }
-  }, []);
+  }, [closeCwdPicker]);
 
   // Close dropdown/context menu on outside click
   useEffect(() => {
@@ -589,7 +627,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       setWorktreeContextMenu(null);
       setSessionContextMenu(null);
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setDropdownOpen(false);
+        closeCwdPicker();
         setCustomPathOpen(false);
         setCustomPathValue("");
         setCustomPathError(null);
@@ -597,7 +635,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
-  }, []);
+  }, [closeCwdPicker]);
 
   const handleNewSession = useCallback(() => {
     if (!selectedCwd) return;
@@ -631,7 +669,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       setEphemeralWorktrees((prev) => ({ ...prev, [data.cwd!]: worktree }));
       setRemovedWorktreeCwds((prev) => prev.filter((cwd) => cwd !== data.cwd));
       setSelectedCwd(data.cwd);
-      setDropdownOpen(false);
+      closeCwdPicker();
       setCustomPathOpen(false);
       setCustomPathValue("");
       setCustomPathError(null);
@@ -642,13 +680,13 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     } finally {
       setCreatingWorktree(false);
     }
-  }, [selectedCwd, creatingWorktree, onNewSession]);
+  }, [closeCwdPicker, selectedCwd, creatingWorktree, onNewSession]);
 
   const openWorktreeAction = useCallback((kind: "delete" | "archive", cwd: string, worktree: WorktreeInfo) => {
     setWorktreeContextMenu(null);
-    setDropdownOpen(false);
+    closeCwdPicker();
     setWorktreeAction({ kind, cwd, worktree, force: false, busy: false, error: null });
-  }, []);
+  }, [closeCwdPicker]);
 
   const applyWorktreeFallback = useCallback((removedCwd: string, fallbackCwd?: string) => {
     setEphemeralWorktrees((prev) => {
@@ -724,7 +762,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       extraCwds.push(acwd);
     }
   }
-  const recentCwds = getRecentCwds(visibleSessions, extraCwds);
+  const orderedCwds = getOrderedCwds(visibleSessions, extraCwds);
   const selectedWorktree = selectedCwd ? worktreeByCwd.get(selectedCwd) : undefined;
   const sessionGit = selectedCwd ? visibleSessions.find((s) => s.cwd === selectedCwd)?.git : undefined;
   const currentGit: GitInfo | undefined = sessionGit ?? selectedCwdGit ?? (selectedWorktree ? {
@@ -738,7 +776,9 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const workspaceTitleDetail = formatWorkspaceTitle(selectedCwd, currentGit);
   const workspaceSubtitle = formatWorkspaceSubtitle(selectedCwd, currentGit);
   const archivedOnlyCwds = new Set(archivedCwds.filter((acwd) => !visibleSessions.some((s) => s.cwd === acwd)));
-  const cwdRows = buildCwdPickerRows(recentCwds, worktreeByCwd);
+  const cwdGroups = groupCwdPickerRows(buildCwdPickerRows(orderedCwds, worktreeByCwd));
+  const filteredCwdGroups = allProjectsOpen ? filterCwdPickerGroups(cwdGroups, cwdSearch) : cwdGroups.slice(0, 5);
+  const displayedCwdRows = filteredCwdGroups.flat();
   const filteredSessions = selectedCwd
     ? visibleSessions.filter((s) => s.cwd === selectedCwd)
     : visibleSessions;
@@ -976,7 +1016,16 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         {/* CWD picker */}
         <div ref={dropdownRef} style={{ position: "relative" }}>
           <button
-            onClick={() => setDropdownOpen((v) => !v)}
+            onClick={() => {
+              if (dropdownOpen) {
+                closeCwdPicker();
+              } else {
+                resetCwdPickerView();
+                setDropdownOpen(true);
+              }
+            }}
+            aria-label={selectedCwd ? `Switch project, current path ${selectedCwd}` : "Switch project"}
+            aria-expanded={dropdownOpen}
             onContextMenu={(e) => {
               const worktree = selectedCwd ? worktreeByCwd.get(selectedCwd) : undefined;
               if (!selectedCwd || !worktree) return;
@@ -1029,69 +1078,166 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                 border: "1px solid var(--border)",
                 borderRadius: 8,
                 boxShadow: "0 6px 20px rgba(0,0,0,0.10)",
+                display: "flex",
+                flexDirection: "column",
+                maxHeight: "calc(100dvh - 150px)",
                 overflow: "hidden",
               }}
             >
-              {cwdRows.map((row) => {
-                const selected = row.cwd === selectedCwd;
-                const isWorktree = row.kind === "worktree";
-                return (
-                  <button
-                    key={`${row.kind}:${row.cwd}`}
-                    onClick={() => {
-                      setSelectedCwd(row.cwd);
-                      setWorktreeError(null);
-                      setCustomPathOpen(false);
-                      setCustomPathValue("");
-                      setCustomPathError(null);
-                      setDropdownOpen(false);
-                    }}
-                    onContextMenu={(e) => {
-                      if (!row.worktree) return;
-                      e.preventDefault();
-                      e.stopPropagation();
-                      setWorktreeContextMenu({ x: e.clientX, y: e.clientY, cwd: row.cwd, worktree: row.worktree });
+              {allProjectsOpen && (
+                <div style={{ padding: "8px", borderBottom: "1px solid var(--border)", background: "var(--bg-subtle)", flexShrink: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 7 }}>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setAllProjectsOpen(false);
+                        setCwdSearch("");
+                      }}
+                      style={{
+                        padding: 0,
+                        background: "none",
+                        border: "none",
+                        color: "var(--accent)",
+                        cursor: "pointer",
+                        fontSize: 11,
+                        fontWeight: 600,
+                      }}
+                    >
+                      ← Recent projects
+                    </button>
+                    <span style={{ color: "var(--text-dim)", fontSize: 10 }}>
+                      {cwdGroups.length} projects
+                    </span>
+                  </div>
+                  <input
+                    ref={cwdSearchInputRef}
+                    type="search"
+                    aria-label="Search projects by cwd path"
+                    placeholder="Search project paths…"
+                    value={cwdSearch}
+                    onChange={(e) => setCwdSearch(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Escape") closeCwdPicker();
                     }}
                     style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 7,
                       width: "100%",
-                      padding: isWorktree ? "7px 10px 7px 28px" : "8px 10px",
-                      background: selected ? "var(--bg-selected)" : isWorktree ? "var(--bg-subtle)" : "none",
-                      border: "none",
-                      borderBottom: "1px solid var(--border)",
-                      color: selected ? "var(--text)" : "var(--text-muted)",
-                      cursor: "pointer",
-                      textAlign: "left",
-                      fontSize: 11,
+                      boxSizing: "border-box",
+                      padding: "6px 8px",
+                      border: "1px solid var(--border)",
+                      borderRadius: 5,
+                      outline: "none",
+                      background: "var(--bg)",
+                      color: "var(--text)",
                       fontFamily: "var(--font-mono)",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
+                      fontSize: 11,
                     }}
-                    title={row.worktree ? `${row.cwd}\n右键点击查看更多 WorkTree 操作` : row.cwd}
+                  />
+                </div>
+              )}
+
+              <div style={{ maxHeight: allProjectsOpen ? 320 : 300, minHeight: 0, overflowY: "auto", flexShrink: 1 }}>
+                {displayedCwdRows.map((row) => {
+                  const selected = row.cwd === selectedCwd;
+                  const isWorktree = row.kind === "worktree";
+                  return (
+                    <button
+                      key={`${row.kind}:${row.cwd}`}
+                      onClick={() => {
+                        setSelectedCwd(row.cwd);
+                        setWorktreeError(null);
+                        setCustomPathOpen(false);
+                        setCustomPathValue("");
+                        setCustomPathError(null);
+                        closeCwdPicker();
+                      }}
+                      onContextMenu={(e) => {
+                        if (!row.worktree) return;
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setWorktreeContextMenu({ x: e.clientX, y: e.clientY, cwd: row.cwd, worktree: row.worktree });
+                      }}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 7,
+                        width: "100%",
+                        padding: isWorktree ? "7px 10px 7px 28px" : "8px 10px",
+                        background: selected ? "var(--bg-selected)" : isWorktree ? "var(--bg-subtle)" : "none",
+                        border: "none",
+                        borderBottom: "1px solid var(--border)",
+                        color: selected ? "var(--text)" : "var(--text-muted)",
+                        cursor: "pointer",
+                        textAlign: "left",
+                        fontSize: 11,
+                        fontFamily: "var(--font-mono)",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                      title={row.worktree ? `${row.cwd}\n右键点击查看更多 WorkTree 操作` : row.cwd}
+                    >
+                      {selected && (
+                        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                          <polyline points="1.5 5 4 7.5 8.5 2.5" />
+                        </svg>
+                      )}
+                      {!selected && isWorktree && (
+                        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--text-dim)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                          <path d="M2 1.5v4A2.5 2.5 0 0 0 4.5 8H8" />
+                        </svg>
+                      )}
+                      {!selected && !isWorktree && <span style={{ width: 10, flexShrink: 0 }} />}
+                      <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {shortenCwd(row.cwd, homeDir)}
+                        {row.syntheticParent && <span style={{ color: "var(--text-dim)", marginLeft: 5 }}>(main)</span>}
+                        {archivedOnlyCwds.has(row.cwd) && <span style={{ color: "var(--text-dim)", fontStyle: "italic", marginLeft: 5 }}>(archived)</span>}
+                      </span>
+                      <WorktreeBadge worktree={row.worktree} />
+                    </button>
+                  );
+                })}
+                {allProjectsOpen && filteredCwdGroups.length === 0 && (
+                  <div
+                    role="status"
+                    style={{ padding: "18px 12px", color: "var(--text-dim)", fontSize: 11, textAlign: "center" }}
                   >
-                    {selected && (
-                      <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-                        <polyline points="1.5 5 4 7.5 8.5 2.5" />
-                      </svg>
-                    )}
-                    {!selected && isWorktree && (
-                      <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--text-dim)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-                        <path d="M2 1.5v4A2.5 2.5 0 0 0 4.5 8H8" />
-                      </svg>
-                    )}
-                    {!selected && !isWorktree && <span style={{ width: 10, flexShrink: 0 }} />}
-                    <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {shortenCwd(row.cwd, homeDir)}
-                      {row.syntheticParent && <span style={{ color: "var(--text-dim)", marginLeft: 5 }}>(main)</span>}
-                      {archivedOnlyCwds.has(row.cwd) && <span style={{ color: "var(--text-dim)", fontStyle: "italic", marginLeft: 5 }}>(archived)</span>}
-                    </span>
-                    <WorktreeBadge worktree={row.worktree} />
-                  </button>
-                );
-              })}
+                    {cwdSearch.trim() ? "No projects match your search." : "No projects available."}
+                  </div>
+                )}
+              </div>
+
+              {!allProjectsOpen && cwdGroups.length > 5 && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setAllProjectsOpen(true);
+                    setCwdSearch("");
+                    setTimeout(() => cwdSearchInputRef.current?.focus(), 0);
+                  }}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 8,
+                    width: "100%",
+                    padding: "8px 10px",
+                    background: "var(--bg-subtle)",
+                    border: "none",
+                    borderTop: "1px solid var(--border)",
+                    color: "var(--accent)",
+                    cursor: "pointer",
+                    textAlign: "left",
+                    fontSize: 11,
+                    fontWeight: 600,
+                    flexShrink: 0,
+                  }}
+                >
+                  <span>View all projects</span>
+                  <span style={{ color: "var(--text-dim)", fontSize: 10, fontWeight: 500 }}>
+                    {cwdGroups.length} projects
+                  </span>
+                </button>
+              )}
 
               {/* Default cwd shortcut */}
               {!customPathOpen && (
@@ -1105,11 +1251,12 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                     padding: "8px 10px",
                     background: "none",
                     border: "none",
-                    borderTop: cwdRows.length > 0 ? "1px solid var(--border)" : "none",
+                    borderTop: displayedCwdRows.length > 0 || cwdGroups.length > 5 ? "1px solid var(--border)" : "none",
                     color: "var(--text-muted)",
                     cursor: "pointer",
                     textAlign: "left",
                     fontSize: 11,
+                    flexShrink: 0,
                   }}
                 >
                   <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
@@ -1140,6 +1287,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                     cursor: "pointer",
                     textAlign: "left",
                     fontSize: 11,
+                    flexShrink: 0,
                   }}
                 >
                   <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" style={{ flexShrink: 0 }}>
@@ -1149,7 +1297,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                   <span>Custom path…</span>
                 </button>
               ) : (
-                <div style={{ padding: "6px 8px", borderTop: cwdRows.length > 0 ? "none" : undefined }}>
+                <div style={{ padding: "6px 8px", borderTop: displayedCwdRows.length > 0 ? "none" : undefined, flexShrink: 0 }}>
                   <input
                     ref={customPathInputRef}
                     value={customPathValue}

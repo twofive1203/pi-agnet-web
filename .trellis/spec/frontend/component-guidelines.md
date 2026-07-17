@@ -233,6 +233,24 @@ return createPortal(
 - Include the portal panel ref or stable panel class in outside-click detection so selecting an option is not treated as an outside tap.
 - Recalculate or close fixed panels when resize, visual viewport, or relevant toolbar scroll changes can invalidate captured coordinates.
 
+## Viewport-Bounded Selector Panels
+
+When a dropdown contains fixed controls around a potentially long list (for example, a search header plus footer actions), bound the outer panel to the viewport and make only the list body scroll.
+
+```typescript
+<div style={{ display: "flex", flexDirection: "column", maxHeight: "calc(100dvh - 150px)", overflow: "hidden" }}>
+  <div style={{ flexShrink: 0 }}>Search controls</div>
+  <div style={{ minHeight: 0, overflowY: "auto", flexShrink: 1 }}>Long option list</div>
+  <button style={{ flexShrink: 0 }}>Persistent footer action</button>
+</div>
+```
+
+**Rules:**
+- Reserve viewport space based on the panel's actual/fixed top position, including a small bottom margin.
+- Keep search controls and required footer actions non-shrinking and reachable.
+- Put scrolling on the options region, not the whole panel, so required actions do not scroll out or get clipped.
+- Recheck short desktop windows and mobile landscape layouts whenever fixed content is added above or below the list.
+
 ## Common Mistakes
 
 1. **Don't import pi session lifecycle code into components** — use `lib/rpc-manager.ts` and `hooks/useAgentSession.ts` as boundaries

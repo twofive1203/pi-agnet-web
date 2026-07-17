@@ -893,13 +893,15 @@ span.linenumber {
     width: auto !important;
     max-width: calc(100vw - 16px);
     max-height: min(70dvh, 480px);
-    overflow-y: auto !important;
   }
   .session-sidebar-cwd-menu {
     top: 142px !important;
+    max-height: min(70dvh, calc(100dvh - 150px), 480px) !important;
+    overflow: hidden !important;
   }
   .session-sidebar-floating-menu {
     top: 110px !important;
+    overflow-y: auto !important;
   }
 }
 
