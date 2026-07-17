@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 45
+- **Total Sessions**: 46
 - **Last Active**: 2026-07-17
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~638 | Active |
+| `journal-1.md` | ~671 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 46 | 2026-07-17 | 项目切换支持查看全部和搜索 | `00eb0f4` | `self-run` |
 | 45 | 2026-07-17 | 移动端顶部功能面板适配 | `92dbb82` | `self-run` |
 | 44 | 2026-07-16 | Native subagent model management and port 62666 | `3285e81`, `3dd82cd` | `self-run` |
 | 43 | 2026-07-16 | Release Snail Pi Web 0.7.2 | `8af1104`, `f5622a2` | `self-run` |

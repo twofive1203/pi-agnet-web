@@ -636,3 +636,36 @@ Added independent user/project native pi-subagents model configuration with safe
 ### Next Steps
 
 - None - task complete
+
+
+## Session 46: 项目切换支持查看全部和搜索
+
+**Date**: 2026-07-17
+**Task**: 项目切换支持查看全部和搜索
+**Branch**: `self-run`
+
+### Summary
+
+项目切换器默认展示最近五个项目组，并支持查看全部、cwd 搜索及视口安全的滚动布局；保留 WorkTree、归档和自定义路径行为。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `00eb0f4` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
