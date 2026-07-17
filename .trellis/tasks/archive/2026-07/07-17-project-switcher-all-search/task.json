@@ -1,0 +1,35 @@
+{
+  "id": "project-switcher-all-search",
+  "name": "project-switcher-all-search",
+  "title": "项目切换支持查看全部和搜索",
+  "description": "",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "lichong",
+  "assignee": "lichong",
+  "createdAt": "2026-07-17",
+  "completedAt": "2026-07-17",
+  "branch": null,
+  "base_branch": "self-run",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "components/SessionSidebar.tsx",
+    "app/globals.css"
+  ],
+  "notes": "",
+  "meta": {
+    "lastCheck": {
+      "status": "passed",
+      "at": "2026-07-17T02:56:11.025Z",
+      "summary": "Trellis review found no blockers; ESLint, TypeScript, and diff checks passed. Browser interaction remains a manual verification risk."
+    }
+  }
+}
