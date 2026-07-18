@@ -28,6 +28,18 @@ When changing pi SDK usage, read the installed package documentation first:
 
 Auth-related API routes live under `app/api/auth/`. Provider tokens and API-key status are stored/read through the pi configuration mechanisms; keep provider-specific network calls isolated in `lib/` helpers.
 
+### Grok CLI package
+
+Grok subscription access is provided by the third-party `pi-grok-cli` Pi package, not by a copied provider implementation in pi-web:
+
+```bash
+pi install npm:pi-grok-cli
+```
+
+`pi-grok-cli` 0.5.0 or newer requires Pi 0.80.0 or newer. The package registers the `grok-cli` provider, OAuth flow, models, commands and tools through Pi's extension APIs. After installation, authenticate from the Models provider UI or Pi's `/login` flow.
+
+The Models -> Grok CLI -> Subscription usage view executes the package-owned `/grok-cli-usage` command in a cwd-bound in-memory SDK session. Pi-web preserves the command's notification text and severity instead of importing or duplicating the extension's xAI billing request, credential handling or payload parser. No OAuth token or raw credential payload is returned to the browser.
+
 ## Skills, Commands, and Subagents
 
 Skill search/install/list routes live under `app/api/skills/`; slash-command discovery lives under `app/api/commands/`. Use `lib/npx.ts` for cross-platform `npx` execution.
