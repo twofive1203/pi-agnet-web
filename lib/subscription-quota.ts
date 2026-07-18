@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { AuthStorage } from "@earendil-works/pi-coding-agent";
+import { FileCredentialStore, getProviderAccessToken } from "@/lib/pi-auth";
 import { extractOpenAICodexAccountId, getOAuthAccountAccessToken, readOAuthAccountCredential, syncActiveOAuthAccountCredential, updateOAuthAccountQuotaCache } from "@/lib/oauth-accounts";
 
 export type CredentialStatus = "valid" | "expired" | "not_found" | "parse_error";
@@ -378,13 +378,13 @@ async function cacheAccountQuota(provider: string, accountId: string | null, quo
 async function resolveActiveOpenAICodexCredential(provider: string): Promise<ResolvedActiveCredential | SubscriptionQuota> {
   if (provider !== OPENAI_CODEX_PROVIDER) return quotaNotFound(provider);
 
-  const authStorage = AuthStorage.create();
+  const authStorage = FileCredentialStore.create();
   const storedCredential = authStorage.get(provider) as StoredOAuthCredential | undefined;
   if (storedCredential?.type !== "oauth") return quotaNotFound(provider);
 
   let accessToken: string | undefined;
   try {
-    accessToken = await authStorage.getApiKey(provider, { includeFallback: false });
+    accessToken = await getProviderAccessToken(provider);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return quotaError(provider, "expired", message);

@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend guideline entry for verification"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Quality check checklist for frontend changes"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "Validate shared types and config contracts"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "Review component composition against project conventions"}

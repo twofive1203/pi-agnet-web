@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import path from "path";
 import { stat, realpath } from "fs/promises";
-import { getAgentDir, createAgentSessionServices } from "@earendil-works/pi-coding-agent";
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { createSessionServicesWithRegistry } from "@/lib/pi-auth";
 import { getAllowedRoots, isPathAllowed } from "@/lib/allowed-roots";
 import {
   readPiSubagentSettings,
@@ -60,19 +61,12 @@ interface SubagentConfigResponse {
 // ---------------------------------------------------------------------------
 
 async function getModelIds(cwd: string): Promise<Set<string>> {
-  let services: Awaited<ReturnType<typeof createAgentSessionServices>> | undefined;
   try {
-    services = await createAgentSessionServices({ cwd, agentDir: getAgentDir() });
-    const available = services.modelRegistry.getAvailable() as Array<{ provider: string; id: string }>;
+    const { registry } = await createSessionServicesWithRegistry(cwd, getAgentDir());
+    const available = registry.getAvailable() as Array<{ provider: string; id: string }>;
     return new Set(available.map((m) => `${m.provider}/${m.id}`));
   } catch {
     return new Set();
-  } finally {
-    try {
-      await (services as unknown as { dispose?: () => Promise<void> | void } | undefined)?.dispose?.();
-    } catch {
-      // best-effort cleanup
-    }
   }
 }
 

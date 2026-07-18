@@ -224,8 +224,7 @@ export class AgentSessionWrapper {
 
       case "set_model": {
         const { provider, modelId } = command as { provider: string; modelId: string };
-        const registry = this.inner.modelRegistry;
-        const model = registry.find(provider, modelId);
+        const model = this.inner.modelRuntime.getModel(provider, modelId);
         if (!model) throw new Error(`Model not found: ${provider}/${modelId}`);
         await this.inner.setModel(model);
         return { id: model.id, provider: model.provider };
@@ -407,12 +406,13 @@ export function reloadRpcAuthState(): number {
   for (const wrapper of getRegistry().values()) {
     if (!wrapper.isAlive()) continue;
     try {
-      wrapper.inner.modelRegistry.authStorage?.reload?.();
-      wrapper.inner.modelRegistry.refresh?.();
+      // 0.80.10+: ModelRuntime owns credential reload + catalog refresh.
+      void wrapper.inner.modelRuntime.reloadConfig?.();
+      void wrapper.inner.modelRuntime.refresh?.();
       count += 1;
     } catch {
       // Keep account activation best-effort for live wrappers; new requests/sessions
-      // still read the updated auth.json through fresh AuthStorage instances.
+      // still read the updated auth.json through fresh ModelRuntime instances.
     }
   }
 

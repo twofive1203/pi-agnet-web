@@ -120,10 +120,11 @@ export interface AgentSessionLike {
   readonly autoCompactionEnabled: boolean;
   readonly autoRetryEnabled: boolean;
   readonly model: ModelLike | undefined;
-  readonly modelRegistry: {
-    find: (provider: string, modelId: string) => ModelLike | undefined;
-    refresh?: () => void;
-    authStorage?: { reload?: () => void };
+  /** pi 0.80.10+ canonical model/auth facade. */
+  readonly modelRuntime: {
+    getModel: (provider: string, modelId: string) => ModelLike | undefined;
+    reloadConfig?: () => Promise<void>;
+    refresh?: () => Promise<unknown>;
   };
   readonly sessionManager: SessionManager;
   readonly settingsManager: SettingsManager;

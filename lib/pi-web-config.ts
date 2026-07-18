@@ -82,6 +82,10 @@ export interface PiWebTerminalConfig {
   envAssistantFallback: PiWebSubagentRunPolicy;
 }
 
+export interface PiWebGrokConfig {
+  usagePanelEnabled: boolean;
+}
+
 export interface PiWebChatGptConfig {
   usagePanelEnabled: boolean;
   warmup: PiWebChatGptWarmupConfig;
@@ -117,6 +121,7 @@ export interface PiWebConfig {
   terminal: PiWebTerminalConfig;
   chatgpt: PiWebChatGptConfig;
   editor: PiWebEditorConfig;
+  grok: PiWebGrokConfig;
 }
 
 export interface PiWebConfigPatch {
@@ -126,6 +131,7 @@ export interface PiWebConfigPatch {
   terminal?: unknown;
   chatgpt?: unknown;
   editor?: unknown;
+  grok?: unknown;
 }
 
 export interface PiWebConfigReadResult {
@@ -239,6 +245,9 @@ export const DEFAULT_PI_WEB_CONFIG: PiWebConfig = {
         "trellis-research": { strategy: "default" },
       },
     },
+  },
+  grok: {
+    usagePanelEnabled: false,
   },
 };
 
@@ -421,6 +430,7 @@ function normalizePiWebConfig(raw: unknown): PiWebConfig {
   const terminal = isRecord(root.terminal) ? root.terminal : {};
   const chatgpt = isRecord(root.chatgpt) ? root.chatgpt : {};
   const editor = isRecord(root.editor) ? root.editor : {};
+  const grok = isRecord(root.grok) ? root.grok : {};
   const editorShortcuts = isRecord(editor.shortcuts) ? editor.shortcuts : {};
   const terminalEnv: Record<string, string> = {};
   if (isRecord(terminal.env)) {
@@ -468,6 +478,9 @@ function normalizePiWebConfig(raw: unknown): PiWebConfig {
         cmdClickDrillDown: readBoolean(editorShortcuts.cmdClickDrillDown, defaults.editor.shortcuts.cmdClickDrillDown),
         shiftClickHierarchy: readBoolean(editorShortcuts.shiftClickHierarchy, defaults.editor.shortcuts.shiftClickHierarchy),
       },
+    },
+    grok: {
+      usagePanelEnabled: readBoolean(grok.usagePanelEnabled, defaults.grok.usagePanelEnabled),
     },
     trellis: {
       enabled: readBoolean(trellis.enabled, defaults.trellis.enabled),
@@ -765,6 +778,15 @@ export function validatePiWebChatGptConfig(value: unknown): PiWebChatGptConfig {
   };
 }
 
+export function validatePiWebGrokConfig(value: unknown): PiWebGrokConfig {
+  if (!isRecord(value)) {
+    throw new PiWebConfigValidationError("grok config must be an object");
+  }
+  return {
+    usagePanelEnabled: requireBoolean(value.usagePanelEnabled, "grok.usagePanelEnabled"),
+  };
+}
+
 export function validatePiWebEditorConfig(value: unknown): PiWebEditorConfig {
   if (!isRecord(value)) {
     throw new PiWebConfigValidationError("editor config must be an object");
@@ -822,7 +844,8 @@ export function writePiWebConfigPatch(patch: PiWebConfigPatch): PiWebConfigReadR
   const hasTerminal = Object.prototype.hasOwnProperty.call(patch, "terminal");
   const hasChatGpt = Object.prototype.hasOwnProperty.call(patch, "chatgpt");
   const hasEditor = Object.prototype.hasOwnProperty.call(patch, "editor");
-  if (!hasWorktree && !hasTrellis && !hasUsage && !hasTerminal && !hasChatGpt && !hasEditor) {
+  const hasGrok = Object.prototype.hasOwnProperty.call(patch, "grok");
+  if (!hasWorktree && !hasTrellis && !hasUsage && !hasTerminal && !hasChatGpt && !hasEditor && !hasGrok) {
     throw new PiWebConfigValidationError("no supported config sections provided");
   }
 
@@ -832,6 +855,7 @@ export function writePiWebConfigPatch(patch: PiWebConfigPatch): PiWebConfigReadR
   const currentConfig = normalizePiWebConfig(raw);
   const chatGptPatch = hasChatGpt ? patch.chatgpt : undefined;
   const normalizedWorktree = hasWorktree ? validatePiWebWorktreeConfig(patch.worktree) : undefined;
+  const normalizedGrok = hasGrok ? validatePiWebGrokConfig(patch.grok) : undefined;
   const normalizedTrellis = hasTrellis ? validatePiWebTrellisConfig(patch.trellis) : undefined;
   const normalizedUsage = hasUsage ? validatePiWebUsageConfig(patch.usage) : undefined;
   const normalizedTerminal = hasTerminal ? validatePiWebTerminalConfig(patch.terminal) : undefined;
@@ -890,6 +914,14 @@ export function writePiWebConfigPatch(patch: PiWebConfigPatch): PiWebConfigReadR
     nextRaw.editor = {
       ...previousEditor,
       ...normalizedEditor,
+    };
+  }
+
+  if (normalizedGrok) {
+    const previousGrok = isRecord(raw.grok) ? raw.grok : {};
+    nextRaw.grok = {
+      ...previousGrok,
+      ...normalizedGrok,
     };
   }
 

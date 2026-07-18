@@ -61,16 +61,16 @@ API routes live under `app/api/`. When adding, removing, or changing routes, upd
 | `default-cwd/` | POST | Create and return `~/pi-cwd-<YYYYMMDD>`. |
 | `home/` | GET | Return `os.homedir()`. |
 | `usage/` | GET | Aggregate token/cost usage across active-only or active-plus-archived sessions based on `pi-web.json` Usage settings. |
-| `auth/providers/` | GET | List configured auth provider statuses. |
-| `auth/all-providers/` | GET | List all known provider ids. |
+| `auth/providers/` | GET | List OAuth/subscription providers. `loggedIn` is true only when the active auth is OAuth (API-key-only credentials on dual-auth providers like `xai` do not count). |
+| `auth/all-providers/` | GET | List API-key-capable built-in providers (excludes primary OAuth-only ids and `models.json` custom keys). `configured` is true only for non-OAuth auth so an xAI subscription login does not also surface a separate active "xAI" API-key row. |
 | `auth/accounts/[provider]/` | GET/POST/PATCH/DELETE | List saved OAuth accounts, import one or more raw/CPA/SUB2API OAuth account JSON entries, update account remarks/extra info, return cached quota reset metadata, and soft-delete inactive saved accounts for supported providers (`openai-codex`). |
 | `auth/accounts/[provider]/activate/` | POST | Activate a saved OAuth account and reload live RPC auth state. |
 | `auth/login/[provider]/` | GET/POST | Initiate OAuth login for a provider; `openai-codex?accountMode=add` saves another account without replacing active auth. |
 | `auth/logout/[provider]/` | POST | Clear OAuth tokens for a provider. |
-| `auth/api-key/[provider]/` | GET | Get masked API-key status for a provider. |
+| `auth/api-key/[provider]/` | GET/POST/DELETE | GET returns API-key auth status (never the key); OAuth credentials do not count as configured. POST sets a stored API key. DELETE clears the stored credential. |
 | `auth/balance/[provider]/` | GET | Query DeepSeek account balance. |
 | `auth/quota/[provider]/` | GET/POST | GET queries OpenAI Codex subscription quota and reset-credit availability for the active account, or for a saved account with `?accountId=...`; queries update the saved account's cached quota/reset-credit metadata and refresh expired saved-account OAuth tokens when possible. POST consumes one available Codex reset credit for the active account or JSON `{ accountId }`, then returns freshly queried quota. |
-| `auth/usage/[provider]/` | POST | Run an allowlisted provider usage command in a cwd-bound in-memory Pi SDK session. Currently maps only `grok-cli` to the installed extension's `/grok-cli-usage` command and returns ordered browser-safe notification text without credentials or persistent session data. |
+| `auth/usage/grok-cli/` | GET | Query Grok CLI structured billing usage. `?mode=cache` (default) returns last-known cache from `~/.pi/agent/grok-cli-usage-cache.json` without hitting billing; `?mode=refresh` live-fetches xAI `/billing` (+ optional weekly credits) and overwrites the cache only on success. Returns browser-safe `GrokUsageResult` JSON (`monthly` used/limit/remaining/utilization/billingPeriodEnd, optional `weekly`, `source`, `queriedAt`, `envBypass`) with no tokens/credentials. No cwd required. Manual refresh only. |
 | `auth/warmup/openai-codex/` | GET/POST | GET returns recent ChatGPT/Codex warmup history and lazily ensures the local scheduler. POST warms selected saved OAuth accounts by sending a tiny real Codex request without activating them; returns per-account results, records manual run history, and refreshes quota cache when possible. |
 | `chatgpt/usage-refresh/status/` | GET | Ensure and inspect the backend ChatGPT usage auto-refresh scheduler, including lock diagnostics and last-run state. |
 | `chatgpt/usage-refresh/ensure/` | POST | Start or re-arm the backend ChatGPT usage auto-refresh scheduler according to `pi-web.json`. |

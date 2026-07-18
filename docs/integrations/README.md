@@ -7,7 +7,7 @@ See `package.json` for exact versions.
 | Dependency | Purpose |
 | --- | --- |
 | `next`, `react`, `react-dom` | Web application framework/runtime. |
-| `@earendil-works/pi-coding-agent`, `@earendil-works/pi-ai` | In-process pi AgentSession and AI provider integration. |
+| `@earendil-works/pi-coding-agent`, `@earendil-works/pi-ai` | In-process pi AgentSession and AI provider integration. **Pinned to exact `0.80.10`**. Auth/catalog access goes through `ModelRuntime` (`lib/pi-auth.ts`); multi-account helpers use `FileCredentialStore` for `auth.json` because public `AuthStorage` was removed. |
 | `react-markdown`, `remark-gfm`, `remark-math`, `rehype-raw`, `rehype-sanitize`, `rehype-katex`, `katex` | Markdown, raw HTML sanitization, and math rendering. |
 | `react-syntax-highlighter` | Code block highlighting. |
 | `mermaid` | Diagram rendering. |
@@ -26,7 +26,13 @@ When changing pi SDK usage, read the installed package documentation first:
 
 ## Auth Providers
 
-Auth-related API routes live under `app/api/auth/`. Provider tokens and API-key status are stored/read through the pi configuration mechanisms; keep provider-specific network calls isolated in `lib/` helpers.
+Auth-related API routes live under `app/api/auth/`. From pi `0.80.10`, login/logout/catalog/request-auth are owned by `ModelRuntime`:
+
+- Shared helpers: `lib/pi-auth.ts`
+- Direct `auth.json` read/write for multi-account Codex flows: `lib/file-credential-store.ts`
+- Do not import removed public `AuthStorage` APIs from `@earendil-works/pi-coding-agent`
+
+Provider-specific network calls remain isolated in `lib/` helpers.
 
 ### Grok CLI package
 
@@ -38,7 +44,9 @@ pi install npm:pi-grok-cli
 
 `pi-grok-cli` 0.5.0 or newer requires Pi 0.80.0 or newer. The package registers the `grok-cli` provider, OAuth flow, models, commands and tools through Pi's extension APIs. After installation, authenticate from the Models provider UI or Pi's `/login` flow.
 
-The Models -> Grok CLI -> Subscription usage view executes the package-owned `/grok-cli-usage` command in a cwd-bound in-memory SDK session. Pi-web preserves the command's notification text and severity instead of importing or duplicating the extension's xAI billing request, credential handling or payload parser. No OAuth token or raw credential payload is returned to the browser.
+**Usage/quota queries do not use the extension command bridge.** The Web UI owns billing fetch and display through `lib/grok-usage.ts` and `GET /api/auth/usage/grok-cli`, which directly calls the xAI billing endpoints. Token resolution order: `GROK_CLI_OAUTH_TOKEN` env bypass → `ModelRegistry.getApiKeyForProvider("grok-cli")` when the extension provider is registered → `readStoredCredential("grok-cli")` from `auth.json` (primary path, because `grok-cli` is extension-owned and absent from a bare `ModelRuntime`) with optional OAuth refresh when near expiry. The last-known successful result is cached at `~/.pi/agent/grok-cli-usage-cache.json` and is shown cache-first; only manual refresh hits live billing. This path does not require a workspace cwd and does not depend on a running Pi SDK session or `/grok-cli-usage`.
+
+OAuth login, model catalog, streaming, and tools are still owned by `pi-grok-cli`. Usage query is the only path that was migrated from extension command to server-owned implementation.
 
 ## Skills, Commands, and Subagents
 

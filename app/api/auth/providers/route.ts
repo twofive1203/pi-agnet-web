@@ -1,11 +1,15 @@
-import { AuthStorage } from "@earendil-works/pi-coding-agent";
+import {
+  createDefaultModelRuntime,
+  isProviderUsingOAuth,
+  listOAuthProviders,
+} from "@/lib/pi-auth";
 import { OPENAI_CODEX_PROVIDER_ID, syncActiveOAuthAccountCredential } from "@/lib/oauth-accounts";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const authStorage = AuthStorage.create();
-  const providers = authStorage.getOAuthProviders();
+  const runtime = await createDefaultModelRuntime();
+  const providers = listOAuthProviders(runtime);
 
   const EXCLUDED = new Set(["anthropic"]);
   const DISPLAY_NAMES: Record<string, string> = {
@@ -18,13 +22,15 @@ export async function GET() {
       .filter((p) => !EXCLUDED.has(p.id))
       .map(async (p) => {
         if (p.id === OPENAI_CODEX_PROVIDER_ID) {
-          await syncActiveOAuthAccountCredential(p.id, authStorage).catch(() => {});
+          await syncActiveOAuthAccountCredential(p.id).catch(() => {});
         }
-        const loggedIn = authStorage.has(p.id);
+        // Dual-auth providers (xai, etc.) may store an API key under the same id.
+        // Only treat real OAuth auth as "logged in" for the subscription tab.
+        const loggedIn = isProviderUsingOAuth(runtime, p.id);
         return {
           id: p.id,
           name: DISPLAY_NAMES[p.id] ?? p.name,
-          usesCallbackServer: p.usesCallbackServer ?? false,
+          usesCallbackServer: p.usesCallbackServer,
           loggedIn,
         };
       })

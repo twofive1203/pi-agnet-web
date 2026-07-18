@@ -1,4 +1,10 @@
-import { AuthStorage } from "@earendil-works/pi-coding-agent";
+import {
+  InMemoryCredentialStore,
+  ModelRuntime,
+  isOAuthCredential,
+  isOAuthProvider,
+  type AuthInteraction,
+} from "@/lib/pi-auth";
 import { OPENAI_CODEX_PROVIDER_ID, saveOAuthAccountCredential, syncActiveOAuthAccountCredential } from "@/lib/oauth-accounts";
 import { reloadRpcAuthState } from "@/lib/rpc-manager";
 
@@ -55,7 +61,7 @@ export async function GET(
     controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
   };
 
-  // AbortController propagates client disconnect into authStorage.login()
+  // AbortController propagates client disconnect into ModelRuntime.login()
   const abort = new AbortController();
   req.signal.addEventListener("abort", () => abort.abort());
 
@@ -72,10 +78,9 @@ export async function GET(
         return;
       }
 
-      const authStorage = addAccountMode ? AuthStorage.inMemory() : AuthStorage.create();
-      const providers = authStorage.getOAuthProviders();
-      const providerInfo = providers.find((p) => p.id === provider);
-      if (!providerInfo) {
+      const credentials = addAccountMode ? new InMemoryCredentialStore() : undefined;
+      const runtime = await ModelRuntime.create(credentials ? { credentials } : undefined);
+      if (!isOAuthProvider(runtime, provider)) {
         send(controller, { type: "error", message: `Unknown provider: ${provider}` });
         controller.close();
         return;
@@ -131,46 +136,10 @@ export async function GET(
       // Also cancel on client disconnect
       abort.signal.addEventListener("abort", cleanup);
 
-      try {
-        await authStorage.login(provider, {
-          onAuth: (info: { url: string; instructions?: string }) => {
-            const request = getManualInputRequest();
-            send(controller, {
-              type: "auth",
-              url: info.url,
-              instructions: info.instructions ?? null,
-              token: request.token,
-            });
-          },
-          onDeviceCode: (info: {
-            userCode: string;
-            verificationUri: string;
-            intervalSeconds?: number;
-            expiresInSeconds?: number;
-          }) => {
-            send(controller, {
-              type: "device_code",
-              userCode: info.userCode,
-              verificationUri: info.verificationUri,
-              intervalSeconds: info.intervalSeconds ?? null,
-              expiresInSeconds: info.expiresInSeconds ?? null,
-            });
-          },
-          onPrompt: async (prompt: { message: string; placeholder?: string }) => {
-            const request = getManualInputRequest();
-            send(controller, {
-              type: "prompt_request",
-              message: prompt.message,
-              placeholder: prompt.placeholder ?? null,
-              token: request.token,
-            });
-            const value = await request.promise;
-            return value;
-          },
-          onProgress: (message: string) => {
-            send(controller, { type: "progress", message });
-          },
-          onSelect: async (prompt: { message: string; options: { id: string; label: string }[] }) => {
+      const interaction: AuthInteraction = {
+        signal: abort.signal,
+        async prompt(prompt) {
+          if (prompt.type === "select") {
             const request = createClientInputRequest();
             send(controller, {
               type: "select_request",
@@ -179,18 +148,67 @@ export async function GET(
               token: request.token,
             });
             const value = await request.promise;
-            return value || undefined;
-          },
-          onManualCodeInput: () => getManualInputRequest().promise,
-          signal: abort.signal,
-        });
+            return value || undefined as unknown as string;
+          }
+
+          const request = getManualInputRequest();
+          if (prompt.type === "manual_code") {
+            // Keep legacy event names for the frontend OAuth UI.
+            send(controller, {
+              type: "auth",
+              url: "",
+              instructions: prompt.message,
+              token: request.token,
+            });
+          } else {
+            send(controller, {
+              type: "prompt_request",
+              message: prompt.message,
+              placeholder: prompt.placeholder ?? null,
+              token: request.token,
+            });
+          }
+          return request.promise;
+        },
+        notify(event) {
+          if (event.type === "auth_url") {
+            const request = getManualInputRequest();
+            send(controller, {
+              type: "auth",
+              url: event.url,
+              instructions: event.instructions ?? null,
+              token: request.token,
+            });
+            return;
+          }
+          if (event.type === "device_code") {
+            send(controller, {
+              type: "device_code",
+              userCode: event.userCode,
+              verificationUri: event.verificationUri,
+              intervalSeconds: event.intervalSeconds ?? null,
+              expiresInSeconds: event.expiresInSeconds ?? null,
+            });
+            return;
+          }
+          if (event.type === "progress" || event.type === "info") {
+            send(controller, { type: "progress", message: event.message });
+          }
+        },
+      };
+
+      try {
+        const credential = await runtime.login(provider, "oauth", interaction);
 
         if (addAccountMode) {
-          const account = await saveOAuthAccountCredential(provider, authStorage.get(provider));
+          if (!isOAuthCredential(credential)) {
+            throw new Error("Expected OAuth credential from login");
+          }
+          const account = await saveOAuthAccountCredential(provider, credential);
           send(controller, { type: "success", account, message: "Account saved successfully." });
         } else {
           if (provider === OPENAI_CODEX_PROVIDER_ID) {
-            await syncActiveOAuthAccountCredential(provider, authStorage).catch(() => {});
+            await syncActiveOAuthAccountCredential(provider).catch(() => {});
           }
           reloadRpcAuthState();
           send(controller, { type: "success" });

@@ -1,4 +1,4 @@
-import { AuthStorage, ModelRegistry } from "@earendil-works/pi-coding-agent";
+import { createModelRegistry } from "@/lib/pi-auth";
 
 const DEEPSEEK_PROVIDER_ID = "deepseek";
 const DEEPSEEK_BALANCE_URL = "https://api.deepseek.com/user/balance";
@@ -136,8 +136,7 @@ export async function getDeepSeekProviderBalance(provider: string): Promise<Deep
     return errorResult(provider, false, `Unsupported provider: ${provider}`);
   }
 
-  const authStorage = AuthStorage.create();
-  const registry = ModelRegistry.create(authStorage);
+  const { registry } = await createModelRegistry();
   const status = registry.getProviderAuthStatus(provider);
   if (!status.configured) return notConfiguredResult(provider);
 

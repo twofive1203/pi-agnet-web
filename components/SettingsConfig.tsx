@@ -71,7 +71,7 @@ const TEMPLATE_VARIABLES = [
   { token: "{yyyyMMdd-HHmmss}", description: "创建时刻，格式如 20260625-153012" },
 ];
 
-type SettingsSection = "worktree" | "usage" | "terminal" | "chatgpt" | "editor" | "agents" | "trellis";
+type SettingsSection = "worktree" | "usage" | "terminal" | "chatgpt" | "grok" | "editor" | "agents" | "trellis";
 type SubagentThinkingOption = PiWebSubagentRunPolicy["thinking"];
 
 const SUBAGENT_AGENT_NAMES = ["trellis-implement", "trellis-check", "trellis-research"];
@@ -407,6 +407,8 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
   const [terminalEnvAssistLoading, setTerminalEnvAssistLoading] = useState(false);
   const [chatgpt, setChatgpt] = useState<PiWebChatGptConfig | null>(null);
   const [savedChatgpt, setSavedChatgpt] = useState<PiWebChatGptConfig | null>(null);
+  const [grok, setGrok] = useState<import("@/lib/pi-web-config").PiWebGrokConfig | null>(null);
+  const [savedGrok, setSavedGrok] = useState<import("@/lib/pi-web-config").PiWebGrokConfig | null>(null);
   const [editor, setEditor] = useState<PiWebEditorConfig | null>(null);
   const [savedEditor, setSavedEditor] = useState<PiWebEditorConfig | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -423,8 +425,8 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
   const [developerNameTouched, setDeveloperNameTouched] = useState(false);
 
   const dirty = useMemo(
-    () => !worktreeConfigsEqual(worktree, savedWorktree) || !trellisConfigsEqual(trellis, savedTrellis) || !usageConfigsEqual(usage, savedUsage) || !terminalConfigsEqual(terminal, savedTerminal) || !chatGptConfigsEqual(chatgpt, savedChatgpt) || !editorConfigsEqual(editor, savedEditor),
-    [worktree, savedWorktree, trellis, savedTrellis, usage, savedUsage, terminal, savedTerminal, chatgpt, savedChatgpt, editor, savedEditor],
+    () => !worktreeConfigsEqual(worktree, savedWorktree) || !trellisConfigsEqual(trellis, savedTrellis) || !usageConfigsEqual(usage, savedUsage) || !terminalConfigsEqual(terminal, savedTerminal) || !chatGptConfigsEqual(chatgpt, savedChatgpt) || JSON.stringify(grok) !== JSON.stringify(savedGrok) || !editorConfigsEqual(editor, savedEditor),
+    [worktree, savedWorktree, trellis, savedTrellis, usage, savedUsage, terminal, savedTerminal, chatgpt, savedChatgpt, grok, savedGrok, editor, savedEditor],
   );
 
   const loadConfig = useCallback(async (signal?: AbortSignal) => {
@@ -446,6 +448,8 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
       setSavedTerminal(data.config.terminal);
       setChatgpt(data.config.chatgpt);
       setSavedChatgpt(data.config.chatgpt);
+      setGrok(data.config.grok);
+      setSavedGrok(data.config.grok);
       setEditor(data.config.editor);
       setSavedEditor(data.config.editor);
       setConfigPath(data.path);
@@ -537,6 +541,11 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
 
   const updateChatgpt = useCallback((patch: Partial<PiWebChatGptConfig>) => {
     setChatgpt((prev) => prev ? { ...prev, ...patch } : prev);
+    setNotice(null);
+  }, []);
+
+  const updateGrok = useCallback((patch: Partial<import("@/lib/pi-web-config").PiWebGrokConfig>) => {
+    setGrok((prev) => prev ? { ...prev, ...patch } : prev);
     setNotice(null);
   }, []);
 
@@ -714,6 +723,8 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
     setSavedTerminal(config.terminal);
     setChatgpt(config.chatgpt);
     setSavedChatgpt(config.chatgpt);
+    setGrok(config.grok);
+    setSavedGrok(config.grok);
     setEditor(config.editor);
     setSavedEditor(config.editor);
     setConfigPath(path);
@@ -722,7 +733,7 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
   }, [onConfigChange]);
 
   const saveConfig = useCallback(async (successNotice?: string): Promise<boolean> => {
-    if (!worktree || !trellis || !usage || !terminal || !chatgpt || !editor) return false;
+    if (!worktree || !trellis || !usage || !terminal || !chatgpt || !grok || !editor) return false;
     setSaving(true);
     setError(null);
     setNotice(null);
@@ -730,7 +741,7 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
       const res = await fetch("/api/web-config", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ worktree, trellis, usage, terminal, chatgpt, editor }),
+        body: JSON.stringify({ worktree, trellis, usage, terminal, chatgpt, grok, editor }),
       });
       const data = await res.json() as WebConfigResponse & { success?: boolean };
       if (!res.ok || data.error) throw new Error(data.error ?? `HTTP ${res.status}`);
@@ -743,7 +754,7 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
     } finally {
       setSaving(false);
     }
-  }, [applyLoadedConfig, worktree, trellis, usage, terminal, chatgpt, editor]);
+  }, [applyLoadedConfig, worktree, trellis, usage, terminal, chatgpt, grok, editor]);
 
   const handleSave = useCallback(async () => {
     await saveConfig("设置已保存。Usage/ChatGPT/Trellis/Editor 设置会立即生效，WorkTree 设置会用于下一次创建 New WorkTree。");
@@ -756,6 +767,7 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
     setUsage(defaults.usage);
     setTerminal(defaults.terminal);
     setChatgpt(defaults.chatgpt);
+    setGrok(defaults.grok);
     setEditor(defaults.editor);
     setNotice("已在表单中恢复默认值，点击保存后会写入 pi-web.json。");
   }, [defaults]);
@@ -791,6 +803,8 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
         setSavedTerminal(data.config.terminal);
         setChatgpt(data.config.chatgpt);
         setSavedChatgpt(data.config.chatgpt);
+        setGrok(data.config.grok);
+        setSavedGrok(data.config.grok);
         setEditor(data.config.editor);
         setSavedEditor(data.config.editor);
         onConfigChange?.();
@@ -891,6 +905,7 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
             {renderSectionButton("usage", "Usage", "Usage 统计范围")}
             {renderSectionButton("terminal", "Terminal", "Web 终端设置")}
             {renderSectionButton("chatgpt", "ChatGPT", "ChatGPT 用量悬浮面板")}
+            {renderSectionButton("grok", "Grok", "Grok CLI 用量悬浮面板")}
             {renderSectionButton("editor", "Editor", "文件编辑器和快捷键")}
             {renderSectionButton("agents", "Agents", "Pi 原生 subagent 模型设置")}
             {renderSectionButton("trellis", "Trellis", "Trellis 面板开关与工作流路由")}
@@ -1238,6 +1253,22 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
                       </div>
                       <div style={{ marginTop: 8 }}>这些是 Monaco 自带编辑行为，不写入蜗牛派配置；上面的开关只控制蜗牛派额外接管的快捷键/鼠标手势。</div>
                     </div>
+                  </div>
+                ) : section === "grok" ? (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                    <div>
+                      <h3 style={{ margin: 0, color: "var(--text)", fontSize: 15 }}>Grok</h3>
+                      <p style={{ margin: "5px 0 0", color: "var(--text-muted)", fontSize: 12, lineHeight: 1.5 }}>
+                        Grok CLI 用量面板配置。保存到 <code style={{ fontFamily: "var(--font-mono)", color: "var(--text)", overflowWrap: "anywhere" }}>{configPath}</code>
+                        {exists ? "" : "（保存时会自动创建）"}
+                      </p>
+                    </div>
+                    <ToggleField
+                      label="Grok 用量悬浮面板"
+                      description="开启后顶部右侧会显示当前 Grok CLI 用量面板入口。仅手动刷新，打开时先显示上次成功结果。需要 Grok CLI 登录。"
+                      checked={grok?.usagePanelEnabled ?? false}
+                      onChange={(usagePanelEnabled) => updateGrok({ usagePanelEnabled })}
+                    />
                   </div>
                 ) : section === "agents" ? (
                   <AgentsConfig cwd={cwd} />
@@ -1588,8 +1619,8 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
                 </button>
                 <button
                   onClick={() => void handleSave()}
-                  disabled={!worktree || !trellis || !usage || !terminal || !chatgpt || loading || saving || !dirty}
-                  style={{ padding: "7px 14px", borderRadius: 7, border: "none", background: !worktree || !trellis || !usage || !terminal || !chatgpt || loading || saving || !dirty ? "var(--border)" : "var(--accent)", color: "white", cursor: !worktree || !trellis || !usage || !terminal || !chatgpt || loading || saving || !dirty ? "not-allowed" : "pointer", fontSize: 12, fontWeight: 600 }}
+                  disabled={!worktree || !trellis || !usage || !terminal || !chatgpt || !grok || !editor || loading || saving || !dirty}
+                  style={{ padding: "7px 14px", borderRadius: 7, border: "none", background: !worktree || !trellis || !usage || !terminal || !chatgpt || !grok || !editor || loading || saving || !dirty ? "var(--border)" : "var(--accent)", color: "white", cursor: !worktree || !trellis || !usage || !terminal || !chatgpt || !grok || !editor || loading || saving || !dirty ? "not-allowed" : "pointer", fontSize: 12, fontWeight: 600 }}
                 >
                   {saving ? "正在保存…" : "保存"}
                 </button>

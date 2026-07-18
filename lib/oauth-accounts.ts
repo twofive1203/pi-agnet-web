@@ -1,9 +1,11 @@
 import { createHash } from "node:crypto";
 import { access, chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { AuthStorage, getAgentDir, type OAuthCredential } from "@earendil-works/pi-coding-agent";
-import { getOAuthApiKey } from "@earendil-works/pi-ai/oauth";
+import { getAgentDir, ModelRuntime } from "@earendil-works/pi-coding-agent";
+import type { OAuthCredential } from "@earendil-works/pi-ai";
+import { InMemoryCredentialStore } from "@earendil-works/pi-ai";
 import { convertOAuthAccountCredential, type OAuthAccountImportMode } from "@/lib/oauth-account-converters";
+import { FileCredentialStore } from "@/lib/file-credential-store";
 
 export const OPENAI_CODEX_PROVIDER_ID = "openai-codex";
 
@@ -492,10 +494,22 @@ export async function readOAuthAccountCredential(provider: string, accountId: st
 
 export async function getOAuthAccountAccessToken(provider: string, credential: NormalizedOpenAICodexCredential): Promise<string | undefined> {
   assertSupportedProvider(provider);
-  const result = await getOAuthApiKey(OPENAI_CODEX_PROVIDER_ID, { [OPENAI_CODEX_PROVIDER_ID]: credential });
-  if (!result?.apiKey) return undefined;
-  await saveOAuthAccountCredential(provider, { type: "oauth", ...result.newCredentials, accountId: credential.accountId }).catch(() => {});
-  return result.apiKey;
+  // Resolve/refresh through ModelRuntime against an isolated credential store so
+  // non-active saved accounts do not overwrite the active auth.json entry.
+  const store = new InMemoryCredentialStore();
+  await store.modify(provider, async () => credential);
+  const runtime = await ModelRuntime.create({ credentials: store });
+  const auth = await runtime.getAuth(provider);
+  if (!auth?.auth?.apiKey) return undefined;
+
+  const refreshed = await store.read(provider);
+  if (refreshed && isStoredOpenAICodexCredential(refreshed)) {
+    await saveOAuthAccountCredential(provider, {
+      ...refreshed,
+      accountId: credential.accountId,
+    }).catch(() => {});
+  }
+  return auth.auth.apiKey;
 }
 
 export async function saveOAuthAccountCredential(
@@ -522,7 +536,7 @@ export async function saveOAuthAccountCredential(
 
 export async function syncActiveOAuthAccountCredential(
   provider: string,
-  authStorage = AuthStorage.create(),
+  authStorage = FileCredentialStore.create(),
 ): Promise<OAuthAccountSummary | null> {
   assertSupportedProvider(provider);
   const credential = authStorage.get(provider);
@@ -684,12 +698,13 @@ export async function activateOAuthAccount(provider: string, accountId: string):
   const normalizedAccountId = accountId.trim();
   if (!normalizedAccountId) throw new OAuthAccountStoreError("accountId is required", 400);
 
-  const authStorage = AuthStorage.create();
+  const authStorage = FileCredentialStore.create();
   await syncActiveOAuthAccountCredential(provider, authStorage);
 
   const credential = await readOAuthAccountCredential(provider, normalizedAccountId);
-  authStorage.set(provider, credential);
-  if (authStorage.drainErrors().length > 0) {
+  try {
+    await authStorage.modify(provider, async () => credential);
+  } catch {
     throw new OAuthAccountStoreError("Failed to update active OAuth credential", 500);
   }
   await saveOAuthAccountCredential(provider, credential, { markActive: true, recordActivation: true });

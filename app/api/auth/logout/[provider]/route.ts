@@ -1,4 +1,8 @@
-import { AuthStorage } from "@earendil-works/pi-coding-agent";
+import {
+  createDefaultModelRuntime,
+  isOAuthProvider,
+  removeStoredCredential,
+} from "@/lib/pi-auth";
 import { reloadRpcAuthState } from "@/lib/rpc-manager";
 
 export const dynamic = "force-dynamic";
@@ -8,12 +12,11 @@ export async function POST(
   { params }: { params: Promise<{ provider: string }> }
 ) {
   const { provider } = await params;
-  const authStorage = AuthStorage.create();
-  const providers = authStorage.getOAuthProviders();
-  if (!providers.find((p) => p.id === provider)) {
+  const runtime = await createDefaultModelRuntime();
+  if (!isOAuthProvider(runtime, provider)) {
     return Response.json({ error: `Unknown provider: ${provider}` }, { status: 400 });
   }
-  authStorage.logout(provider);
+  await removeStoredCredential(provider);
   reloadRpcAuthState();
   return Response.json({ ok: true });
 }
