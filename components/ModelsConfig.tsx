@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import type { DeepSeekBalanceResult } from "@/lib/deepseek-balance";
-import type { ExtensionCommandResult } from "@/lib/extension-command-runner";
+import type { GrokUsageResult } from "@/lib/grok-usage";
 import { ACCOUNT_JSON_CONVERTERS, RAW_ACCOUNT_JSON_EXAMPLE, validateRawOAuthCredentialImport, type OAuthAccountImportMode } from "@/lib/oauth-account-converters";
 import { earliestResetCreditExpiration, formatQuotaQueriedAt, formatResetCountdown, knownQuotaTiers, quotaColor, QUOTA_TIER_LABELS, type CodexResetCreditDisplay } from "@/lib/quota-display";
 import { ChatGptWarmupDialog } from "./ChatGptWarmupDialog";
@@ -1158,32 +1158,33 @@ function OAuthQuotaView({
 }
 
 function GrokUsageView({
-  cwd,
   result,
   loading,
   onRefresh,
 }: {
-  cwd: string | null;
-  result: ExtensionCommandResult | null;
+  result: GrokUsageResult | null;
   loading: boolean;
   onRefresh: () => void;
 }) {
+  const monthly = result?.monthly ?? null;
+  const monthlyUtilization = monthly?.utilization ?? null;
+
   return (
     <div style={{ border: "1px solid var(--border)", borderRadius: 6, background: "var(--bg-panel)", padding: 12, display: "flex", flexDirection: "column", gap: 10 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
           <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0 }}>Usage</span>
           <span style={{ fontSize: 11, color: "var(--text-dim)" }}>
-            {loading ? "Refreshing…" : result ? `Updated ${formatQuotaQueriedAt(result.queriedAt)}` : "Not queried yet"}
+            {loading ? "Refreshing…" : result?.queriedAt ? `Updated ${formatQuotaQueriedAt(result.queriedAt)}` : "Not queried yet"}
           </span>
         </div>
         <button
           type="button"
           onClick={onRefresh}
-          disabled={loading || !cwd}
-          title={cwd ? "Refresh Grok CLI usage" : "Select a workspace to query usage"}
+          disabled={loading}
+          title="Refresh Grok CLI usage"
           aria-label="Refresh Grok CLI usage"
-          style={{ width: 28, height: 28, border: "1px solid var(--border)", borderRadius: 5, background: "var(--bg)", color: loading || !cwd ? "var(--text-dim)" : "var(--text-muted)", cursor: loading || !cwd ? "default" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, flexShrink: 0 }}
+          style={{ width: 28, height: 28, border: "1px solid var(--border)", borderRadius: 5, background: "var(--bg)", color: loading ? "var(--text-dim)" : "var(--text-muted)", cursor: loading ? "default" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, flexShrink: 0 }}
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M21 12a9 9 0 0 1-9 9 8.8 8.8 0 0 1-6.36-2.64" />
@@ -1194,37 +1195,73 @@ function GrokUsageView({
         </button>
       </div>
 
-      {!cwd && (
-        <div style={{ fontSize: 12, color: "#fb923c", lineHeight: 1.5 }}>Select a workspace before querying Grok CLI usage.</div>
-      )}
-
-      {loading && !result && (
-        <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5 }}>Running /grok-cli-usage…</div>
-      )}
-
       {result?.error && (
         <div style={{ fontSize: 12, color: "#f87171", lineHeight: 1.5 }}>{result.error}</div>
       )}
 
-      {result && result.notices.length > 0 && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 0 }}>
-          {result.notices.map((notice, index) => (
-            <pre
-              key={`${index}-${notice.level}`}
-              style={{ margin: 0, padding: "8px 9px", border: "1px solid var(--border)", borderRadius: 5, background: "var(--bg)", color: notice.level === "error" ? "#f87171" : notice.level === "warning" ? "#fb923c" : "var(--text-muted)", fontFamily: "var(--font-mono)", fontSize: 11, lineHeight: 1.6, whiteSpace: "pre-wrap", overflowWrap: "anywhere", maxWidth: "100%", boxSizing: "border-box" }}
-            >
-              {notice.message}
-            </pre>
-          ))}
+      {monthly ? (
+        <div style={{
+          display: "grid", gridTemplateColumns: "36px 1fr auto", alignItems: "center", gap: 10,
+          padding: 9, borderRadius: 9, border: "1px solid var(--border)", background: "rgba(148,163,184,0.08)",
+        }}>
+          <span style={{
+            width: 30, height: 30, borderRadius: "50%", flexShrink: 0,
+            background: `conic-gradient(${quotaColor(monthlyUtilization ?? 0)} ${(monthlyUtilization ?? 0) * 3.6}deg, rgba(148,163,184,0.18) 0deg)`,
+            border: "1px solid rgba(148,163,184,0.35)",
+            display: "inline-flex", alignItems: "center", justifyContent: "center", boxSizing: "border-box",
+          }}>
+            <span style={{ width: 12, height: 12, borderRadius: "50%", background: "var(--bg-panel)", opacity: 0.92 }} />
+          </span>
+          <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
+            <span style={{ color: "var(--text)", fontSize: 12, fontWeight: 700 }}>Monthly</span>
+            <span style={{ color: "var(--text-dim)", fontSize: 10 }}>
+              Used: {monthly.used.toLocaleString()} · Limit: {monthly.monthlyLimit.toLocaleString()} · Remaining: {monthly.remaining.toLocaleString()}
+              {monthly.billingPeriodEnd && <> · Reset: {new Date(monthly.billingPeriodEnd).toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</>}
+            </span>
+          </div>
+          <span style={{ color: quotaColor(monthlyUtilization ?? 0), fontSize: 15, fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>
+            {Math.round(monthlyUtilization ?? 0)}%
+          </span>
+        </div>
+      ) : !loading && !result?.error && (
+        <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.5 }}>
+          Click refresh to query Grok CLI billing.
+          {!result?.configured && !result?.envBypass && <> Make sure Grok CLI is logged in.</>}
         </div>
       )}
 
-      {loading && result && (
-        <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.5 }}>Refreshing while the previous result remains visible…</div>
+      {result?.weekly && (
+        <div style={{
+          display: "grid", gridTemplateColumns: "36px 1fr auto", alignItems: "center", gap: 10,
+          padding: 9, borderRadius: 9, border: "1px solid var(--border)", background: "rgba(148,163,184,0.08)",
+        }}>
+          <span style={{
+            width: 30, height: 30, borderRadius: "50%", flexShrink: 0,
+            background: `conic-gradient(${quotaColor(result.weekly.creditUsagePercent)} ${result.weekly.creditUsagePercent * 3.6}deg, rgba(148,163,184,0.18) 0deg)`,
+            border: "1px solid rgba(148,163,184,0.35)",
+            display: "inline-flex", alignItems: "center", justifyContent: "center", boxSizing: "border-box",
+          }}>
+            <span style={{ width: 12, height: 12, borderRadius: "50%", background: "var(--bg-panel)", opacity: 0.92 }} />
+          </span>
+          <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
+            <span style={{ color: "var(--text)", fontSize: 12, fontWeight: 700 }}>Weekly</span>
+            <span style={{ color: "var(--text-dim)", fontSize: 10 }}>
+              {result.weekly.billingPeriodEnd && <>Reset: {new Date(result.weekly.billingPeriodEnd).toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</>}
+            </span>
+          </div>
+          <span style={{ color: quotaColor(result.weekly.creditUsagePercent), fontSize: 15, fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>
+            {Math.round(result.weekly.creditUsagePercent)}%
+          </span>
+        </div>
+      )}
+
+      {result?.envBypass && (
+        <div style={{ fontSize: 11, color: "#fb923c" }}>Using GROK_CLI_OAUTH_TOKEN env variable.</div>
       )}
     </div>
   );
 }
+
 
 function accountQuotaResetText(account: OAuthAccountSummary): string {
   const resetCreditsAvailableCount = account.quotaCache?.resetCreditsAvailableCount;
@@ -1699,12 +1736,12 @@ function AddAccountDialog({
   );
 }
 
-function OAuthDetail({ provider, cwd, onRefresh }: { provider: OAuthProvider; cwd: string | null; onRefresh: () => void }) {
+function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefresh: () => void }) {
   const [loginState, setLoginState] = useState<OAuthLoginState>({ phase: "idle" });
   const [inputValue, setInputValue] = useState("");
   const [quota, setQuota] = useState<SubscriptionQuota | null>(null);
   const [quotaLoading, setQuotaLoading] = useState(false);
-  const [grokUsage, setGrokUsage] = useState<ExtensionCommandResult | null>(null);
+  const [grokUsage, setGrokUsage] = useState<GrokUsageResult | null>(null);
   const [grokUsageLoading, setGrokUsageLoading] = useState(false);
   const [quotaResetting, setQuotaResetting] = useState(false);
   const [accounts, setAccounts] = useState<OAuthAccountSummary[]>([]);
@@ -1720,7 +1757,6 @@ function OAuthDetail({ provider, cwd, onRefresh }: { provider: OAuthProvider; cw
   const [addAccountDialogView, setAddAccountDialogView] = useState<"method" | "json" | null>(null);
   const [warmupDialogOpen, setWarmupDialogOpen] = useState(false);
   const eventSourceRef = useRef<EventSource | null>(null);
-  const grokUsageAbortRef = useRef<AbortController | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -1738,8 +1774,6 @@ function OAuthDetail({ provider, cwd, onRefresh }: { provider: OAuthProvider; cw
     setQuotaResetting(false);
     setGrokUsage(null);
     setGrokUsageLoading(false);
-    grokUsageAbortRef.current?.abort();
-    grokUsageAbortRef.current = null;
     setAccounts([]);
     setAccountsLoading(false);
     setAccountsError(null);
@@ -1759,7 +1793,6 @@ function OAuthDetail({ provider, cwd, onRefresh }: { provider: OAuthProvider; cw
   useEffect(() => {
     return () => {
       eventSourceRef.current?.close();
-      grokUsageAbortRef.current?.abort();
     };
   }, []);
 
@@ -1828,49 +1861,65 @@ function OAuthDetail({ provider, cwd, onRefresh }: { provider: OAuthProvider; cw
     }
   }, [provider.id, provider.loggedIn, loadQuota]);
 
-  const loadGrokUsage = useCallback(async () => {
-    if (provider.id !== "grok-cli" || !provider.loggedIn || !cwd || grokUsageAbortRef.current) return;
+  const loadGrokUsage = useCallback(async (forceRefresh = false) => {
+    if ((provider.id !== "grok-cli" && provider.id !== "xai") || !provider.loggedIn) return;
 
-    const controller = new AbortController();
-    grokUsageAbortRef.current = controller;
     setGrokUsageLoading(true);
     try {
-      const res = await fetch(`/api/auth/usage/${encodeURIComponent(provider.id)}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cwd }),
-        signal: controller.signal,
-      });
-      const data = await res.json().catch(() => ({})) as ExtensionCommandResult & { error?: string };
-      if (!data.command || !Array.isArray(data.notices)) {
-        throw new Error(data.error ?? `HTTP ${res.status}`);
+      const mode = forceRefresh ? "refresh" : "cache";
+      const res = await fetch(`/api/auth/usage/grok-cli?mode=${mode}`);
+      const data = await res.json().catch(() => ({})) as GrokUsageResult & { error?: string };
+      if (data.success && data.monthly) {
+        setGrokUsage(data);
+        return;
       }
-      setGrokUsage(data);
+      // Keep previous successful result in memory when a live refresh fails.
+      setGrokUsage((prev) => {
+        if (forceRefresh && prev?.success && prev.monthly) {
+          return { ...prev, error: data.error ?? prev.error, source: data.source ?? prev.source };
+        }
+        return data.provider
+          ? data
+          : {
+              provider: "grok-cli",
+              configured: true,
+              success: false,
+              source: forceRefresh ? "live" : "cache",
+              monthly: null,
+              weekly: null,
+              error: data.error ?? "Grok CLI usage query failed",
+              queriedAt: Date.now(),
+              envBypass: false,
+            };
+      });
     } catch (error) {
-      if (controller.signal.aborted) return;
       const message = error instanceof Error ? error.message : "Grok CLI usage query failed";
-      setGrokUsage({
-        command: "grok-cli-usage",
-        executed: false,
-        notices: [],
-        queriedAt: Date.now(),
-        failure: "execution_failed",
-        error: message,
+      setGrokUsage((prev) => {
+        if (forceRefresh && prev?.success && prev.monthly) {
+          return { ...prev, error: message, source: "live" };
+        }
+        return {
+          provider: "grok-cli",
+          configured: true,
+          success: false,
+          source: "live",
+          monthly: null,
+          weekly: null,
+          error: message,
+          queriedAt: Date.now(),
+          envBypass: false,
+        };
       });
     } finally {
-      if (grokUsageAbortRef.current === controller) grokUsageAbortRef.current = null;
-      if (!controller.signal.aborted) setGrokUsageLoading(false);
+      setGrokUsageLoading(false);
     }
-  }, [cwd, provider.id, provider.loggedIn]);
+  }, [provider.id, provider.loggedIn]);
 
   useEffect(() => {
-    const previous = grokUsageAbortRef.current;
-    grokUsageAbortRef.current = null;
-    previous?.abort();
     setGrokUsage(null);
     setGrokUsageLoading(false);
-    if (provider.id === "grok-cli" && provider.loggedIn && cwd) void loadGrokUsage();
-  }, [cwd, provider.id, provider.loggedIn, loadGrokUsage]);
+    if ((provider.id === "grok-cli" || provider.id === "xai") && provider.loggedIn) void loadGrokUsage();
+  }, [provider.id, provider.loggedIn, loadGrokUsage]);
 
   const handleLogin = useCallback((accountMode: "login" | "add" = "login") => {
     eventSourceRef.current?.close();
@@ -1913,7 +1962,7 @@ function OAuthDetail({ provider, cwd, onRefresh }: { provider: OAuthProvider; cw
         onRefresh();
         void loadAccounts();
         if (provider.loggedIn) void loadQuota();
-        if (provider.id === "grok-cli" && provider.loggedIn) void loadGrokUsage();
+        if ((provider.id === "grok-cli" || provider.id === "xai") && provider.loggedIn) void loadGrokUsage();
       } else if (data.type === "error") {
         es.close();
         setLoginState({ phase: "error", message: data.message! });
@@ -1933,8 +1982,6 @@ function OAuthDetail({ provider, cwd, onRefresh }: { provider: OAuthProvider; cw
     setLoginState({ phase: "idle" });
     setQuota(null);
     setGrokUsage(null);
-    grokUsageAbortRef.current?.abort();
-    grokUsageAbortRef.current = null;
     setGrokUsageLoading(false);
     setSelectedQuotaAccountId(null);
     onRefresh();
@@ -2284,8 +2331,8 @@ function OAuthDetail({ provider, cwd, onRefresh }: { provider: OAuthProvider; cw
         <OAuthQuotaView quota={quota} loading={quotaLoading} account={selectedQuotaAccount} resetting={quotaResetting} onRefresh={loadQuota} onReset={handleResetQuota} />
       )}
 
-      {provider.id === "grok-cli" && provider.loggedIn && (
-        <GrokUsageView cwd={cwd} result={grokUsage} loading={grokUsageLoading} onRefresh={loadGrokUsage} />
+      {(provider.id === "grok-cli" || provider.id === "xai") && provider.loggedIn && (
+        <GrokUsageView result={grokUsage} loading={grokUsageLoading} onRefresh={() => void loadGrokUsage(true)} />
       )}
 
       {provider.id === "openai-codex" && (
@@ -2812,7 +2859,8 @@ function AddProviderPicker({
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function ModelsConfig({ cwd, onClose }: { cwd: string | null; onClose: () => void }) {
+export function ModelsConfig({ cwd: _cwd, onClose }: { cwd: string | null; onClose: () => void }) {
+  void _cwd;
   const [config, setConfig] = useState<ModelsJson>({ providers: {} });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -3011,7 +3059,7 @@ export function ModelsConfig({ cwd, onClose }: { cwd: string | null; onClose: ()
     if (selection.type === "oauth") {
       const p = oauthProviders.find((p) => p.id === selection.providerId);
       if (!p) return null;
-      return <OAuthDetail key={p.id} provider={p} cwd={cwd} onRefresh={loadOAuthProviders} />;
+      return <OAuthDetail key={p.id} provider={p} onRefresh={loadOAuthProviders} />;
     }
     if (selection.type === "apikey") {
       const p = apiKeyProviders.find((p) => p.id === selection.providerId);
