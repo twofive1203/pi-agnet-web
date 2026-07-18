@@ -1,5 +1,12 @@
 import { NextResponse } from "next/server";
-import { createAgentSession, DefaultResourceLoader, getAgentDir, SessionManager } from "@earendil-works/pi-coding-agent";
+import {
+  createAgentSession,
+  DefaultPackageManager,
+  DefaultResourceLoader,
+  getAgentDir,
+  SessionManager,
+  SettingsManager,
+} from "@earendil-works/pi-coding-agent";
 import { ExtensionWebUiBridge } from "@/lib/extension-web-ui";
 
 export const dynamic = "force-dynamic";
@@ -90,9 +97,28 @@ export async function GET(req: Request) {
       sourceInfo: (tool as { sourceInfo?: SourceInfo }).sourceInfo,
     }));
 
+    let packages: Array<{ source: string; scope: string; filtered: boolean; installedPath?: string }> = [];
+    try {
+      const settingsManager = SettingsManager.create(cwd, agentDir);
+      const packageManager = new DefaultPackageManager({ cwd, agentDir, settingsManager });
+      packages = packageManager.listConfiguredPackages().map((item) => ({
+        source: item.source,
+        scope: item.scope,
+        filtered: item.filtered,
+        installedPath: item.installedPath,
+      }));
+    } catch (error) {
+      extensionDiagnostics.push({
+        type: "warning",
+        message: `Failed to list configured packages: ${String(error)}`,
+        path: "<package-manager>",
+      });
+    }
+
     return NextResponse.json({
       cwd,
       agentDir,
+      packages,
       extensions,
       tools,
       commands,

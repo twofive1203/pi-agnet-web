@@ -29,7 +29,8 @@ API routes live under `app/api/`. When adding, removing, or changing routes, upd
 | `skills/search/` | GET | Search skills.sh for available skills. |
 | `skills/install/` | POST | Install a skill via `npx skills add`. |
 | `commands/` | GET | List slash commands from extension commands, prompt templates, and skills for a cwd, with provenance metadata and diagnostics. |
-| `pi/resources/` | GET | Inspect Pi SDK resource discovery for a cwd: loaded extensions, tools, extension commands, skills, prompts, agent dir, and diagnostics. |
+| `pi/resources/` | GET | Inspect Pi SDK resource discovery for a cwd: configured packages, loaded extensions, tools, extension commands, skills, prompts, agent dir, and diagnostics. |
+| `pi/extension-settings/` | GET/PUT | Discover registered `pi-extension-settings` definitions for a cwd, read current `settings-extensions.json` values (including orphan keys), and apply patch/replace writes. |
 | `cwd/validate/` | POST | Validate a candidate workspace path. |
 | `git/worktrees/` | GET/POST/DELETE | Inspect, create, and remove Git worktrees from the selected cwd; removal also deletes sessions for that worktree cwd. |
 | `sessions/archive/` | POST | Archive one or more sessions (moves to `sessions-archive/`). |
