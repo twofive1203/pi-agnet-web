@@ -195,6 +195,19 @@ export interface ExtensionWidgetItem {
   placement: "aboveEditor" | "belowEditor";
 }
 
+export interface ExtensionToastItem {
+  id: string;
+  message: string;
+  notifyType: "info" | "warning" | "error";
+  createdAt: number;
+}
+
+/** Blocking extension dialog methods that require a browser response. */
+export type ExtensionDialogRequest = Extract<
+  ExtensionUiRequest,
+  { method: "select" | "confirm" | "input" | "editor" }
+>;
+
 export interface SessionMessageEntry extends SessionEntryBase {
   type: "message";
   message: AgentMessage;

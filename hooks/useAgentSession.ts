@@ -1,7 +1,15 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect, useReducer } from "react";
-import type { AgentMessage, SessionInfo, SessionTreeNode } from "@/lib/types";
+import type {
+  AgentMessage,
+  ExtensionDialogRequest,
+  ExtensionStatusItem,
+  ExtensionToastItem,
+  ExtensionWidgetItem,
+  SessionInfo,
+  SessionTreeNode,
+} from "@/lib/types";
 import { normalizeToolCalls } from "@/lib/normalize";
 import { sendAgentCommand } from "@/lib/agent-client";
 import type { ToolEntry, ToolPreset } from "@/components/ToolPanel";
@@ -130,23 +138,56 @@ type ExtensionUiRequestEvent = AgentEvent & {
   statusText?: string;
   widgetKey?: string;
   widgetLines?: string[];
+  widgetPlacement?: "aboveEditor" | "belowEditor";
   titleText?: string;
   text?: string;
+  timeout?: number;
 };
 
-function formatExtensionNotification(event: ExtensionUiRequestEvent): string {
-  const prefix = event.notifyType && event.notifyType !== "info" ? `[${event.notifyType}] ` : "";
-  return `${prefix}${event.message ?? ""}`;
-}
+const EXTENSION_TOAST_TTL_MS = 5000;
 
-function selectExtensionOption(title: string, options: string[]): string | undefined {
-  if (options.length === 0) return undefined;
-  const promptText = `${title}\n\n${options.map((option, index) => `${index + 1}. ${option}`).join("\n")}\n\nEnter a number or exact value:`;
-  const value = window.prompt(promptText);
-  if (value === null) return undefined;
-  const index = Number(value.trim());
-  if (Number.isInteger(index) && index >= 1 && index <= options.length) return options[index - 1];
-  return options.find((option) => option === value.trim());
+function toDialogRequest(event: ExtensionUiRequestEvent): ExtensionDialogRequest | null {
+  if (event.method === "confirm") {
+    return {
+      type: "extension_ui_request",
+      id: event.id,
+      method: "confirm",
+      title: event.title ?? "Confirm",
+      message: event.message ?? "",
+      timeout: event.timeout,
+    };
+  }
+  if (event.method === "select") {
+    return {
+      type: "extension_ui_request",
+      id: event.id,
+      method: "select",
+      title: event.title ?? "Select an option",
+      options: event.options ?? [],
+      timeout: event.timeout,
+    };
+  }
+  if (event.method === "input") {
+    return {
+      type: "extension_ui_request",
+      id: event.id,
+      method: "input",
+      title: event.title ?? "Input",
+      placeholder: event.placeholder,
+      timeout: event.timeout,
+    };
+  }
+  if (event.method === "editor") {
+    return {
+      type: "extension_ui_request",
+      id: event.id,
+      method: "editor",
+      title: event.title ?? "Edit",
+      prefill: event.prefill,
+      timeout: event.timeout,
+    };
+  }
+  return null;
 }
 
 export type AgentPhase =
@@ -294,8 +335,16 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [agentPhase, setAgentPhase] = useState<AgentPhase>(null);
   const [subagentRuns, setSubagentRuns] = useState<SubagentRun[]>([]);
   const [sessionChangesRefreshKey, setSessionChangesRefreshKey] = useState(0);
+  const [extensionStatuses, setExtensionStatuses] = useState<ExtensionStatusItem[]>([]);
+  const [extensionWidgets, setExtensionWidgets] = useState<ExtensionWidgetItem[]>([]);
+  const [extensionDialog, setExtensionDialog] = useState<ExtensionDialogRequest | null>(null);
+  const [extensionToasts, setExtensionToasts] = useState<ExtensionToastItem[]>([]);
 
   const eventSourceRef = useRef<EventSource | null>(null);
+  const extensionStatusMapRef = useRef<Map<string, string>>(new Map());
+  const extensionWidgetMapRef = useRef<Map<string, ExtensionWidgetItem>>(new Map());
+  const extensionDialogIdRef = useRef<string | null>(null);
+  const toastTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const sessionIdRef = useRef<string | null>(session?.id ?? null);
   const agentRunningRef = useRef(false);
   const handleAgentEventRef = useRef<((event: AgentEvent) => void) | null>(null);
@@ -434,42 +483,83 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     }
   });
 
+  const clearExtensionChrome = useCallback(() => {
+    extensionStatusMapRef.current.clear();
+    extensionWidgetMapRef.current.clear();
+    setExtensionStatuses([]);
+    setExtensionWidgets([]);
+    setExtensionDialog(null);
+    extensionDialogIdRef.current = null;
+    for (const timer of toastTimersRef.current.values()) clearTimeout(timer);
+    toastTimersRef.current.clear();
+    setExtensionToasts([]);
+  }, []);
+
+  const dismissExtensionToast = useCallback((id: string) => {
+    const timer = toastTimersRef.current.get(id);
+    if (timer) {
+      clearTimeout(timer);
+      toastTimersRef.current.delete(id);
+    }
+    setExtensionToasts((prev) => prev.filter((toast) => toast.id !== id));
+  }, []);
+
+  const respondExtensionDialog = useCallback((response: {
+    id: string;
+    value?: string;
+    confirmed?: boolean;
+    cancelled?: true;
+  }) => {
+    if (extensionDialogIdRef.current !== response.id) return;
+    extensionDialogIdRef.current = null;
+    setExtensionDialog(null);
+    const sid = sessionIdRef.current;
+    if (!sid) return;
+    const payload: Record<string, unknown> = { type: "extension_ui_response", id: response.id };
+    if (response.cancelled) payload.cancelled = true;
+    if (response.confirmed !== undefined) payload.confirmed = response.confirmed;
+    if (response.value !== undefined) payload.value = response.value;
+    sendAgentCommand(sid, payload).catch((error) => {
+      console.error("Failed to respond to extension UI request:", error);
+    });
+  }, []);
+
   const handleAgentEvent = useCallback((event: AgentEvent) => {
     switch (event.type) {
       case "extension_ui_request": {
         const request = event as ExtensionUiRequestEvent;
-        const sid = sessionIdRef.current;
-        const respond = (response: Record<string, unknown>) => {
-          if (!sid) return;
-          sendAgentCommand(sid, { type: "extension_ui_response", id: request.id, ...response }).catch((error) => {
-            console.error("Failed to respond to extension UI request:", error);
-          });
-        };
 
         if (request.method === "notify") {
-          window.setTimeout(() => window.alert(formatExtensionNotification(request)), 0);
+          const toast: ExtensionToastItem = {
+            id: request.id || `toast-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            message: request.message ?? "",
+            notifyType: request.notifyType ?? "info",
+            createdAt: Date.now(),
+          };
+          setExtensionToasts((prev) => [...prev, toast].slice(-6));
+          const timer = setTimeout(() => dismissExtensionToast(toast.id), EXTENSION_TOAST_TTL_MS);
+          toastTimersRef.current.set(toast.id, timer);
           break;
         }
-        if (request.method === "confirm") {
-          const confirmed = window.confirm(`${request.title ?? "Confirm"}\n\n${request.message ?? ""}`);
-          respond({ confirmed });
+
+        const dialog = toDialogRequest(request);
+        if (dialog) {
+          // If a previous dialog is still open, cancel it so the bridge cannot hang forever.
+          if (extensionDialogIdRef.current && extensionDialogIdRef.current !== dialog.id) {
+            const sid = sessionIdRef.current;
+            if (sid) {
+              sendAgentCommand(sid, {
+                type: "extension_ui_response",
+                id: extensionDialogIdRef.current,
+                cancelled: true,
+              }).catch(() => {});
+            }
+          }
+          extensionDialogIdRef.current = dialog.id;
+          setExtensionDialog(dialog);
           break;
         }
-        if (request.method === "select") {
-          const value = selectExtensionOption(request.title ?? "Select an option", request.options ?? []);
-          respond(value === undefined ? { cancelled: true } : { value });
-          break;
-        }
-        if (request.method === "input") {
-          const value = window.prompt(request.title ?? "Input", request.placeholder ?? "");
-          respond(value === null ? { cancelled: true } : { value });
-          break;
-        }
-        if (request.method === "editor") {
-          const value = window.prompt(request.title ?? "Edit", request.prefill ?? "");
-          respond(value === null ? { cancelled: true } : { value });
-          break;
-        }
+
         if (request.method === "setTitle" && typeof request.title === "string") {
           document.title = request.title;
           break;
@@ -478,8 +568,36 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           chatInputRef?.current?.insertIfEmpty(request.text);
           break;
         }
-        if (request.method === "setStatus" || request.method === "setWidget") {
-          console.info("Pi extension UI update", request);
+        if (request.method === "setStatus") {
+          const key = request.statusKey;
+          if (!key) break;
+          const text = request.statusText;
+          if (text === undefined || text === "") {
+            extensionStatusMapRef.current.delete(key);
+          } else {
+            extensionStatusMapRef.current.set(key, text);
+          }
+          setExtensionStatuses(
+            Array.from(extensionStatusMapRef.current.entries()).map(([statusKey, statusText]) => ({
+              key: statusKey,
+              text: statusText,
+            })),
+          );
+          break;
+        }
+        if (request.method === "setWidget") {
+          const key = request.widgetKey;
+          if (!key) break;
+          if (request.widgetLines === undefined) {
+            extensionWidgetMapRef.current.delete(key);
+          } else {
+            extensionWidgetMapRef.current.set(key, {
+              key,
+              lines: request.widgetLines,
+              placement: request.widgetPlacement === "belowEditor" ? "belowEditor" : "aboveEditor",
+            });
+          }
+          setExtensionWidgets(Array.from(extensionWidgetMapRef.current.values()));
           break;
         }
         break;
@@ -624,7 +742,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         }
         break;
     }
-  }, [chatInputRef, loadSession, onAgentEnd]);
+  }, [chatInputRef, dismissExtensionToast, loadSession, onAgentEnd]);
   handleAgentEventRef.current = handleAgentEvent;
 
   const handleSend = useCallback(async (message: string, images?: AttachedImage[]) => {
@@ -877,9 +995,12 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         }
       });
     }
+    const toastTimers = toastTimersRef.current;
     return () => {
       eventSourceRef.current?.close();
       eventSourceRef.current = null;
+      for (const timer of toastTimers.values()) clearTimeout(timer);
+      toastTimers.clear();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -975,6 +1096,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     isCompacting, compactError, currentModel, displayModel, sessionStats,
     agentPhase, subagentRuns,
     sessionChangesRefreshKey,
+    extensionStatuses,
+    extensionWidgets,
+    extensionDialog,
+    extensionToasts,
     isNew,
     // Refs
     sessionIdRef, eventSourceRef, messagesEndRef, scrollContainerRef,
@@ -984,6 +1109,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     handleCompact, handleSteer, handleFollowUp, handleAbortCompaction,
     handleToolPresetChange, handleThinkingLevelChange, loadTools, setActiveLeafId, setData, setMessages,
     dispatch, setAgentRunning, setForkingEntryId,
+    respondExtensionDialog,
+    dismissExtensionToast,
+    clearExtensionChrome,
     // Subscriptions
     handleAgentEventRef,
   };

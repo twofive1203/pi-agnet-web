@@ -5,6 +5,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { AgentMessage, SessionInfo, SessionTreeNode } from "@/lib/types";
 import { MessageView } from "./MessageView";
 import { ChatInput, type ChatInputHandle } from "./ChatInput";
+import { ExtensionDialogHost } from "./ExtensionDialogHost";
+import { ExtensionStatusBar } from "./ExtensionStatusBar";
+import { ExtensionToastHost } from "./ExtensionToastHost";
+import { ExtensionWidgetStack } from "./ExtensionWidgetStack";
 import { ChatMinimap, useMessageRefs } from "./ChatMinimap";
 import { useAgentSession, type AgentPhase } from "@/hooks/useAgentSession";
 import { useAudio } from "@/hooks/useAudio";
@@ -102,12 +106,15 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
     retryInfo, contextUsage, forkingEntryId,
     isCompacting, compactError, displayModel: displayModelValue, sessionStats,
     agentPhase, sessionChangesRefreshKey,
+    extensionStatuses, extensionWidgets, extensionDialog, extensionToasts,
     isNew,
     messagesEndRef, scrollContainerRef,
     lastUserMsgRef,
     handleSend, handleAbort, handleFork, handleNavigate, handleModelChange,
     handleCompact, handleSteer, handleFollowUp, handleAbortCompaction,
-    handleToolPresetChange, handleThinkingLevelChange, handleAgentEventRef,
+    handleToolPresetChange, handleThinkingLevelChange,
+    respondExtensionDialog, dismissExtensionToast,
+    handleAgentEventRef,
   } = useAgentSession({
     session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked,
     modelsRefreshKey, onBranchDataChange, onSystemPromptChange, onSubagentChange,
@@ -326,7 +333,14 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
                 </span>
               </div>
             </div>
+            <ExtensionStatusBar items={extensionStatuses} />
+            <ExtensionWidgetStack
+              items={extensionWidgets.filter((item) => item.placement === "aboveEditor")}
+            />
             {chatInputElement}
+            <ExtensionWidgetStack
+              items={extensionWidgets.filter((item) => item.placement === "belowEditor")}
+            />
           </div>
         </div>
       ) : (
@@ -422,11 +436,20 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
         </div>
       </div>
 
-      <div className="relative">
+      <div className="relative" style={{ flexShrink: 0 }}>
+        <ExtensionStatusBar items={extensionStatuses} />
+        <ExtensionWidgetStack
+          items={extensionWidgets.filter((item) => item.placement === "aboveEditor")}
+        />
         {chatInputElement}
+        <ExtensionWidgetStack
+          items={extensionWidgets.filter((item) => item.placement === "belowEditor")}
+        />
       </div>
       </>
       )}
+      <ExtensionDialogHost dialog={extensionDialog} onRespond={respondExtensionDialog} />
+      <ExtensionToastHost toasts={extensionToasts} onDismiss={dismissExtensionToast} />
     </div>
   );
 }
