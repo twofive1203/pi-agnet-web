@@ -669,3 +669,36 @@ Added independent user/project native pi-subagents model configuration with safe
 ### Next Steps
 
 - None - task complete
+
+
+## Session 47: Add Grok CLI subscription usage
+
+**Date**: 2026-07-18
+**Task**: Add Grok CLI subscription usage
+**Branch**: `self-run`
+
+### Summary
+
+Added a secured extension-command usage bridge and Models subscription view for pi-grok-cli, including cancellation, timeout, notification isolation, documentation, and authenticated API validation.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `dce775d` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
