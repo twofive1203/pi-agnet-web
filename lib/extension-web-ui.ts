@@ -215,19 +215,12 @@ export class ExtensionWebUiBridge {
     request: Record<string, unknown>,
   ): Promise<string | boolean | undefined> {
     if (opts?.signal?.aborted) return Promise.resolve(fallback);
-    if (!this.hasListener()) {
-      this.emit({
-        type: "extension_error",
-        extensionPath: "<webui-extension-host>",
-        event: "ui",
-        error: `${String(request.method ?? "dialog")} was cancelled because no browser SSE client is connected`,
-      });
-      return Promise.resolve(fallback);
-    }
 
     const id = randomUUID();
     const event = { ...request, type: "extension_ui_request", id };
     const method = String(request.method ?? "dialog");
+    // Allow a short grace period for the browser SSE to attach after /command send.
+    const timeoutMs = opts?.timeout ?? (this.hasListener() ? undefined : 120_000);
 
     return new Promise((resolve) => {
       let timeoutId: ReturnType<typeof setTimeout> | undefined;
@@ -243,7 +236,7 @@ export class ExtensionWebUiBridge {
       const onAbort = () => finish({ id, cancelled: true });
 
       opts?.signal?.addEventListener("abort", onAbort, { once: true });
-      if (opts?.timeout) timeoutId = setTimeout(onAbort, opts.timeout);
+      if (timeoutMs) timeoutId = setTimeout(onAbort, timeoutMs);
 
       this.pending.set(id, { event, resolve: finish });
       this.emit(event);

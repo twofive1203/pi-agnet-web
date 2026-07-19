@@ -67,8 +67,11 @@ function applyToolSelection(session: AgentSessionLike, selection?: ToolSelection
 // Wraps AgentSession with the same interface the rest of the app expects
 // ============================================================================
 
+const MAX_BUFFERED_EVENTS = 200;
+
 export class AgentSessionWrapper {
   private listeners: EventListener[] = [];
+  private eventBuffer: AgentEvent[] = [];
   private unsubscribe: (() => void) | null = null;
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
   private onDestroyCallback: (() => void) | null = null;
@@ -130,6 +133,10 @@ export class AgentSessionWrapper {
 
   onEvent(listener: EventListener): () => void {
     this.listeners.push(listener);
+    // Replay events that fired before the SSE client attached (extension commands often finish quickly).
+    const buffered = this.eventBuffer;
+    this.eventBuffer = [];
+    for (const event of buffered) listener(event);
     for (const event of this.extensionUiBridge.getPendingEvents()) listener(event);
     return () => {
       const i = this.listeners.indexOf(listener);
@@ -138,6 +145,13 @@ export class AgentSessionWrapper {
   }
 
   emitEvent(event: AgentEvent): void {
+    if (this.listeners.length === 0) {
+      this.eventBuffer.push(event);
+      if (this.eventBuffer.length > MAX_BUFFERED_EVENTS) {
+        this.eventBuffer.splice(0, this.eventBuffer.length - MAX_BUFFERED_EVENTS);
+      }
+      return;
+    }
     for (const listener of this.listeners) listener(event);
   }
 
@@ -191,9 +205,30 @@ export class AgentSessionWrapper {
 
     switch (type) {
       case "prompt": {
-        // Fire and forget — events come via subscribe
+        // Fire-and-forget HTTP response; lifecycle still arrives over SSE.
+        // Extension slash commands (e.g. /brainstorm) return from prompt() without
+        // agent_start/agent_end — emit prompt_settled so the browser can clear the spinner.
         const promptImages = command.images as Array<{ type: "image"; data: string; mimeType: string }> | undefined;
-        this.inner.prompt(command.message as string, promptImages?.length ? { images: promptImages } : undefined).catch(() => {});
+        void this.inner
+          .prompt(command.message as string, promptImages?.length ? { images: promptImages } : undefined)
+          .then(() => {
+            if (!this._alive) return;
+            if (!this.inner.isStreaming) {
+              this.emitEvent({
+                type: "prompt_settled",
+                sessionId: this.sessionId,
+                isStreaming: false,
+              });
+            }
+          })
+          .catch((error) => {
+            if (!this._alive) return;
+            this.emitEvent({
+              type: "prompt_error",
+              sessionId: this.sessionId,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          });
         return null;
       }
 

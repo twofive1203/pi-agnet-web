@@ -611,6 +611,19 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         setSubagentRuns([]);
         dispatch({ type: "start" });
         break;
+      case "prompt_settled":
+        // Extension slash commands return from prompt() without agent_end. Normal model turns
+        // also settle after agent_end; clearing again here is harmless.
+        setAgentRunning(false);
+        setAgentPhase(null);
+        dispatch({ type: "end" });
+        break;
+      case "prompt_error":
+        setAgentRunning(false);
+        setAgentPhase(null);
+        dispatch({ type: "end" });
+        console.error("Prompt failed", event.error ?? event);
+        break;
       case "agent_end":
         setAgentRunning(false);
         setAgentPhase(null);
@@ -758,8 +771,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       timestamp: Date.now(),
     };
     setMessages((prev) => [...prev, userMsg]);
+    // Mark busy immediately so the send button disables, but do not show
+    // "Waiting for model..." until agent_start — extension slash commands never start the model.
     setAgentRunning(true);
-    setAgentPhase({ kind: "waiting_model" });
+    setAgentPhase(null);
     dispatch({ type: "start" });
     pendingScrollToUserRef.current = true;
 
@@ -974,17 +989,18 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     container.scrollTo({ top: elAbsTop - 16, behavior: "smooth" });
   }, []);
 
-  // Load session on mount
+  // Load session on mount — keep SSE connected so extension commands/UI are not dropped
+  // in the window between send() and EventSource onopen.
   useEffect(() => {
     if (session) {
       sessionIdRef.current = session.id;
+      connectEvents(session.id);
       loadSession(session.id, true, true).then((agentState) => {
         if (agentState?.running) {
           loadTools(session.id);
           if (agentState.state?.isStreaming) {
             setAgentRunning(true);
             setAgentPhase({ kind: "waiting_model" });
-            connectEvents(session.id);
           }
         }
         if (agentState?.state) {
