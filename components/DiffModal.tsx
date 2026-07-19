@@ -1,5 +1,7 @@
 "use client";
 
+import { useI18n } from "@/components/I18nProvider";
+
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { DiffView, type DiffMode } from "./DiffView";
 
@@ -16,12 +18,7 @@ interface Props {
   panelStyle?: CSSProperties;
 }
 
-const modeLabels: Record<DiffMode, string> = {
-  "side-by-side": "并排模式 / Side-by-side",
-  unified: "统一模式 / Unified",
-};
-
-function ModeButton({ mode, selected, onSelect, disabled }: { mode: DiffMode; selected: boolean; onSelect: (mode: DiffMode) => void; disabled: boolean }) {
+function ModeButton({ mode, selected, onSelect, disabled, label }: { mode: DiffMode; selected: boolean; onSelect: (mode: DiffMode) => void; disabled: boolean; label: string }) {
   return (
     <button
       type="button"
@@ -41,7 +38,7 @@ function ModeButton({ mode, selected, onSelect, disabled }: { mode: DiffMode; se
         whiteSpace: "nowrap",
       }}
     >
-      {modeLabels[mode]}
+      {label}
     </button>
   );
 }
@@ -54,10 +51,16 @@ export function DiffModal({
   diff,
   fallback,
   onClose,
-  loadingLabel = "Loading diff...",
+  loadingLabel,
   overlayStyle,
   panelStyle,
 }: Props) {
+  const { t } = useI18n();
+  const resolvedLoadingLabel = loadingLabel ?? t("panels.diff.loading");
+  const modeLabels: Record<DiffMode, string> = {
+    "side-by-side": t("panels.diff.sideBySide"),
+    unified: t("panels.diff.unified"),
+  };
   const [mode, setMode] = useState<DiffMode>("side-by-side");
 
   useEffect(() => {
@@ -109,8 +112,8 @@ export function DiffModal({
         <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "13px 16px", borderBottom: "1px solid var(--border)" }}>
           <div style={{ minWidth: 0, flex: 1 }}>{header}</div>
           <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
-            <ModeButton mode="side-by-side" selected={mode === "side-by-side"} onSelect={setMode} disabled={!hasDiff} />
-            <ModeButton mode="unified" selected={mode === "unified"} onSelect={setMode} disabled={!hasDiff} />
+            <ModeButton mode="side-by-side" selected={mode === "side-by-side"} onSelect={setMode} disabled={!hasDiff} label={modeLabels["side-by-side"]} />
+            <ModeButton mode="unified" selected={mode === "unified"} onSelect={setMode} disabled={!hasDiff} label={modeLabels.unified} />
             <button
               type="button"
               onClick={onClose}
@@ -131,7 +134,7 @@ export function DiffModal({
 
         <div style={{ flex: 1, minHeight: 0, overflow: diffBodyOverflow, background: "var(--bg)" }}>
           {loading ? (
-            <div style={{ padding: 18, color: "var(--text-muted)", fontSize: 13 }}>{loadingLabel}</div>
+            <div style={{ padding: 18, color: "var(--text-muted)", fontSize: 13 }}>{resolvedLoadingLabel}</div>
           ) : error ? (
             <div style={{ padding: 18, color: "#dc2626", fontSize: 13 }}>{error}</div>
           ) : diff ? (

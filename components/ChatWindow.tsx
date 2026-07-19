@@ -15,6 +15,7 @@ import { useAudio } from "@/hooks/useAudio";
 import { useAutoScroll } from "@/hooks/useAutoScroll";
 import { useDragDrop } from "@/hooks/useDragDrop";
 import { SessionChangesFloatingPanel } from "./SessionChangesFloatingPanel";
+import { useI18n } from "@/components/I18nProvider";
 
 interface Props {
   session: SessionInfo | null;
@@ -99,6 +100,7 @@ function Typewriter({ phrases }: { phrases: string[] }) {
 }
 
 export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSubagentChange, onSessionStatsChange, onContextUsageChange }: Props) {
+  const { t } = useI18n();
   const { autoScrollEnabled, onAutoScrollToggle } = useAutoScroll();
   const {
     loading, error, messages, entryIds, streamState,
@@ -203,13 +205,13 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
         <polyline points="7 10 12 15 17 10" />
         <line x1="12" y1="15" x2="12" y2="3" />
       </svg>
-      <span>此会话已归档。取消归档以继续对话。</span>
+      <span>{t("chat.archivedBanner")}</span>
     </div>
   ) : null;
 
   const chatInputElement = isArchived ? (
     <div style={{ padding: "12px 14px", textAlign: "center", color: "var(--text-dim)", fontSize: 12, flexShrink: 0 }}>
-      已归档的会话不可发送新消息。
+      {t("chat.archivedInputDisabled")}
     </div>
   ) : (
     <ChatInput
@@ -318,8 +320,8 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
               }}
             >
               <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0, flex: 1, lineHeight: 1.4 }}>
-                <Image src="/snail-pi-logo.svg" alt="蜗牛派" width={42} height={42} style={{ flexShrink: 0 }} priority />
-                <span style={{ fontSize: 22, color: "var(--text)", fontWeight: 800, letterSpacing: "-0.02em" }}>蜗牛派</span>
+                <Image src="/snail-pi-logo.svg" alt={t("app.productName")} width={42} height={42} style={{ flexShrink: 0 }} priority />
+                <span style={{ fontSize: 22, color: "var(--text)", fontWeight: 800, letterSpacing: "-0.02em" }}>{t("app.productName")}</span>
                 <span style={{ fontSize: 14, minWidth: 0, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>
                   <Typewriter phrases={TYPEWRITER_PHRASES} />
                 </span>

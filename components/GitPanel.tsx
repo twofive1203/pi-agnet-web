@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import type { GitStatusInfo, GitFileChange, GitGraphData, GitGraphCommit, GitCommitDetail, GitCommitChangedFile } from "@/lib/types";
 import { CommitGraph } from "./CommitGraph";
 import { GitCommitDiffModal } from "./GitCommitDiffModal";
+import { useI18n } from "@/components/I18nProvider";
 
 interface Props {
   cwd: string | null;
@@ -55,11 +56,12 @@ function FileChangeRow({ change }: { change: GitFileChange }) {
 }
 
 function CommitChangedFileRow({ file, onOpenDiff }: { file: GitCommitChangedFile; onOpenDiff: (file: GitCommitChangedFile) => void }) {
+  const { t } = useI18n();
   return (
     <button
       type="button"
       onDoubleClick={() => onOpenDiff(file)}
-      title="Double-click to open diff"
+      title={t("git.doubleClickDiff")}
       style={{
         width: "100%",
         display: "flex",
@@ -90,7 +92,7 @@ function CommitChangedFileRow({ file, onOpenDiff }: { file: GitCommitChangedFile
         {file.oldFile ? `${file.oldFile} → ${file.file}` : file.file}
       </span>
       {file.binary ? (
-        <span style={{ fontSize: 10, color: "var(--text-dim)", flexShrink: 0 }}>binary</span>
+        <span style={{ fontSize: 10, color: "var(--text-dim)", flexShrink: 0 }}>{t("git.binary")}</span>
       ) : (typeof file.additions === "number" || typeof file.deletions === "number") ? (
         <span style={{ display: "flex", gap: 4, fontSize: 10, fontFamily: "var(--font-mono)", flexShrink: 0 }}>
           {typeof file.additions === "number" && <span style={{ color: "#16a34a" }}>+{file.additions}</span>}
@@ -122,14 +124,15 @@ function CommitDetailPanel({
   error: string | null;
   onOpenDiff: (file: GitCommitChangedFile) => void;
 }) {
+  const { t } = useI18n();
   if (loading) {
-    return <div style={{ padding: "8px 10px", fontSize: 11, color: "var(--text-muted)", fontStyle: "italic" }}>Loading commit details...</div>;
+    return <div style={{ padding: "8px 10px", fontSize: 11, color: "var(--text-muted)", fontStyle: "italic" }}>{t("git.loadingCommit")}</div>;
   }
   if (error) {
     return <div style={{ padding: "8px 10px", fontSize: 11, color: "#ef4444", whiteSpace: "pre-wrap" }}>{error}</div>;
   }
   if (!detail) {
-    return <div style={{ padding: "8px 10px", fontSize: 11, color: "var(--text-dim)", fontStyle: "italic" }}>Select a commit to inspect its files.</div>;
+    return <div style={{ padding: "8px 10px", fontSize: 11, color: "var(--text-dim)", fontStyle: "italic" }}>{t("git.selectCommit")}</div>;
   }
 
   return (
@@ -143,15 +146,15 @@ function CommitDetailPanel({
         </div>
       )}
       <div style={{ display: "grid", gridTemplateColumns: "auto minmax(0, 1fr)", gap: "4px 8px", fontSize: 10.5, color: "var(--text-muted)", marginBottom: 8 }}>
-        <span style={{ color: "var(--text-dim)" }}>Hash</span>
+        <span style={{ color: "var(--text-dim)" }}>{t("git.hash")}</span>
         <span style={{ fontFamily: "var(--font-mono)", overflow: "hidden", textOverflow: "ellipsis" }}>{detail.hash}</span>
-        <span style={{ color: "var(--text-dim)" }}>Author</span>
+        <span style={{ color: "var(--text-dim)" }}>{t("git.author")}</span>
         <span>{detail.author.name} &lt;{detail.author.email}&gt; · {detail.author.date}</span>
-        <span style={{ color: "var(--text-dim)" }}>Committer</span>
+        <span style={{ color: "var(--text-dim)" }}>{t("git.committer")}</span>
         <span>{detail.committer.name} &lt;{detail.committer.email}&gt; · {detail.committer.date}</span>
         {detail.parents.length > 0 && (
           <>
-            <span style={{ color: "var(--text-dim)" }}>Parents</span>
+            <span style={{ color: "var(--text-dim)" }}>{t("git.parents")}</span>
             <span style={{ fontFamily: "var(--font-mono)", overflow: "hidden", textOverflow: "ellipsis" }}>{detail.parents.map((parent) => parent.slice(0, 8)).join(", ")}</span>
           </>
         )}
@@ -169,7 +172,7 @@ function CommitDetailPanel({
         <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
           Changed Files <span style={{ fontWeight: 400, textTransform: "none" }}>({detail.files.length})</span>
         </div>
-        <div style={{ fontSize: 9, color: "var(--text-dim)" }}>Double-click a file to open diff</div>
+        <div style={{ fontSize: 9, color: "var(--text-dim)" }}>{t("git.doubleClickHint")}</div>
       </div>
       {detail.files.length > 0 ? (
         <div style={{ display: "flex", flexDirection: "column", gap: 1, maxHeight: 190, overflow: "auto" }}>
@@ -187,6 +190,7 @@ function CommitDetailPanel({
 }
 
 export function GitPanel({ cwd, refreshKey, onDirtyChange }: Props) {
+  const { t } = useI18n();
   const [status, setStatus] = useState<GitStatusInfo | null>(null);
   const [graphData, setGraphData] = useState<GitGraphData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -404,7 +408,7 @@ export function GitPanel({ cwd, refreshKey, onDirtyChange }: Props) {
         <button
           onClick={() => void fetchAll()}
           disabled={loading}
-          title="Refresh git status and selected branch graph"
+          title={t("git.refreshTitle")}
           style={{
             display: "flex", alignItems: "center", justifyContent: "center",
             width: 24, height: 24, padding: 0,
@@ -427,7 +431,7 @@ export function GitPanel({ cwd, refreshKey, onDirtyChange }: Props) {
 
       {/* Branch Status */}
       <div style={{ padding: "0 16px 8px 16px" }}>
-        <div style={sectionTitleStyle}>Branch</div>
+        <div style={sectionTitleStyle}>{t("git.branch")}</div>
         <div style={{
           display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap",
           padding: "6px 10px", background: "var(--bg-hover)", borderRadius: 6,
@@ -486,7 +490,7 @@ export function GitPanel({ cwd, refreshKey, onDirtyChange }: Props) {
                 setSwitchError(null);
               }}
               disabled={loading || switching || branchOptions.length === 0}
-              aria-label="Select local Git branch"
+              aria-label={t("git.selectBranchAria")}
               style={{
                 flex: 1,
                 minWidth: 0,
@@ -502,7 +506,7 @@ export function GitPanel({ cwd, refreshKey, onDirtyChange }: Props) {
               }}
             >
               {branchOptions.length === 0 ? (
-                <option value="">No local branches</option>
+                <option value="">{t("git.noLocalBranches")}</option>
               ) : branchOptions.map((branch) => (
                 <option key={branch.name} value={branch.name}>
                   {branch.isCurrent ? "✓ " : ""}{branch.name}
@@ -513,7 +517,7 @@ export function GitPanel({ cwd, refreshKey, onDirtyChange }: Props) {
               type="button"
               onClick={() => void handleSwitchBranch()}
               disabled={!canSwitchBranch}
-              title={switchDisabledReason ?? `Switch to ${selectedBranch}`}
+              title={switchDisabledReason ?? t("git.switchTo", { branch: selectedBranch })}
               style={{
                 height: 28,
                 padding: "0 10px",
@@ -601,13 +605,13 @@ export function GitPanel({ cwd, refreshKey, onDirtyChange }: Props) {
                   ))}
                 </div>
               ) : (
-                <div style={emptyTextStyle}>No commits</div>
+                <div style={emptyTextStyle}>{t("git.noCommits")}</div>
               )}
             </div>
           </div>
 
           <div style={{ minWidth: 0 }}>
-            <div style={sectionTitleStyle}>Commit Details</div>
+            <div style={sectionTitleStyle}>{t("git.commitDetails")}</div>
             <CommitDetailPanel
               detail={commitDetail}
               loading={commitDetailLoading}
@@ -620,7 +624,7 @@ export function GitPanel({ cwd, refreshKey, onDirtyChange }: Props) {
 
       {/* Staged Changes */}
       <div style={{ padding: "0 16px 8px 16px" }}>
-        <div style={sectionTitleStyle}>Staged Changes <span style={{ fontWeight: 400, color: "var(--text-dim)", textTransform: "none" }}>({status.staged.length})</span></div>
+        <div style={sectionTitleStyle}>{t("git.staged")} <span style={{ fontWeight: 400, color: "var(--text-dim)", textTransform: "none" }}>({status.staged.length})</span></div>
         {status.staged.length > 0 ? (
           <div>
             {status.staged.map((change, i) => (
@@ -628,13 +632,13 @@ export function GitPanel({ cwd, refreshKey, onDirtyChange }: Props) {
             ))}
           </div>
         ) : (
-          <div style={emptyTextStyle}>No staged changes</div>
+          <div style={emptyTextStyle}>{t("git.noStaged")}</div>
         )}
       </div>
 
       {/* Unstaged Changes */}
       <div style={{ padding: "0 16px 8px 16px" }}>
-        <div style={sectionTitleStyle}>Unstaged Changes <span style={{ fontWeight: 400, color: "var(--text-dim)", textTransform: "none" }}>({status.unstaged.length})</span></div>
+        <div style={sectionTitleStyle}>{t("git.unstaged")} <span style={{ fontWeight: 400, color: "var(--text-dim)", textTransform: "none" }}>({status.unstaged.length})</span></div>
         {status.unstaged.length > 0 ? (
           <div>
             {status.unstaged.map((change, i) => (
@@ -642,13 +646,13 @@ export function GitPanel({ cwd, refreshKey, onDirtyChange }: Props) {
             ))}
           </div>
         ) : (
-          <div style={emptyTextStyle}>No unstaged changes</div>
+          <div style={emptyTextStyle}>{t("git.noUnstaged")}</div>
         )}
       </div>
 
       {/* Untracked Files */}
       <div style={{ padding: "0 16px 8px 16px" }}>
-        <div style={sectionTitleStyle}>Untracked Files <span style={{ fontWeight: 400, color: "var(--text-dim)", textTransform: "none" }}>({status.untracked.length})</span></div>
+        <div style={sectionTitleStyle}>{t("git.untracked")} <span style={{ fontWeight: 400, color: "var(--text-dim)", textTransform: "none" }}>({status.untracked.length})</span></div>
         {status.untracked.length > 0 ? (
           <div>
             {status.untracked.map((file, i) => (
@@ -664,17 +668,17 @@ export function GitPanel({ cwd, refreshKey, onDirtyChange }: Props) {
             ))}
           </div>
         ) : (
-          <div style={emptyTextStyle}>No untracked files</div>
+          <div style={emptyTextStyle}>{t("git.noUntracked")}</div>
         )}
       </div>
 
       {/* Stash */}
       <div style={{ padding: "0 16px 12px 16px" }}>
-        <div style={sectionTitleStyle}>Stash</div>
+        <div style={sectionTitleStyle}>{t("git.stash")}</div>
         <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
           {status.stashCount > 0
             ? <span>{status.stashCount} stash {status.stashCount === 1 ? "entry" : "entries"}</span>
-            : <span style={emptyTextStyle}>No stash entries</span>
+            : <span style={emptyTextStyle}>{t("git.noStash")}</span>
           }
         </div>
       </div>

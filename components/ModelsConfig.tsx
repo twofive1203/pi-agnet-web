@@ -1,5 +1,7 @@
 "use client";
 
+import { useI18n } from "@/components/I18nProvider";
+
 import { useState, useEffect, useCallback, useRef } from "react";
 import type { DeepSeekBalanceResult } from "@/lib/deepseek-balance";
 import type { GrokUsageResult } from "@/lib/grok-usage";
@@ -1526,6 +1528,7 @@ function AddAccountDialog({
   onImported: (accounts: OAuthAccountSummary[]) => void;
   onClose: () => void;
 }) {
+  const { t, locale } = useI18n();
   const [mode, setMode] = useState<OAuthAccountImportMode>("raw");
   const [jsonText, setJsonText] = useState("");
   const [convertedJsonText, setConvertedJsonText] = useState("");
@@ -1544,10 +1547,10 @@ function AddAccountDialog({
     try {
       return JSON.parse(finalJsonText);
     } catch (parseError) {
-      setValidationMessage({ type: "error", text: parseError instanceof Error ? `最终 JSON 格式无效：${parseError.message}` : "最终 JSON 格式无效" });
+      setValidationMessage({ type: "error", text: parseError instanceof Error ? t("settings.models.finalJsonInvalidDetail", { message: parseError.message }) : t("settings.models.finalJsonInvalid") });
       return null;
     }
-  }, [finalJsonText]);
+  }, [finalJsonText, t]);
 
   const validateFinalJson = useCallback((): unknown | null => {
     setError(null);
@@ -1558,9 +1561,9 @@ function AddAccountDialog({
       setValidationMessage({ type: "error", text: validationError });
       return null;
     }
-    setValidationMessage({ type: "success", text: Array.isArray(credential) ? `验证通过：最终 JSON 可以保存 ${credential.length} 个账号。` : "验证通过：最终 JSON 可以保存为账号。" });
+    setValidationMessage({ type: "success", text: Array.isArray(credential) ? t("settings.models.validateOkCount", { count: credential.length }) : t("settings.models.validateOk") });
     return credential;
-  }, [parseFinalCredential]);
+  }, [parseFinalCredential, t]);
 
   const convertSourceJson = useCallback(() => {
     if (!converter) return;
@@ -1571,18 +1574,18 @@ function AddAccountDialog({
     try {
       source = JSON.parse(jsonText);
     } catch (parseError) {
-      setError(parseError instanceof Error ? `源 JSON 格式无效：${parseError.message}` : "源 JSON 格式无效");
+      setError(parseError instanceof Error ? t("settings.models.sourceJsonInvalidDetail", { message: parseError.message }) : t("settings.models.sourceJsonInvalid"));
       return;
     }
 
     try {
       const converted = converter.convert(source);
       setConvertedJsonText(JSON.stringify(converted, null, 2));
-      setValidationMessage({ type: "success", text: "转换完成，请检查下方最终 JSON 后保存。" });
+      setValidationMessage({ type: "success", text: t("settings.models.convertDone") });
     } catch (convertError) {
-      setError(convertError instanceof Error ? convertError.message : "转换失败");
+      setError(convertError instanceof Error ? convertError.message : t("settings.models.convertFailed"));
     }
-  }, [converter, jsonText]);
+  }, [converter, jsonText, t]);
 
   const submitRawJson = useCallback(async () => {
     if (submitting) return;
@@ -1601,11 +1604,11 @@ function AddAccountDialog({
       onImported(data.accounts ?? []);
       onClose();
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : "导入账号失败");
+      setError(submitError instanceof Error ? submitError.message : t("settings.models.importFailed"));
     } finally {
       setSubmitting(false);
     }
-  }, [onClose, onImported, provider.id, submitting, validateFinalJson]);
+  }, [onClose, onImported, provider.id, submitting, validateFinalJson, t]);
 
   const modeButton = (value: OAuthAccountImportMode, label: string, disabled = false) => {
     const active = mode === value;
@@ -1631,7 +1634,7 @@ function AddAccountDialog({
           opacity: disabled ? 0.55 : 1,
         }}
       >
-        {label}{disabled ? " · 后续支持" : ""}
+        {label}{disabled ? t("settings.models.laterSupport") : ""}
       </button>
     );
   };
@@ -1647,8 +1650,8 @@ function AddAccountDialog({
           <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
             <ProviderIcon id={provider.id} size={18} />
             <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>添加 {provider.name} 账号</div>
-              <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 2 }}>选择一种账号添加方式。</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>{t("settings.models.addAccountTitle", { name: provider.name })}</div>
+              <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 2 }}>{t("settings.models.addAccountHint")}</div>
             </div>
           </div>
           <button type="button" disabled={submitting} onClick={onClose} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: submitting ? "not-allowed" : "pointer", fontSize: 20, lineHeight: 1, padding: "2px 6px" }}>×</button>
@@ -1657,12 +1660,12 @@ function AddAccountDialog({
         {view === "method" ? (
           <div style={{ padding: 16, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(240px, 100%), 1fr))", gap: 10 }}>
             <button type="button" onClick={onCodexAuth} style={{ padding: 14, background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: 8, color: "var(--text)", cursor: "pointer", textAlign: "left" }}>
-              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 5 }}>Codex 授权</div>
-              <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5 }}>打开现有浏览器登录授权流程，并保存授权后的账号。</div>
+              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 5 }}>{t("settings.models.codexAuth")}</div>
+              <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5 }}>{t("settings.models.codexAuthHint")}</div>
             </button>
             <button type="button" onClick={() => onViewChange("json")} style={{ padding: 14, background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: 8, color: "var(--text)", cursor: "pointer", textAlign: "left" }}>
-              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 5 }}>输入授权 JSON</div>
-              <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5 }}>粘贴与账号原始保存文件一致的 OAuth credential JSON。</div>
+              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 5 }}>{t("settings.models.pasteJson")}</div>
+              <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5 }}>{t("settings.models.pasteJsonHint")}</div>
             </button>
           </div>
         ) : (
@@ -1670,19 +1673,27 @@ function AddAccountDialog({
             <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: 16, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(320px, 100%), 1fr))", gap: 14 }}>
               <div style={{ display: "flex", flexDirection: "column", gap: 10, minWidth: 0 }}>
                 <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5 }}>
-                  请粘贴原始 credential 对象，或由 CPA/SUB2API 转换得到的 credential 数组。必填字段为 <code style={{ fontFamily: "var(--font-mono)" }}>type</code>、<code style={{ fontFamily: "var(--font-mono)" }}>access</code>、<code style={{ fontFamily: "var(--font-mono)" }}>refresh</code> 和 <code style={{ fontFamily: "var(--font-mono)" }}>expires</code>。账号会被保存，但不会自动切换为当前激活账号。
+                  {locale === "zh" ? (
+                    <>请粘贴原始 credential 对象，或由 CPA/SUB2API 转换得到的 credential 数组。必填字段为 <code style={{ fontFamily: "var(--font-mono)" }}>type</code>、<code style={{ fontFamily: "var(--font-mono)" }}>access</code>、<code style={{ fontFamily: "var(--font-mono)" }}>refresh</code> 和 <code style={{ fontFamily: "var(--font-mono)" }}>expires</code>。账号会被保存，但不会自动切换为当前激活账号。</>
+                  ) : (
+                    <>Paste a raw credential object or a CPA/SUB2API-converted credential array. Required fields: <code style={{ fontFamily: "var(--font-mono)" }}>type</code>, <code style={{ fontFamily: "var(--font-mono)" }}>access</code>, <code style={{ fontFamily: "var(--font-mono)" }}>refresh</code>, and <code style={{ fontFamily: "var(--font-mono)" }}>expires</code>. Accounts are saved but not auto-activated.</>
+                  )}
                 </div>
                 <pre style={{ margin: 0, padding: 12, background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: 8, color: "var(--text)", fontSize: 11, lineHeight: 1.5, overflow: "auto", fontFamily: "var(--font-mono)" }}>{RAW_ACCOUNT_JSON_EXAMPLE}</pre>
                 <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.5 }}>
-                  如果省略 <code style={{ fontFamily: "var(--font-mono)" }}>accountId</code>，蜗牛派会尝试从 access token 中解析，失败时使用稳定 fallback。账号显示名会按邮箱、手机号、accountId 的顺序自动补全。
+                  {locale === "zh" ? (
+                    <>如果省略 <code style={{ fontFamily: "var(--font-mono)" }}>accountId</code>，蜗牛派会尝试从 access token 中解析，失败时使用稳定 fallback。账号显示名会按邮箱、手机号、accountId 的顺序自动补全。</>
+                  ) : (
+                    <>If <code style={{ fontFamily: "var(--font-mono)" }}>accountId</code> is omitted, Snail Pi tries to parse it from the access token and falls back stably on failure. Display names are filled from email, phone, then accountId.</>
+                  )}
                 </div>
               </div>
 
               <div style={{ display: "flex", flexDirection: "column", gap: 10, minWidth: 0 }}>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                  {modeButton("raw", "原文 JSON")}
-                  {modeButton("cpa", "CPA 格式")}
-                  {modeButton("sub2api", "SUB2API 格式")}
+                  {modeButton("raw", t("settings.models.sourceJson"))}
+                  {modeButton("cpa", t("settings.models.cpaFormat"))}
+                  {modeButton("sub2api", t("settings.models.sub2apiFormat"))}
                 </div>
                 {converter ? (
                   <>
@@ -1695,8 +1706,8 @@ function AddAccountDialog({
                       style={{ minHeight: 150, resize: "vertical", padding: "9px 10px", background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: 8, color: "var(--text)", fontSize: 12, outline: "none", fontFamily: "var(--font-mono)", boxSizing: "border-box", lineHeight: 1.5 }}
                     />
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-                      <button type="button" disabled={submitting || !jsonText.trim()} onClick={convertSourceJson} style={{ padding: "6px 12px", background: !submitting && jsonText.trim() ? "var(--accent)" : "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: 6, color: !submitting && jsonText.trim() ? "#fff" : "var(--text-dim)", cursor: !submitting && jsonText.trim() ? "pointer" : "not-allowed", fontSize: 12, fontWeight: 700 }}>转换 ↓</button>
-                      <span style={{ fontSize: 11, color: "var(--text-dim)" }}>{converter.label} → 原文 OAuth JSON</span>
+                      <button type="button" disabled={submitting || !jsonText.trim()} onClick={convertSourceJson} style={{ padding: "6px 12px", background: !submitting && jsonText.trim() ? "var(--accent)" : "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: 6, color: !submitting && jsonText.trim() ? "#fff" : "var(--text-dim)", cursor: !submitting && jsonText.trim() ? "pointer" : "not-allowed", fontSize: 12, fontWeight: 700 }}>{locale === "zh" ? "转换 ↓" : "Convert ↓"}</button>
+                      <span style={{ fontSize: 11, color: "var(--text-dim)" }}>{t("settings.models.convertToRaw", { label: converter.label })}</span>
                     </div>
                     <textarea
                       value={convertedJsonText}
@@ -1722,11 +1733,11 @@ function AddAccountDialog({
             </div>
 
             <div style={{ padding: "10px 14px", borderTop: "1px solid var(--border)", display: "flex", justifyContent: "space-between", gap: 8 }}>
-              <button type="button" disabled={submitting} onClick={() => onViewChange("method")} style={{ padding: "6px 12px", background: "none", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text-muted)", cursor: submitting ? "not-allowed" : "pointer", fontSize: 12 }}>返回</button>
+              <button type="button" disabled={submitting} onClick={() => onViewChange("method")} style={{ padding: "6px 12px", background: "none", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text-muted)", cursor: submitting ? "not-allowed" : "pointer", fontSize: 12 }}>{t("settings.models.back")}</button>
               <div style={{ display: "flex", gap: 8 }}>
-                <button type="button" disabled={submitting} onClick={onClose} style={{ padding: "6px 12px", background: "none", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text-muted)", cursor: submitting ? "not-allowed" : "pointer", fontSize: 12 }}>取消</button>
-                <button type="button" disabled={submitting || !finalJsonText.trim()} onClick={validateFinalJson} style={{ padding: "6px 12px", background: "none", border: "1px solid var(--border)", borderRadius: 6, color: !submitting && finalJsonText.trim() ? "var(--text-muted)" : "var(--text-dim)", cursor: !submitting && finalJsonText.trim() ? "pointer" : "not-allowed", fontSize: 12 }}>验证</button>
-                <button type="button" disabled={submitting || !finalJsonText.trim()} onClick={submitRawJson} style={{ padding: "6px 14px", background: !submitting && finalJsonText.trim() ? "var(--accent)" : "var(--bg-panel)", border: "none", borderRadius: 6, color: !submitting && finalJsonText.trim() ? "#fff" : "var(--text-dim)", cursor: !submitting && finalJsonText.trim() ? "pointer" : "not-allowed", fontSize: 12, fontWeight: 700 }}>{submitting ? "保存中…" : "保存账号"}</button>
+                <button type="button" disabled={submitting} onClick={onClose} style={{ padding: "6px 12px", background: "none", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text-muted)", cursor: submitting ? "not-allowed" : "pointer", fontSize: 12 }}>{t("common.cancel")}</button>
+                <button type="button" disabled={submitting || !finalJsonText.trim()} onClick={validateFinalJson} style={{ padding: "6px 12px", background: "none", border: "1px solid var(--border)", borderRadius: 6, color: !submitting && finalJsonText.trim() ? "var(--text-muted)" : "var(--text-dim)", cursor: !submitting && finalJsonText.trim() ? "pointer" : "not-allowed", fontSize: 12 }}>{t("settings.models.validate")}</button>
+                <button type="button" disabled={submitting || !finalJsonText.trim()} onClick={submitRawJson} style={{ padding: "6px 14px", background: !submitting && finalJsonText.trim() ? "var(--accent)" : "var(--bg-panel)", border: "none", borderRadius: 6, color: !submitting && finalJsonText.trim() ? "#fff" : "var(--text-dim)", cursor: !submitting && finalJsonText.trim() ? "pointer" : "not-allowed", fontSize: 12, fontWeight: 700 }}>{submitting ? t("settings.models.savingAccount") : t("settings.models.saveAccount")}</button>
               </div>
             </div>
           </>
@@ -1737,6 +1748,7 @@ function AddAccountDialog({
 }
 
 function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefresh: () => void }) {
+  const { t } = useI18n();
   const [loginState, setLoginState] = useState<OAuthLoginState>({ phase: "idle" });
   const [inputValue, setInputValue] = useState("");
   const [quota, setQuota] = useState<SubscriptionQuota | null>(null);
@@ -2131,7 +2143,7 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
   const handleResetQuota = useCallback(async () => {
     const quotaAccountId = selectedQuotaAccountId;
     if (!quotaAccountId || quotaResetting) return;
-    const ok = window.confirm("将消耗一次 Codex 重置机会，确认继续？");
+    const ok = window.confirm(t("settings.models.resetConfirm"));
     if (!ok) return;
 
     setQuotaResetting(true);
@@ -2154,7 +2166,7 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
     } finally {
       setQuotaResetting(false);
     }
-  }, [loadAccounts, provider.id, quotaResetting, selectedQuotaAccountId]);
+  }, [loadAccounts, provider.id, quotaResetting, selectedQuotaAccountId, t]);
 
   const handleDeleteAccount = useCallback(async (account: OAuthAccountSummary) => {
     if (!window.confirm(`Delete saved credentials for ${account.displayName}?\n\nThe account must be added again to restore it.`)) return;
@@ -2383,7 +2395,7 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
           onCodexAuth={() => { setAddAccountDialogView(null); handleLogin("add"); }}
           onImported={(nextAccounts) => {
             setAccounts(nextAccounts);
-            setLoginState({ phase: "success", message: "账号保存成功。" });
+            setLoginState({ phase: "success", message: t("settings.models.accountSaved") });
             onRefresh();
             if (provider.loggedIn) void loadQuota();
           }}

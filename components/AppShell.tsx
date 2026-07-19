@@ -23,6 +23,7 @@ import { TerminalPanel } from "./TerminalPanel";
 import { getRelativeFilePath } from "@/lib/file-paths";
 import { formatWorkspaceTitle } from "@/lib/workspace-title";
 import { useTheme } from "@/hooks/useTheme";
+import { useI18n } from "@/components/I18nProvider";
 import type { GitInfo, SessionInfo, SessionTreeNode } from "@/lib/types";
 import type { PiWebConfig } from "@/lib/pi-web-config";
 import type { TrellisSessionTaskLinkResult, TrellisTaskDetail } from "@/lib/trellis-types";
@@ -41,6 +42,7 @@ export function AppShell() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { isDark, toggleTheme } = useTheme();
+  const { locale, setLocale, t } = useI18n();
   const [selectedSession, setSelectedSession] = useState<SessionInfo | null>(null);
   // When user clicks +, we only store the cwd — no fake session id
   const [newSessionCwd, setNewSessionCwd] = useState<string | null>(null);
@@ -497,7 +499,8 @@ export function AppShell() {
       <div style={{ padding: "8px", flexShrink: 0, display: "flex", justifyContent: "space-between", gap: 4 }}>
         {([
           {
-            label: "Models",
+            id: "models",
+            label: t("sidebar.models"),
             onClick: () => setModelsConfigOpen(true),
             disabled: false,
             icon: (
@@ -511,7 +514,8 @@ export function AppShell() {
             ),
           },
           {
-            label: "Usage",
+            id: "usage",
+            label: t("sidebar.usage"),
             onClick: () => setUsageStatsOpen(true),
             disabled: false,
             icon: (
@@ -522,7 +526,8 @@ export function AppShell() {
             ),
           },
           {
-            label: "Skills",
+            id: "skills",
+            label: t("sidebar.skills"),
             onClick: () => setSkillsConfigOpen(true),
             disabled: !activeCwd && !selectedSession?.cwd && !newSessionCwd,
             icon: (
@@ -534,7 +539,8 @@ export function AppShell() {
             ),
           },
           {
-            label: "Extensions",
+            id: "extensions",
+            label: t("sidebar.extensions"),
             onClick: () => setExtensionsConfigOpen(true),
             disabled: false,
             icon: (
@@ -552,7 +558,8 @@ export function AppShell() {
             ),
           },
           {
-            label: "Settings",
+            id: "settings",
+            label: t("sidebar.settings"),
             onClick: () => setSettingsConfigOpen(true),
             disabled: false,
             icon: (
@@ -562,9 +569,9 @@ export function AppShell() {
               </svg>
             ),
           },
-        ] as { label: string; onClick: () => void; disabled: boolean; icon: React.ReactNode }[]).map(({ label, onClick, disabled, icon }) => (
+        ] as { id: string; label: string; onClick: () => void; disabled: boolean; icon: React.ReactNode }[]).map(({ id, label, onClick, disabled, icon }) => (
           <button
-            key={label}
+            key={id}
             onClick={onClick}
             disabled={disabled}
             title={label}
@@ -625,7 +632,7 @@ export function AppShell() {
         <div ref={topBarRef} className="app-top-bar" style={{ display: "flex", alignItems: "center", flexShrink: 0, borderBottom: "1px solid var(--border)", height: 36, background: "var(--bg-panel)" }}>
           <button
             onClick={() => setSidebarOpen((v) => !v)}
-            title={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
+            title={sidebarOpen ? t("app.hideSidebar") : t("app.showSidebar")}
             style={{
               display: "flex", alignItems: "center", justifyContent: "center",
               width: 36, height: 36, padding: 0,
@@ -650,8 +657,8 @@ export function AppShell() {
               const rect = e.currentTarget.getBoundingClientRect();
               toggleTheme({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
             }}
-            title={isDark ? "Switch to light mode" : "Switch to dark mode"}
-            aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
+            title={isDark ? t("app.switchToLight") : t("app.switchToDark")}
+            aria-label={isDark ? t("app.switchToLight") : t("app.switchToDark")}
             aria-pressed={isDark}
             style={{
               display: "flex", alignItems: "center", justifyContent: "center",
@@ -676,13 +683,30 @@ export function AppShell() {
               </svg>
             )}
           </button>
+          <button
+            type="button"
+            onClick={() => setLocale(locale === "zh" ? "en" : "zh")}
+            title={t("app.languageSwitch")}
+            aria-label={t("app.languageSwitch")}
+            style={{
+              display: "flex", alignItems: "center", justifyContent: "center",
+              width: 36, height: 36, padding: 0,
+              background: "none", border: "none", borderRight: "1px solid var(--border)",
+              color: "var(--text-muted)", cursor: "pointer", flexShrink: 0, transition: "color 0.12s",
+              fontSize: 11, fontWeight: 700, letterSpacing: "-0.02em",
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text)"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-muted)"; }}
+          >
+            {locale === "zh" ? "EN" : "中"}
+          </button>
           {showChat && (
             <div className="app-top-actions" style={{ display: "flex", alignItems: "stretch", height: "100%" }}>
               <button
                 onClick={handleExportSession}
                 disabled={!selectedSession}
-                title={selectedSession ? "Export HTML" : "Export is available after the session is saved"}
-                aria-label="Export HTML"
+                title={selectedSession ? t("app.exportHtml") : t("app.exportHtmlDisabled")}
+                aria-label={t("app.exportHtml")}
                 style={{
                   display: "flex",
                   alignItems: "center",
@@ -728,7 +752,7 @@ export function AppShell() {
                     <line x1="12" y1="15" x2="12" y2="3" />
                   </svg>
                 </span>
-                <span className="app-top-label">Export</span>
+                <span className="app-top-label">{t("app.export")}</span>
               </button>
               <BranchNavigator
                 tree={branchTree}
@@ -764,7 +788,7 @@ export function AppShell() {
                   <line x1="8" y1="13" x2="16" y2="13" />
                   <line x1="8" y1="17" x2="13" y2="17" />
                 </svg>
-                <span className="app-top-label">System</span>
+                <span className="app-top-label">{t("app.system")}</span>
               </button>
               <button
                 className="app-top-aux-tab"
@@ -788,7 +812,7 @@ export function AppShell() {
                   <circle cx="12" cy="12" r="3" />
                   <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
                 </svg>
-                <span className="app-top-label">Subagents</span>
+                <span className="app-top-label">{t("app.subagents")}</span>
                 {(() => {
                   const running = subagentRuns.filter((r) => r.status === "running").length;
                   const completed = subagentRuns.filter((r) => r.status === "completed" || r.status === "failed").length;
@@ -836,7 +860,7 @@ export function AppShell() {
                   <circle cx="6" cy="18" r="3" />
                   <path d="M18 9a9 9 0 0 1-9 9" />
                 </svg>
-                <span className="app-top-label">Git</span>
+                <span className="app-top-label">{t("app.git")}</span>
                 {gitDirty && (
                   <span style={{
                     position: "absolute", top: 4, right: 4,
@@ -868,7 +892,7 @@ export function AppShell() {
                 }
                 setTerminalCollapsed((collapsed) => !collapsed);
               }}
-              title={terminalOpen && terminalDockCwd && terminalDockCwd !== terminalCwd ? "Open terminal for selected workspace" : "Open web terminal"}
+              title={terminalOpen && terminalDockCwd && terminalDockCwd !== terminalCwd ? t("app.openTerminalForWorkspace") : t("app.openTerminal")}
               style={{
                 display: "flex", alignItems: "center", gap: 6,
                 height: "100%", padding: "0 12px",
@@ -887,7 +911,7 @@ export function AppShell() {
                 <polyline points="4 17 10 11 4 5" />
                 <line x1="12" y1="19" x2="20" y2="19" />
               </svg>
-              <span className="app-top-label">Terminal</span>
+              <span className="app-top-label">{t("app.terminal")}</span>
             </button>
           )}
           {/* Session stats — right-aligned in top bar */}
@@ -1062,7 +1086,7 @@ export function AppShell() {
           ) : showPlaceholder ? (
             activeCwd ? (
               <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", fontSize: 15 }}>
-                请从侧边栏选择会话
+                {t("app.selectSession")}
               </div>
             ) : (
               <div style={{ position: "absolute", top: 12, left: 12, display: "flex", alignItems: "flex-start", gap: 8, userSelect: "none", pointerEvents: "none" }}>
@@ -1070,10 +1094,10 @@ export function AppShell() {
                   <line x1="20" y1="12" x2="4" y2="12" /><polyline points="10 6 4 12 10 18" />
                 </svg>
                 <div>
-                  <div style={{ fontSize: 18, fontWeight: 600, color: "var(--text)", marginBottom: 8 }}>Get Started</div>
+                  <div style={{ fontSize: 18, fontWeight: 600, color: "var(--text)", marginBottom: 8 }}>{t("app.getStarted")}</div>
                   <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.8 }}>
-                    <span style={{ color: "var(--text-dim)", marginRight: 6 }}>1.</span>Select a project directory from the sidebar<br />
-                    <span style={{ color: "var(--text-dim)", marginRight: 6 }}>2.</span>Add models via the <strong style={{ color: "var(--text)" }}>Models</strong> button at the bottom
+                    <span style={{ color: "var(--text-dim)", marginRight: 6 }}>1.</span>{t("app.getStartedStep1")}<br />
+                    <span style={{ color: "var(--text-dim)", marginRight: 6 }}>2.</span>{t("app.getStartedStep2Before")} <strong style={{ color: "var(--text)" }}>{t("app.getStartedStep2Strong")}</strong> {t("app.getStartedStep2After")}
                   </div>
                 </div>
               </div>
@@ -1128,7 +1152,7 @@ export function AppShell() {
                 <FileViewer filePath={activeFileTab.filePath} cwd={activeCwd ?? undefined} initialLine={activeFileTab.line} editorConfig={webConfig?.editor} onAddChat={handleAddChat} onOpenFile={handleOpenFile} />
               ) : (
                 <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-dim)", fontSize: 12 }}>
-                  没有打开文件
+                  {t("app.noOpenFile")}
                 </div>
               )}
             </div>
@@ -1136,7 +1160,7 @@ export function AppShell() {
         ) : (
           <>
             <div style={{ display: "flex", alignItems: "center", flexShrink: 0, background: "var(--bg-panel)", borderBottom: "1px solid var(--border)", height: 36, padding: "0 12px", gap: 8 }}>
-              <span style={{ color: "var(--text)", fontSize: 13, fontWeight: 700 }}>Trellis</span>
+              <span style={{ color: "var(--text)", fontSize: 13, fontWeight: 700 }}>{t("trellis.panelTitle")}</span>
               {trellisCwd && <span title={trellisCwd} style={{ color: "var(--text-dim)", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{trellisCwd}</span>}
             </div>
             <div style={{ flex: 1, overflow: "hidden" }}>
@@ -1156,8 +1180,8 @@ export function AppShell() {
             setRightPanelOpen(true);
           }
         }}
-        title={rightPanelOpen && rightPanelMode === "files" ? "隐藏预览面板" : "显示预览面板"}
-        aria-label={rightPanelOpen && rightPanelMode === "files" ? "隐藏预览面板" : "显示预览面板"}
+        title={rightPanelOpen && rightPanelMode === "files" ? t("app.hidePreview") : t("app.showPreview")}
+        aria-label={rightPanelOpen && rightPanelMode === "files" ? t("app.hidePreview") : t("app.showPreview")}
         style={{
           display: "flex", alignItems: "center", justifyContent: "center",
           width: 36, height: 36, padding: 0,
@@ -1182,8 +1206,8 @@ export function AppShell() {
               setRightPanelOpen(true);
             }
           }}
-          title={rightPanelOpen && rightPanelMode === "trellis" ? "隐藏 Trellis 面板" : "显示 Trellis 面板"}
-          aria-label={rightPanelOpen && rightPanelMode === "trellis" ? "隐藏 Trellis 面板" : "显示 Trellis 面板"}
+          title={rightPanelOpen && rightPanelMode === "trellis" ? t("app.hideTrellis") : t("app.showTrellis")}
+          aria-label={rightPanelOpen && rightPanelMode === "trellis" ? t("app.hideTrellis") : t("app.showTrellis")}
           style={{
             display: "flex", alignItems: "center", justifyContent: "center",
             width: 36, height: 36, padding: 0,

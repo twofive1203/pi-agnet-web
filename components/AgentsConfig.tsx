@@ -1,5 +1,7 @@
 "use client";
 
+import { useI18n } from "@/components/I18nProvider";
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 // ---------------------------------------------------------------------------
@@ -63,21 +65,21 @@ interface ModelsResponse {
 // ---------------------------------------------------------------------------
 
 const THINKING_OPTIONS = [
-  { value: "", label: "继承/不指定" },
-  { value: "off", label: "关闭思考" },
-  { value: "minimal", label: "Minimal" },
-  { value: "low", label: "Low" },
-  { value: "medium", label: "Medium" },
-  { value: "high", label: "High" },
-  { value: "xhigh", label: "XHigh" },
+  { value: "", labelKey: "settings.inheritUnset" },
+  { value: "off", labelKey: "settings.thinkingOff" },
+  { value: "minimal", labelKey: "minimal" },
+  { value: "low", labelKey: "low" },
+  { value: "medium", labelKey: "medium" },
+  { value: "high", labelKey: "high" },
+  { value: "xhigh", labelKey: "xhigh" },
 ] as const;
 
-const SOURCE_LABELS: Record<string, string> = {
-  builtin: "内置",
-  package: "包",
-  user: "用户",
-  project: "项目",
-  "settings-only": "设置残留",
+const SOURCE_LABEL_KEYS: Record<string, string> = {
+  builtin: "settings.agents.builtin",
+  package: "settings.agents.package",
+  user: "settings.agents.user",
+  project: "settings.agents.project",
+  "settings-only": "settings.agents.settingsResidue",
 };
 
 const SOURCE_BADGE_COLORS: Record<string, string> = {
@@ -109,8 +111,8 @@ function ov(value: string | false | undefined | null): string {
   return typeof value === "string" ? value : "";
 }
 
-function formatInheritedValue(value: string | false | string[] | undefined): string | null {
-  if (value === false) return "显式 false";
+function formatInheritedValue(value: string | false | string[] | undefined, translate?: (key: string) => string): string | null {
+  if (value === false) return translate ? translate("settings.agents.explicitFalse") : "false";
   if (Array.isArray(value)) return value.join(", ");
   if (typeof value === "string" && value.length > 0) return value;
   return null;
@@ -152,6 +154,7 @@ function Field({
 // ---------------------------------------------------------------------------
 
 export function AgentsConfig({ cwd }: { cwd: string | null }) {
+  const { t, locale } = useI18n();
   const [scope, setScope] = useState<"user" | "project">("user");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -367,14 +370,14 @@ export function AgentsConfig({ cwd }: { cwd: string | null }) {
   const addFallbackModel = useCallback((name: string) => {
     const available = modelList.map((model) => `${model.provider}/${model.id}`);
     if (available.length === 0) {
-      setError("没有可用的 Pi 模型，无法添加回退模型。");
+      setError(t("settings.agents.noModelsForFallback"));
       return;
     }
 
     const currentFallbacks = draftManaged.agentOverrides[name]?.fallbackModels;
     const visibleExisting = new Set(Array.isArray(currentFallbacks) ? currentFallbacks : []);
     if (!available.some((model) => !visibleExisting.has(model))) {
-      setError("所有可用模型都已在该 Agent 的回退列表中。");
+      setError(t("settings.agents.allModelsInFallback"));
       return;
     }
 
@@ -392,7 +395,7 @@ export function AgentsConfig({ cwd }: { cwd: string | null }) {
     });
     setError(null);
     setNotice(null);
-  }, [draftManaged.agentOverrides, modelList]);
+  }, [draftManaged.agentOverrides, modelList, t]);
 
   const updateFallbackModel = useCallback((name: string, index: number, value: string) => {
     setDraftManaged((prev) => {
@@ -549,29 +552,29 @@ export function AgentsConfig({ cwd }: { cwd: string | null }) {
   const validatePatchModels = useCallback((patch: ReturnType<typeof computePatch>): string | null => {
     const checkModel = (value: string | null | undefined, label: string): string | null => {
       if (!value) return null;
-      if (!registryModelIds.has(value)) return `${label} 不在 Pi 可用模型列表中：${value}`;
+      if (!registryModelIds.has(value)) return t("settings.agents.notInModelList", { label, value });
       return null;
     };
 
-    const defaultError = checkModel(patch.defaultModel, "默认模型");
+    const defaultError = checkModel(patch.defaultModel, t("settings.defaultModel"));
     if (defaultError) return defaultError;
 
     for (const [agent, override] of Object.entries(patch.agentOverrides ?? {})) {
-      const modelError = checkModel(override.model, `${agent} 模型`);
+      const modelError = checkModel(override.model, t("settings.agents.modelOf", { agent }));
       if (modelError) return modelError;
       if (override.fallbackModels) {
         const seen = new Set<string>();
         for (const model of override.fallbackModels) {
-          if (seen.has(model)) return `${agent} 回退模型重复：${model}`;
+          if (seen.has(model)) return t("settings.agents.fallbackDup", { agent, model });
           seen.add(model);
-          const fallbackError = checkModel(model, `${agent} 回退模型`);
+          const fallbackError = checkModel(model, t("settings.agents.fallbackModelOf", { agent }));
           if (fallbackError) return fallbackError;
         }
       }
     }
 
     return null;
-  }, [registryModelIds]);
+  }, [registryModelIds, t]);
 
   // -----------------------------------------------------------------------
   // Save
@@ -606,13 +609,13 @@ export function AgentsConfig({ cwd }: { cwd: string | null }) {
         setSavedManaged(data.managed);
         setDraftManaged(JSON.parse(JSON.stringify(data.managed)));
       }
-      setNotice("设置已保存。持续化已完成，Pi 会话按正常生命周期加载新设置。");
+      setNotice(t("settings.agents.savedPersist"));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setSaving(false);
     }
-  }, [revision, scope, cwd, computePatch, validatePatchModels]);
+  }, [revision, scope, cwd, computePatch, validatePatchModels, t]);
 
   // -----------------------------------------------------------------------
   // Reload
@@ -664,7 +667,7 @@ export function AgentsConfig({ cwd }: { cwd: string | null }) {
   // -----------------------------------------------------------------------
 
   if (loading) {
-    return <div style={{ color: "var(--text-muted)", fontSize: 13, padding: 12 }}>正在加载子代理设置…</div>;
+    return <div style={{ color: "var(--text-muted)", fontSize: 13, padding: 12 }}>{t("settings.agents.loading")}</div>;
   }
 
   const effectiveAgentList = agents;
@@ -673,9 +676,9 @@ export function AgentsConfig({ cwd }: { cwd: string | null }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       {/* Header */}
       <div>
-        <h3 style={{ margin: 0, color: "var(--text)", fontSize: 15 }}>Pi Subagent 模型设置</h3>
+        <h3 style={{ margin: 0, color: "var(--text)", fontSize: 15 }}>{t("settings.agents.title")}</h3>
         <p style={{ margin: "5px 0 0", color: "var(--text-muted)", fontSize: 12, lineHeight: 1.5 }}>
-          配置 pi-subagents 的原生模型设置，独立于 Trellis 路由策略。保存到 Pi settings.json，不修改 pi-web.json。
+          {t("settings.agents.titleHint")}
         </p>
       </div>
 
@@ -689,9 +692,7 @@ export function AgentsConfig({ cwd }: { cwd: string | null }) {
         fontSize: 11,
         lineHeight: 1.5,
       }}>
-        <strong>与 Trellis 路由的区别：</strong>本页面直接管理 pi-subagents 的原生配置（settings.json → subagents），影响所有使用 pi-subagents
-        的场景。下方的「Trellis」区域只控制蜗牛派 Web UI 的 Trellis 工作流路由策略（pi-web.json → trellis.subagents）。
-        两者互不干扰，可同时使用。
+        {t("settings.agents.vsTrellis")}
       </div>
 
       {/* Error / Notice */}
@@ -701,44 +702,44 @@ export function AgentsConfig({ cwd }: { cwd: string | null }) {
       {/* Parse/validation error banner */}
       {parseError && (
         <div style={{ padding: "8px 10px", borderRadius: 8, background: "rgba(239,68,68,0.12)", color: "#f87171", fontSize: 12, overflowWrap: "anywhere" }}>
-          settings.json 解析错误：{parseError}。保存操作被禁用，请先手动修复该文件。
+          {t("settings.agents.parseError", { error: parseError })}
           <button onClick={handleReload} style={{ marginLeft: 8, background: "none", border: "none", color: "var(--accent)", cursor: "pointer", fontSize: 12, textDecoration: "underline" }}>
-            重新加载
+            {t("settings.agents.reload")}
           </button>
         </div>
       )}
       {validationError && (
         <div style={{ padding: "8px 10px", borderRadius: 8, background: "rgba(239,68,68,0.12)", color: "#f87171", fontSize: 12, overflowWrap: "anywhere" }}>
-          settings.json 内容无效：{validationError}。保存操作被禁用，请先手动修复。
+          {t("settings.agents.validationError", { error: validationError })}
           <button onClick={handleReload} style={{ marginLeft: 8, background: "none", border: "none", color: "var(--accent)", cursor: "pointer", fontSize: 12, textDecoration: "underline" }}>
-            重新加载
+            {t("settings.agents.reload")}
           </button>
         </div>
       )}
       {scope === "project" && (userParseError || userValidationError) && (
         <div style={{ padding: "8px 10px", borderRadius: 8, background: "rgba(234,179,8,0.1)", border: "1px solid rgba(234,179,8,0.2)", color: "var(--text-dim)", fontSize: 12, overflowWrap: "anywhere" }}>
-          用户全局 settings.json 无法作为继承提示读取：{userParseError ?? userValidationError}
+          {t("settings.agents.userInheritWarn", { error: userParseError ?? userValidationError })}
         </div>
       )}
 
       {/* Scope selector */}
       <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-        <span style={{ fontSize: 12, color: "var(--text-dim)", fontWeight: 600 }}>作用域：</span>
+        <span style={{ fontSize: 12, color: "var(--text-dim)", fontWeight: 600 }}>{t("settings.agents.scope")}</span>
         <select
           value={scope}
           onChange={(e) => setScope(e.target.value as "user" | "project")}
           style={{ ...inputStyle, width: "auto", minWidth: 140, cursor: "pointer" }}
         >
-          <option value="user">用户全局</option>
-          <option value="project" disabled={!cwd}>{cwd ? "当前项目" : "当前项目（请先选择工作区）"}</option>
+          <option value="user">{t("settings.agents.userGlobal")}</option>
+          <option value="project" disabled={!cwd}>{cwd ? t("settings.agents.currentProject") : t("settings.agents.currentProjectNeedWorkspace")}</option>
         </select>
       </div>
 
       {/* Path and precedence info */}
       <div style={{ padding: "8px 10px", borderRadius: 8, background: "var(--bg-subtle)", border: "1px solid var(--border)", fontSize: 11, color: "var(--text-dim)", lineHeight: 1.5, overflowWrap: "anywhere" }}>
-        <div><strong>目标文件：</strong><code style={{ fontFamily: "var(--font-mono)", color: "var(--text)" }}>{configPath}</code>{configExists ? "" : "（尚未创建，保存时自动创建）"}</div>
+        <div><strong>{t("settings.agents.targetFile")}</strong><code style={{ fontFamily: "var(--font-mono)", color: "var(--text)" }}>{configPath}</code>{configExists ? "" : t("settings.autoCreateOnSaveLong")}</div>
         {scope === "project" && (
-          <div style={{ marginTop: 4 }}><strong>优先级说明：</strong>项目设置覆盖用户全局设置。未在项目作用域中指定的字段会继承用户全局值。实际运行时还会受 Agent frontmatter、工具调用参数影响。</div>
+          <div style={{ marginTop: 4 }}>{t("settings.agents.precedence")}</div>
         )}
       </div>
 
@@ -753,10 +754,10 @@ export function AgentsConfig({ cwd }: { cwd: string | null }) {
       <div style={{ padding: 12, borderRadius: 10, background: "var(--bg-subtle)", border: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: 8 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
           <div>
-            <div style={{ color: "var(--text)", fontSize: 13, fontWeight: 800 }}>默认子代理模型</div>
+            <div style={{ color: "var(--text)", fontSize: 13, fontWeight: 800 }}>{t("settings.defaultSubagentModel")}</div>
             <div style={{ color: "var(--text-muted)", fontSize: 11, marginTop: 3, lineHeight: 1.45 }}>
-              所有未单独指定模型的子代理默认使用的模型。设为「继承/不指定」则从上一级继承。
-              {scope === "project" && userManaged?.defaultModel ? ` 用户全局值：${userManaged.defaultModel}。` : ""}
+              {t("settings.agents.defaultSubagentHint")}
+              {scope === "project" && userManaged?.defaultModel ? t("settings.agents.userGlobalValue", { value: userManaged.defaultModel }) : ""}
             </div>
           </div>
           <button
@@ -773,7 +774,7 @@ export function AgentsConfig({ cwd }: { cwd: string | null }) {
               whiteSpace: "nowrap",
             }}
           >
-            清除
+            {t("settings.agents.clear")}
           </button>
         </div>
         {modelsError && <div style={{ padding: "6px 8px", borderRadius: 6, background: "rgba(239,68,68,0.12)", color: "#f87171", fontSize: 11 }}>{modelsError}</div>}
@@ -782,7 +783,7 @@ export function AgentsConfig({ cwd }: { cwd: string | null }) {
           onChange={(e) => updateDefaultModel(e.target.value)}
           style={{ ...inputStyle, cursor: "pointer" }}
         >
-          <option value="">— 继承/不指定 —</option>
+          <option value="">{t("settings.agents.inheritOption")}</option>
           {modelOptions.map((opt) => (
             <option key={opt.value} value={opt.value}>{opt.label}</option>
           ))}
@@ -793,24 +794,24 @@ export function AgentsConfig({ cwd }: { cwd: string | null }) {
       <div style={{ padding: 12, borderRadius: 10, background: "var(--bg-subtle)", border: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: 8 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div>
-            <div style={{ color: "var(--text)", fontSize: 13, fontWeight: 800 }}>Agent 单独覆盖</div>
+            <div style={{ color: "var(--text)", fontSize: 13, fontWeight: 800 }}>{t("settings.agents.agentOverrides")}</div>
             <div style={{ color: "var(--text-muted)", fontSize: 11, marginTop: 3, lineHeight: 1.45 }}>
-              为特定 Agent 指定模型、思考强度或回退模型。留空表示继承上级设置。
+              {locale === "zh" ? "为特定 Agent 指定模型、思考强度或回退模型。留空表示继承上级设置。" : "Override model, thinking, or fallbacks for a specific agent. Leave empty to inherit."}
             </div>
           </div>
           {revision && <span style={{ fontSize: 10, color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>rev:{revision.slice(0, 8)}</span>}
         </div>
 
         {effectiveAgentList.length === 0 ? (
-          <div style={{ color: "var(--text-dim)", fontSize: 12, padding: "8px 0" }}>暂无已发现的 Agent。{extensionAvailable ? "" : "请安装 pi-subagents 扩展。"}</div>
+          <div style={{ color: "var(--text-dim)", fontSize: 12, padding: "8px 0" }}>{t("settings.agents.noAgents")}{extensionAvailable ? "" : t("settings.agents.installExtension")}</div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {effectiveAgentList.map((agent) => {
               const draft = draftManaged.agentOverrides[agent.name];
               const userVal = scope === "project" ? userManaged?.agentOverrides[agent.name] : undefined;
-              const inheritedModel = formatInheritedValue(userVal?.model);
-              const inheritedThinking = formatInheritedValue(userVal?.thinking);
-              const inheritedFallbacks = formatInheritedValue(userVal?.fallbackModels);
+              const inheritedModel = formatInheritedValue(userVal?.model, t);
+              const inheritedThinking = formatInheritedValue(userVal?.thinking, t);
+              const inheritedFallbacks = formatInheritedValue(userVal?.fallbackModels, t);
 
               return (
                 <div
@@ -838,21 +839,21 @@ export function AgentsConfig({ cwd }: { cwd: string | null }) {
                       fontSize: 10,
                       fontWeight: 600,
                     }}>
-                      {SOURCE_LABELS[agent.source] ?? agent.source}
+                      {SOURCE_LABEL_KEYS[agent.source] ? t(SOURCE_LABEL_KEYS[agent.source]) : agent.source}
                     </span>
                     <span style={{ fontSize: 11, color: "var(--text-dim)", flex: 1 }}>{agent.description}</span>
                   </div>
 
                   {/* Model row */}
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                    <Field label={`模型${inheritedModel ? "（用户全局：" + inheritedModel + "）" : ""}`} description={draft?.model === false ? "当前作用域保存了 legacy false 值；选择模型会替换，清除会删除该字段并恢复继承。" : undefined}>
+                    <Field label={inheritedModel ? t("settings.agents.modelWithGlobal", { value: inheritedModel }) : t("settings.agents.model")} description={draft?.model === false ? t("settings.agents.legacyFalseModel") : undefined}>
                       <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                         <select
                           value={ov(draft?.model)}
                           onChange={(e) => updateAgentModel(agent.name, e.target.value)}
                           style={{ ...inputStyle, cursor: "pointer", flex: 1 }}
                         >
-                          <option value="">— 继承/不指定 —</option>
+                          <option value="">{t("settings.agents.inheritOption")}</option>
                           {modelOptions.map((opt) => (
                             <option key={opt.value} value={opt.value}>{opt.label}</option>
                           ))}
@@ -862,13 +863,13 @@ export function AgentsConfig({ cwd }: { cwd: string | null }) {
                             onClick={() => clearAgentModel(agent.name)}
                             style={{ padding: "5px 8px", borderRadius: 4, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-dim)", cursor: "pointer", fontSize: 10, whiteSpace: "nowrap" }}
                           >
-                            清除
+                            {t("settings.agents.clear")}
                           </button>
                         )}
                       </div>
                     </Field>
 
-                    <Field label={`思考强度${inheritedThinking ? "（用户全局：" + inheritedThinking + "）" : ""}`} description={draft?.thinking === false ? "当前作用域保存了 legacy false 值；选择强度会替换，清除会删除该字段并恢复继承。" : undefined}>
+                    <Field label={inheritedThinking ? t("settings.agents.thinkingWithGlobal", { value: inheritedThinking }) : t("settings.thinkingLevel")} description={draft?.thinking === false ? t("settings.agents.legacyFalseThinking") : undefined}>
                       <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                         <select
                           value={ov(draft?.thinking)}
@@ -876,7 +877,7 @@ export function AgentsConfig({ cwd }: { cwd: string | null }) {
                           style={{ ...inputStyle, cursor: "pointer", flex: 1 }}
                         >
                           {THINKING_OPTIONS.map((opt) => (
-                            <option key={opt.value} value={opt.value}>{opt.label}</option>
+                            <option key={opt.value} value={opt.value}>{opt.labelKey.startsWith("settings.") ? t(opt.labelKey) : opt.labelKey}</option>
                           ))}
                         </select>
                         {hasConfiguredField(draft?.thinking) && (
@@ -884,7 +885,7 @@ export function AgentsConfig({ cwd }: { cwd: string | null }) {
                             onClick={() => clearAgentThinking(agent.name)}
                             style={{ padding: "5px 8px", borderRadius: 4, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-dim)", cursor: "pointer", fontSize: 10, whiteSpace: "nowrap" }}
                           >
-                            清除
+                            {t("settings.agents.clear")}
                           </button>
                         )}
                       </div>
@@ -895,28 +896,28 @@ export function AgentsConfig({ cwd }: { cwd: string | null }) {
                   <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "space-between" }}>
                       <span style={{ fontSize: 11, color: "var(--text-dim)" }}>
-                        回退模型{inheritedFallbacks ? `（用户全局：${inheritedFallbacks}）` : ""}
+                        {t("settings.fallbackModel")}{inheritedFallbacks ? t("settings.agents.fallbackWithGlobal", { value: inheritedFallbacks }) : ""}
                       </span>
                       <div style={{ display: "flex", gap: 6 }}>
                         <button
                           onClick={() => addFallbackModel(agent.name)}
                           style={{ padding: "3px 8px", borderRadius: 4, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text)", cursor: "pointer", fontSize: 10 }}
                         >
-                          + 添加
+                          {t("settings.agents.add")}
                         </button>
                         {hasConfiguredField(draft?.fallbackModels) && (
                           <button
                             onClick={() => clearAgentFallbacks(agent.name)}
                             style={{ padding: "3px 8px", borderRadius: 4, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-dim)", cursor: "pointer", fontSize: 10 }}
                           >
-                            全部清除
+                            {t("settings.agents.clearAll")}
                           </button>
                         )}
                       </div>
                     </div>
 
                     {draft?.fallbackModels === false && (
-                      <div style={{ color: "var(--text-dim)", fontSize: 10 }}>当前作用域保存了 legacy false 值；添加模型会替换，全部清除会删除该字段并恢复继承。</div>
+                      <div style={{ color: "var(--text-dim)", fontSize: 10 }}>{t("settings.agents.fallbackLegacyFalse")}</div>
                     )}
                     {Array.isArray(draft?.fallbackModels) && (draft.fallbackModels as string[]).length > 0 && (
                       <div style={{ display: "flex", flexDirection: "column", gap: 4, paddingLeft: 8, borderLeft: "2px solid var(--border)" }}>
@@ -930,7 +931,7 @@ export function AgentsConfig({ cwd }: { cwd: string | null }) {
                               onChange={(e) => updateFallbackModel(agent.name, i, e.target.value)}
                               style={{ ...inputStyle, cursor: "pointer", flex: 1 }}
                             >
-                              <option value="">— 选择模型 —</option>
+                              <option value="">{t("settings.agents.selectModel")}</option>
                               {modelOptions.map((opt) => (
                                 <option key={opt.value} value={opt.value}>{opt.label}</option>
                               ))}
@@ -939,7 +940,7 @@ export function AgentsConfig({ cwd }: { cwd: string | null }) {
                               onClick={() => moveFallbackModel(agent.name, i, Math.max(0, i - 1))}
                               disabled={i === 0}
                               style={{ padding: "3px 6px", borderRadius: 4, border: "1px solid var(--border)", background: "var(--bg)", color: i === 0 ? "var(--text-dim)" : "var(--text)", cursor: i === 0 ? "not-allowed" : "pointer", fontSize: 10 }}
-                              title="上移"
+                              title={t("settings.agents.moveUp")}
                             >
                               ↑
                             </button>
@@ -947,14 +948,14 @@ export function AgentsConfig({ cwd }: { cwd: string | null }) {
                               onClick={() => moveFallbackModel(agent.name, i, Math.min(fbArr.length - 1, i + 1))}
                               disabled={i === fbArr.length - 1}
                               style={{ padding: "3px 6px", borderRadius: 4, border: "1px solid var(--border)", background: "var(--bg)", color: i === fbArr.length - 1 ? "var(--text-dim)" : "var(--text)", cursor: i === fbArr.length - 1 ? "not-allowed" : "pointer", fontSize: 10 }}
-                              title="下移"
+                              title={t("settings.agents.moveDown")}
                             >
                               ↓
                             </button>
                             <button
                               onClick={() => removeFallbackModel(agent.name, i)}
                               style={{ padding: "3px 6px", borderRadius: 4, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-dim)", cursor: "pointer", fontSize: 10 }}
-                              title="删除"
+                              title={t("settings.agents.delete")}
                             >
                               ×
                             </button>
@@ -986,7 +987,7 @@ export function AgentsConfig({ cwd }: { cwd: string | null }) {
             fontSize: 12,
           }}
         >
-          重新加载
+          {t("settings.agents.reload")}
         </button>
         <button
           onClick={() => void handleSave()}
@@ -1002,13 +1003,13 @@ export function AgentsConfig({ cwd }: { cwd: string | null }) {
             fontWeight: 600,
           }}
         >
-          {saving ? "正在保存…" : dirty ? "保存设置" : "已保存"}
+          {saving ? t("settings.saving") : dirty ? t("settings.saveSettings") : t("settings.saved")}
         </button>
       </div>
 
       {/* Persistence note */}
       <div style={{ padding: 8, borderRadius: 6, background: "var(--bg-subtle)", border: "1px solid var(--border)", fontSize: 10, color: "var(--text-dim)", lineHeight: 1.45 }}>
-        设置已持久化到磁盘。正在运行的 Pi 会话在下次重启或重新加载扩展配置前可能不会应用新的设置，新创建的子代理会使用最新配置。
+        {t("settings.agents.persistNote")}
       </div>
     </div>
   );

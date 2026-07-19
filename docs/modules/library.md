@@ -45,6 +45,7 @@ Shared logic lives under `lib/`. Prefer adding behavior here when it is used by 
 | `lib/trellis-setup-types.ts` | Wire types for Trellis setup status and setup/update command API responses. |
 | `lib/trellis-types.ts` | Wire types for Trellis task list/detail API responses and UI consumers. |
 | `lib/workspace-title.ts` | Shared workspace title formatting from cwd and Git metadata. |
+| `lib/i18n/` | Lightweight zh/en i18n core: locale types, browser/storage detection, nested message catalogs, and `translate()` with `{param}` interpolation. Consumed by `components/I18nProvider.tsx`. |
 
 ## Reuse Rules
 

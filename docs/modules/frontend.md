@@ -4,7 +4,8 @@
 
 | File | Purpose |
 | --- | --- |
-| `components/AppShell.tsx` | Top-level layout, URL state, tab management, Web Terminal bottom-dock toggling, right drawer mode switching between files and optional Trellis tasks, Trellis-task-to-chat context block insertion, and body-portaled top-bar auxiliary panels that remain visible outside the mobile horizontal scroller. |
+| `components/I18nProvider.tsx` | Client locale provider (`zh` / `en`), `t()` translator, and `useI18n` / `useT` hooks. Preference is stored in `localStorage` key `pi-locale`; first visit follows the browser language. |
+| `components/AppShell.tsx` | Top-level layout, URL state, tab management, language toggle, Web Terminal bottom-dock toggling, right drawer mode switching between files and optional Trellis tasks, Trellis-task-to-chat context block insertion, and body-portaled top-bar auxiliary panels that remain visible outside the mobile horizontal scroller. |
 | `components/SessionSidebar.tsx` | Session tree sidebar, workspace/WorkTree picker actions grouped by main workspace, archive/unarchive actions, archived section, multi-select batch archive, and integrated file explorer. |
 | `components/ChatWindow.tsx` | Message list, SSE streaming, fork/navigate logic. Shows archived banner and disables input for archived sessions. Hosts Pi extension status chips, widget stacks around the composer, and body-portaled dialog/toast hosts for extension UI requests. |
 | `components/ChatInput.tsx` | Input bar, model dropdown, thinking level, tool preset, image upload, file-reference chips, serialized Trellis task context blocks, and bounded, scrollable slash-command autocomplete for extension commands, prompts, and skills. |
@@ -25,7 +26,7 @@
 | `components/GitCommitDiffModal.tsx` | Git commit file-diff adapter that fetches one selected commit file diff, formats commit/file metadata and fallback labels, and renders the shared diff modal. |
 | `components/SkillsConfig.tsx` | Modal for browsing/installing skills. |
 | `components/ExtensionsConfig.tsx` | Modal with Resources (packages/extensions/tools/commands/skills/prompts/diagnostics from `/api/pi/resources`) and Settings (registered extension settings + `settings-extensions.json` edit via `/api/pi/extension-settings`). Opened from the sidebar Extensions button. |
-| `components/SettingsConfig.tsx` | Settings modal for WorkTree defaults, Usage scan scope, Web Terminal enablement/shell/env settings including Unix and Windows shell choices plus raw/AI env parsing model controls, ChatGPT usage panel and backend auto-refresh settings, Grok usage panel toggle, Editor implementation/shortcut settings, native Pi subagent model settings (`AgentsConfig`), and optional Trellis panel settings in `pi-web.json`, including Trellis docs guidance, prerequisite/status inspection, install/init, update, proxy controls, Trellis workflow assistant primary/fallback model controls, and Trellis subagent model policy controls. ChatGPT warmup schedule is managed from `ChatGptWarmupDialog` and preserved by settings saves. |
+| `components/SettingsConfig.tsx` | Settings modal for interface language (`zh`/`en`), WorkTree defaults, Usage scan scope, Web Terminal enablement/shell/env settings including Unix and Windows shell choices plus raw/AI env parsing model controls, ChatGPT usage panel and backend auto-refresh settings, Grok usage panel toggle, Editor implementation/shortcut settings, native Pi subagent model settings (`AgentsConfig`), and optional Trellis panel settings in `pi-web.json`, including Trellis docs guidance, prerequisite/status inspection, install/init, update, proxy controls, Trellis workflow assistant primary/fallback model controls, and Trellis subagent model policy controls. ChatGPT warmup schedule is managed from `ChatGptWarmupDialog` and preserved by settings saves. |
 | `components/AgentsConfig.tsx` | Native pi-subagents model configuration section in the Settings modal. Owns its own load/save/dirty/error state, supports user-global and project scopes, loads/saves the `subagents` section of Pi `settings.json`, displays discovered agents with source badges, and provides per-agent model/thinking/fallback-model controls with inherit/clear semantics. |
 | `components/SubagentPanel.tsx` | Top-bar subagent activity panel, including nested subagent inspection and compact model/thinking metadata chips when subagent routing or result metadata is available. |
 | `components/TrellisPanel.tsx` | Read-only Trellis task drawer: top-level task list with expandable child task groups, filters, details, artifacts, hierarchy, manifest/context counts, recorded task metadata, optional check-run state, derived phase/progress, optional externally focused task selection, and a join-chat action that adds active tasks as chat context blocks without mutating Trellis files. |
@@ -67,3 +68,13 @@ Global CSS lives in `app/globals.css`. Components may reference these CSS variab
 ```
 
 They are also mapped to Tailwind `--color-*` utility aliases. The theme toggles by adding/removing `dark` on `document.documentElement`.
+
+## Internationalization (i18n)
+
+- **Supported locales**: `zh` (default when browser is Chinese), `en`.
+- **Provider**: `components/I18nProvider.tsx` wraps the app in `app/page.tsx`.
+- **Catalogs**: `lib/i18n/messages/*` nested dictionaries; lookup via dotted keys such as `sidebar.archiveAllSessions`.
+- **API**: `const { locale, setLocale, t } = useI18n()`; `t("key", { name })` interpolates `{name}` placeholders.
+- **Persistence**: `localStorage["pi-locale"]`; boot script in `app/layout.tsx` sets `document.documentElement.lang` early to reduce flash.
+- **Switcher**: top-bar `EN`/`中` button in `AppShell`, and Settings → Language section.
+- **Coverage status**: shell/chat/sidebar/git/terminal/diff and shared chrome strings are wired. Large settings/models/trellis panels still contain mixed hard-coded Chinese/English copy and should continue migrating onto `settings.*` / `trellis.*` / `panels.*` keys.

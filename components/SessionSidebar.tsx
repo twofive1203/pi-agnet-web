@@ -4,6 +4,8 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import type { GitInfo, SessionInfo, WorktreeInfo } from "@/lib/types";
 import { formatWorkspaceHeaderTitle, formatWorkspaceSubtitle, formatWorkspaceTitle } from "@/lib/workspace-title";
 import { FileExplorer } from "./FileExplorer";
+import { useI18n } from "@/components/I18nProvider";
+import type { MessageParams } from "@/lib/i18n";
 
 interface Props {
   selectedSessionId: string | null;
@@ -20,17 +22,17 @@ interface Props {
   onAtMention?: (relativePath: string) => void;
 }
 
-function formatRelativeTime(dateStr: string): string {
+function formatRelativeTime(dateStr: string, t: (key: string, params?: MessageParams) => string): string {
   const date = new Date(dateStr);
   const now = new Date();
   const diff = now.getTime() - date.getTime();
   const mins = Math.floor(diff / 60000);
   const hours = Math.floor(diff / 3600000);
   const days = Math.floor(diff / 86400000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  if (hours < 24) return `${hours}h ago`;
-  if (days < 7) return `${days}d ago`;
+  if (mins < 1) return t("sidebar.justNow");
+  if (mins < 60) return t("sidebar.minutesAgo", { n: mins });
+  if (hours < 24) return t("sidebar.hoursAgo", { n: hours });
+  if (days < 7) return t("sidebar.daysAgo", { n: days });
   return date.toLocaleDateString();
 }
 
@@ -65,10 +67,11 @@ function makeTempSessionId(): string {
 }
 
 function WorktreeBadge({ worktree }: { worktree?: WorktreeInfo }) {
+  const { t } = useI18n();
   if (!worktree) return null;
   return (
     <span
-      title={worktree.branch ? `Git 工作树: ${worktree.branch}` : "Git 工作树"}
+      title={worktree.branch ? t("sidebar.gitWorktreeNamed", { branch: worktree.branch }) : t("sidebar.gitWorktree")}
       style={{
         display: "inline-flex",
         alignItems: "center",
@@ -330,6 +333,7 @@ function buildSessionTree(sessions: SessionInfo[]): SessionTreeNode[] {
 }
 
 export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSession, initialSessionId, onInitialRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onOpenFile, explorerRefreshKey, onAtMention }: Props) {
+  const { t } = useI18n();
   const [allSessions, setAllSessions] = useState<SessionInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -490,7 +494,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
 
   const handleDeleteSession = useCallback(async (session: SessionInfo) => {
     const title = session.name || session.firstMessage.slice(0, 50) || session.id.slice(0, 12);
-    if (!window.confirm(`删除会话 “${title}”？此操作不可恢复。`)) return;
+    if (!window.confirm(t("sidebar.deleteSessionConfirm", { title }))) return;
     try {
       const res = await fetch(`/api/sessions/${encodeURIComponent(session.id)}`, { method: "DELETE" });
       if (res.ok) {
@@ -506,7 +510,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     } catch {
       // ignore
     }
-  }, [loadSessions, onSessionDeleted]);
+  }, [loadSessions, onSessionDeleted, t]);
 
   const initialLoadDone = useRef(false);
   useEffect(() => {
@@ -822,7 +826,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                 flexShrink: 0,
                 transition: "background 0.12s, color 0.12s, border-color 0.12s",
               }}
-              title={selectedCwd ? `在 ${selectedCwd} 新建会话` : "请先选择一个项目"}
+              title={selectedCwd ? t("sidebar.newSessionIn", { cwd: selectedCwd }) : t("sidebar.selectProjectFirst")}
               onMouseEnter={(e) => {
                 if (!selectedCwd) return;
                 e.currentTarget.style.background = "var(--bg-selected)";
@@ -860,7 +864,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                 flexShrink: 0,
                 transition: "background 0.12s, color 0.12s, border-color 0.12s",
               }}
-              title={selectedCwd ? `从 ${selectedCwd} 创建 Git 工作树` : "请先选择一个项目"}
+              title={selectedCwd ? t("sidebar.createWorktreeFrom", { cwd: selectedCwd }) : t("sidebar.selectProjectFirst")}
               onMouseEnter={(e) => {
                 if (!selectedCwd || creatingWorktree) return;
                 e.currentTarget.style.background = "var(--bg-selected)";
@@ -879,7 +883,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                 <path d="M6 15V9a3 3 0 0 1 3-3h6" />
                 <path d="M9 18h6a3 3 0 0 0 3-3V9" />
               </svg>
-              {creatingWorktree ? "创建中…" : "WorkTree"}
+              {creatingWorktree ? t("common.creating") : t("sidebar.workTree")}
             </button>
             <button
               onClick={() => loadSessions(false)}
@@ -907,7 +911,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                 e.currentTarget.style.color = "var(--text-muted)";
                 e.currentTarget.style.borderColor = "var(--border)";
               }}
-              title="刷新"
+              title={t("common.refresh")}
             >
               {sessionRefreshDone ? (
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -936,7 +940,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                     padding: 0,
                     flexShrink: 0,
                   }}
-                  title="Workspace actions"
+                  title={t("sidebar.workspaceActions")}
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <circle cx="12" cy="5" r="1" />
@@ -988,7 +992,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                           <polyline points="7 10 12 15 17 10" />
                           <line x1="12" y1="15" x2="12" y2="3" />
                         </svg>
-                        归档所有会话
+                        {t("sidebar.archiveAllSessions")}
                       </button>
                     </div>
                   </>
@@ -1024,7 +1028,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                 setDropdownOpen(true);
               }
             }}
-            aria-label={selectedCwd ? `Switch project, current path ${selectedCwd}` : "Switch project"}
+            aria-label={selectedCwd ? t("sidebar.switchProjectCurrent", { cwd: selectedCwd }) : t("sidebar.switchProject")}
             aria-expanded={dropdownOpen}
             onContextMenu={(e) => {
               const worktree = selectedCwd ? worktreeByCwd.get(selectedCwd) : undefined;
@@ -1058,9 +1062,9 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                 fontSize: 11,
                 color: selectedCwd ? "var(--text)" : "var(--text-dim)",
               }}
-              title={selectedWorktree ? `${selectedCwd ?? ""}\n右键点击查看更多 WorkTree 操作` : selectedCwd ?? ""}
+              title={selectedWorktree ? `${selectedCwd ?? ""}\n${t("sidebar.worktreeContextHint")}` : selectedCwd ?? ""}
             >
-              {selectedCwd ? shortenCwd(selectedCwd, homeDir) : (initialSessionId && !restoredRef.current ? "" : "Select project…")}
+              {selectedCwd ? shortenCwd(selectedCwd, homeDir) : (initialSessionId && !restoredRef.current ? "" : t("sidebar.selectProjectPlaceholder"))}
             </span>
             <WorktreeBadge worktree={selectedCwd ? worktreeByCwd.get(selectedCwd) : undefined} />
           </button>
@@ -1112,8 +1116,8 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                   <input
                     ref={cwdSearchInputRef}
                     type="search"
-                    aria-label="Search projects by cwd path"
-                    placeholder="Search project paths…"
+                    aria-label={t("sidebar.searchProjectsAria")}
+                    placeholder={t("sidebar.searchProjectsPlaceholder")}
                     value={cwdSearch}
                     onChange={(e) => setCwdSearch(e.target.value)}
                     onKeyDown={(e) => {
@@ -1174,7 +1178,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                         textOverflow: "ellipsis",
                         whiteSpace: "nowrap",
                       }}
-                      title={row.worktree ? `${row.cwd}\n右键点击查看更多 WorkTree 操作` : row.cwd}
+                      title={row.worktree ? `${row.cwd}\n${t("sidebar.worktreeContextHint")}` : row.cwd}
                     >
                       {selected && (
                         <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
@@ -1201,7 +1205,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                     role="status"
                     style={{ padding: "18px 12px", color: "var(--text-dim)", fontSize: 11, textAlign: "center" }}
                   >
-                    {cwdSearch.trim() ? "No projects match your search." : "No projects available."}
+                    {cwdSearch.trim() ? t("sidebar.noProjectsMatch") : t("sidebar.noProjects")}
                   </div>
                 )}
               </div>
@@ -1316,7 +1320,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                         setCustomPathError(null);
                       }
                     }}
-                    placeholder="/path/to/project"
+                    placeholder={t("sidebar.pathPlaceholder")}
                     style={{
                       width: "100%",
                       fontSize: 11,
@@ -1373,7 +1377,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                         cursor: "pointer",
                       }}
                     >
-                      取消
+                      {t("common.cancel")}
                     </button>
                   </div>
                 </div>
@@ -1403,13 +1407,13 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
             onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); openWorktreeAction("archive", worktreeContextMenu.cwd, worktreeContextMenu.worktree); }}
             style={{ width: "100%", padding: "8px 10px", background: "none", border: "none", color: "var(--text)", textAlign: "left", cursor: "pointer", fontSize: 12, borderRadius: 6 }}
           >
-            归档 WorkTree…
+            {t("sidebar.archiveWorktreeMenu")}
           </button>
           <button
             onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); openWorktreeAction("delete", worktreeContextMenu.cwd, worktreeContextMenu.worktree); }}
             style={{ width: "100%", padding: "8px 10px", background: "none", border: "none", color: "#dc2626", textAlign: "left", cursor: "pointer", fontSize: 12, borderRadius: 6 }}
           >
-            删除 WorkTree…
+            {t("sidebar.deleteWorktreeMenu")}
           </button>
         </div>
       )}
@@ -1440,7 +1444,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
             }}
             style={{ width: "100%", padding: "8px 10px", background: "none", border: "none", color: "var(--text)", textAlign: "left", cursor: "pointer", fontSize: 12, borderRadius: 6 }}
           >
-            归档
+            {t("common.archive")}
           </button>
           <button
             onMouseDown={(e) => {
@@ -1452,7 +1456,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
             }}
             style={{ width: "100%", padding: "8px 10px", background: "none", border: "none", color: "#dc2626", textAlign: "left", cursor: "pointer", fontSize: 12, borderRadius: 6 }}
           >
-            删除
+            {t("common.delete")}
           </button>
         </div>
       )}
@@ -1464,22 +1468,22 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         >
           <div style={{ width: "min(520px, 100%)", borderRadius: 12, background: "var(--bg)", border: "1px solid var(--border)", boxShadow: "0 18px 50px rgba(0,0,0,0.25)", padding: 16 }}>
             <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>
-              {worktreeAction.kind === "archive" ? "归档 WorkTree" : "删除 WorkTree"}
+              {worktreeAction.kind === "archive" ? t("sidebar.archiveWorktreeTitle") : t("sidebar.deleteWorktreeTitle")}
             </div>
             <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5, marginBottom: 12 }}>
-              <div><strong style={{ color: "var(--text)" }}>分支：</strong> {worktreeAction.worktree.branch ?? "(未知)"}</div>
-              <div style={{ overflowWrap: "anywhere" }}><strong style={{ color: "var(--text)" }}>路径：</strong> {worktreeAction.cwd}</div>
+              <div><strong style={{ color: "var(--text)" }}>{t("sidebar.branchLabel")}</strong> {worktreeAction.worktree.branch ?? t("sidebar.unknownBranch")}</div>
+              <div style={{ overflowWrap: "anywhere" }}><strong style={{ color: "var(--text)" }}>{t("sidebar.pathLabel")}</strong> {worktreeAction.cwd}</div>
               {worktreeAction.worktree.mainWorktreePath && (
-                <div style={{ overflowWrap: "anywhere" }}><strong style={{ color: "var(--text)" }}>回退空间：</strong> {worktreeAction.worktree.mainWorktreePath}</div>
+                <div style={{ overflowWrap: "anywhere" }}><strong style={{ color: "var(--text)" }}>{t("sidebar.fallbackWorkspaceLabel")}</strong> {worktreeAction.worktree.mainWorktreePath}</div>
               )}
             </div>
             {worktreeAction.kind === "archive" ? (
               <div style={{ padding: "10px 12px", borderRadius: 8, background: "rgba(245,158,11,0.10)", border: "1px solid rgba(245,158,11,0.25)", color: "var(--text)", fontSize: 12, lineHeight: 1.5, marginBottom: 12 }}>
-                请确认没有未保存或未完成的工作。归档操作会 squash 该 WorkTree 分支、推送、合并到主工作树分支，然后删除本地 WorkTree。请在继续前自行运行 finish-work 等工具。
+                {t("sidebar.archiveWorktreeBody")}
               </div>
             ) : (
               <div style={{ padding: "10px 12px", borderRadius: 8, background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.22)", color: "var(--text)", fontSize: 12, lineHeight: 1.5, marginBottom: 12 }}>
-                删除将移除本地 WorkTree。未提交的更改和未合并的提交可能会丢失。
+                {t("sidebar.deleteWorktreeBody")}
               </div>
             )}
             {worktreeAction.dirtySummary?.length ? (
@@ -1499,7 +1503,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                   checked={worktreeAction.force}
                   onChange={(e) => setWorktreeAction((prev) => prev ? { ...prev, force: e.target.checked } : prev)}
                 />
-                Git 报告有本地修改，仍然强制删除
+                {t("sidebar.forceDeleteDirty")}
               </label>
             ) : null}
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
@@ -1508,14 +1512,14 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                 disabled={worktreeAction.busy}
                 style={{ padding: "7px 12px", borderRadius: 7, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-muted)", cursor: worktreeAction.busy ? "not-allowed" : "pointer", fontSize: 12 }}
               >
-                取消
+                {t("common.cancel")}
               </button>
               <button
                 onClick={() => void confirmWorktreeAction()}
                 disabled={worktreeAction.busy || (worktreeAction.kind === "delete" && Boolean(worktreeAction.dirtySummary?.length) && !worktreeAction.force)}
                 style={{ padding: "7px 12px", borderRadius: 7, border: "none", background: worktreeAction.kind === "archive" ? "var(--accent)" : "#ef4444", color: "#fff", cursor: worktreeAction.busy ? "not-allowed" : "pointer", fontSize: 12, fontWeight: 700, opacity: worktreeAction.busy || (worktreeAction.kind === "delete" && Boolean(worktreeAction.dirtySummary?.length) && !worktreeAction.force) ? 0.65 : 1 }}
               >
-                {worktreeAction.busy ? (worktreeAction.kind === "archive" ? "归档中…" : "删除中…") : (worktreeAction.kind === "archive" ? "归档" : "删除")}
+                {worktreeAction.busy ? (worktreeAction.kind === "archive" ? t("common.archiving") : t("common.deleting")) : (worktreeAction.kind === "archive" ? t("common.archive") : t("common.delete"))}
               </button>
             </div>
           </div>
@@ -1530,11 +1534,11 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         >
           <div style={{ width: "min(420px, 100%)", borderRadius: 12, background: "var(--bg)", border: "1px solid var(--border)", boxShadow: "0 18px 50px rgba(0,0,0,0.25)", padding: 16 }}>
             <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>
-              归档所有会话
+              {t("sidebar.archiveAllTitle")}
             </div>
             <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5, marginBottom: 16 }}>
-              确认归档 <strong>{(archivedCounts[selectedCwd] ?? 0) + filteredSessions.length}</strong> 个会话？
-              归档后可随时取消归档恢复。
+              {t("sidebar.archiveAllBodyBefore")} <strong>{(archivedCounts[selectedCwd] ?? 0) + filteredSessions.length}</strong> {t("sidebar.archiveAllBodyAfter")}
+              {t("sidebar.archiveAllHint")}
             </div>
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
               <button
@@ -1542,14 +1546,14 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                 disabled={archiveAllBusy}
                 style={{ padding: "7px 12px", borderRadius: 7, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-muted)", cursor: archiveAllBusy ? "not-allowed" : "pointer", fontSize: 12 }}
               >
-                取消
+                {t("common.cancel")}
               </button>
               <button
                 onClick={() => void handleArchiveAll()}
                 disabled={archiveAllBusy}
                 style={{ padding: "7px 12px", borderRadius: 7, border: "none", background: "var(--accent)", color: "#fff", cursor: archiveAllBusy ? "not-allowed" : "pointer", fontSize: 12, fontWeight: 700, opacity: archiveAllBusy ? 0.65 : 1 }}
               >
-                {archiveAllBusy ? "归档中…" : "确认归档"}
+                {archiveAllBusy ? t("common.archiving") : t("sidebar.confirmArchive")}
               </button>
             </div>
           </div>
@@ -1612,7 +1616,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
             flexShrink: 0,
           }}>
             <span style={{ fontSize: 11, color: "var(--text-dim)" }}>
-              已选择 {selectedForArchive.size} 个会话
+              {t("sidebar.selectedSessions", { count: selectedForArchive.size })}
             </span>
             <div style={{ display: "flex", gap: 6 }}>
               <button
@@ -1621,7 +1625,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                 }}
                 style={{ padding: "6px 12px", borderRadius: 7, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-muted)", cursor: "pointer", fontSize: 11, fontWeight: 500 }}
               >
-                取消
+                {t("common.cancel")}
               </button>
               <button
                 onClick={() => void handleBatchArchive()}
@@ -1634,7 +1638,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                   fontSize: 11, fontWeight: 600,
                 }}
               >
-                归档 {selectedForArchive.size > 0 ? `(${selectedForArchive.size})` : ""}
+                {selectedForArchive.size > 0 ? t("sidebar.archiveWithCount", { count: selectedForArchive.size }) : t("common.archive")}
               </button>
             </div>
           </div>
@@ -1680,7 +1684,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
               >
                 <polyline points="2 3.5 5 6.5 8 3.5" />
               </svg>
-              <span>已归档 ({archivedCounts[selectedCwd]})</span>
+              <span>{t("sidebar.archivedSection", { count: archivedCounts[selectedCwd] })}</span>
             </button>
             {archivedExpanded && archivedSessions.length > 0 && (
               <div>
@@ -1747,7 +1751,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                 if (explorerRefreshTimerRef.current) clearTimeout(explorerRefreshTimerRef.current);
                 explorerRefreshTimerRef.current = setTimeout(() => setExplorerRefreshDone(false), 2000);
               }}
-              title="Refresh explorer"
+              title={t("sidebar.refreshExplorer")}
               style={{
                 display: "flex", alignItems: "center", justifyContent: "center",
                 width: 26, height: 26, padding: 0, marginRight: 6,
@@ -1898,6 +1902,7 @@ function SessionItem({
   selectedForArchive?: boolean;
   onToggleSelect?: (id: string) => void;
 }) {
+  const { t } = useI18n();
   const [hovered, setHovered] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState("");
@@ -2101,7 +2106,7 @@ function SessionItem({
               <WorktreeBadge worktree={session.worktree} />
             </div>
             <div style={{ marginTop: 2, display: "flex", gap: 8, color: "var(--text-dim)", fontSize: 11 }}>
-              <span title={session.modified}>{formatRelativeTime(session.modified)}</span>
+              <span title={session.modified}>{formatRelativeTime(session.modified, t)}</span>
               <span>{session.messageCount} msgs</span>
             </div>
           </div>
@@ -2110,7 +2115,7 @@ function SessionItem({
           {hasChildren && (
             <button
               onClick={(e) => { e.stopPropagation(); onToggleCollapse?.(); }}
-              title={collapsed ? "Expand forks" : "Collapse forks"}
+              title={collapsed ? t("sidebar.expandForks") : t("sidebar.collapseForks")}
               style={{
                 display: "flex", alignItems: "center", justifyContent: "center",
                 width: 20, height: 20, padding: 0, flexShrink: 0,
@@ -2131,7 +2136,7 @@ function SessionItem({
             <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
               <button
                 onClick={startRename}
-                title="Rename"
+                title={t("common.rename")}
                 style={{
                   display: "flex", alignItems: "center", justifyContent: "center",
                   width: 32, height: 32, padding: 0,
@@ -2159,7 +2164,7 @@ function SessionItem({
               {!session.archived && (
                 <button
                   onClick={handleArchiveClick}
-                  title="Archive"
+                  title={t("common.archive")}
                   style={{
                     display: "flex", alignItems: "center", justifyContent: "center",
                     width: 32, height: 32, padding: 0,
@@ -2188,7 +2193,7 @@ function SessionItem({
               )}
               <button
                 onClick={handleDeleteClick}
-                title="Delete"
+                title={t("common.delete")}
                 style={{
                   display: "flex", alignItems: "center", justifyContent: "center",
                   width: 32, height: 32, padding: 0,
@@ -2238,6 +2243,7 @@ function ArchivedSessionItem({
   onUnarchive: (id: string) => void;
   onDelete: (id: string) => void;
 }) {
+  const { t } = useI18n();
   const [hovered, setHovered] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -2341,7 +2347,7 @@ function ArchivedSessionItem({
               </div>
             </div>
             <div style={{ marginTop: 2, display: "flex", gap: 8, color: "var(--text-dim)", fontSize: 11 }}>
-              <span title={session.modified}>{formatRelativeTime(session.modified)}</span>
+              <span title={session.modified}>{formatRelativeTime(session.modified, t)}</span>
               <span>{session.messageCount} msgs</span>
             </div>
           </div>
@@ -2349,7 +2355,7 @@ function ArchivedSessionItem({
             <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
               <button
                 onClick={handleUnarchiveClick}
-                title="Unarchive"
+                title={t("common.unarchive")}
                 style={{
                   display: "flex", alignItems: "center", justifyContent: "center",
                   gap: 4, height: 30, padding: "0 10px",
@@ -2373,11 +2379,11 @@ function ArchivedSessionItem({
                   <polyline points="17 8 12 3 7 8" />
                   <line x1="12" y1="3" x2="12" y2="15" />
                 </svg>
-                恢复
+                {t("common.restore")}
               </button>
               <button
                 onClick={handleDeleteClick}
-                title="Delete"
+                title={t("common.delete")}
                 style={{
                   display: "flex", alignItems: "center", justifyContent: "center",
                   width: 32, height: 32, padding: 0,

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { Terminal, type ITheme } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import { useI18n } from "@/components/I18nProvider";
 
 interface Props {
   cwd: string;
@@ -274,7 +275,11 @@ function terminalReducer(state: TerminalState, action: TerminalAction): Terminal
   }
 }
 
-function getContentDropIntent(event: React.DragEvent<HTMLDivElement>, rect: DOMRect): Omit<DropTargetState, "paneId"> {
+function getContentDropIntent(
+  event: React.DragEvent<HTMLDivElement>,
+  rect: DOMRect,
+  labels: { splitH: string; splitV: string; noSpace: string },
+): Omit<DropTargetState, "paneId"> {
   const x = event.clientX - rect.left;
   const y = event.clientY - rect.top;
   const canSplitX = rect.width >= MIN_PANE_WIDTH * 2;
@@ -286,10 +291,11 @@ function getContentDropIntent(event: React.DragEvent<HTMLDivElement>, rect: DOMR
     : (y < rect.height / 2 ? "top" : "bottom");
   const needsHorizontalSpace = zone === "left" || zone === "right";
   const disabled = needsHorizontalSpace ? !canSplitX : !canSplitY;
+  const direction = needsHorizontalSpace ? labels.splitH : labels.splitV;
   return {
     zone,
     disabled,
-    message: disabled ? `空间不足，无法${needsHorizontalSpace ? "左右" : "上下"}切割` : undefined,
+    message: disabled ? labels.noSpace.replace("{direction}", direction) : undefined,
   };
 }
 
@@ -504,6 +510,7 @@ function TerminalSessionView({ tab, visible, layoutVersion, onTabUpdate }: Termi
 }
 
 export function TerminalPanel({ cwd, collapsed, onToggleCollapsed, onClose }: Props) {
+  const { t } = useI18n();
   const [state, dispatch] = useReducer(terminalReducer, cwd, createInitialState);
   const [editingTabId, setEditingTabId] = useState<string | null>(null);
   const [editingLabel, setEditingLabel] = useState("");
@@ -724,7 +731,11 @@ export function TerminalPanel({ cwd, collapsed, onToggleCollapsed, onClose }: Pr
           onDragOver={(event) => {
             if (!dragPayload) return;
             event.preventDefault();
-            const intent = getContentDropIntent(event, event.currentTarget.getBoundingClientRect());
+            const intent = getContentDropIntent(event, event.currentTarget.getBoundingClientRect(), {
+              splitH: t("panels.terminal.splitH"),
+              splitV: t("panels.terminal.splitV"),
+              noSpace: t("panels.terminal.noSpace"),
+            });
             setDropTarget({ paneId: pane.id, ...intent });
             event.dataTransfer.dropEffect = intent.disabled ? "none" : "move";
           }}
@@ -732,7 +743,11 @@ export function TerminalPanel({ cwd, collapsed, onToggleCollapsed, onClose }: Pr
             event.preventDefault();
             const parsed = parseDraggedTerminalTab(event.dataTransfer.getData("application/x-pi-terminal-tab"), dragPayload);
             if (!parsed) return;
-            const intent = getContentDropIntent(event, event.currentTarget.getBoundingClientRect());
+            const intent = getContentDropIntent(event, event.currentTarget.getBoundingClientRect(), {
+              splitH: t("panels.terminal.splitH"),
+              splitV: t("panels.terminal.splitV"),
+              noSpace: t("panels.terminal.noSpace"),
+            });
             if (intent.disabled) {
               setDropTarget({ paneId: pane.id, ...intent });
               return;
@@ -850,7 +865,7 @@ export function TerminalPanel({ cwd, collapsed, onToggleCollapsed, onClose }: Pr
             window.setTimeout(requestLayoutFit, 0);
           }}
           style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 12, padding: "4px 6px" }}
-          title={collapsed ? "展开终端" : "折叠终端"}
+          title={collapsed ? t("panels.terminal.expand") : t("panels.terminal.collapse")}
         >
           {collapsed ? "▴" : "▾"}
         </button>
@@ -885,7 +900,7 @@ export function TerminalPanel({ cwd, collapsed, onToggleCollapsed, onClose }: Pr
           type="button"
           onClick={handleCloseDock}
           style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 18, lineHeight: 1, padding: "2px 6px" }}
-          title="关闭终端并结束所有进程"
+          title={t("panels.terminal.closeAll")}
         >
           ×
         </button>

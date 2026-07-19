@@ -7,6 +7,7 @@ import type { AttachedFile } from "@/lib/types";
 import type { ToolPreset } from "@/components/ToolPanel";
 import { encodeFilePathForApi, getFileName, getRelativeFilePath, joinFilePath } from "@/lib/file-paths";
 import { buildTrellisTaskResumePrompt, type TrellisTaskChatContext } from "@/lib/trellis-chat-context";
+import { useI18n } from "@/components/I18nProvider";
 
 export interface AttachedImage {
   data: string;   // base64, no prefix
@@ -58,14 +59,14 @@ export interface ChatInputHandle {
 }
 
 const TOOL_PRESET_OPTIONS = [
-  { preset: "all", label: "All", desc: "所有当前加载的工具" },
-  { preset: "read-only", label: "Read-only", desc: "只读工具" },
-  { preset: "none", label: "Off", desc: "无工具，纯聊天" },
-] as const satisfies readonly { preset: ToolPreset; label: string; desc: string }[];
-const TOOL_PRESET_LABELS: Record<ToolPreset, string> = {
-  all: "All",
-  "read-only": "Read-only",
-  none: "Off",
+  { preset: "all", labelKey: "chat.toolPresetAll", descKey: "chat.toolPresetAllDesc" },
+  { preset: "read-only", labelKey: "chat.toolPresetReadOnly", descKey: "chat.toolPresetReadOnlyDesc" },
+  { preset: "none", labelKey: "chat.toolPresetOff", descKey: "chat.toolPresetOffDesc" },
+] as const satisfies readonly { preset: ToolPreset; labelKey: string; descKey: string }[];
+const TOOL_PRESET_LABEL_KEYS: Record<ToolPreset, string> = {
+  all: "chat.toolPresetAll",
+  "read-only": "chat.toolPresetReadOnly",
+  none: "chat.toolPresetOff",
 };
 const COMPOSITION_END_ENTER_GRACE_MS = 100;
 
@@ -199,11 +200,14 @@ function filterSlashCommands(commands: SlashCommandEntry[], query: string): Slas
     });
 }
 
-function describeSlashCommand(command: SlashCommandEntry): string {
+function describeSlashCommand(
+  command: SlashCommandEntry,
+  t: (key: string) => string,
+): string {
   if (command.description) return command.description;
-  if (command.source === "extension") return "Pi extension command";
-  if (command.source === "skill") return "Pi skill";
-  return "Prompt template";
+  if (command.source === "extension") return t("chat.cmdExtension");
+  if (command.source === "skill") return t("chat.cmdSkill");
+  return t("chat.cmdTemplate");
 }
 
 function slashCommandSourceLabel(command: SlashCommandEntry): string {
@@ -211,14 +215,14 @@ function slashCommandSourceLabel(command: SlashCommandEntry): string {
   return `${label}${command.location ? ` · ${command.location}` : ""}`;
 }
 
-const THINKING_LEVEL_DESC: Record<typeof THINKING_LEVELS[number], string> = {
-  auto: "沿用 pi 默认设置",
-  off: "关闭推理",
-  minimal: "最少推理",
-  low: "低强度推理",
-  medium: "中等推理",
-  high: "高强度推理",
-  xhigh: "最高强度推理",
+const THINKING_LEVEL_DESC_KEYS: Record<typeof THINKING_LEVELS[number], string> = {
+  auto: "chat.thinkingAuto",
+  off: "chat.thinkingOff",
+  minimal: "chat.thinkingMinimal",
+  low: "chat.thinkingLow",
+  medium: "chat.thinkingMedium",
+  high: "chat.thinkingHigh",
+  xhigh: "chat.thinkingXhigh",
 };
 
 function chipInsertAtCursor(container: HTMLElement, relativePath: string, lines?: { startLine: number; endLine: number }): void {
@@ -289,7 +293,7 @@ function chipInsertAtCursor(container: HTMLElement, relativePath: string, lines?
   }
 }
 
-function createTrellisTaskContextBlock(context: TrellisTaskChatContext): HTMLElement {
+function createTrellisTaskContextBlock(context: TrellisTaskChatContext, continueLabel: string): HTMLElement {
   const block = document.createElement("span");
   block.contentEditable = "false";
   block.dataset.chip = "trellis-task";
@@ -315,7 +319,7 @@ function createTrellisTaskContextBlock(context: TrellisTaskChatContext): HTMLEle
   ].join("; ");
 
   const label = document.createElement("span");
-  label.textContent = "Trellis 继续任务";
+  label.textContent = continueLabel;
   label.style.cssText = "color: var(--accent); font-size: 11px; font-weight: 700";
 
   const title = document.createElement("span");
@@ -330,19 +334,19 @@ function createTrellisTaskContextBlock(context: TrellisTaskChatContext): HTMLEle
   return block;
 }
 
-function trellisTaskContextFromElement(node: HTMLElement): TrellisTaskChatContext | null {
+function trellisTaskContextFromElement(node: HTMLElement, unknownStageLabel: string): TrellisTaskChatContext | null {
   const dirName = node.dataset.dirName;
   if (!dirName) return null;
   return {
     dirName,
     title: node.dataset.title || dirName,
     status: node.dataset.status || "unknown",
-    progressLabel: node.dataset.progressLabel || "未知阶段",
+    progressLabel: node.dataset.progressLabel || unknownStageLabel,
   };
 }
 
-function trellisTaskInsertAtCursor(container: HTMLElement, context: TrellisTaskChatContext): void {
-  const block = createTrellisTaskContextBlock(context);
+function trellisTaskInsertAtCursor(container: HTMLElement, context: TrellisTaskChatContext, continueLabel: string): void {
+  const block = createTrellisTaskContextBlock(context, continueLabel);
   const wasFocused = document.activeElement === container;
   container.focus();
   const sel = window.getSelection();
@@ -406,7 +410,7 @@ function serializeNodes(nodes: NodeListOf<ChildNode>): string {
         text += `\`${path}\``;
       }
     } else if (node instanceof HTMLElement && node.dataset.chip === "trellis-task") {
-      const context = trellisTaskContextFromElement(node);
+      const context = trellisTaskContextFromElement(node, "unknown stage");
       if (context) text += buildTrellisTaskResumePrompt(context);
     } else if (node instanceof HTMLElement) {
       text += serializeNodes(node.childNodes);
@@ -429,7 +433,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   soundEnabled, onSoundToggle,
   autoScrollEnabled, onAutoScrollToggle,
 }: Props, ref) {
+  const { t } = useI18n();
   const [slashCommands, setSlashCommands] = useState<SlashCommandEntry[]>([]);
+
   const [slashCommandsLoading, setSlashCommandsLoading] = useState(false);
   const [slashCommandsError, setSlashCommandsError] = useState<string | null>(null);
   const [slashSelectedIndex, setSlashSelectedIndex] = useState(0);
@@ -793,7 +799,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     addTrellisTaskContext(context: TrellisTaskChatContext) {
       const el = inputRef.current;
       if (!el) return;
-      trellisTaskInsertAtCursor(el, context);
+      trellisTaskInsertAtCursor(el, context, t("chat.trellisContinue"));
       syncFromDom();
       resizeInput();
     },
@@ -1318,7 +1324,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                             {command.argumentHint && (
                               <span style={{ color: "var(--text)", fontFamily: "var(--font-mono)", marginRight: 8 }}>{command.argumentHint}</span>
                             )}
-                            {describeSlashCommand(command)}
+                            {describeSlashCommand(command, t)}
                           </span>
                           <span
                             title={sourceLabel}
@@ -1442,9 +1448,10 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             className="ce-input"
             data-placeholder={
               isStreaming && (onSteer || onFollowUp)
-                ? "Steer 立即注入 / Follow-up 排队…"
-                : isStreaming ? "Agent is running…"
-                : "Message…"
+                ? t("chat.placeholderSteer")
+                : isStreaming
+                  ? t("chat.placeholderRunning")
+                  : t("chat.placeholder")
             }
             style={{
               flex: 1,
@@ -1469,7 +1476,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 <button
                   onClick={() => sendQueued("steer")}
                   disabled={!hasEditorContent && !attachedImages.length && !attachedFiles.length}
-                  title="打断 Agent 当前运行，立即注入消息"
+                  title={t("chat.steerTitle")}
                   style={{
                     display: "flex", alignItems: "center", gap: 5,
                     padding: "7px 12px",
@@ -1492,7 +1499,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 <button
                   onClick={() => sendQueued("followup")}
                   disabled={!hasEditorContent && !attachedImages.length && !attachedFiles.length}
-                  title="在 Agent 完成后排队发送"
+                  title={t("chat.followUpTitle")}
                   style={{
                     display: "flex", alignItems: "center", gap: 5,
                     padding: "7px 12px",
@@ -1740,7 +1747,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                     setThinkingDropdownOpen((v) => !v);
                   }}
                   disabled={isStreaming}
-                  title="切换推理强度"
+                  title={t("chat.thinkingTitle")}
                   style={{
                     display: "flex", alignItems: "center", gap: 5,
                     padding: "8px 12px",
@@ -1791,7 +1798,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                       return availableThinkingLevels.includes(lvl);
                     }).map((lvl) => {
                       const isActive = (thinkingLevel ?? "auto") === lvl;
-                      const desc = THINKING_LEVEL_DESC[lvl];
+                      const desc = t(THINKING_LEVEL_DESC_KEYS[lvl]);
                       const mappedVal = (lvl !== "auto" && thinkingLevelMap) ? thinkingLevelMap[lvl] : undefined;
                       const displayLabel = (mappedVal != null && mappedVal !== lvl) ? mappedVal : lvl;
                       const showOriginal = mappedVal != null && mappedVal !== lvl;
@@ -1846,7 +1853,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                     setToolDropdownOpen((v) => !v);
                   }}
                   disabled={isStreaming}
-                  title="切换工具预设"
+                  title={t("chat.toolsTitle")}
                   style={{
                     display: "flex", alignItems: "center", gap: 5,
                     padding: "8px 12px",
@@ -1873,7 +1880,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
                   </svg>
-                  <span>{TOOL_PRESET_LABELS[toolPreset ?? "all"]}</span>
+                  <span>{t(TOOL_PRESET_LABEL_KEYS[toolPreset ?? "all"])}</span>
                 </button>
                 {toolDropdownOpen && toolDropdownRect && typeof document !== "undefined" && (() => {
                   const { bottom, right, maxHeight } = getDropdownPanelMetrics(toolDropdownRect);
@@ -1906,8 +1913,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                           {isActive
                             ? <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><polyline points="1.5 5 4 7.5 8.5 2.5" /></svg>
                             : <span style={{ width: 10, flexShrink: 0 }} />}
-                          <span style={{ flex: 1 }}>{option.label}</span>
-                          <span style={{ fontSize: 11, color: "var(--text-dim)", marginLeft: 8 }}>{option.desc}</span>
+                          <span style={{ flex: 1 }}>{t(option.labelKey)}</span>
+                          <span style={{ fontSize: 11, color: "var(--text-dim)", marginLeft: 8 }}>{t(option.descKey)}</span>
                         </button>
                       );
                     })}
@@ -1954,7 +1961,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                     e.currentTarget.style.background = isCompacting ? "rgba(239,68,68,0.08)" : "none";
                     e.currentTarget.style.color = isCompacting ? "#ef4444" : "var(--text-muted)";
                   }}
-                  title={isCompacting ? "停止压缩" : "压缩上下文"}
+                  title={isCompacting ? t("chat.stopCompact") : t("chat.compact")}
                 >
                   {isCompacting ? (
                     <><svg width="10" height="10" viewBox="0 0 10 10" fill="none"><rect x="2" y="2" width="6" height="6" rx="1" fill="currentColor" /></svg>Compacting…</>
@@ -1971,7 +1978,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             {isStreaming && (
               <button
                 onClick={onAbort}
-                title="停止 Agent"
+                title={t("chat.stopAgent")}
                 style={{
                   display: "flex", alignItems: "center", gap: 6,
                   padding: "8px 14px",
@@ -1998,8 +2005,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             {onAutoScrollToggle !== undefined && (
               <button
                 onClick={onAutoScrollToggle}
-                title={autoScrollEnabled ? "关闭自动吸底" : "开启自动吸底"}
-                aria-label={autoScrollEnabled ? "关闭自动吸底" : "开启自动吸底"}
+                title={autoScrollEnabled ? t("chat.autoScrollOff") : t("chat.autoScrollOn")}
+                aria-label={autoScrollEnabled ? t("chat.autoScrollOff") : t("chat.autoScrollOn")}
                 style={{
                   display: "flex", alignItems: "center", justifyContent: "center",
                   width: 32, height: 32, padding: 0,
@@ -2034,8 +2041,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             {onSoundToggle !== undefined && (
               <button
                 onClick={onSoundToggle}
-                title={soundEnabled ? "关闭完成提示音" : "开启完成提示音"}
-                aria-label={soundEnabled ? "关闭完成提示音" : "开启完成提示音"}
+                title={soundEnabled ? t("chat.soundOff") : t("chat.soundOn")}
+                aria-label={soundEnabled ? t("chat.soundOff") : t("chat.soundOn")}
                 style={{
                   display: "flex", alignItems: "center", justifyContent: "center",
                   width: 32, height: 32, padding: 0,
