@@ -25,6 +25,7 @@ API routes live under `app/api/`. When adding, removing, or changing routes, upd
 | `models-config/` | GET/PUT | Read/write `~/.pi/agent/models.json`. |
 | `models-config/discover/` | POST | Fetch an OpenAI-compatible draft provider's remote `/models` list server-side and return selectable model candidates without mutating `models.json`. |
 | `models-config/test/` | POST | Test a model config with a completion request. |
+| `model-pricing/` | GET/POST | GET returns cache summary, cached model-id lookup (`?model=&provider=`), ambiguous provider/model/cost candidates for manual matching, or the normalized catalog (`?catalog=1`); POST fetches `https://pi.dev/api/models`, validates, persists atomically, and returns sync result. GET never performs upstream network I/O. |
 | `skills/` | GET | List installed skills for a cwd. |
 | `skills/search/` | GET | Search skills.sh for available skills. |
 | `skills/install/` | POST | Install a skill via `npx skills add`. |

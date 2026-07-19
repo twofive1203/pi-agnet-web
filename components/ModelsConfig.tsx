@@ -3,11 +3,13 @@
 import { useI18n } from "@/components/I18nProvider";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { createPortal } from "react-dom";
 import type { DeepSeekBalanceResult } from "@/lib/deepseek-balance";
 import type { GrokUsageResult } from "@/lib/grok-usage";
 import { ACCOUNT_JSON_CONVERTERS, RAW_ACCOUNT_JSON_EXAMPLE, validateRawOAuthCredentialImport, type OAuthAccountImportMode } from "@/lib/oauth-account-converters";
 import { earliestResetCreditExpiration, formatQuotaQueriedAt, formatResetCountdown, knownQuotaTiers, quotaColor, QUOTA_TIER_LABELS, type CodexResetCreditDisplay } from "@/lib/quota-display";
 import { ChatGptWarmupDialog } from "./ChatGptWarmupDialog";
+import { ModelPricingCatalog } from "./ModelPricingCatalog";
 // Color icons (have their own fill colors — no background needed)
 import AnthropicIcon from "@lobehub/icons/es/Anthropic/components/Mono";
 import OpenAIIcon from "@lobehub/icons/es/OpenAI/components/Mono";
@@ -217,6 +219,29 @@ type ModelDiscoveryState =
   | { phase: "success"; url: string; triedUrls: string[]; models: DiscoveredModelCandidate[]; searchQuery: string; collapsedGroups: Record<string, boolean>; message?: string }
   | { phase: "error"; message: string; triedUrls?: string[]; status?: number; responseText?: string };
 
+interface CachedPricingEntry {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+}
+
+interface CachedPricingCandidate {
+  provider: string;
+  model: string;
+  entry: CachedPricingEntry;
+}
+
+type CachedPricingLookup =
+  | { match: "exact" | "unique-id"; entry: CachedPricingEntry }
+  | { match: "ambiguous"; candidates: CachedPricingCandidate[] }
+  | { match: "no-match" };
+
+interface CachedPricingLookupResponse {
+  ok: boolean;
+  lookup?: CachedPricingLookup;
+}
+
 interface DiscoveredModelGroup {
   owner: string;
   models: DiscoveredModelCandidate[];
@@ -399,6 +424,42 @@ function groupDiscoveredModels(models: DiscoveredModelCandidate[]): DiscoveredMo
     .sort((a, b) => discoveredModelCollator.compare(a.owner, b.owner));
 }
 
+async function lookupCachedPricing(providerName: string, modelId: string): Promise<CachedPricingLookup | null> {
+  const res = await fetch(`/api/model-pricing?provider=${encodeURIComponent(providerName)}&model=${encodeURIComponent(modelId)}`);
+  const data = await res.json() as CachedPricingLookupResponse;
+  return res.ok && data.ok && data.lookup ? data.lookup : null;
+}
+
+function getMissingPricingFields(model: ModelEntry, entry: CachedPricingEntry): Partial<CachedPricingEntry> {
+  const currentCost = model.cost ?? {};
+  const fields: Partial<CachedPricingEntry> = {};
+  if (currentCost.input === undefined) fields.input = entry.input;
+  if (currentCost.output === undefined) fields.output = entry.output;
+  if (currentCost.cacheRead === undefined) fields.cacheRead = entry.cacheRead;
+  if (currentCost.cacheWrite === undefined) fields.cacheWrite = entry.cacheWrite;
+  return fields;
+}
+
+function mergeMissingPricing(model: ModelEntry, entry: CachedPricingEntry): ModelEntry {
+  return {
+    ...model,
+    cost: { ...(model.cost ?? {}), ...getMissingPricingFields(model, entry) },
+  };
+}
+
+interface AutoAppliedPricing {
+  provider: string;
+  modelId: string;
+  fields: Partial<CachedPricingEntry>;
+}
+
+type PricingLookupState =
+  | { phase: "idle" | "loading" | "no-match" }
+  | { phase: "matched"; match: "exact" | "unique-id" | "manual" }
+  | { phase: "ambiguous"; candidates: CachedPricingCandidate[] };
+
+const PRICING_FIELDS = ["input", "output", "cacheRead", "cacheWrite"] as const;
+
 // ── Provider detail ───────────────────────────────────────────────────────────
 
 function ProviderDetail({ name, provider, onChange, onRename, onDelete, onAddDiscoveredModel, onRemoveDiscoveredModel }: {
@@ -488,11 +549,11 @@ function ProviderDetail({ name, provider, onChange, onRename, onDelete, onAddDis
   const handleAddDiscoveredModel = useCallback((candidate: DiscoveredModelCandidate) => {
     if (discoveryState.phase !== "success") return;
     const result = onAddDiscoveredModel(candidate);
-    setDiscoveryState({
-      ...discoveryState,
+    setDiscoveryState((current) => current.phase === "success" ? {
+      ...current,
       message: result.message ?? (result.ok ? `Added ${candidate.id}. Click Save to persist it.` : "Could not add the selected model."),
-    });
-  }, [discoveryState, onAddDiscoveredModel]);
+    } : current);
+  }, [discoveryState.phase, onAddDiscoveredModel]);
 
   const handleRemoveDiscoveredModel = useCallback((modelId: string) => {
     if (discoveryState.phase !== "success") return;
@@ -820,19 +881,46 @@ function ModelDetail({
   providerName,
   provider,
   model,
+  autoAppliedPricing,
   onChange,
+  onAutoAppliedPricingChange,
   onDelete,
 }: {
   providerName: string;
   provider: ProviderEntry;
   model: ModelEntry;
+  autoAppliedPricing: AutoAppliedPricing | null;
   onChange: (m: ModelEntry) => void;
+  onAutoAppliedPricingChange: (pricing: AutoAppliedPricing | null) => void;
   onDelete: () => void;
 }) {
   const [testState, setTestState] = useState<ModelTestState>({ phase: "idle" });
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
+  const latestModelRef = useRef(model);
+  latestModelRef.current = model;
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+  const autoAppliedPricingRef = useRef(autoAppliedPricing);
+  autoAppliedPricingRef.current = autoAppliedPricing;
+  const onAutoAppliedPricingChangeRef = useRef(onAutoAppliedPricingChange);
+  onAutoAppliedPricingChangeRef.current = onAutoAppliedPricingChange;
   const set = <K extends keyof ModelEntry>(k: K, v: ModelEntry[K]) => onChange({ ...model, [k]: v });
   const costVal = (k: keyof NonNullable<ModelEntry["cost"]>) => model.cost?.[k] !== undefined ? String(model.cost[k]) : "";
-  const setCost = (k: keyof NonNullable<ModelEntry["cost"]>, v: string) => {
+  const setCost = (k: keyof CachedPricingEntry, v: string) => {
+    const autoApplied = autoAppliedPricingRef.current;
+    if (autoApplied?.provider === providerName && autoApplied.modelId === model.id.trim()) {
+      const remainingFields = { ...autoApplied.fields };
+      delete remainingFields[k];
+      const remainingPricing = Object.keys(remainingFields).length > 0
+        ? { ...autoApplied, fields: remainingFields }
+        : null;
+      autoAppliedPricingRef.current = remainingPricing;
+      onAutoAppliedPricingChangeRef.current(remainingPricing);
+    }
     const n = parseFloat(v);
     onChange({ ...model, cost: { ...(model.cost ?? {}), [k]: isNaN(n) ? undefined : n } });
   };
@@ -849,9 +937,92 @@ function ModelDetail({
     return ["Failed", ...meta, testState.message].filter(Boolean).join(" · ");
   })();
 
+  // Auto-lookup cached pricing when model id changes (debounced)
+  const [pricingSource, setPricingSource] = useState<string | null>(null);
+  const [pricingLookup, setPricingLookup] = useState<PricingLookupState>({ phase: "idle" });
+  const [pricingMatchOpen, setPricingMatchOpen] = useState(false);
+  const pricingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pricingLookupSequenceRef = useRef(0);
+
+  const applyPricing = useCallback((entry: CachedPricingEntry, source: string) => {
+    const currentModel = latestModelRef.current;
+    const fields = getMissingPricingFields(currentModel, entry);
+    if (Object.keys(fields).length === 0) return;
+    const nextModel = mergeMissingPricing(currentModel, entry);
+    const appliedPricing = { provider: providerName, modelId: currentModel.id.trim(), fields };
+    autoAppliedPricingRef.current = appliedPricing;
+    onAutoAppliedPricingChangeRef.current(appliedPricing);
+    latestModelRef.current = nextModel;
+    onChangeRef.current(nextModel);
+    setPricingSource(source);
+  }, [providerName]);
+
   useEffect(() => {
     setTestState({ phase: "idle" });
-  }, [providerName, provider.baseUrl, provider.api, provider.apiKey, model.id, model.api]);
+
+    if (pricingTimerRef.current) clearTimeout(pricingTimerRef.current);
+    setPricingSource(null);
+    setPricingMatchOpen(false);
+    setPricingLookup({ phase: "idle" });
+    const lookupSequence = ++pricingLookupSequenceRef.current;
+
+    const id = model.id.trim();
+    const previousAutoPricing = autoAppliedPricingRef.current;
+    if (previousAutoPricing && (previousAutoPricing.provider !== providerName || previousAutoPricing.modelId !== id)) {
+      const currentModel = latestModelRef.current;
+      const nextCost = { ...(currentModel.cost ?? {}) };
+      let removedAutoPricing = false;
+      for (const field of PRICING_FIELDS) {
+        const previousValue = previousAutoPricing.fields[field];
+        if (previousValue !== undefined && nextCost[field] === previousValue) {
+          delete nextCost[field];
+          removedAutoPricing = true;
+        }
+      }
+      autoAppliedPricingRef.current = null;
+      onAutoAppliedPricingChangeRef.current(null);
+      if (removedAutoPricing) {
+        const nextModel = {
+          ...currentModel,
+          cost: Object.keys(nextCost).length > 0 ? nextCost : undefined,
+        };
+        latestModelRef.current = nextModel;
+        onChangeRef.current(nextModel);
+      }
+    }
+    if (!id) return;
+    setPricingLookup({ phase: "loading" });
+
+    pricingTimerRef.current = setTimeout(async () => {
+      try {
+        const lookup = await lookupCachedPricing(providerName, id);
+        if (!mountedRef.current || pricingLookupSequenceRef.current !== lookupSequence || latestModelRef.current.id.trim() !== id) return;
+        if (!lookup) {
+          setPricingLookup({ phase: "no-match" });
+          return;
+        }
+        if (lookup.match === "ambiguous") {
+          setPricingLookup({ phase: "ambiguous", candidates: lookup.candidates });
+          return;
+        }
+        if (lookup.match === "no-match") {
+          setPricingLookup({ phase: "no-match" });
+          return;
+        }
+        setPricingLookup({ phase: "matched", match: lookup.match });
+        applyPricing(lookup.entry, lookup.match === "exact" ? `pricing from ${providerName}` : "pricing from pi.dev");
+      } catch {
+        if (mountedRef.current && pricingLookupSequenceRef.current === lookupSequence && latestModelRef.current.id.trim() === id) {
+          setPricingLookup({ phase: "no-match" });
+        }
+        // Cached pricing is best-effort and must not block model editing.
+      }
+    }, 600);
+
+    return () => {
+      if (pricingTimerRef.current) clearTimeout(pricingTimerRef.current);
+    };
+  }, [applyPricing, providerName, model.id]);
 
   const handleTest = useCallback(async () => {
     if (!model.id.trim() || testState.phase === "testing") return;
@@ -889,7 +1060,18 @@ function ModelDetail({
     }
   }, [model, provider, providerName, testState.phase]);
 
+  const handleManualPricingSelection = useCallback((candidate: CachedPricingCandidate) => {
+    if (latestModelRef.current.id.trim() !== candidate.model) {
+      setPricingMatchOpen(false);
+      return;
+    }
+    setPricingLookup({ phase: "matched", match: "manual" });
+    applyPricing(candidate.entry, `selected pricing from ${candidate.provider}`);
+    setPricingMatchOpen(false);
+  }, [applyPricing]);
+
   return (
+    <>
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <SectionTitle>Model</SectionTitle>
@@ -1005,8 +1187,29 @@ function ModelDetail({
       </div>
 
       <div>
-        <SectionTitle>Cost (per million tokens)</SectionTitle>
-        <div style={{ marginTop: 8, display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+          <SectionTitle>Cost (per million tokens)</SectionTitle>
+          {pricingLookup.phase === "ambiguous" && (
+            <button
+              type="button"
+              onClick={() => setPricingMatchOpen(true)}
+              style={{ height: 26, padding: "0 9px", border: "1px solid var(--border)", borderRadius: 5, background: "var(--bg-panel)", color: "var(--text-muted)", cursor: "pointer", fontSize: 11, fontWeight: 600 }}
+            >
+              Match pricing ({pricingLookup.candidates.length})
+            </button>
+          )}
+        </div>
+        {pricingSource && (
+          <div style={{ fontSize: 10, color: "var(--text-dim)", marginTop: 4, marginBottom: 4 }}>
+            Cached pricing applied · source: {pricingSource}
+          </div>
+        )}
+        {!pricingSource && pricingLookup.phase === "ambiguous" && (
+          <div style={{ fontSize: 10, color: "var(--text-dim)", marginTop: 4, marginBottom: 4 }}>
+            Multiple providers have pricing for this model. Choose one to apply it.
+          </div>
+        )}
+        <div style={{ marginTop: pricingSource || pricingLookup.phase === "ambiguous" ? 4 : 8, display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 8 }}>
           {(["input", "output", "cacheRead", "cacheWrite"] as const).map((k) => (
             <Field key={k} label={k}>
               <NumInput value={costVal(k)} onChange={(v) => setCost(k, v)} placeholder="0" />
@@ -1015,6 +1218,74 @@ function ModelDetail({
         </div>
       </div>
     </div>
+    {pricingMatchOpen && pricingLookup.phase === "ambiguous" && (
+      <PricingMatchDialog
+        modelId={model.id.trim()}
+        candidates={pricingLookup.candidates}
+        onSelect={handleManualPricingSelection}
+        onClose={() => setPricingMatchOpen(false)}
+      />
+    )}
+    </>
+  );
+}
+
+function PricingMatchDialog({
+  modelId,
+  candidates,
+  onSelect,
+  onClose,
+}: {
+  modelId: string;
+  candidates: CachedPricingCandidate[];
+  onSelect: (candidate: CachedPricingCandidate) => void;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
+  if (typeof document === "undefined") return null;
+  return createPortal(
+    <div
+      style={{ position: "fixed", inset: 0, zIndex: 1300, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
+      onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}
+    >
+      <div style={{ width: "min(620px, calc(100vw - 32px))", maxHeight: "min(680px, calc(100dvh - 32px))", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 8, boxShadow: "0 16px 48px rgba(0,0,0,0.28)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>Match pricing</div>
+            <div style={{ marginTop: 3, fontSize: 11, color: "var(--text-dim)", fontFamily: "var(--font-mono)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{modelId}</div>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Close pricing match" style={{ width: 28, height: 28, border: "none", background: "transparent", color: "var(--text-muted)", cursor: "pointer", fontSize: 20, lineHeight: 1 }}>×</button>
+        </div>
+        <div style={{ minHeight: 0, overflowY: "auto", padding: 10, display: "flex", flexDirection: "column", gap: 6 }}>
+          {candidates.map((candidate) => (
+            <button
+              key={`${candidate.provider}:${candidate.model}`}
+              type="button"
+              onClick={() => onSelect(candidate)}
+              style={{ width: "100%", padding: "10px 12px", border: "1px solid var(--border)", borderRadius: 6, background: "var(--bg-panel)", color: "var(--text)", cursor: "pointer", textAlign: "left", display: "flex", flexDirection: "column", gap: 8 }}
+            >
+              <span style={{ minWidth: 0, fontSize: 12, fontWeight: 700, overflowWrap: "anywhere" }}>{candidate.provider}</span>
+              <span style={{ width: "100%", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(90px, 1fr))", gap: 8 }}>
+                {PRICING_FIELDS.map((field) => (
+                  <span key={field} style={{ minWidth: 0, fontSize: 10, color: "var(--text-dim)" }}>
+                    <span style={{ display: "block", marginBottom: 2 }}>{field}</span>
+                    <span style={{ color: "var(--text)", fontSize: 12, fontVariantNumeric: "tabular-nums" }}>${candidate.entry[field]}</span>
+                  </span>
+                ))}
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -2869,6 +3140,102 @@ function AddProviderPicker({
   );
 }
 
+// ── Pricing sync status ───────────────────────────────────────────────────────
+
+type PricingSyncPhase = { kind: "initial" } | { kind: "loading" } | { kind: "success"; syncedAt: number; providerCount: number; modelCount: number } | { kind: "error"; message: string };
+
+function PricingSyncStatus() {
+  const [phase, setPhase] = useState<PricingSyncPhase>({ kind: "initial" });
+
+  // Load summary on mount — no network call
+  useEffect(() => {
+    fetch("/api/model-pricing")
+      .then((r) => r.json())
+      .then((d: { ok: boolean; syncedAt?: number; providerCount?: number; modelCount?: number }) => {
+        if (d.ok && d.syncedAt) {
+          setPhase({ kind: "success", syncedAt: d.syncedAt, providerCount: d.providerCount ?? 0, modelCount: d.modelCount ?? 0 });
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleSync = useCallback(async () => {
+    if (phase.kind === "loading") return;
+    setPhase({ kind: "loading" });
+    try {
+      const res = await fetch("/api/model-pricing", { method: "POST" });
+      const d = await res.json() as { ok: boolean; syncedAt?: number; providerCount?: number; modelCount?: number; error?: string };
+      if (!res.ok || !d.ok) {
+        throw new Error(d.error ?? `HTTP ${res.status}`);
+      }
+      setPhase({ kind: "success", syncedAt: d.syncedAt!, providerCount: d.providerCount ?? 0, modelCount: d.modelCount ?? 0 });
+    } catch (error) {
+      setPhase({ kind: "error", message: error instanceof Error ? error.message : String(error) });
+    }
+  }, [phase.kind]);
+
+  const label = (() => {
+    if (phase.kind === "initial") return "Not synced";
+    if (phase.kind === "loading") return "Syncing…";
+    if (phase.kind === "error") return `Sync failed: ${phase.message}`;
+    const ago = formatRelativeTime(phase.syncedAt);
+    return `${phase.providerCount} providers · ${phase.modelCount} models · ${ago}`;
+  })();
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 6 }} title={label}>
+      {phase.kind === "success" && (
+        <span style={{ fontSize: 10, color: "var(--text-dim)", whiteSpace: "nowrap" }}>
+          {phase.providerCount}/{phase.modelCount}
+        </span>
+      )}
+      {phase.kind === "error" && (
+        <span style={{ fontSize: 10, color: "#f87171", maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={phase.message}>
+          {phase.message}
+        </span>
+      )}
+      <button
+        type="button"
+        onClick={handleSync}
+        disabled={phase.kind === "loading"}
+        title={phase.kind === "loading" ? "Syncing…" : "Sync pricing from pi.dev"}
+        aria-label={phase.kind === "loading" ? "Syncing pricing" : "Sync pricing"}
+        style={{
+          width: 24,
+          height: 24,
+          padding: 0,
+          border: "1px solid var(--border)",
+          borderRadius: 4,
+          background: "var(--bg-panel)",
+          color: phase.kind === "loading" ? "var(--text-dim)" : "var(--text-muted)",
+          cursor: phase.kind === "loading" ? "not-allowed" : "pointer",
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          flexShrink: 0,
+        }}
+      >
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M21 12a9 9 0 0 1-9 9 8.8 8.8 0 0 1-6.36-2.64" />
+          <path d="M3 12a9 9 0 0 1 9-9 8.8 8.8 0 0 1 6.36 2.64" />
+          <path d="M3 4v8h8" />
+          <path d="M21 20v-8h-8" />
+        </svg>
+      </button>
+    </div>
+  );
+}
+
+function formatRelativeTime(ts: number): string {
+  const diff = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+  if (diff < 60) return "just now";
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return `${Math.floor(diff / 86400)}d ago`;
+}
+
+type AutoPricingByProvider = Record<string, Record<number, AutoAppliedPricing>>;
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function ModelsConfig({ cwd: _cwd, onClose }: { cwd: string | null; onClose: () => void }) {
@@ -2882,6 +3249,37 @@ export function ModelsConfig({ cwd: _cwd, onClose }: { cwd: string | null; onClo
   const [oauthProviders, setOauthProviders] = useState<OAuthProvider[]>([]);
   const [apiKeyProviders, setApiKeyProviders] = useState<ApiKeyProvider[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [pricingCatalogOpen, setPricingCatalogOpen] = useState(false);
+  const [autoPricingByProvider, setAutoPricingByProvider] = useState<AutoPricingByProvider>({});
+
+  const updateAutoAppliedPricing = useCallback((providerName: string, index: number, pricing: AutoAppliedPricing | null) => {
+    setAutoPricingByProvider((prev) => {
+      const indexes = { ...(prev[providerName] ?? {}) };
+      if (pricing) indexes[index] = pricing;
+      else delete indexes[index];
+      const next = { ...prev };
+      if (Object.keys(indexes).length > 0) next[providerName] = indexes;
+      else delete next[providerName];
+      return next;
+    });
+  }, []);
+
+  const shiftAutoPricingAfterRemove = useCallback((providerName: string, removedIndex: number) => {
+    setAutoPricingByProvider((prev) => {
+      const current = prev[providerName];
+      if (!current) return prev;
+      const shifted: Record<number, AutoAppliedPricing> = {};
+      for (const [rawIndex, pricing] of Object.entries(current)) {
+        const index = Number(rawIndex);
+        if (index === removedIndex) continue;
+        shifted[index > removedIndex ? index - 1 : index] = pricing;
+      }
+      const next = { ...prev };
+      if (Object.keys(shifted).length > 0) next[providerName] = shifted;
+      else delete next[providerName];
+      return next;
+    });
+  }, []);
 
   const loadOAuthProviders = useCallback(() => {
     fetch("/api/auth/providers")
@@ -2925,6 +3323,13 @@ export function ModelsConfig({ cwd: _cwd, onClose }: { cwd: string | null; onClo
   }, []);
 
   const renameProvider = useCallback((oldName: string, newName: string) => {
+    setAutoPricingByProvider((prev) => {
+      if (!prev[oldName]) return prev;
+      const next = { ...prev };
+      next[newName] = next[oldName];
+      delete next[oldName];
+      return next;
+    });
     setConfig((prev) => {
       const entries = Object.entries(prev.providers ?? {});
       const idx = entries.findIndex(([k]) => k === oldName);
@@ -2941,6 +3346,11 @@ export function ModelsConfig({ cwd: _cwd, onClose }: { cwd: string | null; onClo
   }, []);
 
   const deleteProvider = useCallback((name: string) => {
+    setAutoPricingByProvider((prev) => {
+      const next = { ...prev };
+      delete next[name];
+      return next;
+    });
     setConfig((prev) => {
       const providers = { ...(prev.providers ?? {}) };
       delete providers[name];
@@ -2988,7 +3398,8 @@ export function ModelsConfig({ cwd: _cwd, onClose }: { cwd: string | null; onClo
         },
       };
     });
-    return { ok: true, message: `Added ${candidate.id}. Select it from the model list to review it, then click Save to persist it.` };
+    setSelection({ type: "model", providerName, index: models.length });
+    return { ok: true, message: `Added ${candidate.id}. Cached pricing will be applied when available; click Save to persist it.` };
   }, [config.providers]);
 
   const removeDiscoveredModel = useCallback((providerName: string, modelId: string): DiscoveredModelChangeResult => {
@@ -3019,8 +3430,9 @@ export function ModelsConfig({ cwd: _cwd, onClose }: { cwd: string | null; onClo
       if (prev.index > index) return { ...prev, index: prev.index - 1 };
       return prev;
     });
+    shiftAutoPricingAfterRemove(providerName, index);
     return { ok: true, message: `Removed ${modelId}. Click Save to persist it.` };
-  }, [config.providers]);
+  }, [config.providers, shiftAutoPricingAfterRemove]);
 
   const updateModel = useCallback((providerName: string, index: number, m: ModelEntry) => {
     setConfig((prev) => {
@@ -3038,8 +3450,9 @@ export function ModelsConfig({ cwd: _cwd, onClose }: { cwd: string | null; onClo
       models.splice(index, 1);
       return { ...prev, providers: { ...(prev.providers ?? {}), [providerName]: { ...provider, models: models.length ? models : undefined } } };
     });
+    shiftAutoPricingAfterRemove(providerName, index);
     setSelection({ type: "provider", name: providerName });
-  }, []);
+  }, [shiftAutoPricingAfterRemove]);
 
   const handleSave = useCallback(async () => {
     setSaving(true);
@@ -3103,7 +3516,9 @@ export function ModelsConfig({ cwd: _cwd, onClose }: { cwd: string | null; onClo
         providerName={selection.providerName}
         provider={provider}
         model={model}
+        autoAppliedPricing={autoPricingByProvider[selection.providerName]?.[selection.index] ?? null}
         onChange={(m) => updateModel(selection.providerName, selection.index, m)}
+        onAutoAppliedPricingChange={(pricing) => updateAutoAppliedPricing(selection.providerName, selection.index, pricing)}
         onDelete={() => removeModel(selection.providerName, selection.index)}
       />
     );
@@ -3121,7 +3536,22 @@ export function ModelsConfig({ cwd: _cwd, onClose }: { cwd: string | null; onClo
             <span style={{ fontSize: 15, fontWeight: 700, color: "var(--text)" }}>Models</span>
             <code style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>~/.pi/agent/models.json</code>
           </div>
-          <button onClick={onClose} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 20, lineHeight: 1, padding: "2px 6px" }}>×</button>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <button
+              type="button"
+              onClick={() => setPricingCatalogOpen(true)}
+              title="View pricing catalog"
+              aria-label="View pricing catalog"
+              style={{ width: 24, height: 24, padding: 0, border: "1px solid var(--border)", borderRadius: 4, background: "var(--bg-panel)", color: "var(--text-muted)", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M4 5h16" /><path d="M4 12h16" /><path d="M4 19h16" />
+                <path d="M8 3v18" /><path d="M16 3v18" />
+              </svg>
+            </button>
+            <PricingSyncStatus />
+            <button onClick={onClose} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 20, lineHeight: 1, padding: "2px 6px" }}>×</button>
+          </div>
         </div>
 
         {/* Body */}
@@ -3285,6 +3715,7 @@ export function ModelsConfig({ cwd: _cwd, onClose }: { cwd: string | null; onClo
         </div>
       </div>
     </div>
+    {pricingCatalogOpen && <ModelPricingCatalog onClose={() => setPricingCatalogOpen(false)} />}
     {pickerOpen && (
       <AddProviderPicker
         oauthProviders={oauthProviders}

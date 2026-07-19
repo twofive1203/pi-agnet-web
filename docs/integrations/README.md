@@ -34,6 +34,12 @@ Auth-related API routes live under `app/api/auth/`. From pi `0.80.10`, login/log
 
 Provider-specific network calls remain isolated in `lib/` helpers.
 
+### Model Pricing (pi.dev)
+
+Model pricing synchronization fetches `https://pi.dev/api/models` on manual request (POST `/api/model-pricing`), validates the JSON response, and persists a normalized cache at `~/.pi/agent/model-pricing.json`. GET requests always read the local cache and never perform network I/O. The cache is written atomically (same-directory temp file + rename) so a failed refresh cannot corrupt the previous catalog.
+
+Pricing lookup resolves by exact provider+model id first, then by unique model-id-only match when the model id appears exactly once across all providers. The UI auto-fills missing cost fields (`input`, `output`, `cacheRead`, `cacheWrite`) for custom providers and discovered model additions without overwriting user-entered values. Ambiguous model-id matches are not guessed: Models settings exposes the cached provider/model/cost candidates in a manual match dialog. The same cache is available in the searchable `ModelPricingCatalog` viewer; opening it performs local GET only.
+
 ### Grok CLI package
 
 Grok subscription access is provided by the third-party `pi-grok-cli` Pi package, not by a copied provider implementation in pi-web:
