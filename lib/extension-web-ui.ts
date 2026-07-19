@@ -19,13 +19,46 @@ type PendingRequest = {
 type ExtensionUiEmitter = (event: AgentEvent) => void;
 type ListenerState = () => boolean;
 
+/** Theme stub that strips styling so factory widgets can be rendered to plain text. */
 const passthroughTheme = {
   fg: (_name: string, text: string) => text,
   bg: (_name: string, text: string) => text,
   bold: (text: string) => text,
   italic: (text: string) => text,
+  underline: (text: string) => text,
   strikethrough: (text: string) => text,
+  dim: (text: string) => text,
+  inverse: (text: string) => text,
 };
+
+const ANSI_RE = /\[[0-9;?]*[ -/]*[@-~]/g;
+
+function stripAnsi(text: string): string {
+  return text.replace(ANSI_RE, "");
+}
+
+/**
+ * Convert setWidget content to plain text lines for the Web UI.
+ * Supports string arrays and TUI component factories (e.g. manage_todo_list).
+ */
+function materializeWidgetLines(
+  content: string[] | ((tui: unknown, theme: unknown) => unknown) | undefined,
+): string[] | undefined {
+  if (content === undefined) return undefined;
+  if (Array.isArray(content)) return content.map((line) => stripAnsi(String(line)));
+  if (typeof content !== "function") return undefined;
+
+  try {
+    // Factories receive (tui, theme) and return a Component with render(width)=>string[].
+    const component = content({}, passthroughTheme) as { render?: (width?: number) => unknown } | null | undefined;
+    if (!component || typeof component.render !== "function") return undefined;
+    const rendered = component.render(120);
+    if (!Array.isArray(rendered)) return undefined;
+    return rendered.map((line) => stripAnsi(String(line)));
+  } catch {
+    return undefined;
+  }
+}
 
 function parseDialogResponse(method: string, fallback: DialogDefault, response: ExtensionUiResponse): DialogDefault {
   if (response.cancelled) return fallback;
@@ -97,18 +130,37 @@ export class ExtensionWebUiBridge {
         this.emitUnsupported("setHiddenThinkingLabel");
       },
       setWidget: (key, content, options) => {
-        if (content === undefined || Array.isArray(content)) {
+        if (content === undefined) {
           this.emit({
             type: "extension_ui_request",
             id: randomUUID(),
             method: "setWidget",
             widgetKey: key,
-            widgetLines: content,
+            widgetLines: undefined,
             widgetPlacement: options?.placement,
           });
           return;
         }
-        this.emitUnsupported("setWidget", "component factories are not supported in WebUI");
+
+        const widgetLines = materializeWidgetLines(
+          content as string[] | ((tui: unknown, theme: unknown) => unknown),
+        );
+        if (widgetLines !== undefined) {
+          this.emit({
+            type: "extension_ui_request",
+            id: randomUUID(),
+            method: "setWidget",
+            widgetKey: key,
+            widgetLines,
+            widgetPlacement: options?.placement,
+          });
+          return;
+        }
+
+        this.emitUnsupported(
+          "setWidget",
+          "component factory could not be materialized to text lines in WebUI",
+        );
       },
       setFooter: () => this.emitUnsupported("setFooter"),
       setHeader: () => this.emitUnsupported("setHeader"),
