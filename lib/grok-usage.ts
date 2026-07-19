@@ -8,6 +8,9 @@ import {
 } from "@/lib/pi-auth";
 
 const GROK_PROVIDER_ID = "grok-cli";
+const XAI_PROVIDER_ID = "xai";
+const GROK_AUTH_PROVIDER_IDS = [GROK_PROVIDER_ID, XAI_PROVIDER_ID] as const;
+type GrokAuthProviderId = typeof GROK_AUTH_PROVIDER_IDS[number];
 const GROK_BILLING_TIMEOUT_MS = 15_000;
 /** Refresh a little early so billing calls rarely hit an already-expired access token. */
 const GROK_TOKEN_REFRESH_SKEW_MS = 120_000;
@@ -69,14 +72,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * 获取 Grok CLI billing base URL。
- * 优先 env，其次 auth.json 中 pi-grok-cli 写入的 baseUrl。
+ * 获取 Grok billing base URL。
+ * 优先 env，其次当前 auth provider 写入的 baseUrl。
  */
-function resolveBaseUrl(): string {
+function resolveBaseUrl(providerId: GrokAuthProviderId): string {
   const fromEnv = process.env.PI_GROK_CLI_BASE_URL || process.env.GROK_CLI_BASE_URL;
   if (fromEnv?.trim()) return fromEnv.trim().replace(/\/+$/, "");
 
-  const stored = readStoredCredential(GROK_PROVIDER_ID);
+  const stored = readStoredCredential(providerId);
   if (isRecord(stored) && typeof stored.baseUrl === "string" && stored.baseUrl.trim()) {
     return stored.baseUrl.trim().replace(/\/+$/, "");
   }
@@ -116,6 +119,7 @@ function resolveTokenEndpoint(credential: GrokStoredOAuthCredential): string {
  * Billing only needs a valid access token; OAuth login remains owned by the extension.
  */
 async function refreshStoredGrokCredential(
+  providerId: GrokAuthProviderId,
   credential: GrokStoredOAuthCredential,
 ): Promise<GrokStoredOAuthCredential | null> {
   if (!credential.refresh) return null;
@@ -165,7 +169,7 @@ async function refreshStoredGrokCredential(
     };
 
     // Persist refreshed tokens so subsequent billing/UI reads stay in sync with auth.json.
-    await FileCredentialStore.create().modify(GROK_PROVIDER_ID, async () => ({
+    await FileCredentialStore.create().modify(providerId, async () => ({
       type: "oauth",
       access: next.access,
       refresh: next.refresh ?? credential.refresh ?? "",
@@ -185,51 +189,59 @@ async function refreshStoredGrokCredential(
 /**
  * 获取 Grok CLI access token。
  * 1. GROK_CLI_OAUTH_TOKEN 环境变量
- * 2. createAgentSessionServices 加载扩展后的 ModelRegistry（可 OAuth refresh）
- * 3. 裸 ModelRuntime/ModelRegistry（通常拿不到 grok-cli）
- * 4. 直接读 auth.json 的 access，必要时本地 refresh
+ * 2. auth.json 中 grok-cli 或 Pi 内置 xai 的 OAuth credential
+ * 3. createAgentSessionServices 加载扩展后的 ModelRegistry（兼容旧扩展配置）
+ * 4. 裸 ModelRuntime/ModelRegistry（通常拿不到 grok-cli）
  */
-async function resolveToken(): Promise<{ token: string; envBypass: boolean } | null> {
+async function resolveToken(): Promise<{ token: string; envBypass: boolean; providerId: GrokAuthProviderId } | null> {
   if (process.env.GROK_CLI_OAUTH_TOKEN) {
-    return { token: process.env.GROK_CLI_OAUTH_TOKEN, envBypass: true };
+    return { token: process.env.GROK_CLI_OAUTH_TOKEN, envBypass: true, providerId: GROK_PROVIDER_ID };
   }
 
-  // pi-grok-cli registers the `grok-cli` provider only after extension load.
-  // Bare ModelRuntime.create() will report configured status but getAuth() is undefined.
+  // Pi's built-in xAI OAuth stores the subscription credential under `xai`,
+  // while pi-grok-cli stores the equivalent credential under `grok-cli`.
+  // Read both keys before asking a registry so the provider identity is retained
+  // when an expired credential has to be refreshed.
+  for (const providerId of GROK_AUTH_PROVIDER_IDS) {
+    const stored = readStoredCredential(providerId);
+    if (isGrokStoredOAuthCredential(stored)) {
+      if (isTokenFresh(stored.expires)) {
+        return { token: stored.access, envBypass: false, providerId };
+      }
+
+      const refreshed = await refreshStoredGrokCredential(providerId, stored);
+      if (refreshed?.access) return { token: refreshed.access, envBypass: false, providerId };
+
+      // Last resort: try the stored access token; billing maps 401 to re-login guidance.
+      return { token: stored.access, envBypass: false, providerId };
+    }
+
+    // An API key is meaningful for the extension provider, but xAI subscription
+    // billing requires OAuth and must not mistake XAI_API_KEY for a login.
+    if (providerId === GROK_PROVIDER_ID && stored?.type === "api_key") {
+      const key = typeof (stored as { key?: unknown }).key === "string"
+        ? (stored as { key: string }).key.trim()
+        : "";
+      if (key) return { token: key, envBypass: false, providerId };
+    }
+  }
+
+  // pi-grok-cli may expose auth through a loaded extension registry even when
+  // its credential is not visible through the direct file fallback above.
   try {
     const { registry } = await createSessionServicesWithRegistry(process.cwd(), getAgentDir());
     const apiKey = await registry.getApiKeyForProvider(GROK_PROVIDER_ID);
-    if (apiKey) return { token: apiKey, envBypass: false };
+    if (apiKey) return { token: apiKey, envBypass: false, providerId: GROK_PROVIDER_ID };
   } catch {
-    // Fall through to lighter paths
+    // Fall through to the bare registry.
   }
 
   try {
     const { registry } = await createModelRegistry();
     const apiKey = await registry.getApiKeyForProvider(GROK_PROVIDER_ID);
-    if (apiKey) return { token: apiKey, envBypass: false };
+    if (apiKey) return { token: apiKey, envBypass: false, providerId: GROK_PROVIDER_ID };
   } catch {
     // Extension providers like grok-cli are usually not present on a bare ModelRuntime.
-  }
-
-  const stored = readStoredCredential(GROK_PROVIDER_ID);
-  if (isGrokStoredOAuthCredential(stored)) {
-    if (isTokenFresh(stored.expires)) {
-      return { token: stored.access, envBypass: false };
-    }
-
-    const refreshed = await refreshStoredGrokCredential(stored);
-    if (refreshed?.access) return { token: refreshed.access, envBypass: false };
-
-    // Last resort: try the stored access token; billing maps 401 to re-login guidance.
-    return { token: stored.access, envBypass: false };
-  }
-
-  if (stored?.type === "api_key") {
-    const key = typeof (stored as { key?: unknown }).key === "string"
-      ? (stored as { key: string }).key.trim()
-      : "";
-    if (key) return { token: key, envBypass: false };
   }
 
   return null;
@@ -356,7 +368,7 @@ function notConfiguredResult(): GrokUsageResult {
     source: "live",
     monthly: null,
     weekly: null,
-    error: "Grok CLI 未登录。请先在 Models → Grok CLI 完成 OAuth 登录，或设置 GROK_CLI_OAUTH_TOKEN 环境变量。",
+    error: "Grok 未登录。请先在 Models → xAI 或 Grok CLI 完成 OAuth 登录，或设置 GROK_CLI_OAUTH_TOKEN 环境变量。",
     queriedAt: null,
     envBypass: false,
   };
@@ -418,8 +430,8 @@ export async function getGrokUsage(mode: "cache" | "refresh" = "cache"): Promise
   const resolved = await resolveToken();
   if (!resolved) return notConfiguredResult();
 
-  const { token, envBypass } = resolved;
-  const baseUrl = resolveBaseUrl();
+  const { token, envBypass, providerId } = resolved;
+  const baseUrl = resolveBaseUrl(providerId);
   const headers: Record<string, string> = {
     authorization: `Bearer ${token}`,
     "x-xai-token-auth": "xai-grok-cli",

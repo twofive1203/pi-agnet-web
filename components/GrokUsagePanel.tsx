@@ -239,7 +239,7 @@ export function GrokUsagePanel() {
               <div style={{ color: "var(--text-dim)", fontSize: 12, lineHeight: 1.45 }}>
                 Grok CLI usage not available. Click refresh to query xAI billing.
                 {!usageResult?.configured && !usageResult?.envBypass && (
-                  <> Make sure Grok CLI is logged in via Models → Grok CLI or set GROK_CLI_OAUTH_TOKEN.</>
+                  <> Make sure Grok is logged in via Models → xAI or Grok CLI, or set GROK_CLI_OAUTH_TOKEN.</>
                 )}
               </div>
             </div>
