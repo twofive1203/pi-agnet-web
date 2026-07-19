@@ -210,6 +210,14 @@ function describeSlashCommand(
   return t("chat.cmdTemplate");
 }
 
+function slashCommandSupportBadge(command: SlashCommandEntry, t: (key: string) => string): { text: string; title: string; color: string } | null {
+  if (command.source !== "extension" || !command.webSupport || command.webSupport === "full") return null;
+  if (command.webSupport === "cli-only") {
+    return { text: t("chat.cmdCliOnly"), title: command.webSupportReason || t("chat.cmdCliOnlyHint"), color: "#eab308" };
+  }
+  return { text: t("chat.cmdPartial"), title: command.webSupportReason || t("chat.cmdPartialHint"), color: "var(--text-dim)" };
+}
+
 function slashCommandSourceLabel(command: SlashCommandEntry): string {
   const label = command.source === "extension" ? "extension" : command.source === "skill" ? "skill" : "template";
   return `${label}${command.location ? ` · ${command.location}` : ""}`;
@@ -1280,11 +1288,14 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   {filteredSlashCommands.map((command, index) => {
                     const selected = index === slashSelectedIndex;
                     const sourceLabel = slashCommandSourceLabel(command);
+                    const supportBadge = slashCommandSupportBadge(command, t);
+                    const cliOnly = command.webSupport === "cli-only";
                     return (
                       <button
                         ref={selected ? slashSelectedItemRef : undefined}
                         key={`${command.source}:${command.name}:${command.path ?? ""}`}
                         type="button"
+                        title={supportBadge?.title}
                         onMouseDown={(e) => {
                           e.preventDefault();
                           insertSlashCommand(command);
@@ -1302,6 +1313,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                           color: "var(--text)",
                           cursor: "pointer",
                           textAlign: "left",
+                          opacity: cliOnly ? 0.62 : 1,
                         }}
                       >
                         <span
@@ -1310,7 +1322,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                             maxWidth: "42%",
                             overflow: "hidden",
                             textOverflow: "ellipsis",
-                            color: "var(--accent)",
+                            color: cliOnly ? "var(--text-muted)" : "var(--accent)",
                             fontFamily: "var(--font-mono)",
                             fontSize: 12,
                             whiteSpace: "nowrap",
@@ -1326,19 +1338,40 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                             )}
                             {describeSlashCommand(command, t)}
                           </span>
-                          <span
-                            title={sourceLabel}
-                            style={{
-                              fontSize: 10,
-                              color: "var(--text-dim)",
-                              textTransform: "uppercase",
-                              letterSpacing: "0.05em",
-                              overflow: "hidden",
-                              textOverflow: "ellipsis",
-                              whiteSpace: "nowrap",
-                            }}
-                          >
-                            {sourceLabel}
+                          <span style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                            <span
+                              title={sourceLabel}
+                              style={{
+                                fontSize: 10,
+                                color: "var(--text-dim)",
+                                textTransform: "uppercase",
+                                letterSpacing: "0.05em",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {sourceLabel}
+                            </span>
+                            {supportBadge && (
+                              <span
+                                title={supportBadge.title}
+                                style={{
+                                  fontSize: 9,
+                                  fontWeight: 700,
+                                  letterSpacing: "0.04em",
+                                  textTransform: "uppercase",
+                                  color: supportBadge.color,
+                                  border: `1px solid ${supportBadge.color}`,
+                                  borderRadius: 999,
+                                  padding: "0 6px",
+                                  lineHeight: "16px",
+                                  flexShrink: 0,
+                                }}
+                              >
+                                {supportBadge.text}
+                              </span>
+                            )}
                           </span>
                         </span>
                       </button>

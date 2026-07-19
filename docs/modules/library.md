@@ -34,6 +34,8 @@ Shared logic lives under `lib/`. Prefer adding behavior here when it is used by 
 | `lib/pi-runtime-resolver.ts` | Prepares a deterministic local Pi CLI shim for extension tools such as `pi-subagents` that spawn nested Pi processes from the WebUI server environment. |
 | `lib/extension-web-ui.ts` | Web/RPC-style Pi extension UI adapter for SDK sessions; forwards simple extension UI requests and diagnostics to the browser SSE stream and resolves dialog responses. |
 | `lib/extension-settings.ts` | Read/write `~/.pi/agent/settings-extensions.json`, discover registered extension setting definitions via a shared Pi event bus during package load, and build effective value rows (stored/default/orphan). |
+| `lib/extension-command-web-support.ts` | Classify extension slash commands as full / partial / cli-only for Web autocomplete badges. |
+| `lib/intercom-hub.ts` | Short-lived pi-intercom broker hub client for listing peers and sending one-shot messages from the Web UI. |
 | `lib/allowed-roots.ts` | Shared authorized-workspace root discovery and path checks for file and Trellis APIs. |
 | `lib/terminal-manager.ts` | Web Terminal PTY manager: setting-gated session creation, cwd authorization, platform-aware Unix/Windows shell and custom path resolution, env injection, SSE subscription fan-out, input/resize handling, and process cleanup. |
 | `lib/trellis-manager.ts` | Trellis setup/status/update helper: prerequisite checks, CLI/version inspection, proxy-scoped child-process environment, and fixed Trellis/npm command execution. |

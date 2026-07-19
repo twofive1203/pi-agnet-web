@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import { createAgentSession, DefaultResourceLoader, getAgentDir, SessionManager, type SlashCommandInfo } from "@earendil-works/pi-coding-agent";
 import { ExtensionWebUiBridge } from "@/lib/extension-web-ui";
+import { annotateExtensionCommandWebSupport, type ExtensionCommandWebSupport } from "@/lib/extension-command-web-support";
 
 export const dynamic = "force-dynamic";
 
 export type SlashCommandSource = "extension" | "prompt" | "skill";
+export type { ExtensionCommandWebSupport };
 
 export interface SlashCommandEntry {
   name: string;
@@ -14,6 +16,9 @@ export interface SlashCommandEntry {
   location?: "user" | "project" | "temporary";
   path?: string;
   sourceInfo?: SlashCommandInfo["sourceInfo"];
+  /** Web usability for extension commands (skills/prompts omit this). */
+  webSupport?: ExtensionCommandWebSupport;
+  webSupportReason?: string;
 }
 
 function locationFromSourceInfo(sourceInfo: SlashCommandInfo["sourceInfo"] | undefined): SlashCommandEntry["location"] {
@@ -114,7 +119,7 @@ export async function GET(req: Request) {
       const order: Record<SlashCommandSource, number> = { extension: 0, prompt: 1, skill: 2 };
       if (a.source !== b.source) return order[a.source] - order[b.source];
       return a.name.localeCompare(b.name);
-    });
+    }).map((command) => annotateExtensionCommandWebSupport(command));
 
     return NextResponse.json({ commands, diagnostics: [...extensionDiagnostics, ...skillDiagnostics, ...promptDiagnostics] });
   } catch (e) {

@@ -10,6 +10,7 @@ import { TabBar, type Tab } from "./TabBar";
 import { ModelsConfig } from "./ModelsConfig";
 import { SkillsConfig } from "./SkillsConfig";
 import { ExtensionsConfig } from "./ExtensionsConfig";
+import { IntercomPanel } from "./IntercomPanel";
 import { UsageStatsModal } from "./UsageStatsModal";
 import { ChatGptUsagePanel } from "./ChatGptUsagePanel";
 import { GrokUsagePanel } from "./GrokUsagePanel";
@@ -120,15 +121,27 @@ export function AppShell() {
     setSubagentRuns(runs);
   }, []);
 
+  const handleInteractiveShellRequest = useCallback((request: { cwd: string; command?: string; reason?: string }) => {
+    // When config is still loading, optimistically open; createTerminalSession enforces enablement.
+    if (webConfig && !webConfig.terminal.enabled) return;
+    setTerminalOpen(true);
+    setTerminalCollapsed(false);
+    setTerminalDockCwd(request.cwd);
+    if (request.command?.trim()) {
+      setTerminalSeedCommand(request.command.trim());
+    }
+  }, [webConfig]);
+
   // Git panel state
   const [gitDirty, setGitDirty] = useState(false);
   const [gitRefreshKey, setGitRefreshKey] = useState(0);
 
   // Single active panel — only one dropdown open at a time
-  const [activeTopPanel, setActiveTopPanel] = useState<"branches" | "system" | "subagents" | "git" | null>(null);
+  const [activeTopPanel, setActiveTopPanel] = useState<"branches" | "system" | "subagents" | "git" | "intercom" | null>(null);
   const [topPanelPos, setTopPanelPos] = useState<{ top: number; left: number; width: number } | null>(null);
+  const [terminalSeedCommand, setTerminalSeedCommand] = useState<string | null>(null);
 
-  const toggleTopPanel = useCallback((panel: "branches" | "system" | "subagents" | "git") => {
+  const toggleTopPanel = useCallback((panel: "branches" | "system" | "subagents" | "git" | "intercom") => {
     setActiveTopPanel((cur) => cur === panel ? null : panel);
   }, []);
 
@@ -838,6 +851,29 @@ export function AppShell() {
               </button>
               <button
                 className="app-top-aux-tab"
+                onClick={() => toggleTopPanel("intercom")}
+                style={{
+                  display: "flex", alignItems: "center", gap: 6,
+                  height: "100%", padding: "0 12px",
+                  background: activeTopPanel === "intercom" ? "var(--bg-selected)" : "none",
+                  border: "none",
+                  borderTop: activeTopPanel === "intercom" ? "2px solid var(--accent)" : "2px solid transparent",
+                  borderRight: "1px solid var(--border)",
+                  cursor: "pointer",
+                  color: activeTopPanel === "intercom" ? "var(--text)" : "var(--text-muted)",
+                  fontSize: 11, whiteSpace: "nowrap", transition: "color 0.1s, background 0.1s",
+                  position: "relative",
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text)"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.color = activeTopPanel === "intercom" ? "var(--text)" : "var(--text-muted)"; }}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                </svg>
+                <span className="app-top-label">{t("app.intercom")}</span>
+              </button>
+              <button
+                className="app-top-aux-tab"
                 onClick={() => toggleTopPanel("git")}
                 style={{
                   display: "flex", alignItems: "center", gap: 6,
@@ -1051,6 +1087,9 @@ export function AppShell() {
                   <SubagentPanel runs={subagentRuns} />
                 </div>
               )}
+              {activeTopPanel === "intercom" && (
+                <IntercomPanel cwd={activeCwd ?? selectedSession?.cwd ?? newSessionCwd ?? null} />
+              )}
               {activeTopPanel === "git" && (
                 <div style={{
                   background: "var(--bg-panel)",
@@ -1082,6 +1121,7 @@ export function AppShell() {
               onSessionStatsChange={handleSessionStatsChange}
               onContextUsageChange={handleContextUsageChange}
               onSubagentChange={handleSubagentChange}
+              onInteractiveShellRequest={handleInteractiveShellRequest}
             />
           ) : showPlaceholder ? (
             activeCwd ? (
@@ -1111,11 +1151,14 @@ export function AppShell() {
             <TerminalPanel
               cwd={terminalDockCwd}
               collapsed={terminalCollapsed}
+              seedCommand={terminalSeedCommand}
+              onSeedCommandConsumed={() => setTerminalSeedCommand(null)}
               onToggleCollapsed={() => setTerminalCollapsed((collapsed) => !collapsed)}
               onClose={() => {
                 setTerminalOpen(false);
                 setTerminalDockCwd(null);
                 setTerminalCollapsed(false);
+                setTerminalSeedCommand(null);
               }}
             />
           )}
