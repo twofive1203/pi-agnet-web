@@ -6,6 +6,7 @@ import { createPortal } from "react-dom";
 interface PricingCatalogItem {
   provider: string;
   model: string;
+  contextWindow?: number;
   input: number;
   output: number;
   cacheRead: number;
@@ -135,11 +136,11 @@ export function ModelPricingCatalog({ onClose }: Props) {
           ) : items.length === 0 ? (
             <div style={{ padding: 24, color: "var(--text-muted)", fontSize: 12 }}>No synced pricing catalog.</div>
           ) : (
-            <table style={{ width: "100%", minWidth: 780, borderCollapse: "collapse", tableLayout: "fixed", fontSize: 11 }}>
+            <table style={{ width: "100%", minWidth: 860, borderCollapse: "collapse", tableLayout: "fixed", fontSize: 11 }}>
               <thead style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--bg-panel)" }}>
                 <tr>
                   {[
-                    ["Provider", "18%"], ["Model", "34%"], ["Input", "12%"], ["Output", "12%"], ["Cache read", "12%"], ["Cache write", "12%"],
+                    ["Provider", "15%"], ["Model", "29%"], ["Context", "12%"], ["Input", "11%"], ["Output", "11%"], ["Cache read", "11%"], ["Cache write", "11%"],
                   ].map(([label, width]) => (
                     <th key={label} style={{ width, padding: "8px 10px", borderBottom: "1px solid var(--border)", color: "var(--text-dim)", fontWeight: 600, textAlign: label === "Provider" || label === "Model" ? "left" : "right" }}>{label}</th>
                   ))}
@@ -150,6 +151,7 @@ export function ModelPricingCatalog({ onClose }: Props) {
                   <tr key={`${item.provider}:${item.model}`}>
                     <td style={{ padding: "7px 10px", borderBottom: "1px solid var(--border)", color: "var(--text-muted)", overflowWrap: "anywhere" }}>{item.provider}</td>
                     <td style={{ padding: "7px 10px", borderBottom: "1px solid var(--border)", color: "var(--text)", fontFamily: "var(--font-mono)", overflowWrap: "anywhere" }}>{item.model}</td>
+                    <td style={{ padding: "7px 10px", borderBottom: "1px solid var(--border)", color: "var(--text)", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{item.contextWindow?.toLocaleString() ?? "—"}</td>
                     {[item.input, item.output, item.cacheRead, item.cacheWrite].map((value, index) => (
                       <td key={index} style={{ padding: "7px 10px", borderBottom: "1px solid var(--border)", color: "var(--text)", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{formatPrice(value)}</td>
                     ))}

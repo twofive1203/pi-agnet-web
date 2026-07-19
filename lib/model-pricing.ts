@@ -14,6 +14,7 @@ export interface ModelPricingEntry {
   output: number;
   cacheRead: number;
   cacheWrite: number;
+  contextWindow?: number;
 }
 
 /**
@@ -72,6 +73,10 @@ function isFiniteNonNegativeNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0;
 }
 
+function isFinitePositiveNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0;
+}
+
 const UNSAFE_INDEX_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 
 function normalizeIndexKey(value: string): string | null {
@@ -84,9 +89,9 @@ function createIndex<T>(): Record<string, T> {
 }
 
 /**
- * Validate an untrusted upstream model entry and extract the four cost fields.
- * Accepts object-shaped entries with optional cost sub-object containing
- * finite, non-negative numeric values for input/output/cacheRead/cacheWrite.
+ * Validate an untrusted upstream model entry and extract the four cost fields
+ * plus an optional positive context-window size. Accepts object-shaped entries
+ * with an optional cost sub-object containing finite, non-negative numeric values.
  */
 function validateCost(raw: unknown): ModelPricingEntry | null {
   if (!isRecord(raw)) return null;
@@ -103,7 +108,8 @@ function validateCost(raw: unknown): ModelPricingEntry | null {
   ) {
     return null;
   }
-  return { input, output, cacheRead, cacheWrite };
+  const contextWindow = isFinitePositiveNumber(raw.contextWindow) ? raw.contextWindow : undefined;
+  return { input, output, cacheRead, cacheWrite, ...(contextWindow !== undefined ? { contextWindow } : {}) };
 }
 
 function normalizePricingIndex(raw: unknown): ModelPricingIndex {
@@ -141,7 +147,7 @@ export function validateUpstreamPayload(payload: unknown): ModelPricingIndex {
     normalized[providerId] = Object.fromEntries(
       Object.entries(providerRaw).map(([modelId, modelRaw]) => [
         modelId,
-        isRecord(modelRaw) && isRecord(modelRaw.cost) ? modelRaw.cost : null,
+        isRecord(modelRaw) ? modelRaw : null,
       ]),
     );
   }

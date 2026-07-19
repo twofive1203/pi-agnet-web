@@ -224,6 +224,7 @@ interface CachedPricingEntry {
   output: number;
   cacheRead: number;
   cacheWrite: number;
+  contextWindow?: number;
 }
 
 interface CachedPricingCandidate {
@@ -259,6 +260,7 @@ type Selection =
   | { type: "apikey"; providerId: string };
 
 const API_OPTIONS = ["openai-completions", "openai-responses", "anthropic-messages", "google-generative-ai"] as const;
+const DEFAULT_MAX_TOKENS = 128000;
 const discoveredModelCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 
 // ── Form field helpers ────────────────────────────────────────────────────────
@@ -437,13 +439,17 @@ function getMissingPricingFields(model: ModelEntry, entry: CachedPricingEntry): 
   if (currentCost.output === undefined) fields.output = entry.output;
   if (currentCost.cacheRead === undefined) fields.cacheRead = entry.cacheRead;
   if (currentCost.cacheWrite === undefined) fields.cacheWrite = entry.cacheWrite;
+  if (model.contextWindow === undefined && entry.contextWindow !== undefined) fields.contextWindow = entry.contextWindow;
   return fields;
 }
 
 function mergeMissingPricing(model: ModelEntry, entry: CachedPricingEntry): ModelEntry {
+  const missingFields = getMissingPricingFields(model, entry);
+  const { contextWindow, ...missingCostFields } = missingFields;
   return {
     ...model,
-    cost: { ...(model.cost ?? {}), ...getMissingPricingFields(model, entry) },
+    ...(contextWindow !== undefined ? { contextWindow } : {}),
+    cost: { ...(model.cost ?? {}), ...missingCostFields },
   };
 }
 
@@ -458,7 +464,13 @@ type PricingLookupState =
   | { phase: "matched"; match: "exact" | "unique-id" | "manual" }
   | { phase: "ambiguous"; candidates: CachedPricingCandidate[] };
 
-const PRICING_FIELDS = ["input", "output", "cacheRead", "cacheWrite"] as const;
+const PRICING_COST_FIELDS = ["input", "output", "cacheRead", "cacheWrite"] as const;
+const PRICING_FIELDS = ["input", "output", "cacheRead", "cacheWrite", "contextWindow"] as const;
+
+function formatPricingCandidateValue(field: typeof PRICING_FIELDS[number], entry: CachedPricingEntry): string {
+  if (field === "contextWindow") return entry.contextWindow?.toLocaleString() ?? "—";
+  return `$${entry[field]}`;
+}
 
 // ── Provider detail ───────────────────────────────────────────────────────────
 
@@ -908,19 +920,24 @@ function ModelDetail({
   autoAppliedPricingRef.current = autoAppliedPricing;
   const onAutoAppliedPricingChangeRef = useRef(onAutoAppliedPricingChange);
   onAutoAppliedPricingChangeRef.current = onAutoAppliedPricingChange;
-  const set = <K extends keyof ModelEntry>(k: K, v: ModelEntry[K]) => onChange({ ...model, [k]: v });
+  const clearAutoAppliedField = (field: keyof CachedPricingEntry) => {
+    const autoApplied = autoAppliedPricingRef.current;
+    if (autoApplied?.provider !== providerName || autoApplied.modelId !== model.id.trim()) return;
+    const remainingFields = { ...autoApplied.fields };
+    delete remainingFields[field];
+    const remainingPricing = Object.keys(remainingFields).length > 0
+      ? { ...autoApplied, fields: remainingFields }
+      : null;
+    autoAppliedPricingRef.current = remainingPricing;
+    onAutoAppliedPricingChangeRef.current(remainingPricing);
+  };
+  const set = <K extends keyof ModelEntry>(k: K, v: ModelEntry[K]) => {
+    if (k === "contextWindow") clearAutoAppliedField("contextWindow");
+    onChange({ ...model, [k]: v });
+  };
   const costVal = (k: keyof NonNullable<ModelEntry["cost"]>) => model.cost?.[k] !== undefined ? String(model.cost[k]) : "";
   const setCost = (k: keyof CachedPricingEntry, v: string) => {
-    const autoApplied = autoAppliedPricingRef.current;
-    if (autoApplied?.provider === providerName && autoApplied.modelId === model.id.trim()) {
-      const remainingFields = { ...autoApplied.fields };
-      delete remainingFields[k];
-      const remainingPricing = Object.keys(remainingFields).length > 0
-        ? { ...autoApplied, fields: remainingFields }
-        : null;
-      autoAppliedPricingRef.current = remainingPricing;
-      onAutoAppliedPricingChangeRef.current(remainingPricing);
-    }
+    clearAutoAppliedField(k);
     const n = parseFloat(v);
     onChange({ ...model, cost: { ...(model.cost ?? {}), [k]: isNaN(n) ? undefined : n } });
   };
@@ -971,10 +988,17 @@ function ModelDetail({
     if (previousAutoPricing && (previousAutoPricing.provider !== providerName || previousAutoPricing.modelId !== id)) {
       const currentModel = latestModelRef.current;
       const nextCost = { ...(currentModel.cost ?? {}) };
+      let nextContextWindow = currentModel.contextWindow;
       let removedAutoPricing = false;
       for (const field of PRICING_FIELDS) {
         const previousValue = previousAutoPricing.fields[field];
-        if (previousValue !== undefined && nextCost[field] === previousValue) {
+        if (previousValue === undefined) continue;
+        if (field === "contextWindow") {
+          if (nextContextWindow === previousValue) {
+            nextContextWindow = undefined;
+            removedAutoPricing = true;
+          }
+        } else if (nextCost[field] === previousValue) {
           delete nextCost[field];
           removedAutoPricing = true;
         }
@@ -984,6 +1008,7 @@ function ModelDetail({
       if (removedAutoPricing) {
         const nextModel = {
           ...currentModel,
+          contextWindow: nextContextWindow,
           cost: Object.keys(nextCost).length > 0 ? nextCost : undefined,
         };
         latestModelRef.current = nextModel;
@@ -1182,7 +1207,7 @@ function ModelDetail({
         </Field>
         <Field label="Max output tokens">
           <NumInput value={model.maxTokens !== undefined ? String(model.maxTokens) : ""}
-            onChange={(v) => set("maxTokens", v ? parseInt(v) : undefined)} placeholder="16384" />
+            onChange={(v) => set("maxTokens", v ? parseInt(v) : undefined)} placeholder="128000" />
         </Field>
       </div>
 
@@ -1210,7 +1235,7 @@ function ModelDetail({
           </div>
         )}
         <div style={{ marginTop: pricingSource || pricingLookup.phase === "ambiguous" ? 4 : 8, display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 8 }}>
-          {(["input", "output", "cacheRead", "cacheWrite"] as const).map((k) => (
+          {PRICING_COST_FIELDS.map((k) => (
             <Field key={k} label={k}>
               <NumInput value={costVal(k)} onChange={(v) => setCost(k, v)} placeholder="0" />
             </Field>
@@ -1275,8 +1300,8 @@ function PricingMatchDialog({
               <span style={{ width: "100%", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(90px, 1fr))", gap: 8 }}>
                 {PRICING_FIELDS.map((field) => (
                   <span key={field} style={{ minWidth: 0, fontSize: 10, color: "var(--text-dim)" }}>
-                    <span style={{ display: "block", marginBottom: 2 }}>{field}</span>
-                    <span style={{ color: "var(--text)", fontSize: 12, fontVariantNumeric: "tabular-nums" }}>${candidate.entry[field]}</span>
+                    <span style={{ display: "block", marginBottom: 2 }}>{field === "contextWindow" ? "context" : field}</span>
+                    <span style={{ color: "var(--text)", fontSize: 12, fontVariantNumeric: "tabular-nums" }}>{formatPricingCandidateValue(field, candidate.entry)}</span>
                   </span>
                 ))}
               </span>
@@ -3366,7 +3391,7 @@ export function ModelsConfig({ cwd: _cwd, onClose }: { cwd: string | null; onClo
   const addModel = useCallback((providerName: string) => {
     setConfig((prev) => {
       const provider = prev.providers?.[providerName] ?? {};
-      const models = [...(provider.models ?? []), { id: "" }];
+      const models = [...(provider.models ?? []), { id: "", maxTokens: DEFAULT_MAX_TOKENS }];
       return { ...prev, providers: { ...(prev.providers ?? {}), [providerName]: { ...provider, models } } };
     });
     setConfig((prev) => {
@@ -3385,7 +3410,9 @@ export function ModelsConfig({ cwd: _cwd, onClose }: { cwd: string | null; onClo
       return { ok: false, message: `Model "${candidate.id}" already exists under this provider.` };
     }
 
-    const model: ModelEntry = candidate.name ? { id: candidate.id, name: candidate.name } : { id: candidate.id };
+    const model: ModelEntry = candidate.name
+      ? { id: candidate.id, name: candidate.name, maxTokens: DEFAULT_MAX_TOKENS }
+      : { id: candidate.id, maxTokens: DEFAULT_MAX_TOKENS };
     setConfig((prev) => {
       const currentProvider = prev.providers?.[providerName] ?? {};
       const currentModels = currentProvider.models ?? [];
