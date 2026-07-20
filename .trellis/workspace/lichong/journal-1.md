@@ -702,3 +702,36 @@ Added a secured extension-command usage bridge and Models subscription view for 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 48: Fix Trellis subagent workspace binding
+
+**Date**: 2026-07-20
+**Task**: Fix Trellis subagent workspace binding
+**Branch**: `self-run`
+
+### Summary
+
+Investigated Trellis Pi dispatch using the server process cwd across multi-project WebUI sessions. Updated the local Trellis extension to derive task context and child cwd from ExtensionContext.cwd, fail closed without a session workspace, scope turn caches by project root, documented the contract, ran lint/type-check and cross-workspace smoke checks, and committed the fix.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `260956d` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

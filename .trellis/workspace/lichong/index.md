@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 47
-- **Last Active**: 2026-07-18
+- **Total Sessions**: 48
+- **Last Active**: 2026-07-20
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~704 | Active |
+| `journal-1.md` | ~737 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 48 | 2026-07-20 | Fix Trellis subagent workspace binding | `260956d` | `self-run` |
 | 47 | 2026-07-18 | Add Grok CLI subscription usage | `dce775d` | `self-run` |
 | 46 | 2026-07-17 | 项目切换支持查看全部和搜索 | `00eb0f4` | `self-run` |
 | 45 | 2026-07-17 | 移动端顶部功能面板适配 | `92dbb82` | `self-run` |
