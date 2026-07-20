@@ -34,6 +34,11 @@ interface Props {
   onContextUsageChange?: (usage: { percent: number | null; contextWindow: number; tokens: number | null } | null) => void;
 }
 
+function isPowerbarExtensionItem(item: { key: string }): boolean {
+  const key = item.key.toLowerCase();
+  return key === "powerbar" || key.startsWith("powerbar:");
+}
+
 function phaseLabel(phase: AgentPhase): string {
   if (phase?.kind === "running_tools") {
     const names = phase.tools.map((t) => t.name);
@@ -177,7 +182,9 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
 
   const visibleMessages = messages.filter((m) => m.role === "user" || m.role === "assistant");
   const messageRefs = useMessageRefs(visibleMessages.length);
-  const todoWidget = extensionWidgets.find(isTodoWidget) ?? null;
+  const visibleExtensionStatuses = extensionStatuses.filter((item) => !isPowerbarExtensionItem(item));
+  const visibleExtensionWidgets = extensionWidgets.filter((item) => !isPowerbarExtensionItem(item));
+  const todoWidget = visibleExtensionWidgets.find(isTodoWidget) ?? null;
 
   const isEmptyNew = isNew && messages.length === 0 && !streamState.isStreaming && !agentRunning;
 
@@ -340,13 +347,13 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
                 </span>
               </div>
             </div>
-            <ExtensionStatusBar items={extensionStatuses} />
+            <ExtensionStatusBar items={visibleExtensionStatuses} />
             <ExtensionWidgetStack
-              items={extensionWidgets.filter((item) => item.placement === "aboveEditor")}
+              items={visibleExtensionWidgets.filter((item) => item.placement === "aboveEditor")}
             />
             {chatInputElement}
             <ExtensionWidgetStack
-              items={extensionWidgets.filter((item) => item.placement === "belowEditor")}
+              items={visibleExtensionWidgets.filter((item) => item.placement === "belowEditor")}
             />
           </div>
         </div>
@@ -444,13 +451,13 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
       </div>
 
       <div className="relative" style={{ flexShrink: 0 }}>
-        <ExtensionStatusBar items={extensionStatuses} />
+        <ExtensionStatusBar items={visibleExtensionStatuses} />
         <ExtensionWidgetStack
-          items={extensionWidgets.filter((item) => item.placement === "aboveEditor")}
+          items={visibleExtensionWidgets.filter((item) => item.placement === "aboveEditor")}
         />
         {chatInputElement}
         <ExtensionWidgetStack
-          items={extensionWidgets.filter((item) => item.placement === "belowEditor")}
+          items={visibleExtensionWidgets.filter((item) => item.placement === "belowEditor")}
         />
       </div>
       </>

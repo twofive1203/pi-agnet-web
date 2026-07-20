@@ -3,7 +3,7 @@
 import React, { useRef, useState, useCallback, useEffect, useImperativeHandle, forwardRef, useMemo } from "react";
 import { createPortal } from "react-dom";
 import type { SlashCommandEntry } from "@/app/api/commands/route";
-import type { AttachedFile } from "@/lib/types";
+import type { AttachedFile, GitStatusInfo } from "@/lib/types";
 import type { ToolPreset } from "@/components/ToolPanel";
 import { encodeFilePathForApi, getFileName, getRelativeFilePath, joinFilePath } from "@/lib/file-paths";
 import { buildTrellisTaskResumePrompt, type TrellisTaskChatContext } from "@/lib/trellis-chat-context";
@@ -48,6 +48,8 @@ interface Props {
   autoScrollEnabled?: boolean;
   onAutoScrollToggle?: () => void;
 }
+
+type GitBranchDisplay = Pick<GitStatusInfo, "branch" | "isDetached" | "isDirty" | "isWorktree">;
 
 export interface ChatInputHandle {
   insertText: (text: string) => void;
@@ -462,6 +464,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const [attachedImages, setAttachedImages] = useState<AttachedImage[]>([]);
   const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
   const [uploadingFiles, setUploadingFiles] = useState(false);
+  const [gitBranch, setGitBranch] = useState<GitBranchDisplay | null>(null);
 
   const inputRef = useRef<HTMLDivElement>(null);
   const slashSelectedItemRef = useRef<HTMLButtonElement>(null);
@@ -1097,6 +1100,36 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const currentModelLabel = currentModelOption
     ? `${currentModelOption.provider}/${currentModelOption.name}`
     : model ? `${model.provider}/${model.modelId}` : null;
+  const gitBranchInfo = gitBranch;
+  const gitBranchLabel = gitBranchInfo?.isDetached ? "detached" : gitBranchInfo?.branch ?? null;
+  const gitBranchTitle = gitBranchInfo && gitBranchLabel
+    ? `${gitBranchInfo.isWorktree ? "Worktree branch" : "Git branch"}: ${gitBranchLabel}${gitBranchInfo.isDirty ? " (dirty)" : ""}`
+    : undefined;
+
+  useEffect(() => {
+    if (!cwd) {
+      setGitBranch(null);
+      return;
+    }
+
+    const controller = new AbortController();
+    fetch(`/api/git/status?cwd=${encodeURIComponent(cwd)}`, { signal: controller.signal })
+      .then(async (res) => {
+        const data = await res.json() as { status?: GitStatusInfo | null };
+        if (!res.ok || !data.status) {
+          setGitBranch(null);
+          return;
+        }
+        const { branch, isDetached, isDirty, isWorktree } = data.status;
+        setGitBranch({ branch, isDetached, isDirty, isWorktree });
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setGitBranch(null);
+      });
+
+    return () => controller.abort();
+  }, [cwd]);
 
   // Close dropdowns on outside click
   useEffect(() => {
@@ -1754,6 +1787,31 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                     ), document.body);
                   })()}
                 </div>
+            )}
+            {gitBranchInfo && gitBranchLabel && (
+              <div
+                title={gitBranchTitle}
+                aria-label={gitBranchTitle}
+                style={{
+                  display: "flex", alignItems: "center", gap: 6,
+                  height: 32,
+                  maxWidth: 180,
+                  padding: "8px 10px",
+                  borderRadius: 9,
+                  color: "var(--text-muted)",
+                  fontSize: 12,
+                  minWidth: 0,
+                }}
+              >
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                  <line x1="6" y1="3" x2="6" y2="15" />
+                  <circle cx="18" cy="6" r="3" />
+                  <circle cx="6" cy="18" r="3" />
+                  <path d="M18 9a9 9 0 0 1-9 9" />
+                </svg>
+                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{gitBranchLabel}</span>
+                {gitBranchInfo.isDirty && <span style={{ color: "var(--accent)", flexShrink: 0 }}>*</span>}
+              </div>
             )}
           </div>
 
