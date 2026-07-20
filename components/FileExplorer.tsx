@@ -28,9 +28,9 @@ interface Props {
   onAtMention?: (relativePath: string) => void;
 }
 
-async function fetchEntries(dirPath: string): Promise<FileNode[]> {
+async function fetchEntries(dirPath: string, signal?: AbortSignal): Promise<FileNode[]> {
   const encoded = encodeFilePathForApi(dirPath);
-  const res = await fetch(`/api/files/${encoded}?type=list`);
+  const res = await fetch(`/api/files/${encoded}?type=list`, { signal });
   if (!res.ok) {
     let message = `Failed to load files (HTTP ${res.status})`;
     try {
@@ -235,18 +235,31 @@ export function FileExplorer({ cwd, onOpenFile, refreshKey, onAtMention }: Props
   }, []);
 
   useEffect(() => {
+    const controller = new AbortController();
     const cwdChanged = prevCwdRef.current !== cwd;
     prevCwdRef.current = cwd;
 
-    // Reset expanded state only when cwd changes, not on refreshKey bumps
-    if (cwdChanged) setExpandedPaths(new Set());
+    // Reset project-owned state immediately so a previous workspace is never
+    // displayed while the newly selected workspace is loading.
+    if (cwdChanged) {
+      setExpandedPaths(new Set());
+      setRoots([]);
+    }
 
     setLoading(cwdChanged);
     setError(null);
-    fetchEntries(cwd)
-      .then((entries) => setRoots(entries))
-      .catch((e) => setError(e instanceof Error ? e.message : String(e)))
-      .finally(() => setLoading(false));
+    fetchEntries(cwd, controller.signal)
+      .then((entries) => {
+        if (!controller.signal.aborted) setRoots(entries);
+      })
+      .catch((e) => {
+        if (!controller.signal.aborted) setError(e instanceof Error ? e.message : String(e));
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+
+    return () => controller.abort();
   }, [cwd, refreshKey]);
 
   if (loading) {

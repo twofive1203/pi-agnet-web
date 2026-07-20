@@ -30,11 +30,29 @@ const MOBILE_MEDIA_QUERY = "(max-width: 640px)";
 const TODO_WIDGET_STORAGE_KEY = "pi-web:extension-todo-widget-position";
 const TODO_WIDGET_MARGIN = 18;
 const TODO_WIDGET_BOTTOM = 92;
+const TODO_WIDGET_INPUT_GAP = 8;
 const DRAG_THRESHOLD_PX = 4;
 
 interface WidgetPosition {
   left: number;
   top: number;
+}
+
+function getDefaultPosition(parent: HTMLElement, widget: HTMLElement): WidgetPosition {
+  const inputInner = parent.querySelector<HTMLElement>(".chat-input-inner");
+  if (inputInner) {
+    const parentRect = parent.getBoundingClientRect();
+    const inputRect = inputInner.getBoundingClientRect();
+    return {
+      left: inputRect.left - parentRect.left,
+      top: inputRect.top - parentRect.top - widget.offsetHeight - TODO_WIDGET_INPUT_GAP,
+    };
+  }
+
+  return {
+    left: TODO_WIDGET_MARGIN,
+    top: Math.max(TODO_WIDGET_MARGIN, parent.clientHeight - widget.offsetHeight - TODO_WIDGET_BOTTOM),
+  };
 }
 
 function clampPosition(position: WidgetPosition, parent: HTMLElement, widget: HTMLElement): WidgetPosition {
@@ -324,10 +342,7 @@ export function ExtensionTodoPanel({ item }: Props) {
 
     const applyDefault = () => {
       const stored = readStoredPosition();
-      const next = stored ?? {
-        left: TODO_WIDGET_MARGIN,
-        top: Math.max(TODO_WIDGET_MARGIN, parent.clientHeight - widget.offsetHeight - TODO_WIDGET_BOTTOM),
-      };
+      const next = stored ?? getDefaultPosition(parent, widget);
       setPosition(clampPosition(next, parent, widget));
     };
 

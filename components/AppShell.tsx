@@ -9,7 +9,6 @@ import { FileViewer } from "./FileViewer";
 import { TabBar, type Tab } from "./TabBar";
 import { ModelsConfig } from "./ModelsConfig";
 import { SkillsConfig } from "./SkillsConfig";
-import { ExtensionsConfig } from "./ExtensionsConfig";
 import { IntercomPanel } from "./IntercomPanel";
 import { UsageStatsModal } from "./UsageStatsModal";
 import { ChatGptUsagePanel } from "./ChatGptUsagePanel";
@@ -53,7 +52,6 @@ export function AppShell() {
   const [modelsConfigOpen, setModelsConfigOpen] = useState(false);
   const [modelsRefreshKey, setModelsRefreshKey] = useState(0);
   const [skillsConfigOpen, setSkillsConfigOpen] = useState(false);
-  const [extensionsConfigOpen, setExtensionsConfigOpen] = useState(false);
   const [usageStatsOpen, setUsageStatsOpen] = useState(false);
   const [settingsConfigOpen, setSettingsConfigOpen] = useState(false);
   const [webConfig, setWebConfig] = useState<PiWebConfig | null>(null);
@@ -548,25 +546,6 @@ export function AppShell() {
                 <path d="M12 2L2 7l10 5 10-5-10-5z" />
                 <path d="M2 17l10 5 10-5" />
                 <path d="M2 12l10 5 10-5" />
-              </svg>
-            ),
-          },
-          {
-            id: "extensions",
-            label: t("sidebar.extensions"),
-            onClick: () => setExtensionsConfigOpen(true),
-            disabled: false,
-            icon: (
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 2v6" />
-                <path d="M12 16v6" />
-                <path d="m4.93 4.93 4.24 4.24" />
-                <path d="m14.83 14.83 4.24 4.24" />
-                <path d="M2 12h6" />
-                <path d="M16 12h6" />
-                <path d="m4.93 19.07 4.24-4.24" />
-                <path d="m14.83 9.17 4.24-4.24" />
-                <circle cx="12" cy="12" r="3" />
               </svg>
             ),
           },
@@ -1269,12 +1248,6 @@ export function AppShell() {
     {modelsConfigOpen && <ModelsConfig cwd={trellisCwd ?? null} onClose={() => { setModelsConfigOpen(false); setModelsRefreshKey((k) => k + 1); }} />}
     {skillsConfigOpen && (activeCwd ?? selectedSession?.cwd ?? newSessionCwd) && (
       <SkillsConfig cwd={(activeCwd ?? selectedSession?.cwd ?? newSessionCwd)!} onClose={() => setSkillsConfigOpen(false)} />
-    )}
-    {extensionsConfigOpen && (
-      <ExtensionsConfig
-        cwd={activeCwd ?? selectedSession?.cwd ?? newSessionCwd ?? null}
-        onClose={() => setExtensionsConfigOpen(false)}
-      />
     )}
     {usageStatsOpen && (
       <UsageStatsModal cwd={activeCwd ?? selectedSession?.cwd ?? newSessionCwd} onClose={() => setUsageStatsOpen(false)} />

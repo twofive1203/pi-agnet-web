@@ -354,7 +354,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const [selectedForArchive, setSelectedForArchive] = useState<Set<string>>(new Set());
   const [archiveAllConfirming, setArchiveAllConfirming] = useState(false);
   const [archiveAllBusy, setArchiveAllBusy] = useState(false);
-  const [explorerOpen, setExplorerOpen] = useState(true);
+  const [explorerOpen, setExplorerOpen] = useState(false);
   const [explorerKey, setExplorerKey] = useState(0);
   const [sessionRefreshDone, setSessionRefreshDone] = useState(false);
   const [explorerRefreshDone, setExplorerRefreshDone] = useState(false);

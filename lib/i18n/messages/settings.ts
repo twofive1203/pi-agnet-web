@@ -37,6 +37,7 @@ export const settingsZh = {
   grokSection: "Grok CLI 用量悬浮面板",
   editorSection: "文件编辑器和快捷键",
   agentsSection: "Pi 原生 subagent 模型设置",
+  extensionsSection: "扩展管理",
   trellisSection: "Trellis 面板开关与工作流路由",
   includeArchivedSessions: "统计时包含已归档 Session",
   includeArchivedSessionsHint:
@@ -301,6 +302,80 @@ export const settingsZh = {
     noResetTime: "无重置时间",
     noQuotaCache: "无额度缓存",
   },
+  // Section nav labels
+  sectionWorktree: "工作目录",
+  sectionUsage: "用量",
+  sectionTerminal: "终端",
+  sectionEditor: "编辑器",
+  sectionAgents: "代理",
+
+  // WorkTree section
+  saveTo: "保存到",
+  templateVariables: "可用模板变量",
+  sessionDisplaySeparate: "独立项目条目",
+  sessionDisplayTag: "在项目内标记",
+
+  // Usage section
+  usageDescription: "控制左下角 Usage 弹窗扫描哪些 session 文件。",
+
+  // Terminal section
+  terminalDescription: "控制本地 Web 终端。环境变量会明文保存到",
+  envVariables: "环境变量",
+  envVariablesHint:
+    "下面的值会覆盖或补充 pi-web 服务进程环境，并明文保存；不要填写需要加密管理的长期密钥。",
+  envName: "变量名",
+  envValue: "变量值",
+  addVariable: "添加变量",
+  parseToTable: "解析到表格",
+  envAssistantTitle: "Raw env AI 解析模型",
+  envAssistantDesc:
+    "用于解析复杂 export/代理变量片段，只返回 key-value 结果并填入上方表格。",
+
+  // ChatGPT section
+  chatgptDescription:
+    "控制 ChatGPT/Codex 账号相关显示。账号预热计划在 Models 的 Warm up 弹窗中管理，并同样保存到",
+  chatgptLockInfo:
+    "文件锁过期判断跟随配置：锁超过约 2 × 总刷新间隔未更新时，启动器会把它视为 stale 并尝试接管。",
+
+  // Grok section
+  grokDescription: "Grok CLI 用量面板配置。保存到",
+
+  // Editor section
+  editorDescription: "控制文件面板的编辑器实现和快捷键。保存到",
+  customShortcutsTitle: "蜗牛派自定义快捷键 / 鼠标手势",
+  customShortcutsHint:
+    "这些是蜗牛派在 Monaco 之上额外接管的操作，可单独关闭；关闭后对应按钮仍可使用。",
+  builtinShortcutsTitle: "Monaco 内置常用快捷键",
+  monacoDisclaimer:
+    "这些是 Monaco 自带编辑行为，不写入蜗牛派配置；上面的开关只控制蜗牛派额外接管的快捷键/鼠标手势。",
+
+  // Trellis section
+  trellisDescription:
+    "面板从当前工作区的 .trellis/tasks 读取任务；使用前需要在项目中安装并初始化 Trellis。",
+  openDocs: "打开 Trellis 官方文档 ↗",
+  workflowDesign: "流程设计",
+  currentWorkspace: "当前工作区：",
+  workflowAssistantTitle: "流程辅助阅读模型",
+  workflowAssistantDesc:
+    "用于解释 workflow.md 节点引导内容：翻译成中文并总结关键动作。只读辅助，不会修改流程文件。",
+  subagentRoutingTitle: "Trellis 工作流子代理模型路由",
+  subagentRoutingDesc:
+    "这是 Trellis 工作流路由策略（pi-web.json → trellis.subagents），仅影响 Trellis 派出的子代理。如需配置原生 pi-subagents 模型设置，请使用上方「Agents」面板。给 Trellis 派出去的子代理单独选模型。默认跟随当前聊天使用的主模型；如果某次工具调用里手动指定了模型，会优先使用手动指定。",
+  routingTableTitle: "分流模型表",
+  routingTableDesc:
+    "按「任务类型 × 任务等级」给子代理指定模型。比如：简单文本任务用便宜模型，复杂实现任务用更强模型，多模态任务用支持图片的模型。",
+  perAgentOverrideTitle: "按 Agent 单独覆盖",
+  strategyDefault: "使用默认规则",
+  strategyRoute: "总是自动分流",
+  strategyFixed: "固定指定模型",
+  trellisInspectionTitle: "Trellis 巡检",
+
+  // Footer
+  agentsPanelNote:
+    "Agents 面板保存到 Pi settings.json；请使用面板内的保存/重新加载按钮。",
+  resetDefaults: "恢复默认值",
+  unsavedChanges: "有未保存更改",
+
   passed: "通过",
   needsAttention: "需处理",
 } as const satisfies MessageTree;
@@ -341,6 +416,7 @@ export const settingsEn = {
   grokSection: "Grok CLI usage panel",
   editorSection: "Editor and shortcuts",
   agentsSection: "Native Pi subagent model settings",
+  extensionsSection: "Extensions",
   trellisSection: "Trellis panel and workflow routing",
   includeArchivedSessions: "Include archived sessions in stats",
   includeArchivedSessionsHint:
@@ -615,6 +691,82 @@ export const settingsEn = {
     noResetTime: "No reset time",
     noQuotaCache: "No quota cache",
   },
+  // Section nav labels
+  sectionWorktree: "WorkTree",
+  sectionUsage: "Usage",
+  sectionTerminal: "Terminal",
+  sectionEditor: "Editor",
+  sectionAgents: "Agents",
+
+  // WorkTree section
+  saveTo: "Saved to",
+  templateVariables: "Template variables",
+  sessionDisplaySeparate: "Separate project entries",
+  sessionDisplayTag: "Tag inside project",
+
+  // Usage section
+  usageDescription: "Controls which session files the Usage panel scans.",
+
+  // Terminal section
+  terminalDescription:
+    "Controls the local Web Terminal. Environment variables are saved in plain text to",
+  envVariables: "Environment variables",
+  envVariablesHint:
+    "These values override or supplement the pi-web service process environment and are saved in plain text; do not enter long-lived secrets here.",
+  envName: "Name",
+  envValue: "Value",
+  addVariable: "Add variable",
+  parseToTable: "Parse to table",
+  envAssistantTitle: "Raw env AI parse model",
+  envAssistantDesc:
+    "Parses complex export/proxy variable blocks and fills the key-value table above.",
+
+  // ChatGPT section
+  chatgptDescription:
+    "Controls ChatGPT/Codex account display. Account warm-up plans are managed in Models' Warm-up dialog and also saved to",
+  chatgptLockInfo:
+    "Lock expiry follows config: if a lock is not updated for ~2× the refresh cycle, the launcher treats it as stale and attempts to take over.",
+
+  // Grok section
+  grokDescription: "Grok CLI usage panel config. Saved to",
+
+  // Editor section
+  editorDescription:
+    "Controls the file panel editor implementation and shortcuts. Saved to",
+  customShortcutsTitle: "Snail Pi custom shortcuts / mouse gestures",
+  customShortcutsHint:
+    "These are additional Snail Pi shortcuts layered on top of Monaco. Each can be toggled off individually; the corresponding buttons remain available.",
+  builtinShortcutsTitle: "Built-in Monaco shortcuts",
+  monacoDisclaimer:
+    "These are built-in Monaco behaviors and are not stored in Snail Pi config. The toggles above only control Snail Pi-managed shortcuts/gestures.",
+
+  // Trellis section
+  trellisDescription:
+    "The panel reads tasks from .trellis/tasks in the current workspace. Install and initialize Trellis in the project first.",
+  openDocs: "Open Trellis docs ↗",
+  workflowDesign: "Workflow design",
+  currentWorkspace: "Current workspace: ",
+  workflowAssistantTitle: "Workflow assistant model",
+  workflowAssistantDesc:
+    "Explains workflow.md node guides and summarizes key actions. Read-only assistance; does not modify workflow files.",
+  subagentRoutingTitle: "Trellis workflow subagent model routing",
+  subagentRoutingDesc:
+    "This is the Trellis workflow routing policy (pi-web.json → trellis.subagents) and only affects subagents dispatched by Trellis. To configure native pi-subagents model settings, use the Agents panel above. Selects subagent models for Trellis-dispatched agents. Defaults to the current chat model; manual tool-call model specification takes priority.",
+  routingTableTitle: "Routing table",
+  routingTableDesc:
+    "Assign subagent models by task type × difficulty. Example: cheap models for simple text, stronger models for complex implementation, vision models for multimodal work.",
+  perAgentOverrideTitle: "Per-agent overrides",
+  strategyDefault: "Use default rules",
+  strategyRoute: "Always auto-route",
+  strategyFixed: "Fixed model",
+  trellisInspectionTitle: "Trellis inspection",
+
+  // Footer
+  agentsPanelNote:
+    "The Agents panel saves to Pi settings.json; use its own save/reload buttons.",
+  resetDefaults: "Reset to defaults",
+  unsavedChanges: "Unsaved changes",
+
   passed: "Passed",
   needsAttention: "Needs attention",
 } as const satisfies MessageTree;

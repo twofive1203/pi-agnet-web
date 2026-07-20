@@ -6,7 +6,7 @@
 | --- | --- |
 | `components/I18nProvider.tsx` | Client locale provider (`zh` / `en`), `t()` translator, and `useI18n` / `useT` hooks. Preference is stored in `localStorage` key `pi-locale`; first visit follows the browser language. |
 | `components/AppShell.tsx` | Top-level layout, URL state, tab management, language toggle, Web Terminal bottom-dock toggling, right drawer mode switching between files and optional Trellis tasks, Trellis-task-to-chat context block insertion, and body-portaled top-bar auxiliary panels that remain visible outside the mobile horizontal scroller. |
-| `components/SessionSidebar.tsx` | Session tree sidebar, workspace/WorkTree picker actions grouped by main workspace, archive/unarchive actions, archived section, multi-select batch archive, and integrated file explorer. |
+| `components/SessionSidebar.tsx` | Session tree sidebar, workspace/WorkTree picker actions grouped by main workspace, archive/unarchive actions, archived section, multi-select batch archive, and an integrated Explorer that starts collapsed and mounts its file tree only when expanded. |
 | `components/ChatWindow.tsx` | Message list, SSE streaming, fork/navigate logic. Shows archived banner and disables input for archived sessions. Hosts Pi extension status chips, generic widget stacks around the composer, the floating todo panel, and body-portaled dialog/toast hosts for extension UI requests. |
 | `components/ChatInput.tsx` | Input bar, model dropdown, thinking level, tool preset, image upload, file-reference chips, serialized Trellis task context blocks, and bounded, scrollable slash-command autocomplete for extension commands, prompts, and skills. Extension commands may show CLI-only / Partial badges from server `webSupport` metadata. |
 | `components/ExtensionStatusBar.tsx` | Compact chip row for Pi extension `setStatus` keys near the chat composer. |
@@ -43,7 +43,7 @@
 | `components/TerminalPanel.tsx` | Bottom-dock Web Terminal workspace using xterm; manages ephemeral multi-tab terminal sessions, per-pane tab strips, tab renaming, nested drag-to-split panes, pane and dock resizing, minimize/restore, app-local fullscreen, and destructive close confirmation while reusing existing terminal session APIs per tab. |
 | `components/ModelPricingCatalog.tsx` | Searchable, provider-filterable read-only view of the locally cached pi.dev model pricing catalog, including context-window and token-price columns. |
 | `components/UsageStatsModal.tsx` | Token/cost usage statistics modal with active/archive scan counts and rounded M-token conversions. |
-| `components/FileExplorer.tsx` | File tree inside the sidebar. |
+| `components/FileExplorer.tsx` | On-demand file tree inside the sidebar; root loads are abortable and workspace changes clear old roots before applying the new response. |
 | `components/FileViewer.tsx` | File content viewer/editor in a tab; routes media/document previews, orchestrates text editing state, and exposes Java implementation lookup results. |
 | `components/MonacoFileEditor.tsx` | Monaco-backed source editor for text files, including language mapping, basic completions, word wrap, theme, and line-selection callbacks. |
 | `components/FileIcons.tsx` | Monochrome SVG icons for files/folders. |
@@ -54,7 +54,7 @@
 
 | File | Purpose |
 | --- | --- |
-| `hooks/useAgentSession.ts` | Central chat/session hook: data loading, SSE, streaming state, commands, tools, models, thinking levels, subagent run/routing metadata, and browser-mediated Pi extension UI state (`setStatus`/`setWidget` maps, blocking dialog request, notify toasts) with `extension_ui_response` replies. Standard `todo-list` widget updates are projected by `ChatWindow` into the floating `ExtensionTodoPanel`; other widgets stay near the composer. |
+| `hooks/useAgentSession.ts` | Central chat/session hook: data loading, SSE, streaming state, commands, tools, cwd-scoped model metadata with bounded browser request/result deduplication, thinking levels, subagent run/routing metadata, and browser-mediated Pi extension UI state (`setStatus`/`setWidget` maps, blocking dialog request, notify toasts) with `extension_ui_response` replies. Standard `todo-list` widget updates are projected by `ChatWindow` into the floating `ExtensionTodoPanel`; other widgets stay near the composer. |
 | `hooks/useTheme.ts` | Dark/light theme toggle with view-transition animation. |
 | `hooks/useDragDrop.ts` | Drag-and-drop image attachment handler. |
 | `hooks/useAudio.ts` | Sound toggle and completion chime playback. |

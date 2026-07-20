@@ -314,7 +314,7 @@ function SettingEditor({
 /**
  * Modal for inspecting loaded Pi packages/resources and editing extension settings.
  */
-export function ExtensionsConfig({ cwd, onClose }: { cwd: string | null; onClose: () => void }) {
+export function ExtensionsConfig({ cwd, onClose, embed }: { cwd: string | null; onClose: () => void; embed?: boolean }) {
   const [tab, setTab] = useState<TabId>("resources");
   const [resources, setResources] = useState<ResourcesPayload | null>(null);
   const [settings, setSettings] = useState<SettingsPayload | null>(null);
@@ -386,12 +386,13 @@ export function ExtensionsConfig({ cwd, onClose }: { cwd: string | null; onClose
   }, [loadSettings, tab]);
 
   useEffect(() => {
+    if (embed) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
+  }, [onClose, embed]);
 
   const dirtyKeys = useMemo(() => {
     const keys = new Set([...Object.keys(draft), ...Object.keys(baseline)]);
@@ -467,40 +468,8 @@ export function ExtensionsConfig({ cwd, onClose }: { cwd: string | null; onClose
 
   const loading = tab === "resources" ? loadingResources : loadingSettings;
 
-  return (
-    <div
-      className="pi-modal-overlay"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Pi extensions"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 900,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: 18,
-        background: "rgba(0,0,0,0.44)",
-      }}
-    >
-      <div
-        className="pi-modal-panel pi-modal-panel-large"
-        style={{
-          width: "min(980px, 100%)",
-          maxHeight: "min(820px, calc(100dvh - 36px))",
-          display: "flex",
-          flexDirection: "column",
-          background: "var(--bg)",
-          border: "1px solid var(--border)",
-          borderRadius: 10,
-          boxShadow: "0 22px 70px rgba(0,0,0,0.34)",
-          overflow: "hidden",
-        }}
-      >
+  const panelContent = (
+    <>
         <div
           style={{
             display: "flex",
@@ -563,21 +532,23 @@ export function ExtensionsConfig({ cwd, onClose }: { cwd: string | null; onClose
           >
             Refresh
           </button>
-          <button
-            type="button"
-            onClick={onClose}
-            style={{
-              border: "1px solid var(--border)",
-              background: "var(--bg)",
-              color: "var(--text-muted)",
-              borderRadius: 7,
-              padding: "6px 10px",
-              fontSize: 12,
-              cursor: "pointer",
-            }}
-          >
-            Close
-          </button>
+          {!embed && (
+            <button
+              type="button"
+              onClick={onClose}
+              style={{
+                border: "1px solid var(--border)",
+                background: "var(--bg)",
+                color: "var(--text-muted)",
+                borderRadius: 7,
+                padding: "6px 10px",
+                fontSize: 12,
+                cursor: "pointer",
+              }}
+            >
+              Close
+            </button>
+          )}
         </div>
 
         {(error || saveMessage) && (
@@ -790,6 +761,47 @@ export function ExtensionsConfig({ cwd, onClose }: { cwd: string | null; onClose
             </>
           )}
         </div>
+    </>
+      );
+  if (embed) {
+    return panelContent;
+  }
+
+  return (
+    <div
+      className="pi-modal-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Pi extensions"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 900,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 18,
+        background: "rgba(0,0,0,0.44)",
+      }}
+    >
+      <div
+        className="pi-modal-panel pi-modal-panel-large"
+        style={{
+          width: "min(980px, 100%)",
+          maxHeight: "min(820px, calc(100dvh - 36px))",
+          display: "flex",
+          flexDirection: "column",
+          background: "var(--bg)",
+          border: "1px solid var(--border)",
+          borderRadius: 10,
+          boxShadow: "0 22px 70px rgba(0,0,0,0.34)",
+          overflow: "hidden",
+        }}
+      >
+        {panelContent}
       </div>
     </div>
   );

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { TrellisWorkflowVisualizer } from "./TrellisWorkflowVisualizer";
 import { AgentsConfig } from "./AgentsConfig";
+import { ExtensionsConfig } from "./ExtensionsConfig";
 import type {
   PiWebChatGptConfig,
   PiWebConfig,
@@ -73,7 +74,7 @@ const TEMPLATE_VARIABLES = [
   { token: "{yyyyMMdd-HHmmss}", descriptionKey: "settings.pathVarsTimestamp" },
 ];
 
-type SettingsSection = "language" | "worktree" | "usage" | "terminal" | "chatgpt" | "grok" | "editor" | "agents" | "trellis";
+type SettingsSection = "language" | "worktree" | "usage" | "terminal" | "chatgpt" | "grok" | "editor" | "agents" | "trellis" | "extensions";
 type SubagentThinkingOption = PiWebSubagentRunPolicy["thinking"];
 
 const SUBAGENT_AGENT_NAMES = ["trellis-implement", "trellis-check", "trellis-research"];
@@ -908,13 +909,14 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
         <div className="settings-modal-body" style={{ display: "flex", minHeight: 0 }}>
           <div style={{ width: 150, borderRight: "1px solid var(--border)", padding: 10, background: "var(--bg-subtle)", flexShrink: 0, display: "flex", flexDirection: "column", gap: 6 }}>
             {renderSectionButton("language", t("common.language"), t("settings.languageSection"))}
-            {renderSectionButton("worktree", "WorkTree", t("settings.worktreeSection"))}
-            {renderSectionButton("usage", "Usage", t("settings.usageSection"))}
-            {renderSectionButton("terminal", "Terminal", t("settings.terminalSection"))}
+            {renderSectionButton("worktree", t("settings.sectionWorktree"), t("settings.worktreeSection"))}
+            {renderSectionButton("usage", t("settings.sectionUsage"), t("settings.usageSection"))}
+            {renderSectionButton("terminal", t("settings.sectionTerminal"), t("settings.terminalSection"))}
             {renderSectionButton("chatgpt", "ChatGPT", t("settings.chatgptSection"))}
             {renderSectionButton("grok", "Grok", t("settings.grokSection"))}
-            {renderSectionButton("editor", "Editor", t("settings.editorSection"))}
-            {renderSectionButton("agents", "Agents", t("settings.agentsSection"))}
+            {renderSectionButton("editor", t("settings.sectionEditor"), t("settings.editorSection"))}
+            {renderSectionButton("agents", t("settings.sectionAgents"), t("settings.agentsSection"))}
+            {renderSectionButton("extensions", "Extensions", t("settings.extensionsSection"))}
             {renderSectionButton("trellis", "Trellis", t("settings.trellisSection"))}
           </div>
 
@@ -964,7 +966,7 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
                     <div>
                       <h3 style={{ margin: 0, color: "var(--text)", fontSize: 15 }}>{t("settings.worktreeSection")}</h3>
                       <p style={{ margin: "5px 0 0", color: "var(--text-muted)", fontSize: 12, lineHeight: 1.5 }}>
-                        保存到 <code style={{ fontFamily: "var(--font-mono)", color: "var(--text)", overflowWrap: "anywhere" }}>{configPath}</code>
+                        {t("settings.saveTo")} <code style={{ fontFamily: "var(--font-mono)", color: "var(--text)", overflowWrap: "anywhere" }}>{configPath}</code>
                         {exists ? "" : t("settings.autoCreateOnSave")}
                       </p>
                     </div>
@@ -979,8 +981,8 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
                           onChange={(e) => updateWorktree({ sessionDisplay: e.target.value as PiWebWorktreeConfig["sessionDisplay"] })}
                           style={inputStyle}
                         >
-                          <option value="separate">{locale === "zh" ? "独立项目条目" : "Separate project entries"}</option>
-                          <option value="tag">{locale === "zh" ? "在项目内标记" : "Tag inside project"}</option>
+                          <option value="separate">{t("settings.sessionDisplaySeparate")}</option>
+                          <option value="tag">{t("settings.sessionDisplayTag")}</option>
                         </select>
                       </Field>
                     </div>
@@ -996,7 +998,7 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
                     </Field>
 
                     <div style={{ padding: 12, borderRadius: 8, background: "var(--bg-subtle)", border: "1px solid var(--border)" }}>
-                      <div style={{ fontSize: 12, color: "var(--text)", fontWeight: 600, marginBottom: 8 }}>{locale === "zh" ? "可用模板变量" : "Template variables"}</div>
+                      <div style={{ fontSize: 12, color: "var(--text)", fontWeight: 600, marginBottom: 8 }}>{t("settings.templateVariables")}</div>
                       <div style={{ display: "grid", gridTemplateColumns: "minmax(150px, max-content) 1fr", gap: "7px 12px", alignItems: "baseline" }}>
                         {TEMPLATE_VARIABLES.map((variable) => (
                           <div key={variable.token} style={{ display: "contents" }}>
@@ -1014,7 +1016,7 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
                     <div>
                       <h3 style={{ margin: 0, color: "var(--text)", fontSize: 15 }}>{t("settings.usageSection")}</h3>
                       <p style={{ margin: "5px 0 0", color: "var(--text-muted)", fontSize: 12, lineHeight: 1.5 }}>
-                        控制左下角 Usage 弹窗扫描哪些 session 文件。保存到 <code style={{ fontFamily: "var(--font-mono)", color: "var(--text)", overflowWrap: "anywhere" }}>{configPath}</code>
+                        {t("settings.usageDescription")} {t("settings.saveTo")} <code style={{ fontFamily: "var(--font-mono)", color: "var(--text)", overflowWrap: "anywhere" }}>{configPath}</code>
                         {exists ? "" : t("settings.autoCreateOnSave")}
                       </p>
                     </div>
@@ -1030,7 +1032,7 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
                     <div>
                       <h3 style={{ margin: 0, color: "var(--text)", fontSize: 15 }}>{t("settings.terminalSection")}</h3>
                       <p style={{ margin: "5px 0 0", color: "var(--text-muted)", fontSize: 12, lineHeight: 1.5 }}>
-                        控制本地 Web 终端。环境变量会明文保存到 <code style={{ fontFamily: "var(--font-mono)", color: "var(--text)", overflowWrap: "anywhere" }}>{configPath}</code>
+                        {t("settings.terminalDescription")} <code style={{ fontFamily: "var(--font-mono)", color: "var(--text)", overflowWrap: "anywhere" }}>{configPath}</code>
                         {exists ? "" : t("settings.autoCreateOnSave")}
                       </p>
                     </div>
@@ -1056,7 +1058,7 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
                           <option value="custom">custom path</option>
                         </select>
                       </Field>
-                      <Field label="Custom shell path" description={t("settings.customShellPathHint")}>
+                      <Field label={t("settings.customShellPath")} description={t("settings.customShellPathHint")}>
                         <TextInput
                           value={terminal.customShellPath}
                           onChange={(customShellPath) => updateTerminal({ customShellPath })}
@@ -1067,14 +1069,14 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
                     </div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: 12, borderRadius: 10, background: "var(--bg-subtle)", border: "1px solid var(--border)" }}>
                       <div>
-                        <div style={{ color: "var(--text)", fontSize: 13, fontWeight: 800 }}>{locale === "zh" ? "环境变量" : "Environment variables"}</div>
+                        <div style={{ color: "var(--text)", fontSize: 13, fontWeight: 800 }}>{t("settings.envVariables")}</div>
                         <div style={{ color: "var(--text-muted)", fontSize: 11, marginTop: 3, lineHeight: 1.45 }}>
-                          下面的值会覆盖或补充 pi-web 服务进程环境，并明文保存；不要填写需要加密管理的长期密钥。
+                          {t("settings.envVariablesHint")}
                         </div>
                       </div>
                       <div style={{ display: "grid", gridTemplateColumns: "minmax(120px, 0.45fr) minmax(160px, 1fr) 70px", gap: 8, alignItems: "center" }}>
-                        <span style={{ fontSize: 11, color: "var(--text-dim)", fontWeight: 700 }}>{locale === "zh" ? "变量名" : "Name"}</span>
-                        <span style={{ fontSize: 11, color: "var(--text-dim)", fontWeight: 700 }}>{locale === "zh" ? "变量值" : "Value"}</span>
+                        <span style={{ fontSize: 11, color: "var(--text-dim)", fontWeight: 700 }}>{t("settings.envName")}</span>
+                        <span style={{ fontSize: 11, color: "var(--text-dim)", fontWeight: 700 }}>{t("settings.envValue")}</span>
                         <span />
                         {Object.entries(terminal.env).map(([key, value]) => (
                           <div key={key} style={{ display: "contents" }}>
@@ -1085,7 +1087,7 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
                               onClick={() => deleteTerminalEnv(key)}
                               style={{ padding: "7px 10px", borderRadius: 7, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-muted)", cursor: "pointer", fontSize: 12 }}
                             >
-                              删除
+                              {t("common.delete")}
                             </button>
                           </div>
                         ))}
@@ -1103,7 +1105,7 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
                         }}
                         style={{ alignSelf: "flex-start", padding: "7px 10px", borderRadius: 7, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text)", cursor: "pointer", fontSize: 12 }}
                       >
-                        添加变量
+                        {t("settings.addVariable")}
                       </button>
                       <Field label={t("settings.rawEnvImport")} description={t("settings.rawEnvHint")}>
                         <textarea
@@ -1122,7 +1124,7 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
                           disabled={!rawEnvImport.trim()}
                           style={{ padding: "7px 10px", borderRadius: 7, border: "1px solid var(--border)", background: rawEnvImport.trim() ? "var(--bg)" : "var(--border)", color: rawEnvImport.trim() ? "var(--text)" : "var(--text-dim)", cursor: rawEnvImport.trim() ? "pointer" : "not-allowed", fontSize: 12 }}
                         >
-                          解析到表格
+                          {t("settings.parseToTable")}
                         </button>
                         <button
                           type="button"
@@ -1137,9 +1139,9 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
                     </div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: 12, borderRadius: 10, background: "var(--bg-subtle)", border: "1px solid var(--border)" }}>
                       <div>
-                        <div style={{ color: "var(--text)", fontSize: 13, fontWeight: 800 }}>{locale === "zh" ? "Raw env AI 解析模型" : "Raw env AI parse model"}</div>
+                        <div style={{ color: "var(--text)", fontSize: 13, fontWeight: 800 }}>{t("settings.envAssistantTitle")}</div>
                         <div style={{ color: "var(--text-muted)", fontSize: 11, marginTop: 3, lineHeight: 1.45 }}>
-                          用于解析复杂 export/代理变量片段，只返回 key-value 结果并填入上方表格。
+                          {t("settings.envAssistantDesc")}
                         </div>
                       </div>
                       {modelsError && <div style={{ padding: "7px 9px", borderRadius: 7, background: "rgba(239,68,68,0.12)", color: "#f87171", fontSize: 11 }}>{modelsError}</div>}
@@ -1166,7 +1168,7 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
                     <div>
                       <h3 style={{ margin: 0, color: "var(--text)", fontSize: 15 }}>ChatGPT</h3>
                       <p style={{ margin: "5px 0 0", color: "var(--text-muted)", fontSize: 12, lineHeight: 1.5 }}>
-                        控制 ChatGPT/Codex 账号相关显示。账号预热计划在 Models 的 Warm up 弹窗中管理，并同样保存到 <code style={{ fontFamily: "var(--font-mono)", color: "var(--text)", overflowWrap: "anywhere" }}>{configPath}</code>
+                        {t("settings.chatgptDescription")} <code style={{ fontFamily: "var(--font-mono)", color: "var(--text)", overflowWrap: "anywhere" }}>{configPath}</code>
                         {exists ? "" : t("settings.autoCreateOnSave")}
                       </p>
                     </div>
@@ -1207,7 +1209,7 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
                       </Field>
                     </div>
                     <div style={{ padding: 10, borderRadius: 8, border: "1px solid var(--border)", background: "var(--bg-subtle)", color: "var(--text-dim)", fontSize: 11, lineHeight: 1.5 }}>
-                      文件锁过期判断跟随配置：锁超过约 2 × 总刷新间隔未更新时，启动器会把它视为 stale 并尝试接管。
+                      {t("settings.chatgptLockInfo")}
                     </div>
                   </div>
                 ) : section === "editor" ? (
@@ -1215,7 +1217,7 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
                     <div>
                       <h3 style={{ margin: 0, color: "var(--text)", fontSize: 15 }}>{t("settings.editorSection")}</h3>
                       <p style={{ margin: "5px 0 0", color: "var(--text-muted)", fontSize: 12, lineHeight: 1.5 }}>
-                        控制文件面板的编辑器实现和快捷键。保存到 <code style={{ fontFamily: "var(--font-mono)", color: "var(--text)", overflowWrap: "anywhere" }}>{configPath}</code>
+                        {t("settings.editorDescription")} <code style={{ fontFamily: "var(--font-mono)", color: "var(--text)", overflowWrap: "anywhere" }}>{configPath}</code>
                         {exists ? "" : t("settings.autoCreateOnSave")}
                       </p>
                     </div>
@@ -1230,9 +1232,9 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
                     </Field>
                     <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: 12, borderRadius: 10, background: "var(--bg-subtle)", border: "1px solid var(--border)" }}>
                       <div>
-                        <div style={{ color: "var(--text)", fontSize: 13, fontWeight: 800 }}>{locale === "zh" ? "蜗牛派自定义快捷键 / 鼠标手势" : "Snail Pi custom shortcuts / mouse gestures"}</div>
+                        <div style={{ color: "var(--text)", fontSize: 13, fontWeight: 800 }}>{t("settings.customShortcutsTitle")}</div>
                         <div style={{ color: "var(--text-muted)", fontSize: 11, marginTop: 3, lineHeight: 1.45 }}>
-                          这些是蜗牛派在 Monaco 之上额外接管的操作，可单独关闭；关闭后对应按钮仍可使用。
+                          {t("settings.customShortcutsHint")}
                         </div>
                       </div>
                       <ToggleField
@@ -1273,7 +1275,7 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
                       />
                     </div>
                     <div style={{ padding: 12, borderRadius: 10, background: "var(--bg-subtle)", border: "1px solid var(--border)", color: "var(--text-dim)", fontSize: 11, lineHeight: 1.6 }}>
-                      <div style={{ color: "var(--text)", fontSize: 13, fontWeight: 800, marginBottom: 8 }}>{locale === "zh" ? "Monaco 内置常用快捷键" : "Built-in Monaco shortcuts"}</div>
+                      <div style={{ color: "var(--text)", fontSize: 13, fontWeight: 800, marginBottom: 8 }}>{t("settings.builtinShortcutsTitle")}</div>
                       <div style={{ display: "grid", gridTemplateColumns: "150px 1fr", gap: "6px 12px", alignItems: "baseline" }}>
                         {[
                           ["Cmd/Ctrl+F", t("settings.currentFind")],
@@ -1291,7 +1293,7 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
                           </div>
                         ))}
                       </div>
-                      <div style={{ marginTop: 8 }}>{locale === "zh" ? "这些是 Monaco 自带编辑行为，不写入蜗牛派配置；上面的开关只控制蜗牛派额外接管的快捷键/鼠标手势。" : "These are built-in Monaco behaviors and are not stored in Snail Pi config. The toggles above only control Snail Pi-managed shortcuts/gestures."}</div>
+                      <div style={{ marginTop: 8 }}>{t("settings.monacoDisclaimer")}</div>
                     </div>
                   </div>
                 ) : section === "grok" ? (
@@ -1299,7 +1301,7 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
                     <div>
                       <h3 style={{ margin: 0, color: "var(--text)", fontSize: 15 }}>Grok</h3>
                       <p style={{ margin: "5px 0 0", color: "var(--text-muted)", fontSize: 12, lineHeight: 1.5 }}>
-                        Grok CLI 用量面板配置。保存到 <code style={{ fontFamily: "var(--font-mono)", color: "var(--text)", overflowWrap: "anywhere" }}>{configPath}</code>
+                        {t("settings.grokDescription")} <code style={{ fontFamily: "var(--font-mono)", color: "var(--text)", overflowWrap: "anywhere" }}>{configPath}</code>
                         {exists ? "" : t("settings.autoCreateOnSave")}
                       </p>
                     </div>
@@ -1310,6 +1312,8 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
                       onChange={(usagePanelEnabled) => updateGrok({ usagePanelEnabled })}
                     />
                   </div>
+                ) : section === "extensions" ? (
+                  <ExtensionsConfig cwd={cwd} onClose={() => {}} embed />
                 ) : section === "agents" ? (
                   <AgentsConfig cwd={cwd} />
                 ) : (
@@ -1318,12 +1322,12 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
                       <div>
                         <h3 style={{ margin: 0, color: "var(--text)", fontSize: 15 }}>{t("settings.trellisSection")}</h3>
                         <p style={{ margin: "5px 0 0", color: "var(--text-muted)", fontSize: 12, lineHeight: 1.5 }}>
-                          {locale === "zh" ? <>面板从当前工作区的 <code style={{ fontFamily: "var(--font-mono)", color: "var(--text)" }}>.trellis/tasks</code> 读取任务；使用前需要在项目中安装并初始化 Trellis。</> : <>The panel reads tasks from <code style={{ fontFamily: "var(--font-mono)", color: "var(--text)" }}>.trellis/tasks</code> in the current workspace. Install and initialize Trellis in the project first.</>}
+                          {t("settings.trellisDescription")}
                         </p>
                       </div>
                       <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
                         <a href="https://docs.trytrellis.app/" target="_blank" rel="noreferrer" style={{ color: "var(--accent)", fontSize: 12, fontWeight: 700, textDecoration: "none" }}>
-                          打开 Trellis 官方文档 ↗
+                          {t("settings.openDocs")}
                         </a>
                         <button
                           type="button"
@@ -1332,11 +1336,11 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
                           title={cwd ? t("settings.viewWorkflow") : t("settings.selectWorkspaceShort")}
                           style={{ background: "none", border: "none", padding: 0, color: cwd ? "var(--accent)" : "var(--text-dim)", fontSize: 12, fontWeight: 700, cursor: cwd ? "pointer" : "not-allowed" }}
                         >
-                          流程设计
+                          {t("settings.workflowDesign")}
                         </button>
                       </div>
                       <div style={{ color: "var(--text-dim)", fontSize: 11, overflowWrap: "anywhere" }}>
-                        当前工作区：{cwd ? <code style={{ fontFamily: "var(--font-mono)", color: "var(--text-muted)" }}>{cwd}</code> : t("settings.notSelected")}
+                        {t("settings.currentWorkspace")}{cwd ? <code style={{ fontFamily: "var(--font-mono)", color: "var(--text-muted)" }}>{cwd}</code> : t("settings.notSelected")}
                       </div>
                     </div>
 
@@ -1369,9 +1373,9 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
 
                     <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: 12, borderRadius: 10, background: "var(--bg-subtle)", border: "1px solid var(--border)" }}>
                       <div>
-                        <div style={{ color: "var(--text)", fontSize: 13, fontWeight: 800 }}>{locale === "zh" ? "流程辅助阅读模型" : "Workflow assistant model"}</div>
+                        <div style={{ color: "var(--text)", fontSize: 13, fontWeight: 800 }}>{t("settings.workflowAssistantTitle")}</div>
                         <div style={{ color: "var(--text-muted)", fontSize: 11, marginTop: 3, lineHeight: 1.45 }}>
-                          用于解释 workflow.md 节点引导内容：翻译成中文并总结关键动作。只读辅助，不会修改流程文件。
+                          {t("settings.workflowAssistantDesc")}
                         </div>
                       </div>
                       <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 12 }}>
@@ -1408,11 +1412,9 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
 
                     <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: 12, borderRadius: 10, background: "var(--bg-subtle)", border: "1px solid var(--border)" }}>
                       <div>
-                        <div style={{ color: "var(--text)", fontSize: 13, fontWeight: 800 }}>{locale === "zh" ? "Trellis 工作流子代理模型路由" : "Trellis workflow subagent model routing"}</div>
+                        <div style={{ color: "var(--text)", fontSize: 13, fontWeight: 800 }}>{t("settings.subagentRoutingTitle")}</div>
                         <div style={{ color: "var(--text-muted)", fontSize: 11, marginTop: 3, lineHeight: 1.45 }}>
-                          这是 Trellis 工作流路由策略（pi-web.json → trellis.subagents），仅影响 Trellis 派出的子代理。
-                          {t("settings.agentsNativeHint")}
-                          给 Trellis 派出去的子代理单独选模型。默认跟随当前聊天使用的主模型；如果某次工具调用里手动指定了模型，会优先使用手动指定。
+                          {t("settings.subagentRoutingDesc")}
                         </div>
                       </div>
                       {modelsError && <div style={{ padding: "7px 9px", borderRadius: 7, background: "rgba(239,68,68,0.12)", color: "#f87171", fontSize: 11 }}>{modelsError}</div>}
@@ -1490,8 +1492,8 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
                       </div>
 
                       <div style={{ display: "flex", flexDirection: "column", gap: 8, paddingTop: 4, borderTop: "1px solid var(--border)" }}>
-                        <div style={{ fontSize: 12, color: "var(--text)", fontWeight: 700 }}>{locale === "zh" ? "分流模型表" : "Routing table"}</div>
-                        <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.45 }}>{locale === "zh" ? "按“任务类型 × 任务等级”给子代理指定模型。比如：简单文本任务用便宜模型，复杂实现任务用更强模型，多模态任务用支持图片的模型。" : "Assign subagent models by task type × difficulty. Example: cheap models for simple text, stronger models for complex implementation, vision models for multimodal work."}</div>
+                        <div style={{ fontSize: 12, color: "var(--text)", fontWeight: 700 }}>{t("settings.routingTableTitle")}</div>
+                        <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.45 }}>{t("settings.routingTableDesc")}</div>
                         {SUBAGENT_MODALITIES.map((modality) => (
                           <div key={modality} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                             <div style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 700 }}>{t(SUBAGENT_MODALITY_LABEL_KEYS[modality])}</div>
@@ -1519,7 +1521,7 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
                       </div>
 
                       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                        <div style={{ fontSize: 12, color: "var(--text)", fontWeight: 700 }}>{locale === "zh" ? "按 Agent 单独覆盖" : "Per-agent overrides"}</div>
+                        <div style={{ fontSize: 12, color: "var(--text)", fontWeight: 700 }}>{t("settings.perAgentOverrideTitle")}</div>
                         {SUBAGENT_AGENT_NAMES.map((agent) => {
                           const agentConfig = trellis.subagents.agents[agent] ?? { strategy: "default" as const };
                           const fixed = agentConfig.fixed ?? trellis.subagents.defaultPolicy;
@@ -1533,9 +1535,9 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
                                 disabled={!trellis.subagents.enabled}
                                 style={{ ...inputStyle, opacity: trellis.subagents.enabled ? 1 : 0.6 }}
                               >
-                                <option value="default">{locale === "zh" ? "使用默认规则" : "Use default rules"}</option>
-                                <option value="route">{locale === "zh" ? "总是自动分流" : "Always auto-route"}</option>
-                                <option value="fixed">{locale === "zh" ? "固定指定模型" : "Fixed model"}</option>
+                                <option value="default">{t("settings.strategyDefault")}</option>
+                                <option value="route">{t("settings.strategyRoute")}</option>
+                                <option value="fixed">{t("settings.strategyFixed")}</option>
                                 <option value="disabled">{t("settings.disableHere")}</option>
                               </select>
                               <ModelPolicySelect
@@ -1558,7 +1560,7 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
                     <div style={{ padding: 12, borderRadius: 10, background: "var(--bg-subtle)", border: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: 10 }}>
                       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
                         <div>
-                          <div style={{ color: "var(--text)", fontSize: 13, fontWeight: 800 }}>{locale === "zh" ? "Trellis 巡检" : "Trellis inspection"}</div>
+                          <div style={{ color: "var(--text)", fontSize: 13, fontWeight: 800 }}>{t("settings.trellisInspectionTitle")}</div>
                           <div style={{ color: "var(--text-muted)", fontSize: 11, marginTop: 3 }}>{trellisStatus ? formatRecommendedAction(trellisStatus, t) : (cwd ? t("settings.checking") : t("settings.selectWorkspaceToInit"))}</div>
                         </div>
                         <button
@@ -1632,12 +1634,12 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
         <div style={{ padding: "12px 18px", borderTop: "1px solid var(--border)", display: "flex", justifyContent: "space-between", gap: 10 }}>
           {section === "agents" ? (
             <>
-              <span style={{ color: "var(--text-dim)", fontSize: 12 }}>{locale === "zh" ? "Agents 面板保存到 Pi settings.json；请使用面板内的保存/重新加载按钮。" : "The Agents panel saves to Pi settings.json; use its own save/reload buttons."}</span>
+              <span style={{ color: "var(--text-dim)", fontSize: 12 }}>{t("settings.agentsPanelNote")}</span>
               <button
                 onClick={onClose}
                 style={{ padding: "7px 12px", borderRadius: 7, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-muted)", cursor: "pointer", fontSize: 12 }}
               >
-                关闭
+                {t("common.close")}
               </button>
             </>
           ) : (
@@ -1647,15 +1649,15 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
                 disabled={!defaults || loading || saving}
                 style={{ padding: "7px 12px", borderRadius: 7, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-muted)", cursor: !defaults || loading || saving ? "not-allowed" : "pointer", fontSize: 12 }}
               >
-                恢复默认值
+                {t("settings.resetDefaults")}
               </button>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                {dirty && <span style={{ fontSize: 12, color: "var(--text-dim)" }}>{locale === "zh" ? "有未保存更改" : "Unsaved changes"}</span>}
+                {dirty && <span style={{ fontSize: 12, color: "var(--text-dim)" }}>{t("settings.unsavedChanges")}</span>}
                 <button
                   onClick={onClose}
                   style={{ padding: "7px 12px", borderRadius: 7, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-muted)", cursor: "pointer", fontSize: 12 }}
                 >
-                  取消
+                  {t("common.cancel")}
                 </button>
                 <button
                   onClick={() => void handleSave()}

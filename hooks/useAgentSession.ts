@@ -231,6 +231,53 @@ export interface AttachedImage {
   previewUrl: string;
 }
 
+interface ModelMetadata {
+  models: Record<string, string>;
+  modelList: { id: string; name: string; provider: string }[];
+  defaultModel: { provider: string; modelId: string } | null;
+  thinkingLevels: Record<string, string[]>;
+  thinkingLevelMaps: Record<string, Record<string, string | null>>;
+}
+
+const MODEL_METADATA_CACHE_LIMIT = 8;
+const modelMetadataCache = new Map<string, Promise<ModelMetadata>>();
+
+function loadModelMetadata(cwd: string, refreshGeneration: number): Promise<ModelMetadata> {
+  const cacheKey = `${refreshGeneration}\0${cwd}`;
+  const cached = modelMetadataCache.get(cacheKey);
+  if (cached) {
+    modelMetadataCache.delete(cacheKey);
+    modelMetadataCache.set(cacheKey, cached);
+    return cached;
+  }
+
+  const params = new URLSearchParams({ cwd });
+  if (refreshGeneration > 0) params.set("refresh", "1");
+  const request = fetch(`/api/models?${params.toString()}`).then(async (response) => {
+    const data = await response.json() as Partial<ModelMetadata> & { error?: string };
+    if (!response.ok || data.error) throw new Error(data.error ?? `HTTP ${response.status}`);
+    return {
+      models: data.models ?? {},
+      modelList: data.modelList ?? [],
+      defaultModel: data.defaultModel ?? null,
+      thinkingLevels: data.thinkingLevels ?? {},
+      thinkingLevelMaps: data.thinkingLevelMaps ?? {},
+    };
+  });
+
+  modelMetadataCache.set(cacheKey, request);
+  while (modelMetadataCache.size > MODEL_METADATA_CACHE_LIMIT) {
+    const oldestKey = modelMetadataCache.keys().next().value;
+    if (oldestKey === undefined) break;
+    modelMetadataCache.delete(oldestKey);
+  }
+
+  void request.catch(() => {
+    if (modelMetadataCache.get(cacheKey) === request) modelMetadataCache.delete(cacheKey);
+  });
+  return request;
+}
+
 /** Extract SubagentRun(s) from a subagent tool call's args.
  *  Handles single-agent, parallel (tasks[]), and chain modes. */
 function extractSubagentRuns(
@@ -1102,25 +1149,46 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     }
   }, [hasMessages, messages.length, agentRunning, streamState.isStreaming, streamState.streamingMessage, autoScrollEnabled, scrollToBottom, scrollUserMsgToTop]);
 
-  // Load model list
+  // Model metadata is workspace-scoped because project extensions and settings can
+  // change both the available models and the default selection.
   useEffect(() => {
-    fetch("/api/models").then((r) => r.json()).then((d: { models: Record<string, string>; modelList?: { id: string; name: string; provider: string }[]; defaultModel?: { provider: string; modelId: string } | null; thinkingLevels?: Record<string, string[]>; thinkingLevelMaps?: Record<string, Record<string, string | null>> }) => {
-      setModelNames(d.models);
-      if (d.thinkingLevels) setModelThinkingLevels(d.thinkingLevels);
-      if (d.thinkingLevelMaps) setModelThinkingLevelMaps(d.thinkingLevelMaps);
-      if (d.modelList) {
-        setModelList(d.modelList);
-        if (isNew && d.modelList.length > 0) {
-          const def = d.defaultModel;
-          const match = def && d.modelList.find((m) => m.id === def.modelId && m.provider === def.provider);
+    const cwd = session?.cwd ?? newSessionCwd;
+    if (!cwd) return;
+
+    let active = true;
+    const refreshGeneration = modelsRefreshKey ?? 0;
+    setModelNames({});
+    setModelList([]);
+    setModelThinkingLevels({});
+    setModelThinkingLevelMaps({});
+
+    loadModelMetadata(cwd, refreshGeneration)
+      .then((metadata) => {
+        if (!active) return;
+        setModelNames(metadata.models);
+        setModelList(metadata.modelList);
+        setModelThinkingLevels(metadata.thinkingLevels);
+        setModelThinkingLevelMaps(metadata.thinkingLevelMaps);
+        if (isNew && metadata.modelList.length > 0) {
+          const match = metadata.defaultModel && metadata.modelList.find(
+            (model) => model.id === metadata.defaultModel?.modelId && model.provider === metadata.defaultModel.provider,
+          );
           const selected = match
             ? { provider: match.provider, modelId: match.id }
-            : { provider: d.modelList[0].provider, modelId: d.modelList[0].id };
+            : { provider: metadata.modelList[0].provider, modelId: metadata.modelList[0].id };
           setNewSessionModel(selected);
         }
-      }
-    }).catch(() => {});
-  }, [isNew, modelsRefreshKey, setNewSessionModel]);
+      })
+      .catch(() => {
+        if (!active) return;
+        setModelNames({});
+        setModelList([]);
+        setModelThinkingLevels({});
+        setModelThinkingLevelMaps({});
+      });
+
+    return () => { active = false; };
+  }, [isNew, modelsRefreshKey, newSessionCwd, session?.cwd, setNewSessionModel]);
 
   // Compact error auto-dismiss
   useEffect(() => {

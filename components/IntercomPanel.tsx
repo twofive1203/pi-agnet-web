@@ -12,6 +12,13 @@ type ListResponse = {
 };
 
 function shorten(path: string): string {
+  // Windows named pipe: show just the segment after the last \ (e.g. pi-intercom-...)
+  if (path.startsWith("\\\\\\.\\pipe\\")) {
+    const segments = path.split("-");
+    if (segments.length >= 2) return "pipe:" + segments.slice(1).join("-");
+    return "pipe:" + path.split("\\\\").pop()!;
+  }
+  // Unix socket or regular path: abbreviate home directory
   return path
     .replace(/^[/\\]?Users[/\\][^/\\]+/i, "~")
     .replace(/^[/\\]?home[/\\][^/\\]+/i, "~")
@@ -110,8 +117,12 @@ export function IntercomPanel({ cwd }: { cwd: string | null }) {
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text)" }}>Intercom</div>
           <div style={{ fontSize: 10, color: "var(--text-dim)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {data?.connected ? `${peers.length} peer(s)` : "Broker offline"}
-            {data?.socketPath ? ` · ${shorten(data.socketPath)}` : ""}
+            {data?.connected
+            ? `${peers.length} peer(s)`
+            : "Broker offline"}
+            {data?.socketPath && data?.connected
+              ? ` · ${shorten(data.socketPath)}`
+              : ""}
           </div>
         </div>
         <button

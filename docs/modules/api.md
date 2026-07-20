@@ -21,7 +21,7 @@ API routes live under `app/api/`. When adding, removing, or changing routes, upd
 | `files/implementations/` | GET | Lightweight workspace search for Java symbol implementations/references used by the Monaco file editor. |
 | `files/references/` | GET | Lightweight workspace text/code symbol reference search for editor “find usages” actions. |
 | `files/upload/` | POST | Upload files for chat/file workflows. |
-| `models/` | GET | List available models and default model. |
+| `models/` | GET | List cwd-scoped available models and the project-aware default model. Complete metadata is cached briefly per canonical cwd with in-flight deduplication; `?refresh=1` rebuilds and replaces that cache entry after model/auth configuration changes. |
 | `models-config/` | GET/PUT | Read/write `~/.pi/agent/models.json`. |
 | `models-config/discover/` | POST | Fetch an OpenAI-compatible draft provider's remote `/models` list server-side and return selectable model candidates without mutating `models.json`. |
 | `models-config/test/` | POST | Test a model config with a completion request. |
