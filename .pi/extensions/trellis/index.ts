@@ -12,6 +12,8 @@ interface PiToolResult {
 }
 interface PiExtensionContext {
   hasUI?: boolean;
+  /** The effective workspace for the current AgentSession. */
+  cwd?: string;
   sessionManager?: {
     getSessionId?: () => string;
     getSessionFile?: () => string | undefined;
@@ -1250,6 +1252,10 @@ function normalizeAgent(agent: string | undefined): string {
   return name.startsWith("trellis-") ? name : `trellis-${name}`;
 }
 
+function workspaceRoot(fallbackRoot: string, ctx?: PiExtensionContext): string {
+  return ctx?.cwd ? findRoot(ctx.cwd) : fallbackRoot;
+}
+
 function isTrellisAgent(root: string, agent: string): boolean {
   return existsSync(join(root, ".pi", "agents", `${agent}.md`));
 }
@@ -1721,11 +1727,14 @@ export default function trellisExtension(pi: {
   getThinkingLevel?: () => string;
 }): void {
   if (process.env.TRELLIS_SUBAGENT_CHILD === "1") return;
-  const root = findRoot(process.cwd());
-  const procKey = `pi_process_${hash([root, process.pid, Date.now(), randomBytes(8).toString("hex")].join(":"))}`;
+  // Extension modules are loaded once by the WebUI process, while one SDK
+  // runtime can serve sessions from several workspaces. Keep this only as a
+  // compatibility fallback; session-bound callbacks must use ctx.cwd.
+  const fallbackRoot = findRoot(process.cwd());
+  const procKey = `pi_process_${hash([fallbackRoot, process.pid, Date.now(), randomBytes(8).toString("hex")].join(":"))}`;
   let curKey: string | null = null;
 
-  const getKey = (input?: unknown, ctx?: PiExtensionContext) => {
+  const getKey = (root: string, input?: unknown, ctx?: PiExtensionContext) => {
     const k = adoptKey(root, contextKey(input, ctx) ?? curKey ?? procKey);
     curKey = k;
     return k;
@@ -1738,12 +1747,12 @@ export default function trellisExtension(pi: {
     wf: string;
     ov: string;
   } | null = null;
-  const getTurnCtx = (k: string | null) => {
+  const getTurnCtx = (root: string, k: string | null) => {
     const now = Date.now();
-    if (turnCache && turnCache.key === k && now - turnCache.ts < 1500)
+    if (turnCache && turnCache.key === `${root}:${k}` && now - turnCache.ts < 1500)
       return turnCache;
     turnCache = {
-      key: k,
+      key: `${root}:${k}`,
       ts: now,
       wf: workflowBreadcrumb(root, k),
       ov: sessionOverview(root, k),
@@ -1817,6 +1826,13 @@ export default function trellisExtension(pi: {
       ctx?: PiExtensionContext,
     ) => {
       activeSubagentToolCallId = id;
+      if (!ctx?.cwd) {
+        return {
+          content: [{ type: "text", text: "Unable to dispatch Trellis subagent: the active session workspace is unavailable." }],
+          details: { error: "missing session cwd" },
+        };
+      }
+      const root = workspaceRoot(fallbackRoot, ctx);
       const agentName = normalizeAgent(input.agent);
       if (!isTrellisAgent(root, agentName)) {
         return {
@@ -1863,7 +1879,7 @@ export default function trellisExtension(pi: {
         prompt,
         prompts: prompts?.length ? prompts : undefined,
       };
-      const key = getKey(cleanInput, ctx);
+      const key = getKey(root, cleanInput, ctx);
       const inheritedThinking = pi.getThinkingLevel?.();
       const parentModel = parentModelFromCtx(ctx);
       const result = await runSubagent(
@@ -1928,7 +1944,8 @@ export default function trellisExtension(pi: {
 
   // Events
   pi.on?.("session_start", (event, ctx) => {
-    getKey(event, ctx);
+    const root = workspaceRoot(fallbackRoot, ctx);
+    getKey(root, event, ctx);
     ctx?.ui?.notify?.(
       "Trellis project context is available. Use /trellis-continue to resume the current task.",
       "info",
@@ -1939,7 +1956,8 @@ export default function trellisExtension(pi: {
     activeSubagentToolCallId = null;
   });
   pi.on?.("tool_call", (event, ctx) => {
-    const k = getKey(event, ctx);
+    const root = workspaceRoot(fallbackRoot, ctx);
+    const k = getKey(root, event, ctx);
     const ev = event as { toolName?: string; input?: JsonObject };
     if (
       ev.toolName === "bash" &&
@@ -1966,15 +1984,17 @@ export default function trellisExtension(pi: {
     return undefined;
   });
   pi.on?.("before_agent_start", (event, ctx) => {
-    const k = getKey(event, ctx);
+    const root = workspaceRoot(fallbackRoot, ctx);
+    const k = getKey(root, event, ctx);
     const cur = (event as { systemPrompt?: string }).systemPrompt ?? "";
     const ctxText = buildContext(root, "trellis-implement", k);
-    const { wf, ov } = getTurnCtx(k);
+    const { wf, ov } = getTurnCtx(root, k);
     return {
       systemPrompt: [cur, ctxText, wf, ov].filter(Boolean).join("\n\n"),
     };
   });
   pi.on?.("context", (event, ctx) => {
-    getKey(event, ctx);
+    const root = workspaceRoot(fallbackRoot, ctx);
+    getKey(root, event, ctx);
   });
 }
