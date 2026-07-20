@@ -1,0 +1,32 @@
+{
+  "id": "fix-trellis-implement-subagent-cwd",
+  "name": "fix-trellis-implement-subagent-cwd",
+  "title": "Fix trellis implement subagent working directory",
+  "description": "Investigate and fix trellis-implement subagents being launched in another project's directory, causing active Trellis tasks to be unresolved.",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P1",
+  "creator": "lichong",
+  "assignee": "lichong",
+  "createdAt": "2026-07-20",
+  "completedAt": "2026-07-20",
+  "branch": "self-run",
+  "base_branch": "self-run",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "Root cause: the local Trellis extension captured process.cwd() at module initialization instead of resolving each AgentSession workspace from ExtensionContext.cwd.",
+  "meta": {
+    "lastCheck": {
+      "status": "passed",
+      "at": "2026-07-20T09:20:00Z",
+      "summary": "Independent trellis-check review found no issues; lint, type-check, diff check, cross-workspace context injection, and missing-cwd fail-closed checks passed."
+    }
+  }
+}
