@@ -30,6 +30,7 @@
   - `setWidget`: upsert by `widgetKey`；`widgetLines` undefined 时移除；尊重 `widgetPlacement`（`aboveEditor` | `belowEditor`，默认 above）
 - 会话切换 / 新会话时清空 status 与 widget 状态。
 - 多 key 并存；widget 多行纯文本渲染（等宽可选）；status 以 compact chip/row 展示。
+- `todo-list` 标准 widget 不再占据输入框上方高度：改为 Trellis 风格的浮动胶囊入口，桌面展开浮层、移动端展开底部面板，显示完成进度和任务行；其他 widget 保持原 placement 行为。
 - 空状态不占布局。
 
 ### Dialog + notify surface
@@ -53,6 +54,7 @@
 
 - [x] 扩展调用 `setStatus` 后聊天输入区附近出现对应 chip；清空 text 后消失
 - [x] 扩展调用 `setWidget` 后在 above/below editor 显示多行内容；清除后消失
+- [x] `todo-list` widget 使用可折叠、可拖动的浮动任务面板，不遮挡或推高对话输入区，并兼容桌面与移动端
 - [x] 切换会话后旧 status/widget 不残留
 - [x] confirm/select/input/editor 不再使用 `window.prompt/confirm`；使用应用内 modal
 - [x] notify 不再使用 `window.alert`；使用 toast

@@ -1,6 +1,7 @@
 "use client";
 
 import type { ExtensionWidgetItem } from "@/lib/types";
+import { isTodoWidget } from "./ExtensionTodoPanel";
 
 interface Props {
   items: ExtensionWidgetItem[];
@@ -8,9 +9,11 @@ interface Props {
 
 /**
  * Multi-line text cards for Pi extension `setWidget` content at a composer placement.
+ * The standard todo widget is rendered by the floating task panel instead.
  */
 export function ExtensionWidgetStack({ items }: Props) {
-  if (items.length === 0) return null;
+  const visibleItems = items.filter((item) => !isTodoWidget(item));
+  if (visibleItems.length === 0) return null;
 
   return (
     <div
@@ -22,7 +25,7 @@ export function ExtensionWidgetStack({ items }: Props) {
         padding: "6px 12px 0",
       }}
     >
-      {items.map((item) => (
+      {visibleItems.map((item) => (
         <div
           key={item.key}
           style={{

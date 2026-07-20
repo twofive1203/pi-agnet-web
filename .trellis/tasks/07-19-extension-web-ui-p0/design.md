@@ -37,7 +37,8 @@ Clear maps on session id change / new-session start.
 | Component | Role |
 | --- | --- |
 | `components/ExtensionStatusBar.tsx` | Renders status chips row |
-| `components/ExtensionWidgetStack.tsx` | Renders widgets for one placement |
+| `components/ExtensionWidgetStack.tsx` | Renders generic widgets for one placement |
+| `components/ExtensionTodoPanel.tsx` | Renders `todo-list` as a floating capsule with desktop panel / mobile bottom sheet |
 | `components/ExtensionDialogHost.tsx` | Modal for confirm/select/input/editor |
 | `components/ExtensionToastHost.tsx` | Fixed toast stack for notify |
 
@@ -55,10 +56,11 @@ Styling: CSS variables + inline styles (project convention). Portal modals/toast
 
 ### Widget UX
 
-- Card with subtle border; key as small label; lines as pre-wrap text
-- placement `aboveEditor` sits between message list and ChatInput
-- placement `belowEditor` sits under ChatInput
-- Status chips sit above the aboveEditor stack (single chrome strip)
+- Generic widgets use a subtle bordered card; key is a small label and lines render as pre-wrap text.
+- placement `aboveEditor` sits between message list and ChatInput; placement `belowEditor` sits under ChatInput.
+- Status chips sit above the aboveEditor stack (single chrome strip).
+- The standard `todo-list` key is parsed from the materialized `manage_todo_list` text and excluded from generic stacks.
+- Todo defaults to a compact draggable capsule over the chat workspace. Desktop expands upward into a bounded panel; mobile uses a body-portaled bottom sheet. Pointer dragging moves the capsule and desktop panel together, persists the clamped position in local storage, and remains distinct from click-to-toggle behavior. Both show completed/total progress and parsed task rows without changing the extension bridge protocol.
 
 ## API / types
 

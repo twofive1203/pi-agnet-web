@@ -9,6 +9,7 @@ import { ExtensionDialogHost } from "./ExtensionDialogHost";
 import { ExtensionStatusBar } from "./ExtensionStatusBar";
 import { ExtensionToastHost } from "./ExtensionToastHost";
 import { ExtensionWidgetStack } from "./ExtensionWidgetStack";
+import { ExtensionTodoPanel, isTodoWidget } from "./ExtensionTodoPanel";
 import { ChatMinimap, useMessageRefs } from "./ChatMinimap";
 import { useAgentSession, type AgentPhase } from "@/hooks/useAgentSession";
 import { useAudio } from "@/hooks/useAudio";
@@ -176,6 +177,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
 
   const visibleMessages = messages.filter((m) => m.role === "user" || m.role === "assistant");
   const messageRefs = useMessageRefs(visibleMessages.length);
+  const todoWidget = extensionWidgets.find(isTodoWidget) ?? null;
 
   const isEmptyNew = isNew && messages.length === 0 && !streamState.isStreaming && !agentRunning;
 
@@ -274,6 +276,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
       {session?.id && (
         <SessionChangesFloatingPanel sessionId={session.id} agentRunning={agentRunning} refreshKey={sessionChangesRefreshKey} />
       )}
+      <ExtensionTodoPanel item={todoWidget} />
       {isDragOver && (
         <div className="pointer-events-none absolute inset-0 z-50 flex animate-[drop-zone-in_0.15s_ease_both] items-center justify-center bg-[rgba(37,99,235,0.06)] backdrop-blur-[1px]">
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">

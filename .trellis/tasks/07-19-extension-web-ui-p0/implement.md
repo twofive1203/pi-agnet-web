@@ -11,6 +11,7 @@
 2. **UI components**
    - `ExtensionStatusBar.tsx`
    - `ExtensionWidgetStack.tsx`
+   - `ExtensionTodoPanel.tsx` for Trellis-style `todo-list` floating task UI
    - `ExtensionDialogHost.tsx`
    - `ExtensionToastHost.tsx`
 
@@ -32,6 +33,7 @@
 - `components/ChatWindow.tsx`
 - `components/ExtensionStatusBar.tsx` (new)
 - `components/ExtensionWidgetStack.tsx` (new)
+- `components/ExtensionTodoPanel.tsx` (new)
 - `components/ExtensionDialogHost.tsx` (new)
 - `components/ExtensionToastHost.tsx` (new)
 - `docs/modules/frontend.md`
