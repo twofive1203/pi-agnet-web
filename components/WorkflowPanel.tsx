@@ -132,7 +132,8 @@ export function WorkflowPanel({
     setConflictNote(null);
   }, []);
 
-  const loadTasks = useCallback(async () => {
+  const loadTasks = useCallback(async (opts?: { silent?: boolean }) => {
+    const silent = opts?.silent === true;
     if (!cwd) {
       setTasks([]);
       setListError(null);
@@ -142,14 +143,18 @@ export function WorkflowPanel({
       setActiveCwdRunId(null);
       return;
     }
-    setListLoading(true);
-    setListError(null);
+    if (!silent) {
+      setListLoading(true);
+      setListError(null);
+    }
     try {
       const res = await fetch(
         `/api/workflows/tasks?cwd=${encodeURIComponent(cwd)}&includeArchived=${includeArchived ? "true" : "false"}`,
       );
       const body = (await res.json()) as TasksResponse;
       if (!res.ok) {
+        // Silent polls keep the last good list on transient failures.
+        if (silent) return;
         setListError(body.error || `HTTP ${res.status}`);
         setTasks([]);
         setListDiagnostics([]);
@@ -157,6 +162,7 @@ export function WorkflowPanel({
       }
       const nextTasks = body.tasks ?? [];
       setTasks(nextTasks);
+      setListError(null);
       setExists(body.exists !== false);
       setActiveCwdRunId(body.activeCwdRunId ?? null);
       setCurrentTaskId(body.currentTaskId ?? null);
@@ -169,11 +175,12 @@ export function WorkflowPanel({
         return nextSelectedId;
       });
     } catch (error) {
+      if (silent) return;
       setListError(error instanceof Error ? error.message : String(error));
       setTasks([]);
       setListDiagnostics([]);
     } finally {
-      setListLoading(false);
+      if (!silent) setListLoading(false);
     }
   }, [cwd, includeArchived]);
 
@@ -236,6 +243,24 @@ export function WorkflowPanel({
     setActionError(null);
   }, [cwd]);
 
+  // Agents mutate task files outside this panel (CLI start/implement/archive);
+  // poll the list so status changes show up without manual refresh.
+  useEffect(() => {
+    if (!cwd) return;
+    const timer = setInterval(() => {
+      void loadTasks({ silent: true });
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [cwd, loadTasks]);
+
+  // Reload the selected detail when the list reveals an external revision change,
+  // unless the user has unsaved local edits.
+  useEffect(() => {
+    if (!detail || dirty || detailLoading) return;
+    const summary = tasks.find((task) => task.id === detail.id);
+    if (summary && summary.revision !== detail.revision) void loadDetail(detail.id);
+  }, [tasks, detail, dirty, detailLoading, loadDetail]);
+
   const activeRunId = detail?.activeRunId ?? null;
 
   useEffect(() => {
@@ -271,7 +296,7 @@ export function WorkflowPanel({
             applyDetail(body.task);
           }
         }
-        void loadTasks();
+        void loadTasks({ silent: true });
       } catch {
         // ignore transient poll errors
       }
