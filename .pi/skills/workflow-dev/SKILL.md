@@ -1,11 +1,11 @@
 ---
 name: workflow-dev
-description: "Use Snail Pi Web native Workflow tasks under .pi/workflows/tasks/ for development work. Create tasks from chat (like Trellis task.py create), maintain requirements/design/plan, and guide implement/check via the Workflow panel or CLI. Prefer this over Trellis when the user wants WebUI-owned workflow or the project has no .trellis."
+description: "Use Snail Pi Web native SnFlow tasks under .pi/snflows/tasks/ for development work. Create tasks from chat (like Trellis task.py create), maintain requirements/design/plan, and guide implement/check via the SnFlow panel or CLI. Prefer this over Trellis when the user wants WebUI-owned workflow or the project has no .trellis."
 ---
 
 # Native WebUI Workflow — Trellis-like flow
 
-This is **WebUI Workflow** (`.pi/workflows/tasks/`), not Trellis (`.trellis/`).
+This is **WebUI SnFlow** (`.pi/snflows/tasks/`), not Trellis (`.trellis/`).
 The **user experience should feel like Trellis**: chat-orchestrated create → plan → start → implement → check → commit handoff.
 
 Panel (W) is for visibility/emergency controls. **Do not make the user drive the lifecycle by clicking around.**
@@ -38,12 +38,13 @@ If the CLI fails because of Node/ESM/runtime compatibility, use the manual file 
 Manual fallback task layout:
 
 ```text
-.pi/workflows/tasks/<slug>/
+.pi/snflows/tasks/<slug>/
   task.json
   requirements.md
   design.md
   plan.md
-.pi/workflows/current.json   # optional current pointer
+.pi/snflows/archived/<slug>/   # archived tasks live here, sibling of tasks/
+.pi/snflows/current.json       # optional current pointer
 ```
 
 Minimum `task.json`:
@@ -73,7 +74,7 @@ Minimum `task.json`:
 After create/start, always acknowledge:
 
 ```text
-Active workflow task: .pi/workflows/tasks/<id>
+Active workflow task: .pi/snflows/tasks/<id>
 ```
 
 ## Phase 1 — Plan
@@ -83,7 +84,7 @@ Active workflow task: .pi/workflows/tasks/<id>
 - Real dev work: create the task yourself (never tell user to open W and press +).
 - Preferred command: `create "<title>" --seed "..."`
 - If the command fails, manually create `task.json`, `requirements.md`, `design.md`, and `plan.md` using the fallback schema above.
-- Status becomes `planning`. Current pointer is set automatically by CLI, or manually through `.pi/workflows/current.json` when using fallback.
+- Status becomes `planning`. Current pointer is set automatically by CLI, or manually through `.pi/snflows/current.json` when using fallback.
 
 ### 1.1 Artifacts
 Edit:
@@ -94,17 +95,19 @@ Edit:
 Consent to create ≠ consent to implement. Stay in planning until review.
 
 ### 1.2 Activate
-When user approves implementation:
+When user approves implementation, run all of this in the same turn (approval means dispatch — do not ask again):
 
 ```bash
 npx tsx scripts/workflow-task.ts start
+npx tsx scripts/workflow-task.ts implement
+npx tsx scripts/workflow-task.ts wait
 ```
 
-Status → `ready`.
+Status → `ready` → `implementing`.
 
 ## Phase 2 — Execute
 
-Main session orchestrates (like Trellis main session):
+Main session is the **orchestrator only** (like Trellis main session). Implementation runs in the `worker` subagent, never inline:
 
 ```bash
 npx tsx scripts/workflow-task.ts implement
@@ -122,8 +125,8 @@ npx tsx scripts/workflow-task.ts wait
 - If you are already the implement/check child, do **not** re-dispatch workflow implement/check.
 - Only the main session should run `implement` / `check` commands.
 
-### Alternative
-You may implement small fixes inline in the main session after `start`, then still run `check`.
+### Inline exception
+Do **not** edit project source files in the main session for the task. The sole exception is a trivial fix of roughly ≤10 lines with no new files — and even then run `check` afterwards.
 
 ## Phase 3 — Finish
 
@@ -134,6 +137,9 @@ You may implement small fixes inline in the main session after `start`, then sti
 npx tsx scripts/workflow-task.ts complete --hash <git-sha>
 npx tsx scripts/workflow-task.ts archive
 ```
+
+- `archive` moves the task directory to `.pi/snflows/archived/<id>/` (sibling of `tasks/`) and clears the current pointer.
+- Manual fallback for complete/archive: set `status: "completed"` + `completedAt`, write `commit` as an **object** `{ "hash": "<sha>", "recordedAt": "<ISO>" }` (never a plain string), then move the directory to `.pi/snflows/archived/<id>/` with `archived: true` and `activeRunId: null`.
 
 ## Hard rules
 

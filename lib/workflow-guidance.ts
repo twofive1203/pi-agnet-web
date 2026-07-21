@@ -1,6 +1,6 @@
 /**
- * Trellis-like per-turn workflow breadcrumbs for the active WebUI Workflow task.
- * Injected into chat host system prompt when Workflow is enabled.
+ * Trellis-like per-turn SnFlow breadcrumbs for the active WebUI task.
+ * Injected into chat host system prompt when SnFlow is enabled.
  */
 
 import { getWorkflowCurrentTaskId } from "./workflow-current";
@@ -35,40 +35,40 @@ export function buildWorkflowSystemGuidance(cwd: string): string | null {
     if (!taskId) {
       return [
         "<workflow-state:no_task>",
-        "No active WebUI Workflow task for this project.",
-        "This is Snail Pi Web native Workflow (.pi/workflows/tasks/), NOT Trellis (.trellis/).",
+        "No active SnFlow task for this project.",
+        "This is Snail Pi Web SnFlow (.pi/snflows/tasks/), NOT Trellis (.trellis/).",
         "Task file contract:",
         "- task.json is mandatory and is the task source of truth.",
         "- task.md is legacy or scratch output only; do not rely on it for the panel.",
         "- A valid task directory should contain: task.json, requirements.md, design.md, and plan.md.",
         "Triage:",
-        "- Simple chat: ask whether to create a Workflow task; if user says no, skip.",
+        "- Simple chat: ask whether to create a SnFlow task; if user says no, skip.",
         "- Real dev work: create a task yourself (do not ask the user to click panel +).",
         "Create (preferred):",
         '  npx tsx scripts/workflow-task.ts create "<title>" --seed "<user goal>"',
         "Manual fallback when the CLI fails because of Node/ESM/runtime issues:",
-        "- Create .pi/workflows/tasks/<slug>/task.json plus requirements.md, design.md, and plan.md yourself.",
+        "- Create .pi/snflows/tasks/<slug>/task.json plus requirements.md, design.md, and plan.md yourself.",
         "- task.json must include schemaVersion:1, id:<slug>, title, description, status:'planning', priority:'P2', createdAt, updatedAt, completedAt:null, revision:'manual', activeRunId:null, latestImplementRunId:null, latestCheckRunId:null, commit:null, archived:false.",
-        "- Optionally set .pi/workflows/current.json to { taskId:'<slug>', updatedAt:'<ISO>', source:'agent' }.",
-        "After create, verify the W panel can list the task; if CLI works, also verify with:",
+        "- Optionally set .pi/snflows/current.json to { taskId:'<slug>', updatedAt:'<ISO>', source:'agent' }.",
+        "After create, verify the SnFlow panel can list the task; if CLI works, also verify with:",
         "  npx tsx scripts/workflow-task.ts show <taskId>",
         "Then stay in planning: edit requirements.md / design.md / plan.md before implement.",
-        "User consent to create ≠ consent to implement.",
+        "User consent to create does not imply consent to implement.",
         "</workflow-state:no_task>",
       ].join("\n");
     }
 
     const task = getWorkflowTaskDetail(cwd, taskId);
-    const base = `.pi/workflows/tasks/${task.id}`;
+    const base = `.pi/snflows/tasks/${task.id}`;
     const phase = workflowPhaseForStatus(task.status);
 
     const header = [
-      `Active workflow task: ${base}`,
+      `Active SnFlow task: ${base}`,
       `title: ${task.title}`,
       `status: ${task.status}`,
       `phase: ${phase}`,
-      "Namespace: WebUI Workflow only — do not write .trellis/ or run trellis task.py for this task.",
-      "Task file contract: task.json is mandatory source-of-truth metadata; requirements.md, design.md, and plan.md are the long-form docs; task.md is not a valid primary Workflow task record.",
+      "Namespace: SnFlow only - do not write .trellis/ or run trellis task.py for this task.",
+      "Task file contract: task.json is mandatory source-of-truth metadata; requirements.md, design.md, and plan.md are the long-form docs; task.md is not a valid primary SnFlow task record.",
     ];
 
     if (task.status === "planning") {
@@ -80,8 +80,11 @@ export function buildWorkflowSystemGuidance(cwd: string): string | null {
         `Edit docs only through the canonical files: ${base}/requirements.md, ${base}/design.md, ${base}/plan.md`,
         "Do not create or update task.md as the task authority.",
         "If workflow-task.ts fails because of Node/ESM/runtime issues, update task.json manually instead of blocking on the CLI.",
-        "When artifacts are ready and user approves implementation:",
+        "When the user approves implementation, do all of this in the same turn without asking again:",
         "  npx tsx scripts/workflow-task.ts start",
+        "  npx tsx scripts/workflow-task.ts implement",
+        "  npx tsx scripts/workflow-task.ts wait",
+        "Approval to implement means dispatch the worker subagent — do NOT implement the code yourself in the main session.",
         "Manual fallback for start: change task.json status from planning to ready and update updatedAt.",
         "Do not start large implementation before start.",
         "</workflow-state:planning>",
@@ -101,13 +104,14 @@ export function buildWorkflowSystemGuidance(cwd: string): string | null {
         ...header,
         "Main-session default flow (Trellis-like):",
         "  implement -> check -> ready_to_commit -> user commit -> complete/archive",
-        "Dispatch from chat (preferred, no panel clicking):",
+        "You are the orchestrator. Implementation MUST run in the worker subagent, not the main session:",
         "  npx tsx scripts/workflow-task.ts implement",
+        "  npx tsx scripts/workflow-task.ts wait",
         "  npx tsx scripts/workflow-task.ts check",
         "  npx tsx scripts/workflow-task.ts wait",
-        "Or use native subagent worker/reviewer with the same Active workflow task header,",
-        "then record outcome with: npx tsx scripts/workflow-task.ts sync",
-        "Recursion guard: if you are already the implement/check child, do not re-dispatch workflow agents.",
+        "Do NOT edit project source files yourself in the main session for this task.",
+        "Sole inline exception: trivial fixes of roughly <=10 lines with no new files; still run check afterwards.",
+        "Recursion guard: if you are already the implement/check child, do not re-dispatch SnFlow agents.",
         "Never git commit/push/PR unless the user explicitly asks.",
         "Read task docs before editing code.",
         "</workflow-state:in_progress>",
@@ -121,6 +125,8 @@ export function buildWorkflowSystemGuidance(cwd: string): string | null {
         "Check passed. Hand off commit to the user (do not commit unless asked).",
         "After commit: npx tsx scripts/workflow-task.ts complete --hash <git-sha>",
         "Then optional: npx tsx scripts/workflow-task.ts archive",
+        "Manual fallback for complete: set task.json status:'completed', completedAt:'<ISO>',",
+        "and commit to an object { hash:'<git-sha>', recordedAt:'<ISO>' } - never a plain string.",
         "</workflow-state:ready_to_commit>",
       ].join("\n");
     }
@@ -131,6 +137,8 @@ export function buildWorkflowSystemGuidance(cwd: string): string | null {
         ...header,
         "Task is terminal. Archive if needed:",
         "  npx tsx scripts/workflow-task.ts archive",
+        "Manual fallback for archive: move .pi/snflows/tasks/<id>/ to .pi/snflows/archived/<id>/,",
+        "set archived:true and activeRunId:null in task.json, and remove .pi/snflows/current.json if it points at this task.",
         "Or create a new task for new work.",
         "</workflow-state:done>",
       ].join("\n");
