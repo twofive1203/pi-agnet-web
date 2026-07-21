@@ -16,6 +16,7 @@ import type {
   PiWebTerminalConfig,
   PiWebTrellisConfig,
   PiWebUsageConfig,
+  PiWebWorkflowConfig,
   PiWebWorktreeConfig,
 } from "@/lib/pi-web-config";
 import type { TrellisCommandResponse, TrellisSetupStatus } from "@/lib/trellis-setup-types";
@@ -74,7 +75,7 @@ const TEMPLATE_VARIABLES = [
   { token: "{yyyyMMdd-HHmmss}", descriptionKey: "settings.pathVarsTimestamp" },
 ];
 
-type SettingsSection = "language" | "worktree" | "usage" | "terminal" | "chatgpt" | "grok" | "editor" | "agents" | "trellis" | "extensions";
+type SettingsSection = "language" | "worktree" | "usage" | "terminal" | "chatgpt" | "grok" | "editor" | "agents" | "workflow" | "trellis" | "extensions";
 type SubagentThinkingOption = PiWebSubagentRunPolicy["thinking"];
 
 const SUBAGENT_AGENT_NAMES = ["trellis-implement", "trellis-check", "trellis-research"];
@@ -374,6 +375,11 @@ function trellisConfigsEqual(a: PiWebTrellisConfig | null, b: PiWebTrellisConfig
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
+function workflowConfigsEqual(a: PiWebWorkflowConfig | null, b: PiWebWorkflowConfig | null): boolean {
+  if (!a || !b) return a === b;
+  return a.enabled === b.enabled && a.includeArchived === b.includeArchived;
+}
+
 function usageConfigsEqual(a: PiWebUsageConfig | null, b: PiWebUsageConfig | null): boolean {
   if (!a || !b) return a === b;
   return a.includeArchived === b.includeArchived;
@@ -406,6 +412,8 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
   const [savedWorktree, setSavedWorktree] = useState<PiWebWorktreeConfig | null>(null);
   const [trellis, setTrellis] = useState<PiWebTrellisConfig | null>(null);
   const [savedTrellis, setSavedTrellis] = useState<PiWebTrellisConfig | null>(null);
+  const [workflow, setWorkflow] = useState<PiWebWorkflowConfig | null>(null);
+  const [savedWorkflow, setSavedWorkflow] = useState<PiWebWorkflowConfig | null>(null);
   const [usage, setUsage] = useState<PiWebUsageConfig | null>(null);
   const [savedUsage, setSavedUsage] = useState<PiWebUsageConfig | null>(null);
   const [terminal, setTerminal] = useState<PiWebTerminalConfig | null>(null);
@@ -432,8 +440,8 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
   const [developerNameTouched, setDeveloperNameTouched] = useState(false);
 
   const dirty = useMemo(
-    () => !worktreeConfigsEqual(worktree, savedWorktree) || !trellisConfigsEqual(trellis, savedTrellis) || !usageConfigsEqual(usage, savedUsage) || !terminalConfigsEqual(terminal, savedTerminal) || !chatGptConfigsEqual(chatgpt, savedChatgpt) || JSON.stringify(grok) !== JSON.stringify(savedGrok) || !editorConfigsEqual(editor, savedEditor),
-    [worktree, savedWorktree, trellis, savedTrellis, usage, savedUsage, terminal, savedTerminal, chatgpt, savedChatgpt, grok, savedGrok, editor, savedEditor],
+    () => !worktreeConfigsEqual(worktree, savedWorktree) || !trellisConfigsEqual(trellis, savedTrellis) || !workflowConfigsEqual(workflow, savedWorkflow) || !usageConfigsEqual(usage, savedUsage) || !terminalConfigsEqual(terminal, savedTerminal) || !chatGptConfigsEqual(chatgpt, savedChatgpt) || JSON.stringify(grok) !== JSON.stringify(savedGrok) || !editorConfigsEqual(editor, savedEditor),
+    [worktree, savedWorktree, trellis, savedTrellis, workflow, savedWorkflow, usage, savedUsage, terminal, savedTerminal, chatgpt, savedChatgpt, grok, savedGrok, editor, savedEditor],
   );
 
   const loadConfig = useCallback(async (signal?: AbortSignal) => {
@@ -449,6 +457,8 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
       setSavedWorktree(data.config.worktree);
       setTrellis(data.config.trellis);
       setSavedTrellis(data.config.trellis);
+      setWorkflow(data.config.workflow);
+      setSavedWorkflow(data.config.workflow);
       setUsage(data.config.usage);
       setSavedUsage(data.config.usage);
       setTerminal(data.config.terminal);
@@ -538,6 +548,11 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
 
   const updateTrellis = useCallback((patch: Partial<PiWebTrellisConfig>) => {
     setTrellis((prev) => prev ? { ...prev, ...patch } : prev);
+    setNotice(null);
+  }, []);
+
+  const updateWorkflow = useCallback((patch: Partial<PiWebWorkflowConfig>) => {
+    setWorkflow((prev) => prev ? { ...prev, ...patch } : prev);
     setNotice(null);
   }, []);
 
@@ -724,6 +739,8 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
     setSavedWorktree(config.worktree);
     setTrellis(config.trellis);
     setSavedTrellis(config.trellis);
+    setWorkflow(config.workflow);
+    setSavedWorkflow(config.workflow);
     setUsage(config.usage);
     setSavedUsage(config.usage);
     setTerminal(config.terminal);
@@ -740,7 +757,7 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
   }, [onConfigChange]);
 
   const saveConfig = useCallback(async (successNotice?: string): Promise<boolean> => {
-    if (!worktree || !trellis || !usage || !terminal || !chatgpt || !grok || !editor) return false;
+    if (!worktree || !trellis || !workflow || !usage || !terminal || !chatgpt || !grok || !editor) return false;
     setSaving(true);
     setError(null);
     setNotice(null);
@@ -748,7 +765,7 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
       const res = await fetch("/api/web-config", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ worktree, trellis, usage, terminal, chatgpt, grok, editor }),
+        body: JSON.stringify({ worktree, trellis, workflow, usage, terminal, chatgpt, grok, editor }),
       });
       const data = await res.json() as WebConfigResponse & { success?: boolean };
       if (!res.ok || data.error) throw new Error(data.error ?? `HTTP ${res.status}`);
@@ -761,7 +778,7 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
     } finally {
       setSaving(false);
     }
-  }, [applyLoadedConfig, worktree, trellis, usage, terminal, chatgpt, grok, editor]);
+  }, [applyLoadedConfig, worktree, trellis, workflow, usage, terminal, chatgpt, grok, editor]);
 
   const handleSave = useCallback(async () => {
     await saveConfig(t("settings.savedToast"));
@@ -771,6 +788,7 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
     if (!defaults) return;
     setWorktree(defaults.worktree);
     setTrellis(defaults.trellis);
+    setWorkflow(defaults.workflow);
     setUsage(defaults.usage);
     setTerminal(defaults.terminal);
     setChatgpt(defaults.chatgpt);
@@ -916,6 +934,7 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
             {renderSectionButton("grok", "Grok", t("settings.grokSection"))}
             {renderSectionButton("editor", t("settings.sectionEditor"), t("settings.editorSection"))}
             {renderSectionButton("agents", t("settings.sectionAgents"), t("settings.agentsSection"))}
+            {renderSectionButton("workflow", "Workflow", t("settings.workflowSection"))}
             {renderSectionButton("extensions", "Extensions", t("settings.extensionsSection"))}
             {renderSectionButton("trellis", "Trellis", t("settings.trellisSection"))}
           </div>
@@ -923,7 +942,7 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
           <div style={{ padding: 18, overflow: "auto", flex: 1 }}>
             {loading ? (
               <div style={{ color: "var(--text-muted)", fontSize: 13 }}>{t("settings.loadingSettings")}</div>
-            ) : worktree && trellis && usage && terminal && chatgpt && editor ? (
+            ) : worktree && trellis && workflow && usage && terminal && chatgpt && editor ? (
               <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
                 {error && <div style={{ padding: "8px 10px", borderRadius: 8, background: "rgba(239,68,68,0.12)", color: "#f87171", fontSize: 12, overflowWrap: "anywhere" }}>{error}</div>}
                 {notice && <div style={{ padding: "8px 10px", borderRadius: 8, background: "rgba(37,99,235,0.12)", color: "var(--accent)", fontSize: 12, overflowWrap: "anywhere" }}>{notice}</div>}
@@ -1316,6 +1335,32 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
                   <ExtensionsConfig cwd={cwd} onClose={() => {}} embed />
                 ) : section === "agents" ? (
                   <AgentsConfig cwd={cwd} />
+                ) : section === "workflow" ? (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                    <div>
+                      <h3 style={{ margin: 0, color: "var(--text)", fontSize: 15 }}>{t("settings.workflowSection")}</h3>
+                      <p style={{ margin: "5px 0 0", color: "var(--text-muted)", fontSize: 12, lineHeight: 1.5 }}>
+                        {t("settings.workflowDescription")}
+                      </p>
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                      <ToggleField
+                        label={t("settings.enableWorkflow")}
+                        description={t("settings.enableWorkflowHint")}
+                        checked={workflow.enabled}
+                        onChange={(enabled) => updateWorkflow({ enabled })}
+                      />
+                      <ToggleField
+                        label={t("settings.workflowIncludeArchived")}
+                        description={t("settings.workflowIncludeArchivedHint")}
+                        checked={workflow.includeArchived}
+                        onChange={(includeArchived) => updateWorkflow({ includeArchived })}
+                      />
+                    </div>
+                    <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5 }}>
+                      {t("settings.workflowNativeModelsHint")}
+                    </div>
+                  </div>
                 ) : (
                   <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
                     <div style={{ padding: 12, borderRadius: 10, background: "var(--bg-subtle)", border: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: 8 }}>

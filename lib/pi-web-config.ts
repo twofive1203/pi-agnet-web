@@ -86,6 +86,11 @@ export interface PiWebGrokConfig {
   usagePanelEnabled: boolean;
 }
 
+export interface PiWebWorkflowConfig {
+  enabled: boolean;
+  includeArchived: boolean;
+}
+
 export interface PiWebChatGptConfig {
   usagePanelEnabled: boolean;
   warmup: PiWebChatGptWarmupConfig;
@@ -117,6 +122,7 @@ export interface PiWebEditorConfig {
 export interface PiWebConfig {
   worktree: PiWebWorktreeConfig;
   trellis: PiWebTrellisConfig;
+  workflow: PiWebWorkflowConfig;
   usage: PiWebUsageConfig;
   terminal: PiWebTerminalConfig;
   chatgpt: PiWebChatGptConfig;
@@ -127,6 +133,7 @@ export interface PiWebConfig {
 export interface PiWebConfigPatch {
   worktree?: unknown;
   trellis?: unknown;
+  workflow?: unknown;
   usage?: unknown;
   terminal?: unknown;
   chatgpt?: unknown;
@@ -245,6 +252,10 @@ export const DEFAULT_PI_WEB_CONFIG: PiWebConfig = {
         "trellis-research": { strategy: "default" },
       },
     },
+  },
+  workflow: {
+    enabled: false,
+    includeArchived: false,
   },
   grok: {
     usagePanelEnabled: false,
@@ -426,6 +437,7 @@ function normalizePiWebConfig(raw: unknown): PiWebConfig {
   const root = isRecord(raw) ? raw : {};
   const worktree = isRecord(root.worktree) ? root.worktree : {};
   const trellis = isRecord(root.trellis) ? root.trellis : {};
+  const workflow = isRecord(root.workflow) ? root.workflow : {};
   const usage = isRecord(root.usage) ? root.usage : {};
   const terminal = isRecord(root.terminal) ? root.terminal : {};
   const chatgpt = isRecord(root.chatgpt) ? root.chatgpt : {};
@@ -490,6 +502,10 @@ function normalizePiWebConfig(raw: unknown): PiWebConfig {
       workflowAssistant: readSubagentPolicy(trellis.workflowAssistant, defaults.trellis.workflowAssistant),
       workflowAssistantFallback: readSubagentPolicy(trellis.workflowAssistantFallback, defaults.trellis.workflowAssistantFallback),
       subagents: readTrellisSubagentsConfig(trellis.subagents, defaults.trellis.subagents),
+    },
+    workflow: {
+      enabled: readBoolean(workflow.enabled, defaults.workflow.enabled),
+      includeArchived: readBoolean(workflow.includeArchived, defaults.workflow.includeArchived),
     },
   };
 }
@@ -810,6 +826,16 @@ export function validatePiWebEditorConfig(value: unknown): PiWebEditorConfig {
   };
 }
 
+export function validatePiWebWorkflowConfig(value: unknown): PiWebWorkflowConfig {
+  if (!isRecord(value)) {
+    throw new PiWebConfigValidationError("workflow config must be an object");
+  }
+  return {
+    enabled: requireBoolean(value.enabled, "workflow.enabled"),
+    includeArchived: requireBoolean(value.includeArchived, "workflow.includeArchived"),
+  };
+}
+
 export function validatePiWebTrellisConfig(value: unknown): PiWebTrellisConfig {
   if (!isRecord(value)) {
     throw new PiWebConfigValidationError("trellis config must be an object");
@@ -840,12 +866,13 @@ export function writePiWebConfigPatch(patch: PiWebConfigPatch): PiWebConfigReadR
 
   const hasWorktree = Object.prototype.hasOwnProperty.call(patch, "worktree");
   const hasTrellis = Object.prototype.hasOwnProperty.call(patch, "trellis");
+  const hasWorkflow = Object.prototype.hasOwnProperty.call(patch, "workflow");
   const hasUsage = Object.prototype.hasOwnProperty.call(patch, "usage");
   const hasTerminal = Object.prototype.hasOwnProperty.call(patch, "terminal");
   const hasChatGpt = Object.prototype.hasOwnProperty.call(patch, "chatgpt");
   const hasEditor = Object.prototype.hasOwnProperty.call(patch, "editor");
   const hasGrok = Object.prototype.hasOwnProperty.call(patch, "grok");
-  if (!hasWorktree && !hasTrellis && !hasUsage && !hasTerminal && !hasChatGpt && !hasEditor && !hasGrok) {
+  if (!hasWorktree && !hasTrellis && !hasWorkflow && !hasUsage && !hasTerminal && !hasChatGpt && !hasEditor && !hasGrok) {
     throw new PiWebConfigValidationError("no supported config sections provided");
   }
 
@@ -857,6 +884,7 @@ export function writePiWebConfigPatch(patch: PiWebConfigPatch): PiWebConfigReadR
   const normalizedWorktree = hasWorktree ? validatePiWebWorktreeConfig(patch.worktree) : undefined;
   const normalizedGrok = hasGrok ? validatePiWebGrokConfig(patch.grok) : undefined;
   const normalizedTrellis = hasTrellis ? validatePiWebTrellisConfig(patch.trellis) : undefined;
+  const normalizedWorkflow = hasWorkflow ? validatePiWebWorkflowConfig(patch.workflow) : undefined;
   const normalizedUsage = hasUsage ? validatePiWebUsageConfig(patch.usage) : undefined;
   const normalizedTerminal = hasTerminal ? validatePiWebTerminalConfig(patch.terminal) : undefined;
   const normalizedChatGpt = hasChatGpt ? validatePiWebChatGptConfig(isRecord(chatGptPatch) ? {
@@ -882,6 +910,14 @@ export function writePiWebConfigPatch(patch: PiWebConfigPatch): PiWebConfigReadR
     nextRaw.trellis = {
       ...previousTrellis,
       ...normalizedTrellis,
+    };
+  }
+
+  if (normalizedWorkflow) {
+    const previousWorkflow = isRecord(raw.workflow) ? raw.workflow : {};
+    nextRaw.workflow = {
+      ...previousWorkflow,
+      ...normalizedWorkflow,
     };
   }
 

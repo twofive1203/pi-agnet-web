@@ -17,6 +17,11 @@ import { SubagentPanel } from "./SubagentPanel";
 import { SettingsConfig } from "./SettingsConfig";
 import { TrellisPanel } from "./TrellisPanel";
 import { TrellisSessionWidget } from "./TrellisSessionWidget";
+import { WorkflowPanel } from "./WorkflowPanel";
+import { WorkflowSessionWidget } from "./WorkflowSessionWidget";
+import type { WorkflowTaskDetail } from "@/lib/workflow-types";
+import type { WorkflowPhaseLabel } from "@/lib/workflow-guidance";
+import { workflowTaskToChatContext, type WorkflowTaskChatContext } from "@/lib/workflow-chat-context";
 import { BranchNavigator } from "./BranchNavigator";
 import { GitPanel } from "./GitPanel";
 import { TerminalPanel } from "./TerminalPanel";
@@ -182,11 +187,17 @@ export function AppShell() {
   const [fileTabs, setFileTabs] = useState<Tab[]>([]);
   const [activeFileTabId, setActiveFileTabId] = useState<string | null>(null);
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
-  const [rightPanelMode, setRightPanelMode] = useState<"files" | "trellis">("files");
+  const [rightPanelMode, setRightPanelMode] = useState<"files" | "trellis" | "workflow">("files");
   const [focusedTrellisTaskKey, setFocusedTrellisTaskKey] = useState<string | null>(null);
   const [trellisSessionTask, setTrellisSessionTask] = useState<TrellisSessionTaskLinkResult | null>(null);
   const [trellisSessionTaskRefreshKey, setTrellisSessionTaskRefreshKey] = useState(0);
   const [pendingTrellisTaskContext, setPendingTrellisTaskContext] = useState<TrellisTaskChatContext | null>(null);
+  const [pendingWorkflowTaskContext, setPendingWorkflowTaskContext] = useState<WorkflowTaskChatContext | null>(null);
+  const [focusedWorkflowTaskId, setFocusedWorkflowTaskId] = useState<string | null>(null);
+  const [workflowCurrentTask, setWorkflowCurrentTask] = useState<{
+    task: Pick<WorkflowTaskDetail, "id" | "title" | "status" | "activeRunId">;
+    phase: WorkflowPhaseLabel;
+  } | null>(null);
 
   const handleAtMention = useCallback((relativePath: string) => {
     chatInputRef.current?.addFileReference(relativePath);
@@ -350,9 +361,12 @@ export function AppShell() {
 
   const activeFileTab = fileTabs.find((t) => t.id === activeFileTabId) ?? null;
   const trellisEnabled = webConfig?.trellis.enabled ?? false;
+  const workflowEnabled = webConfig?.workflow.enabled ?? false;
   const terminalEnabled = webConfig?.terminal.enabled ?? false;
   const trellisIncludeArchivedDefault = webConfig?.trellis.includeArchived ?? false;
+  const workflowIncludeArchivedDefault = webConfig?.workflow.includeArchived ?? false;
   const trellisCwd = activeCwd ?? selectedSession?.cwd ?? newSessionCwd;
+  const workflowCwd = selectedSession?.cwd ?? newSessionCwd ?? activeCwd;
   const terminalCwd = activeCwd ?? selectedSession?.cwd ?? newSessionCwd;
   const browserTitleCwd = selectedSession?.cwd ?? newSessionCwd ?? activeCwd;
   const browserTitleGit = selectedSession?.cwd === browserTitleCwd ? selectedSession.git : activeCwdGit;
@@ -376,6 +390,10 @@ export function AppShell() {
   useEffect(() => {
     setFocusedTrellisTaskKey(null);
   }, [selectedSession?.id]);
+
+  useEffect(() => {
+    setFocusedWorkflowTaskId(null);
+  }, [workflowCwd]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -439,11 +457,122 @@ export function AppShell() {
   }, [pendingTrellisTaskContext, sessionKey, showChat]);
 
   useEffect(() => {
+    if (!pendingWorkflowTaskContext || !showChat) return;
+    let cancelled = false;
+    let attempts = 0;
+    const tryInsert = () => {
+      if (cancelled) return;
+      if (chatInputRef.current) {
+        chatInputRef.current.addWorkflowTaskContext(pendingWorkflowTaskContext);
+        setPendingWorkflowTaskContext(null);
+        return;
+      }
+      attempts += 1;
+      if (attempts < 12) window.requestAnimationFrame(tryInsert);
+    };
+    window.requestAnimationFrame(tryInsert);
+    return () => { cancelled = true; };
+  }, [pendingWorkflowTaskContext, sessionKey, showChat]);
+
+  const handleWorkflowTaskCreated = useCallback((task: WorkflowTaskDetail) => {
+    setFocusedWorkflowTaskId(task.id);
+    setRightPanelMode("workflow");
+    setRightPanelOpen(true);
+    setPendingWorkflowTaskContext(workflowTaskToChatContext(task));
+    setWorkflowCurrentTask({
+      task: {
+        id: task.id,
+        title: task.title,
+        status: task.status,
+        activeRunId: task.activeRunId,
+      },
+      phase: task.status === "planning" ? "plan" : task.status === "ready_to_commit" || task.status === "completed" || task.status === "cancelled" ? "finish" : "execute",
+    });
+  }, []);
+
+  const loadWorkflowCurrentTask = useCallback(async (signal?: AbortSignal) => {
+    if (!workflowEnabled || !workflowCwd) {
+      setWorkflowCurrentTask(null);
+      return;
+    }
+    try {
+      const res = await fetch(`/api/workflows/current?cwd=${encodeURIComponent(workflowCwd)}`, { signal });
+      const data = await res.json() as {
+        task?: WorkflowTaskDetail | null;
+        phase?: WorkflowPhaseLabel;
+        error?: string;
+      };
+      if (!res.ok || data.error) {
+        setWorkflowCurrentTask(null);
+        return;
+      }
+      if (!data.task) {
+        setWorkflowCurrentTask(null);
+        return;
+      }
+      setWorkflowCurrentTask({
+        task: {
+          id: data.task.id,
+          title: data.task.title,
+          status: data.task.status,
+          activeRunId: data.task.activeRunId,
+        },
+        phase: data.phase ?? "idle",
+      });
+    } catch (error) {
+      if ((error as { name?: string }).name === "AbortError") return;
+      setWorkflowCurrentTask(null);
+    }
+  }, [workflowEnabled, workflowCwd]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void loadWorkflowCurrentTask(controller.signal);
+    const timer = window.setInterval(() => {
+      void loadWorkflowCurrentTask();
+    }, 5000);
+    return () => {
+      controller.abort();
+      window.clearInterval(timer);
+    };
+  }, [loadWorkflowCurrentTask, focusedWorkflowTaskId]);
+
+  const handleStartWorkflowFromChat = useCallback(async () => {
+    if (!workflowEnabled) return;
+    const cwd = workflowCwd;
+    if (!cwd) return;
+    if (!selectedSession?.id) return;
+    try {
+      const res = await fetch(`/api/workflows/tasks?cwd=${encodeURIComponent(cwd)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId: selectedSession.id, priority: "P1" }),
+      });
+      const data = await res.json() as { task?: WorkflowTaskDetail; error?: string };
+      if (!res.ok || !data.task) throw new Error(data.error ?? `HTTP ${res.status}`);
+      handleWorkflowTaskCreated(data.task);
+    } catch (error) {
+      console.error("Failed to create workflow task from chat", error);
+      window.alert(error instanceof Error ? error.message : String(error));
+    }
+  }, [workflowEnabled, workflowCwd, selectedSession?.id, handleWorkflowTaskCreated]);
+
+  useEffect(() => {
     if (!trellisEnabled && rightPanelMode === "trellis") {
       setRightPanelMode("files");
       if (fileTabs.length === 0) setRightPanelOpen(false);
     }
   }, [trellisEnabled, rightPanelMode, fileTabs.length]);
+
+  useEffect(() => {
+    if (!workflowEnabled && rightPanelMode === "workflow") {
+      setRightPanelMode("files");
+      if (fileTabs.length === 0) setRightPanelOpen(false);
+    }
+  }, [workflowEnabled, rightPanelMode, fileTabs.length]);
+
+  const rightToggleCount = 1 + (trellisEnabled ? 1 : 0) + (workflowEnabled ? 1 : 0);
+  const rightTogglePad = rightPanelOpen ? 12 : 12 + rightToggleCount * 36;
 
   useEffect(() => {
     if (!terminalEnabled || (!terminalCwd && !terminalDockCwd)) {
@@ -967,7 +1096,7 @@ export function AppShell() {
                   marginLeft: "auto",
                   display: "flex", alignItems: "center", gap: 10,
                   paddingLeft: 12,
-                  paddingRight: (webConfig?.chatgpt.usagePanelEnabled || webConfig?.grok.usagePanelEnabled) ? 12 : (rightPanelOpen ? 12 : (trellisEnabled ? 84 : 48)),
+                  paddingRight: (webConfig?.chatgpt.usagePanelEnabled || webConfig?.grok.usagePanelEnabled) ? 12 : rightTogglePad,
                   height: "100%",
                   fontSize: 11, color: "var(--text-muted)",
                   whiteSpace: "nowrap", cursor: "default",
@@ -1015,7 +1144,7 @@ export function AppShell() {
             );
           })()}
           {(webConfig?.chatgpt.usagePanelEnabled || webConfig?.grok.usagePanelEnabled) && (
-            <div className="app-top-usage-panel" style={{ marginLeft: showChat && (sessionStats || contextUsage) ? 0 : "auto", paddingRight: rightPanelOpen ? 12 : (trellisEnabled ? 84 : 48), height: "100%", display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+            <div className="app-top-usage-panel" style={{ marginLeft: showChat && (sessionStats || contextUsage) ? 0 : "auto", paddingRight: rightTogglePad, height: "100%", display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
               {webConfig?.chatgpt.usagePanelEnabled && <ChatGptUsagePanel />}
               {webConfig?.grok.usagePanelEnabled && <GrokUsagePanel />}
             </div>
@@ -1125,6 +1254,17 @@ export function AppShell() {
           {showChat && trellisSessionTask?.task && !(rightPanelOpen && rightPanelMode === "trellis" && focusedTrellisTaskKey === trellisSessionTask.task.key) && (
             <TrellisSessionWidget task={trellisSessionTask.task} onClick={handleOpenTrellisSessionTask} />
           )}
+          {showChat && workflowEnabled && workflowCurrentTask?.task && !(rightPanelOpen && rightPanelMode === "workflow" && focusedWorkflowTaskId === workflowCurrentTask.task.id) && (
+            <WorkflowSessionWidget
+              task={workflowCurrentTask.task}
+              phase={workflowCurrentTask.phase}
+              onClick={() => {
+                setFocusedWorkflowTaskId(workflowCurrentTask.task.id);
+                setRightPanelMode("workflow");
+                setRightPanelOpen(true);
+              }}
+            />
+          )}
           </div>
           {terminalOpen && terminalEnabled && terminalDockCwd && (
             <TerminalPanel
@@ -1179,6 +1319,22 @@ export function AppShell() {
               )}
             </div>
           </>
+        ) : rightPanelMode === "workflow" ? (
+          <>
+            <div style={{ display: "flex", alignItems: "center", flexShrink: 0, background: "var(--bg-panel)", borderBottom: "1px solid var(--border)", height: 36, padding: "0 12px", gap: 8 }}>
+              <span style={{ color: "var(--text)", fontSize: 13, fontWeight: 700 }}>{t("workflow.panelTitle")}</span>
+              {workflowCwd && <span title={workflowCwd} style={{ color: "var(--text-dim)", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{workflowCwd}</span>}
+            </div>
+            <div style={{ flex: 1, overflow: "hidden" }}>
+              <WorkflowPanel
+                cwd={workflowCwd}
+                includeArchivedDefault={workflowIncludeArchivedDefault}
+                focusedTaskId={focusedWorkflowTaskId}
+                sessionId={selectedSession?.id ?? null}
+                onTaskCreated={handleWorkflowTaskCreated}
+              />
+            </div>
+          </>
         ) : (
           <>
             <div style={{ display: "flex", alignItems: "center", flexShrink: 0, background: "var(--bg-panel)", borderBottom: "1px solid var(--border)", height: 36, padding: "0 12px", gap: 8 }}>
@@ -1219,6 +1375,36 @@ export function AppShell() {
           <circle cx="12" cy="12" r="3" />
         </svg>
       </button>
+      {workflowEnabled && (
+        <button
+          onClick={(e) => {
+            // Alt/Option+click: create task from current chat (Trellis-like, no manual "+").
+            if (e.altKey && selectedSession?.id && workflowCwd) {
+              void handleStartWorkflowFromChat();
+              return;
+            }
+            if (rightPanelOpen && rightPanelMode === "workflow") setRightPanelOpen(false);
+            else {
+              setRightPanelMode("workflow");
+              setRightPanelOpen(true);
+            }
+          }}
+          title={selectedSession?.id ? t("app.workflowToggleWithCreate") : (rightPanelOpen && rightPanelMode === "workflow" ? t("app.hideWorkflow") : t("app.showWorkflow"))}
+          aria-label={rightPanelOpen && rightPanelMode === "workflow" ? t("app.hideWorkflow") : t("app.showWorkflow")}
+          style={{
+            display: "flex", alignItems: "center", justifyContent: "center",
+            width: 36, height: 36, padding: 0,
+            background: "var(--bg-panel)", border: "none", borderLeft: "1px solid var(--border)", borderBottom: "1px solid var(--border)",
+            color: rightPanelOpen && rightPanelMode === "workflow" ? "var(--accent)" : "var(--text-muted)",
+            cursor: "pointer", transition: "color 0.12s",
+            fontSize: 12, fontWeight: 800,
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.color = "var(--accent)"; }}
+          onMouseLeave={(e) => { e.currentTarget.style.color = rightPanelOpen && rightPanelMode === "workflow" ? "var(--accent)" : "var(--text-muted)"; }}
+        >
+          W
+        </button>
+      )}
       {trellisEnabled && (
         <button
           onClick={() => {

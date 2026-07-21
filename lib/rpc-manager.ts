@@ -495,13 +495,43 @@ export async function startRpcSession(
   if (inflight) return inflight;
 
   const starting = (async () => {
-    const { SessionManager, getAgentDir } = await import("@earendil-works/pi-coding-agent");
+    const {
+      SessionManager,
+      getAgentDir,
+      DefaultResourceLoader,
+      SettingsManager,
+    } = await import("@earendil-works/pi-coding-agent");
     const agentDir = getAgentDir();
     preparePiRuntimeEnvironment({ cwd, agentDir });
 
     const sessionManager = sessionFile
       ? SessionManager.open(sessionFile, undefined)
       : SessionManager.create(cwd, undefined);
+
+    // Trellis-like workflow breadcrumbs: when WebUI Workflow is enabled, append
+    // active-task guidance so chat agents follow create/plan/start/implement/check
+    // without requiring the user to operate the panel first.
+    let resourceLoader: InstanceType<typeof DefaultResourceLoader> | undefined;
+    try {
+      const { readPiWebConfig } = await import("./pi-web-config");
+      const { buildWorkflowSystemGuidance } = await import("./workflow-guidance");
+      if (readPiWebConfig().workflow.enabled) {
+        const guidance = buildWorkflowSystemGuidance(cwd);
+        if (guidance) {
+          const settingsManager = SettingsManager.create(cwd, agentDir);
+          resourceLoader = new DefaultResourceLoader({
+            cwd,
+            agentDir,
+            settingsManager,
+            appendSystemPrompt: [guidance],
+          });
+          await resourceLoader.reload();
+        }
+      }
+    } catch {
+      // Workflow guidance is best-effort; never block chat session start.
+      resourceLoader = undefined;
+    }
 
     // Do NOT pass the `tools` parameter to createAgentSession.
     // The `tools` param acts as a global allowlist that filters out extension
@@ -511,6 +541,7 @@ export async function startRpcSession(
       cwd,
       agentDir,
       sessionManager,
+      ...(resourceLoader ? { resourceLoader } : {}),
     });
 
     const wrapper = new AgentSessionWrapper(inner, cwd);

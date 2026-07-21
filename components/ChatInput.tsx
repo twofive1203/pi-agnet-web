@@ -7,6 +7,7 @@ import type { AttachedFile, GitStatusInfo } from "@/lib/types";
 import type { ToolPreset } from "@/components/ToolPanel";
 import { encodeFilePathForApi, getFileName, getRelativeFilePath, joinFilePath } from "@/lib/file-paths";
 import { buildTrellisTaskResumePrompt, type TrellisTaskChatContext } from "@/lib/trellis-chat-context";
+import { buildWorkflowTaskResumePrompt, type WorkflowTaskChatContext } from "@/lib/workflow-chat-context";
 import { useI18n } from "@/components/I18nProvider";
 
 export interface AttachedImage {
@@ -58,6 +59,8 @@ export interface ChatInputHandle {
   addFiles: (files: File[]) => void;
   addFileReference: (relativePath: string, lines?: { startLine: number; endLine: number }) => void;
   addTrellisTaskContext: (context: TrellisTaskChatContext) => void;
+  /** Inject a plain-text Workflow task resume prompt (Trellis-like active task binding). */
+  addWorkflowTaskContext: (context: WorkflowTaskChatContext) => void;
 }
 
 const TOOL_PRESET_OPTIONS = [
@@ -811,6 +814,26 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       const el = inputRef.current;
       if (!el) return;
       trellisTaskInsertAtCursor(el, context, t("chat.trellisContinue"));
+      syncFromDom();
+      resizeInput();
+    },
+    addWorkflowTaskContext(context: WorkflowTaskChatContext) {
+      const el = inputRef.current;
+      if (!el) return;
+      const prompt = buildWorkflowTaskResumePrompt(context);
+      // Prefer filling an empty composer; otherwise append as a new block.
+      if (!hasContent(el)) {
+        el.textContent = prompt;
+      } else {
+        const existing = el.innerText || el.textContent || "";
+        el.textContent = `${existing.replace(/\s+$/, "")}\n\n${prompt}`;
+      }
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      range.collapse(false);
+      const sel = window.getSelection();
+      sel?.removeAllRanges();
+      sel?.addRange(range);
       syncFromDom();
       resizeInput();
     },

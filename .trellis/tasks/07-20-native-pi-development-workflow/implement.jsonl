@@ -1,0 +1,10 @@
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Follow existing allowed-root, workspace-file, Trellis/task-panel, and validation contracts for the new cross-layer workflow UI/API."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Use project type guards, shared contracts, strict external-data normalization, and typed state transitions."}
+{"file":"docs/standards/code-style.md","reason":"Follow repository TypeScript, API boundary, validation, and testing conventions."}
+{"file":"docs/architecture/overview.md","reason":"Preserve AgentSession, cwd, extension, event, and native-vs-Trellis configuration invariants."}
+{"file":"docs/modules/api.md","reason":"Update and follow the API route ownership/map conventions for workflow routes."}
+{"file":"docs/modules/frontend.md","reason":"Reuse existing panel, hook, session, i18n, and responsive UI patterns."}
+{"file":"docs/modules/library.md","reason":"Place shared workflow store/runtime logic in lib and preserve reuse boundaries."}
+{"file":"docs/integrations/README.md","reason":"Use the documented Pi SDK, runtime resolver, native pi-subagents, and settings boundaries."}
+{"file":".trellis/tasks/07-20-native-pi-development-workflow/research/native-pi-subagents-rpc.md","reason":"Use the verified stable pi-subagents RPC, cwd, lifecycle artifact, and builtin-agent contract."}
+{"file":".trellis/tasks/07-20-native-pi-development-workflow/research/existing-webui-surfaces.md","reason":"Reuse confirmed WebUI session, task, panel, security, and native subagent surfaces."}

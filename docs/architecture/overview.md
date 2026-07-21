@@ -103,6 +103,21 @@ other. The native config persists to `~/.pi/agent/settings.json` (user) or
 `<cwd>/.pi/settings.json` (project); the Trellis routing config persists to
 `~/.pi/agent/pi-web.json`.
 
+### WebUI-owned Workflow (separate from Trellis)
+
+Snail Pi Web also owns a first-class development Workflow panel gated by
+`pi-web.json → workflow.enabled`. Task documents live under
+`<cwd>/.pi/workflows/tasks/` and never share schema, import, or writeback with
+`.trellis/tasks/`. Implement/check phases dispatch through native `pi-subagents`
+RPC (`worker` / `reviewer`) using a cwd-bound in-memory host session managed by
+`lib/workflow-run-manager.ts`. Workflow agent models come only from native
+`settings.json → subagents`; Workflow code must not read `trellis.subagents`.
+
+Chat experience is intentionally Trellis-like: when Workflow is enabled, RPC chat
+sessions receive active-task breadcrumbs via `lib/workflow-guidance.ts`, agents
+create/start/implement/check through `scripts/workflow-task.ts` (not panel
+clicking), and a current-task pointer lives at `.pi/workflows/current.json`.
+
 ### Pi Settings Precedence
 
 Effective model for a subagent child (highest to lowest):
