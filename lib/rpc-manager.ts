@@ -508,9 +508,9 @@ export async function startRpcSession(
       ? SessionManager.open(sessionFile, undefined)
       : SessionManager.create(cwd, undefined);
 
-    // Trellis-like workflow breadcrumbs: when WebUI Workflow is enabled, append
-    // active-task guidance so chat agents follow create/plan/start/implement/check
-    // without requiring the user to operate the panel first.
+    // Trellis-like SnFlow breadcrumbs: when SnFlow is enabled, append active-task
+    // guidance so chat agents follow create/plan/start/implement/check without
+    // requiring the user to operate the panel first.
     let resourceLoader: InstanceType<typeof DefaultResourceLoader> | undefined;
     try {
       const { readPiWebConfig } = await import("./pi-web-config");
@@ -529,7 +529,7 @@ export async function startRpcSession(
         }
       }
     } catch {
-      // Workflow guidance is best-effort; never block chat session start.
+      // SnFlow guidance is best-effort; never block chat session start.
       resourceLoader = undefined;
     }
 

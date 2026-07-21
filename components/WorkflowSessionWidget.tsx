@@ -48,7 +48,7 @@ export function WorkflowSessionWidget({ task, phase, onClick }: Props) {
     >
       <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 4 }}>
         <span style={{ fontSize: 11, fontWeight: 800, color: phaseColor(phase) }}>
-          Workflow · {t(`workflow.phase.${phase}`)}
+          SnFlow · {t(`workflow.phase.${phase}`)}
         </span>
         {task.activeRunId && (
           <span style={{ fontSize: 10, color: "#f59e0b", fontWeight: 700 }}>{t("workflow.running")}</span>

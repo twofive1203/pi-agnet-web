@@ -1,6 +1,6 @@
 /**
- * Per-cwd "current workflow task" pointer, analogous to Trellis active-task.
- * Stored at <cwd>/.pi/workflows/current.json — never under .trellis/.
+ * Per-cwd "current SnFlow task" pointer, analogous to Trellis active-task.
+ * Stored at <cwd>/.pi/snflows/current.json — never under .trellis/.
  */
 
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "fs";
@@ -62,7 +62,7 @@ export function setWorkflowCurrentTask(
   options?: { source?: WorkflowCurrentPointer["source"]; sessionId?: string },
 ): WorkflowCurrentPointer {
   if (!isValidWorkflowTaskId(taskId)) {
-    throw new Error(`Invalid workflow task id: ${taskId}`);
+    throw new Error(`Invalid SnFlow task id: ${taskId}`);
   }
   const root = canonicalizeCwd(cwd);
   const dir = path.join(root, ...WORKFLOW_ROOT_SEGMENTS);

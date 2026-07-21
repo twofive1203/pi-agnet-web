@@ -48,21 +48,21 @@ API routes live under `app/api/`. When adding, removing, or changing routes, upd
 | `git/diff/` | GET | Return a bounded read-only unified diff, or binary/too-large/unavailable fallback metadata, for one changed file in a selected commit. |
 | `git/switch/` | POST | Switch the current workspace to a local branch. Validates cwd, branch existence, and working tree cleanliness before executing `git switch`. Returns `switchedTo` on success or an error message. |
 | `subagents/config/` | GET/PUT | Read/write native `pi-subagents` model configuration in Pi `settings.json` for user-global or selected-project scope. GET returns managed fields, discovered agents, discovery diagnostics, and user-scope projection for project scope. PUT applies a managed-field patch with revision-based conflict detection, validates model ids against the Pi model registry, and returns the refreshed projection. |
-| `web-config/` | GET/PUT | Read/write `~/.pi/agent/pi-web.json` for WorkTree defaults, Usage scan scope, Web Terminal settings, ChatGPT usage panel/warmup schedule settings, Editor implementation/shortcut settings, optional Workflow panel settings, optional Trellis panel settings, setup proxy, and Trellis subagent model policy; also lazily ensures the local ChatGPT warmup scheduler. |
+| `web-config/` | GET/PUT | Read/write `~/.pi/agent/pi-web.json` for WorkTree defaults, Usage scan scope, Web Terminal settings, ChatGPT usage panel/warmup schedule settings, Editor implementation/shortcut settings, optional SnFlow panel settings (compat key `workflow`), optional Trellis panel settings, setup proxy, and Trellis subagent model policy; also lazily ensures the local ChatGPT warmup scheduler. |
 | `terminal/env/assist/` | POST | Use the configured Terminal env assistant model to parse complex raw env text into normalized key-value env entries. |
 | `terminal/sessions/` | POST | Create a local Web Terminal session for an authorized workspace cwd when the Terminal setting is enabled. |
 | `terminal/sessions/[id]/` | DELETE | Close a Web Terminal session and terminate its process. |
 | `terminal/sessions/[id]/events/` | GET | Stream Web Terminal output through SSE. |
 | `terminal/sessions/[id]/input/` | POST | Write user input to a Web Terminal session. |
 | `terminal/sessions/[id]/resize/` | POST | Resize a Web Terminal PTY. |
-| `workflows/current/` | GET | Return the cwd current Workflow task pointer and detail (Trellis-like active task) when Workflow is enabled. |
-| `workflows/tasks/` | GET/POST | List or create WebUI-owned Workflow tasks under `<cwd>/.pi/workflows/tasks/` when the Workflow panel setting is enabled. POST may seed from `sessionId` / `seedText`. |
-| `workflows/tasks/[taskId]/` | GET/PUT | Read or revision-checked update one Workflow task metadata/documents. |
-| `workflows/tasks/[taskId]/runs/` | POST | Start implement or check phase via native pi-subagents for one Workflow task. |
-| `workflows/runs/[runId]/` | GET | Reconcile and return one Workflow run plus parent task projection. |
-| `workflows/runs/[runId]/cancel/` | POST | Stop an active native Workflow run and reconcile. |
-| `workflows/tasks/[taskId]/complete/` | POST | Record commit metadata and/or mark a Workflow task completed. |
-| `workflows/tasks/[taskId]/archive/` | POST | Archive a completed/cancelled Workflow task under `.pi/workflows/tasks/archive/`. |
+| `workflows/current/` | GET | Return the cwd current SnFlow task pointer and detail (Trellis-like active task) when SnFlow is enabled. |
+| `workflows/tasks/` | GET/POST | List or create WebUI-owned SnFlow tasks under `<cwd>/.pi/snflows/tasks/` when the SnFlow panel setting is enabled. POST may seed from `sessionId` / `seedText`. |
+| `workflows/tasks/[taskId]/` | GET/PUT | Read or revision-checked update one SnFlow task metadata/documents. |
+| `workflows/tasks/[taskId]/runs/` | POST | Start implement or check phase via native pi-subagents for one SnFlow task. |
+| `workflows/runs/[runId]/` | GET | Reconcile and return one SnFlow run plus parent task projection. |
+| `workflows/runs/[runId]/cancel/` | POST | Stop an active native SnFlow run and reconcile. |
+| `workflows/tasks/[taskId]/complete/` | POST | Record commit metadata and/or mark a SnFlow task completed. |
+| `workflows/tasks/[taskId]/archive/` | POST | Archive a completed/cancelled SnFlow task by moving it to `.pi/snflows/archived/<task-id>/`. |
 | `trellis/tasks/` | GET | List read-only Trellis task summaries for an authorized workspace cwd when the Trellis panel setting is enabled. |
 | `trellis/tasks/[taskKey]/` | GET | Read one Trellis task detail, artifacts, manifest counts, hierarchy, and derived phase/progress. |
 | `trellis/workflow/` | GET | Read and parse the selected workspace `.trellis/workflow.md` into a read-only workflow visualization projection with phases, steps, workflow-state blocks, source line ranges, and parser warnings. |

@@ -1,6 +1,6 @@
 /**
  * WebUI-owned development workflow types.
- * Task files live under <cwd>/.pi/workflows/tasks/ and are independent of Trellis.
+ * Task files live under <cwd>/.pi/snflows/tasks/ and are independent of Trellis.
  */
 
 export const WORKFLOW_SCHEMA_VERSION = 1 as const;

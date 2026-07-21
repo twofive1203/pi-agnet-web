@@ -552,7 +552,7 @@ export function AppShell() {
       if (!res.ok || !data.task) throw new Error(data.error ?? `HTTP ${res.status}`);
       handleWorkflowTaskCreated(data.task);
     } catch (error) {
-      console.error("Failed to create workflow task from chat", error);
+      console.error("Failed to create SnFlow task from chat", error);
       window.alert(error instanceof Error ? error.message : String(error));
     }
   }, [workflowEnabled, workflowCwd, selectedSession?.id, handleWorkflowTaskCreated]);
@@ -1378,7 +1378,7 @@ export function AppShell() {
       {workflowEnabled && (
         <button
           onClick={(e) => {
-            // Alt/Option+click: create task from current chat (Trellis-like, no manual "+").
+            // Alt/Option+click: create SnFlow task from current chat (Trellis-like, no manual "+").
             if (e.altKey && selectedSession?.id && workflowCwd) {
               void handleStartWorkflowFromChat();
               return;
@@ -1402,7 +1402,7 @@ export function AppShell() {
           onMouseEnter={(e) => { e.currentTarget.style.color = "var(--accent)"; }}
           onMouseLeave={(e) => { e.currentTarget.style.color = rightPanelOpen && rightPanelMode === "workflow" ? "var(--accent)" : "var(--text-muted)"; }}
         >
-          W
+          SF
         </button>
       )}
       {trellisEnabled && (

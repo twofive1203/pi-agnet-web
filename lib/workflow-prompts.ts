@@ -1,5 +1,5 @@
 /**
- * Prompt builders and structured-output normalizers for Workflow implement/check phases.
+ * Prompt builders and structured-output normalizers for SnFlow implement/check phases.
  */
 
 import type {
@@ -61,8 +61,8 @@ function normalizeValidation(value: unknown): WorkflowValidationResult[] {
 
 export function buildImplementPrompt(ctx: WorkflowPromptContext): string {
   return [
-    "You are the Workflow implementation agent for Snail Pi Web.",
-    "You are a child worker, not an orchestrator. Do not spawn subagents, do not call the subagent tool, and do not start other Workflow phases.",
+    "You are the SnFlow implementation agent for Snail Pi Web.",
+    "You are a child worker, not an orchestrator. Do not spawn subagents, do not call the subagent tool, and do not start other SnFlow phases.",
     "",
     `Project cwd (must remain your working directory): ${ctx.cwd}`,
     `Task id: ${ctx.taskId}`,
@@ -79,7 +79,7 @@ export function buildImplementPrompt(ctx: WorkflowPromptContext): string {
     "- Implement only what the requirements/design/plan require for this task.",
     "- Prefer focused, reviewable changes. Do not drive-by refactor unrelated code.",
     "- Never git commit, push, merge, tag, or open a PR.",
-    "- Never modify .trellis/ task metadata as part of this Workflow.",
+    "- Never modify .trellis/ task metadata as part of this SnFlow task.",
     "- Never treat task.md as the task source of truth; task.json is mandatory.",
     "- Run focused validation that is practical for the change (lint/typecheck/tests as appropriate).",
     "- If task.json is missing or malformed, stop and report it instead of inventing a markdown-only task.",
@@ -97,7 +97,7 @@ export function buildImplementPrompt(ctx: WorkflowPromptContext): string {
 
 export function buildCheckPrompt(ctx: WorkflowPromptContext): string {
   return [
-    "You are the Workflow check/review agent for Snail Pi Web.",
+    "You are the SnFlow check/review agent for Snail Pi Web.",
     "You are an independent reviewer, not an implementer and not an orchestrator.",
     "Do not spawn subagents, do not call the subagent tool, and do not edit project files unless a tiny read-only note is absolutely required (prefer zero writes).",
     "",
@@ -120,7 +120,7 @@ export function buildCheckPrompt(ctx: WorkflowPromptContext): string {
     "- Verify the implementation matches requirements/design/plan.",
     "- Prefer concrete findings with paths when possible.",
     "- Never git commit, push, merge, tag, or open a PR.",
-    "- Never dispatch implement/check Workflow agents or other subagents.",
+    "- Never dispatch implement/check SnFlow agents or other subagents.",
     "- Never treat task.md as the source of truth; if task.json is missing or invalid, report that explicitly.",
     "- When finished, respond with a concise human summary AND a final fenced JSON block with this exact shape:",
     "```json",
@@ -151,10 +151,9 @@ function extractJsonCandidate(text: string): unknown | null {
     try {
       return JSON.parse(block) as unknown;
     } catch {
-      // try next
+      // Try the next fenced block.
     }
   }
-  // Fallback: last {...} object in the text.
   const start = text.lastIndexOf("{");
   const end = text.lastIndexOf("}");
   if (start >= 0 && end > start) {
@@ -223,14 +222,9 @@ export function normalizeCheckResult(text: string | null | undefined): WorkflowC
       validation: [],
     };
   }
-
-  const verdictRaw = asString(candidate.verdict)?.toLowerCase();
+  const rawVerdict = asString(candidate.verdict)?.toLowerCase();
   let verdict: WorkflowCheckVerdict = "changes_requested";
-  if (verdictRaw === "pass" || verdictRaw === "passed" || verdictRaw === "ok") verdict = "pass";
-  if (verdictRaw === "changes_requested" || verdictRaw === "fail" || verdictRaw === "failed") {
-    verdict = "changes_requested";
-  }
-
+  if (rawVerdict === "pass" || rawVerdict === "passed") verdict = "pass";
   return {
     verdict,
     summary: asString(candidate.summary) ?? text.trim().slice(0, 2000),

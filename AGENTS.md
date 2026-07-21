@@ -59,7 +59,7 @@ npm run dev     # http://localhost:62666
 | Tool-call normalization | `lib/normalize.ts` | `docs/architecture/overview.md`, `docs/modules/library.md` |
 | Workspace files and Git context | `app/api/files/**`, `app/api/git/**`, `lib/file-paths.ts`, `lib/git-worktree.ts`, `lib/workspace-title.ts` | `docs/modules/api.md`, `docs/modules/library.md` |
 | Models, model pricing/catalog, native subagents, skills, extensions, intercom, auth, usage | `app/api/models*`, `app/api/model-pricing/`, `app/api/subagents/config/**`, `app/api/skills/**`, `app/api/pi/**`, `app/api/intercom/**`, `app/api/auth/**`, `app/api/usage/route.ts` | `docs/modules/api.md`, `docs/integrations/README.md` |
-| WebUI-owned Workflow tasks/runs | `lib/workflow-store.ts`, `lib/workflow-run-manager.ts`, `app/api/workflows/**`, `components/WorkflowPanel.tsx` | `docs/modules/api.md`, `docs/modules/library.md`, `docs/modules/frontend.md` |
+| WebUI-owned SnFlow tasks/runs | `lib/workflow-store.ts`, `lib/workflow-run-manager.ts`, `app/api/workflows/**`, `components/WorkflowPanel.tsx` | `docs/modules/api.md`, `docs/modules/library.md`, `docs/modules/frontend.md` |
 
 ## Project Invariants
 
@@ -111,8 +111,8 @@ node_modules/.bin/tsc --noEmit
 | Session files | `~/.pi/agent/sessions/<encoded-cwd>/<timestamp>_<uuid>.jsonl` |
 | Model config | `~/.pi/agent/models.json` |
 | Settings/default model/native subagents | `~/.pi/agent/settings.json`, project override `<cwd>/.pi/settings.json` |
-| Web UI settings (WorkTree, Usage, Web Terminal, ChatGPT panel, Grok panel, Editor, Workflow panel, Trellis routing) | `~/.pi/agent/pi-web.json` |
-| WebUI Workflow tasks | `<cwd>/.pi/workflows/tasks/<task-id>/` |
+| Web UI settings (WorkTree, Usage, Web Terminal, ChatGPT panel, Grok panel, Editor, SnFlow panel, Trellis routing) | `~/.pi/agent/pi-web.json` |
+| WebUI SnFlow tasks | `<cwd>/.pi/snflows/tasks/<task-id>/` (archived: `<cwd>/.pi/snflows/archived/<task-id>/`) |
 
 ## Archive Rules
 

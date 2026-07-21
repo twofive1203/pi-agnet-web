@@ -79,7 +79,7 @@ Two separate subagent configuration systems exist:
 | Native pi-subagents | `settings.json → subagents` | User/Project | pi-subagents extension native model config (defaultModel, agentOverrides) |
 | Trellis routing | `pi-web.json → trellis.subagents` | User | Web UI Trellis workflow routing policy only |
 
-The WebUI-owned Workflow panel (`pi-web.json → workflow`) dispatches implement/check
+The WebUI-owned SnFlow panel (`pi-web.json → workflow` compatibility key) dispatches implement/check
 through native pi-subagents RPC and uses the native `settings.json → subagents`
 model source only. It does not read Trellis routing policy.
 

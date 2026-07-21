@@ -1,5 +1,5 @@
 /**
- * Seed a Workflow task title/goal from an existing chat session transcript.
+ * Seed a SnFlow task title/goal from an existing chat session transcript.
  */
 
 import { buildSessionContext, getSessionEntries, resolveSessionPath } from "./session-reader";
@@ -36,7 +36,11 @@ export async function extractWorkflowSeedFromSession(sessionId: string): Promise
     const text = messageText((msg as { content?: unknown }).content);
     if (!text) continue;
     // Skip injected system-ish resume prompts.
-    if (text.startsWith("继续 Trellis 任务") || text.startsWith("继续 WebUI Workflow 任务")) continue;
+    if (
+      text.startsWith("继续 Trellis 任务") ||
+      text.startsWith("继续 WebUI Workflow 任务") ||
+      text.startsWith("继续 SnFlow 任务")
+    ) continue;
     userTexts.push(text);
   }
   if (userTexts.length === 0) return null;

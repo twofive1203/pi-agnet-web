@@ -1,5 +1,5 @@
 /**
- * Deterministic smoke checks for Workflow store/prompts/types.
+ * Deterministic smoke checks for SnFlow store/prompts/types.
  * Run: npx tsx scripts/smoke-workflow-store.ts
  *  or: node scripts/smoke-workflow-store.mjs
  */
@@ -66,7 +66,7 @@ try {
   });
   assert(created.status === "planning", "planning");
   assert(created.documents.requirements.includes("auth token refresh"), "seeded requirements");
-  assert(created.pathLabel.includes(".pi/workflows/tasks/"), "namespace path");
+  assert(created.pathLabel.includes(".pi/snflows/tasks/"), "namespace path");
   assert(listWorkflowTasks(projectA).currentTaskId === created.id, "create sets current task");
 
   assert(listWorkflowTasks(projectB).tasks.length === 0, "project isolation");
@@ -113,7 +113,7 @@ try {
   }
   assert(revConflict, "revision conflict");
 
-  const badDir = path.join(projectA, ".pi", "workflows", "tasks", "bad-task");
+  const badDir = path.join(projectA, ".pi", "snflows", "tasks", "bad-task");
   mkdirSync(badDir, { recursive: true });
   writeFileSync(path.join(badDir, "task.json"), JSON.stringify({ schemaVersion: 1, id: "bad-task" }), "utf8");
   const listed = listWorkflowTasks(projectA, true);
@@ -129,7 +129,7 @@ try {
 
   try {
     const outside = mkdtempSync(path.join(tmpdir(), "wf-out-"));
-    const link = path.join(projectA, ".pi", "workflows", "tasks", "linky");
+    const link = path.join(projectA, ".pi", "snflows", "tasks", "linky");
     symlinkSync(outside, link, "dir");
     writeFileSync(path.join(outside, "task.json"), '{"schemaVersion":1}', "utf8");
     let secured = false;
@@ -145,7 +145,7 @@ try {
   }
 
   assert(
-    existsSync(path.join(projectA, ".pi", "workflows", "tasks", created.id, "task.json")),
+    existsSync(path.join(projectA, ".pi", "snflows", "tasks", created.id, "task.json")),
     "task persisted",
   );
   console.log("OK workflow-store smoke");

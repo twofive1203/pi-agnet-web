@@ -59,7 +59,7 @@ export interface ChatInputHandle {
   addFiles: (files: File[]) => void;
   addFileReference: (relativePath: string, lines?: { startLine: number; endLine: number }) => void;
   addTrellisTaskContext: (context: TrellisTaskChatContext) => void;
-  /** Inject a plain-text Workflow task resume prompt (Trellis-like active task binding). */
+  /** Inject a plain-text SnFlow task resume prompt (Trellis-like active task binding). */
   addWorkflowTaskContext: (context: WorkflowTaskChatContext) => void;
 }
 

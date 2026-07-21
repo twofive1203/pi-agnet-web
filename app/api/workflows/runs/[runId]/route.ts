@@ -14,7 +14,7 @@ export async function GET(
   try {
     const config = readPiWebConfig();
     if (!config.workflow.enabled) {
-      return NextResponse.json({ error: "Workflow panel is disabled" }, { status: 403 });
+      return NextResponse.json({ error: "SnFlow panel is disabled" }, { status: 403 });
     }
 
     const cwd = request.nextUrl.searchParams.get("cwd");

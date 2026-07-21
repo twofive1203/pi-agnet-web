@@ -934,7 +934,7 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
             {renderSectionButton("grok", "Grok", t("settings.grokSection"))}
             {renderSectionButton("editor", t("settings.sectionEditor"), t("settings.editorSection"))}
             {renderSectionButton("agents", t("settings.sectionAgents"), t("settings.agentsSection"))}
-            {renderSectionButton("workflow", "Workflow", t("settings.workflowSection"))}
+            {renderSectionButton("workflow", "SnFlow", t("settings.workflowSection"))}
             {renderSectionButton("extensions", "Extensions", t("settings.extensionsSection"))}
             {renderSectionButton("trellis", "Trellis", t("settings.trellisSection"))}
           </div>

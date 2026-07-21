@@ -20,22 +20,22 @@ export function workflowTaskToChatContext(
 
 /**
  * Injected into chat so the main agent behaves like Trellis after task create:
- * bind to the task, read docs, continue planning — do not wait for the user to
+ * bind to the task, read docs, continue planning - do not wait for the user to
  * open the panel and click "+".
  */
 export function buildWorkflowTaskResumePrompt(context: WorkflowTaskChatContext): string {
-  const base = `.pi/workflows/tasks/${context.taskId}`;
+  const base = `.pi/snflows/tasks/${context.taskId}`;
   return [
-    "继续 WebUI Workflow 任务（不是 Trellis）：",
+    "继续 SnFlow 任务（不是 Trellis）：",
     "",
-    `Active workflow task: ${base}`,
+    `Active SnFlow task: ${base}`,
     "",
     `任务标题：${context.title}`,
     `当前状态：${context.status}`,
     `任务目录：${base}`,
     "",
     "任务文件契约：",
-    "- 这个工作流只认 `task.json` 作为任务主记录。不要把 `task.md` 当成主文件。",
+    "- SnFlow 只认 `task.json` 作为任务主记录。不要把 `task.md` 当成主文件。",
     "- 正确目录结构必须是：",
     `  - ${base}/task.json`,
     `  - ${base}/requirements.md`,
@@ -53,11 +53,11 @@ export function buildWorkflowTaskResumePrompt(context: WorkflowTaskChatContext):
     `- ${base}/plan.md`,
     "",
     "行为约定：",
-    "- 这是 Snail Pi Web 自有 Workflow，不要写 .trellis/，也不要跑 trellis task.py。",
+    "- 这是 Snail Pi Web 自有 SnFlow，不要写 .trellis/，也不要跑 trellis task.py。",
     "- 用户已经有任务了，不要再让用户去面板里手动点“创建任务”。",
     "- 先完善 requirements/design/plan；用户明确要求实现前，不要直接大改代码。",
-    "- 需要派发实现/检查时，优先提示用户在 Workflow 面板点“运行实现/运行检查”，或使用项目内 `npx tsx scripts/workflow-task.ts`（若可用）。",
-    "- 创建/修复任务后，必须自检：W 面板能列出任务；如果 CLI 可用，再用 `npx tsx scripts/workflow-task.ts show <taskId>` 验证。",
+    "- 需要派发实现/检查时，优先提示用户在 SnFlow 面板点“运行实现/运行检查”，或使用项目内 `npx tsx scripts/workflow-task.ts`（若可用）。",
+    "- 创建/修复任务后，必须自检：SnFlow 面板能列出任务；如果 CLI 可用，再用 `npx tsx scripts/workflow-task.ts show <taskId>` 验证。",
     "- 如果生成器输出了 task.md，请把它当作草稿或兼容文件，不要让它替代 task.json。",
     "- 不要 git commit/push/PR，除非用户明确要求。",
     "",

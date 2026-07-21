@@ -1,12 +1,12 @@
 #!/usr/bin/env npx tsx
 /**
- * Trellis-like Workflow CLI for chat agents.
+ * Trellis-like SnFlow CLI for chat agents.
  *
  * Lifecycle:
  *   create → (edit docs) → start → implement → check → complete → archive
  *
  * implement/check dispatch through the same server-side native pi-subagents host
- * as the Workflow panel (cwd-bound). No panel clicking required.
+ * as the SnFlow panel (cwd-bound). No panel clicking required.
  */
 
 import {
@@ -85,13 +85,13 @@ function resolveTaskId(cwd: string, maybeId?: string): string {
   if (maybeId) return maybeId;
   const current = getWorkflowCurrentTaskId(cwd);
   if (!current) {
-    throw new Error("No task id and no current workflow task. Run: workflow-task create ...");
+    throw new Error("No task id and no current SnFlow task. Run: workflow-task create ...");
   }
   return current;
 }
 
 function printActive(taskId: string) {
-  console.log(`Active workflow task: .pi/workflows/tasks/${taskId}`);
+  console.log(`Active SnFlow task: .pi/snflows/tasks/${taskId}`);
 }
 
 async function dispatchPhase(cwd: string, taskId: string, phase: "implement" | "check") {
@@ -172,7 +172,7 @@ async function main() {
   if (cmd === "current") {
     const id = getWorkflowCurrentTaskId(cwd);
     if (!id) {
-      console.log("(no current workflow task)");
+      console.log("(no current SnFlow task)");
       return;
     }
     printActive(id);
@@ -299,13 +299,12 @@ async function main() {
     const next = archiveWorkflowTask(cwd, taskId, detail.revision);
     console.log(`status=${next.status}`);
     console.log(`archived=${next.archived}`);
-    if (getWorkflowCurrentTaskId(cwd) === taskId) clearWorkflowCurrentTask(cwd);
     return;
   }
 
   if (cmd === "finish") {
     clearWorkflowCurrentTask(cwd);
-    console.log("(current workflow task cleared)");
+    console.log("(current SnFlow task cleared)");
     return;
   }
 

@@ -1,5 +1,5 @@
 /**
- * Workflow runtime: cwd-bound in-memory Pi host sessions + native pi-subagents RPC.
+ * SnFlow runtime: cwd-bound in-memory Pi host sessions + native pi-subagents RPC.
  * Never falls back to process.cwd() for project context.
  */
 

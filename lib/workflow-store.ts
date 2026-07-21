@@ -1,5 +1,6 @@
 /**
- * Project-local Workflow task store under <cwd>/.pi/workflows/tasks/.
+ * Project-local SnFlow task store under <cwd>/.pi/snflows/tasks/.
+ * Archived tasks live in the sibling <cwd>/.pi/snflows/archived/ directory.
  * Strict parsing, allowed-root aware path resolution, atomic writes.
  * Does not read or write .trellis/.
  */
@@ -20,7 +21,7 @@ import {
 import path from "path";
 import { canonicalizeCwd } from "./cwd";
 import { buildWorkflowTaskSeedRequirements } from "./workflow-chat-context";
-import { setWorkflowCurrentTask, getWorkflowCurrentTaskId } from "./workflow-current";
+import { clearWorkflowCurrentTask, setWorkflowCurrentTask, getWorkflowCurrentTaskId } from "./workflow-current";
 import {
   WORKFLOW_DOC_NAMES,
   WORKFLOW_SCHEMA_VERSION,
@@ -52,9 +53,9 @@ import {
   WORKFLOW_ACTIVE_RUN_STATES,
 } from "./workflow-types";
 
-export const WORKFLOW_ROOT_SEGMENTS = [".pi", "workflows"] as const;
+export const WORKFLOW_ROOT_SEGMENTS = [".pi", "snflows"] as const;
 export const WORKFLOW_TASKS_DIR = "tasks";
-export const WORKFLOW_ARCHIVE_DIR = "archive";
+export const WORKFLOW_ARCHIVED_DIR = "archived";
 
 export const WORKFLOW_MAX_JSON_BYTES = 256 * 1024;
 export const WORKFLOW_MAX_DOC_BYTES = 512 * 1024;
@@ -210,7 +211,7 @@ export function createStoreContext(cwd: string): StoreContext {
   }
   const workflowsRoot = path.join(workspaceRoot, ...WORKFLOW_ROOT_SEGMENTS);
   const tasksRoot = path.join(workflowsRoot, WORKFLOW_TASKS_DIR);
-  const archiveRoot = path.join(tasksRoot, WORKFLOW_ARCHIVE_DIR);
+  const archiveRoot = path.join(workflowsRoot, WORKFLOW_ARCHIVED_DIR);
   return { cwd: workspaceRoot, workspaceRoot, workflowsRoot, tasksRoot, archiveRoot };
 }
 
@@ -219,20 +220,14 @@ function ensureTasksRoot(ctx: StoreContext): void {
   assertPathWithinWorkspace(ctx.tasksRoot, ctx.workspaceRoot, "dir");
 }
 
-function taskDir(ctx: StoreContext, taskId: string, archivedMonth?: string): string {
+function taskDir(ctx: StoreContext, taskId: string, archived = false): string {
   if (!isValidWorkflowTaskId(taskId)) {
     throw new WorkflowStoreError("Invalid task id", { status: 400, code: "invalid_task_id" });
   }
-  if (archivedMonth) {
-    if (!/^\d{4}-\d{2}$/.test(archivedMonth)) {
-      throw new WorkflowStoreError("Invalid archive month", { status: 400, code: "invalid_archive_month" });
-    }
-    return path.join(ctx.archiveRoot, archivedMonth, taskId);
-  }
-  return path.join(ctx.tasksRoot, taskId);
+  return path.join(archived ? ctx.archiveRoot : ctx.tasksRoot, taskId);
 }
 
-function resolveExistingTaskDir(ctx: StoreContext, taskId: string): { dir: string; archived: boolean; archiveMonth?: string } {
+function resolveExistingTaskDir(ctx: StoreContext, taskId: string): { dir: string; archived: boolean } {
   if (!isValidWorkflowTaskId(taskId)) {
     throw new WorkflowStoreError("Invalid task id", { status: 400, code: "invalid_task_id" });
   }
@@ -241,16 +236,10 @@ function resolveExistingTaskDir(ctx: StoreContext, taskId: string): { dir: strin
     assertPathWithinWorkspace(active, ctx.workspaceRoot, "dir");
     return { dir: active, archived: false };
   }
-  if (existsSync(ctx.archiveRoot)) {
-    assertPathWithinWorkspace(ctx.archiveRoot, ctx.workspaceRoot, "dir");
-    for (const month of readdirSync(ctx.archiveRoot)) {
-      if (!/^\d{4}-\d{2}$/.test(month)) continue;
-      const candidate = path.join(ctx.archiveRoot, month, taskId);
-      if (existsSync(candidate)) {
-        assertPathWithinWorkspace(candidate, ctx.workspaceRoot, "dir");
-        return { dir: candidate, archived: true, archiveMonth: month };
-      }
-    }
+  const archivedDir = taskDir(ctx, taskId, true);
+  if (existsSync(archivedDir)) {
+    assertPathWithinWorkspace(archivedDir, ctx.workspaceRoot, "dir");
+    return { dir: archivedDir, archived: true };
   }
   throw new WorkflowNotFoundError(`Task not found: ${taskId}`);
 }
@@ -312,21 +301,21 @@ function parseNullableString(value: unknown, field: string): string | null {
   });
 }
 
-function parseCommit(value: unknown): WorkflowTaskCommitMeta | null {
-  if (value === null || value === undefined) return null;
-  if (!isRecord(value)) {
-    throw new WorkflowStoreError("Invalid commit metadata", { status: 409, code: "malformed_task" });
+function parseCommit(value: unknown, fallbackRecordedAt: string): WorkflowTaskCommitMeta | null {
+  // Agent hand-writes are messy here (plain string hash, missing recordedAt).
+  // Never fail the whole task on commit metadata; salvage what we can or drop it.
+  if (typeof value === "string") {
+    const hash = value.trim();
+    return hash ? { hash, recordedAt: fallbackRecordedAt } : null;
   }
-  if (typeof value.hash !== "string" || !value.hash.trim()) {
-    throw new WorkflowStoreError("Invalid commit.hash", { status: 409, code: "malformed_task" });
-  }
-  if (typeof value.recordedAt !== "string" || !value.recordedAt.trim()) {
-    throw new WorkflowStoreError("Invalid commit.recordedAt", { status: 409, code: "malformed_task" });
-  }
-  const commit: WorkflowTaskCommitMeta = {
-    hash: value.hash.trim(),
-    recordedAt: value.recordedAt,
-  };
+  if (!isRecord(value)) return null;
+  const hash = typeof value.hash === "string" ? value.hash.trim() : "";
+  if (!hash) return null;
+  const recordedAt =
+    typeof value.recordedAt === "string" && value.recordedAt.trim()
+      ? value.recordedAt
+      : fallbackRecordedAt;
+  const commit: WorkflowTaskCommitMeta = { hash, recordedAt };
   if (typeof value.note === "string" && value.note.trim()) {
     commit.note = value.note.trim();
   }
@@ -387,8 +376,11 @@ export function parseTaskRecord(raw: unknown, expectedId?: string): WorkflowTask
   const updatedAt = typeof raw.updatedAt === "string" && raw.updatedAt ? raw.updatedAt : createdAt;
   const archived = typeof raw.archived === "boolean" ? raw.archived : false;
 
-  const activeRunId =
+  const activeRunIdRaw =
     raw.activeRunId === undefined ? null : parseNullableString(raw.activeRunId, "activeRunId");
+  // Terminal tasks cannot hold the workspace run lock; agent hand-writes often leave one behind.
+  const activeRunId =
+    archived || status === "completed" || status === "cancelled" ? null : activeRunIdRaw;
   const latestImplementRunId =
     raw.latestImplementRunId === undefined
       ? null
@@ -420,7 +412,7 @@ export function parseTaskRecord(raw: unknown, expectedId?: string): WorkflowTask
     activeRunId,
     latestImplementRunId,
     latestCheckRunId,
-    commit: parseCommit(raw.commit),
+    commit: parseCommit(raw.commit, updatedAt),
     archived,
   };
   // Revision is derived content-hash. Agent hand-writes often invent a wrong hash;
@@ -726,7 +718,6 @@ function writeTaskBundle(
 function findActiveCwdRunId(ctx: StoreContext): string | null {
   if (!existsSync(ctx.tasksRoot)) return null;
   for (const name of readdirSync(ctx.tasksRoot)) {
-    if (name === WORKFLOW_ARCHIVE_DIR) continue;
     if (!isValidWorkflowTaskId(name)) continue;
     const dir = path.join(ctx.tasksRoot, name);
     try {
@@ -772,7 +763,6 @@ export function listWorkflowTasks(cwd: string, includeArchived = false): Workflo
       return;
     }
     for (const name of entries) {
-      if (!archived && name === WORKFLOW_ARCHIVE_DIR) continue;
       const taskPath = path.join(dir, name);
       let isDir = false;
       try {
@@ -814,19 +804,7 @@ export function listWorkflowTasks(cwd: string, includeArchived = false): Workflo
   scanDir(ctx.tasksRoot, false);
   if (includeArchived && existsSync(ctx.archiveRoot)) {
     assertPathWithinWorkspace(ctx.archiveRoot, ctx.workspaceRoot, "dir");
-    for (const month of readdirSync(ctx.archiveRoot)) {
-      if (!/^\d{4}-\d{2}$/.test(month)) continue;
-      const monthDir = path.join(ctx.archiveRoot, month);
-      try {
-        if (!statSync(monthDir).isDirectory()) continue;
-        scanDir(monthDir, true);
-      } catch (error) {
-        errors.push({
-          pathLabel: relativeLabel(ctx.workspaceRoot, monthDir),
-          message: error instanceof Error ? error.message : String(error),
-        });
-      }
-    }
+    scanDir(ctx.archiveRoot, true);
   }
 
   tasks.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
@@ -1093,7 +1071,6 @@ export function findWorkflowRunById(
   };
 
   for (const name of readdirSync(ctx.tasksRoot)) {
-    if (name === WORKFLOW_ARCHIVE_DIR) continue;
     if (!isValidWorkflowTaskId(name)) continue;
     const dir = path.join(ctx.tasksRoot, name);
     try {
@@ -1106,20 +1083,15 @@ export function findWorkflowRunById(
   }
 
   if (existsSync(ctx.archiveRoot)) {
-    for (const month of readdirSync(ctx.archiveRoot)) {
-      if (!/^\d{4}-\d{2}$/.test(month)) continue;
-      const monthDir = path.join(ctx.archiveRoot, month);
-      if (!statSync(monthDir).isDirectory()) continue;
-      for (const name of readdirSync(monthDir)) {
-        if (!isValidWorkflowTaskId(name)) continue;
-        const dir = path.join(monthDir, name);
-        try {
-          if (!statSync(dir).isDirectory()) continue;
-          const hit = searchTaskDir(dir, name);
-          if (hit) return hit;
-        } catch {
-          // continue
-        }
+    for (const name of readdirSync(ctx.archiveRoot)) {
+      if (!isValidWorkflowTaskId(name)) continue;
+      const dir = path.join(ctx.archiveRoot, name);
+      try {
+        if (!statSync(dir).isDirectory()) continue;
+        const hit = searchTaskDir(dir, name);
+        if (hit) return hit;
+      } catch {
+        // continue
       }
     }
   }
@@ -1387,10 +1359,9 @@ export function archiveWorkflowTask(
     });
   }
 
-  const month = new Date().toISOString().slice(0, 7);
-  const destDir = taskDir(ctx, taskId, month);
+  const destDir = taskDir(ctx, taskId, true);
   if (existsSync(destDir)) {
-    throw new WorkflowConflictError(`Archive destination already exists for ${taskId} in ${month}`);
+    throw new WorkflowConflictError(`Archive destination already exists for ${taskId}`);
   }
   mkdirSync(path.dirname(destDir), { recursive: true });
   assertPathWithinWorkspace(path.dirname(destDir), ctx.workspaceRoot, "dir");
@@ -1415,6 +1386,10 @@ export function archiveWorkflowTask(
   writeTaskBundle(ctx, located.dir, next);
   renameSync(located.dir, destDir);
   assertPathWithinWorkspace(destDir, ctx.workspaceRoot, "dir");
+  // Trellis-like: archiving the current task releases the cwd pointer.
+  if (getWorkflowCurrentTaskId(ctx.workspaceRoot) === taskId) {
+    clearWorkflowCurrentTask(ctx.workspaceRoot);
+  }
   return getWorkflowTaskDetail(ctx.workspaceRoot, taskId);
 }
 

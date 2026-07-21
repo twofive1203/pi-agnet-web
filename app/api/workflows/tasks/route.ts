@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
   try {
     const config = readPiWebConfig();
     if (!config.workflow.enabled) {
-      return NextResponse.json({ error: "Workflow panel is disabled" }, { status: 403 });
+      return NextResponse.json({ error: "SnFlow panel is disabled" }, { status: 403 });
     }
 
     const cwd = request.nextUrl.searchParams.get("cwd");
@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
   try {
     const config = readPiWebConfig();
     if (!config.workflow.enabled) {
-      return NextResponse.json({ error: "Workflow panel is disabled" }, { status: 403 });
+      return NextResponse.json({ error: "SnFlow panel is disabled" }, { status: 403 });
     }
 
     const cwd = request.nextUrl.searchParams.get("cwd");
@@ -75,7 +75,7 @@ export async function POST(request: NextRequest) {
       const seed = await extractWorkflowSeedFromSession(sessionId);
       if (!seed) {
         return NextResponse.json(
-          { error: "Session has no user messages to seed a workflow task" },
+          { error: "Session has no user messages to seed a SnFlow task" },
           { status: 400 },
         );
       }
