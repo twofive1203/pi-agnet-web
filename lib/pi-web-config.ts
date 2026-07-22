@@ -93,6 +93,12 @@ export interface PiWebWorkflowConfig {
    */
   enabled?: boolean;
   includeArchived: boolean;
+  /**
+   * When false (default), SnFlow init/update keeps managed asset paths in the
+   * project .gitignore so generated files are not committed accidentally.
+   * When true, the managed ignore block is removed.
+   */
+  trackInGit: boolean;
 }
 
 export interface PiWebChatGptConfig {
@@ -259,6 +265,7 @@ export const DEFAULT_PI_WEB_CONFIG: PiWebConfig = {
   },
   workflow: {
     includeArchived: false,
+    trackInGit: false,
   },
   grok: {
     usagePanelEnabled: false,
@@ -509,6 +516,7 @@ function normalizePiWebConfig(raw: unknown): PiWebConfig {
     workflow: {
       // enabled is intentionally ignored — SnFlow activation is project-local init only.
       includeArchived: readBoolean(workflow.includeArchived, defaults.workflow.includeArchived),
+      trackInGit: readBoolean(workflow.trackInGit, defaults.workflow.trackInGit),
     },
   };
 }
@@ -835,6 +843,11 @@ export function validatePiWebWorkflowConfig(value: unknown): PiWebWorkflowConfig
   }
   return {
     includeArchived: requireBoolean(value.includeArchived, "workflow.includeArchived"),
+    // Optional for older clients that only patch includeArchived; default stays false.
+    trackInGit:
+      value.trackInGit === undefined
+        ? DEFAULT_PI_WEB_CONFIG.workflow.trackInGit
+        : requireBoolean(value.trackInGit, "workflow.trackInGit"),
   };
 }
 

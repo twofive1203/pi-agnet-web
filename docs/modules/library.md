@@ -49,7 +49,8 @@ Shared logic lives under `lib/`. Prefer adding behavior here when it is used by 
 | `lib/workflow-types.ts` | Versioned SnFlow task/run/status/transition and browser projection types for the WebUI-owned development flow. |
 | `lib/workflow-store.ts` | Project-local SnFlow task store under `.pi/snflows/tasks/` (archived tasks in sibling `.pi/snflows/archived/`): canonical cwd resolution, strict parsing with agent-hand-write leniency, atomic writes, revision checks, run records, complete/archive. Never reads/writes `.trellis/`. |
 | `lib/snflow-assets.ts` | Bundled SnFlow project asset manifest (SemVer) and embedded file contents for the project extension, skill, agents, and CLI wrapper. | 
-| `lib/workflow-setup.ts` | SnFlow project init/update/status: task directories, managed asset install from the bundled manifest, `.pi/snflows/.version`, and extension-presence checks used to avoid double guidance injection. |
+| `lib/workflow-setup.ts` | SnFlow project init/update/status: task directories, managed asset install from the bundled manifest, `.pi/snflows/.version`, optional `.gitignore` policy via `trackInGit`, and extension-presence checks used to avoid double guidance injection. |
+| `lib/workflow-gitignore.ts` | Maintains a marked SnFlow block in the project `.gitignore` when `workflow.trackInGit` is false (default). |
 | `lib/workflow-guidance.ts` | Legacy WebUI-side SnFlow system-prompt breadcrumbs for projects that are initialized but do not yet have the project extension installed. |
 | `lib/workflow-prompts.ts` | SnFlow implement/check prompt builders and structured-output normalizers for builtin `worker` / `reviewer`. |
 | `lib/workflow-run-manager.ts` | SnFlow cwd-bound in-memory Pi host sessions, native pi-subagents RPC (`ping`/`spawn`/`status`/`stop`), one-active-run-per-cwd lock, and restart-friendly run reconciliation. |

@@ -81,6 +81,14 @@ function positionalAfterCommand(args: string[]): string[] {
   return out;
 }
 
+// pi injects the chat session id into tool subprocess env (same source Trellis
+// uses); binding it into the pointer keeps the session widget session-scoped.
+function sessionIdFromEnv(): string | undefined {
+  const raw = process.env.PI_SESSION_ID ?? process.env.PI_SESSIONID;
+  const trimmed = raw?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
 function resolveTaskId(cwd: string, maybeId?: string): string {
   if (maybeId) return maybeId;
   const current = getWorkflowCurrentTaskId(cwd);
@@ -96,7 +104,7 @@ function printActive(taskId: string) {
 
 async function dispatchPhase(cwd: string, taskId: string, phase: "implement" | "check") {
   const detail = getWorkflowTaskDetail(cwd, taskId);
-  setWorkflowCurrentTask(cwd, taskId, { source: "cli" });
+  setWorkflowCurrentTask(cwd, taskId, { source: "cli", sessionId: sessionIdFromEnv() });
   const result = await startWorkflowRun({
     cwd,
     taskId,
@@ -148,6 +156,7 @@ async function main() {
       seedText: argValue(args, "--seed"),
       id: argValue(args, "--id"),
       markReady: hasFlag(args, "--ready"),
+      sessionId: sessionIdFromEnv(),
     });
     console.log(task.pathLabel);
     console.log(`id=${task.id}`);
@@ -163,7 +172,7 @@ async function main() {
       detail.status === "planning" || detail.status === "failed"
         ? markWorkflowTaskReady(cwd, taskId, detail.revision)
         : detail;
-    setWorkflowCurrentTask(cwd, taskId, { source: "cli" });
+    setWorkflowCurrentTask(cwd, taskId, { source: "cli", sessionId: sessionIdFromEnv() });
     console.log(`status=${next.status}`);
     printActive(taskId);
     return;
@@ -183,7 +192,7 @@ async function main() {
     const id = pos[0];
     if (!id) usage();
     getWorkflowTaskDetail(cwd, id); // validate exists
-    setWorkflowCurrentTask(cwd, id, { source: "cli" });
+    setWorkflowCurrentTask(cwd, id, { source: "cli", sessionId: sessionIdFromEnv() });
     printActive(id);
     return;
   }

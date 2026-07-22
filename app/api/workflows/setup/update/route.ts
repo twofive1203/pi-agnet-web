@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAllowedRoots, isPathAllowed } from "@/lib/allowed-roots";
 import { canonicalizeCwd } from "@/lib/cwd";
+import { readPiWebConfig } from "@/lib/pi-web-config";
 import { updateWorkflowProject } from "@/lib/workflow-setup";
 import { WorkflowSecurityError, WorkflowStoreError } from "@/lib/workflow-store";
 
@@ -24,7 +25,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
 
-    const result = updateWorkflowProject(canonicalCwd);
+    const trackInGit = readPiWebConfig().workflow.trackInGit === true;
+    const result = updateWorkflowProject(canonicalCwd, { trackInGit });
     if (!result.success) {
       return NextResponse.json(result, { status: 400 });
     }

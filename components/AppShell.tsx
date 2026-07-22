@@ -394,6 +394,12 @@ export function AppShell() {
     setFocusedWorkflowTaskId(null);
   }, [workflowCwd]);
 
+  // Clear the session widget when changing sessions — the pointer is
+  // session-scoped and an old task should not surface in a new session.
+  useEffect(() => {
+    setWorkflowCurrentTask(null);
+  }, [selectedSession?.id]);
+
   useEffect(() => {
     const controller = new AbortController();
     void loadTrellisSessionTask(controller.signal);
@@ -498,6 +504,7 @@ export function AppShell() {
       const res = await fetch(`/api/workflows/current?cwd=${encodeURIComponent(workflowCwd)}`, { signal });
       const data = await res.json() as {
         task?: WorkflowTaskDetail | null;
+        pointer?: { taskId?: string; sessionId?: string; updatedAt?: string };
         phase?: WorkflowPhaseLabel;
         error?: string;
       };
@@ -507,6 +514,14 @@ export function AppShell() {
       }
       if (!data.task) {
         setWorkflowCurrentTask(null);
+        return;
+      }
+      // Client-side session scoping (Trellis parity): if the pointer is bound to
+      // a concrete session id and we have a different session open, don't surface it.
+      // Pointers without sessionId (CLI-created, older records) remain visible in all
+      // sessions so the widget stays when a task is created outside a session context.
+      const currentSessionId = selectedSession && !selectedSession.archived ? selectedSession.id : null;
+      if (data.pointer?.sessionId && currentSessionId && data.pointer.sessionId !== currentSessionId) {
         return;
       }
       setWorkflowCurrentTask({
@@ -522,7 +537,7 @@ export function AppShell() {
       if ((error as { name?: string }).name === "AbortError") return;
       setWorkflowCurrentTask(null);
     }
-  }, [workflowCwd]);
+  }, [workflowCwd, selectedSession]);
 
   useEffect(() => {
     const controller = new AbortController();

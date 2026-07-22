@@ -23,6 +23,10 @@ import {
   type SnflowAssetFile,
 } from "./snflow-assets";
 import {
+  applySnflowGitignorePolicy,
+  type SnflowGitignoreResult,
+} from "./workflow-gitignore";
+import {
   WORKFLOW_ROOT_SEGMENTS,
   WORKFLOW_TASKS_DIR,
   createStoreContext,
@@ -60,7 +64,13 @@ export interface WorkflowSetupCommandResponse {
   status: WorkflowSetupStatus;
   /** true when init created the tasks directory for the first time. */
   created?: boolean;
+  gitignore?: SnflowGitignoreResult;
   error?: string;
+}
+
+export interface WorkflowSetupOptions {
+  /** When false (default), keep managed SnFlow paths in project .gitignore. */
+  trackInGit?: boolean;
 }
 
 const VERSION_FILE = ".version";
@@ -300,7 +310,31 @@ export function getWorkflowSetupStatus(cwd: string): WorkflowSetupStatus {
   };
 }
 
-export function initializeWorkflowProject(cwd: string): WorkflowSetupCommandResponse {
+function applyGitPolicyLines(
+  cwd: string,
+  trackInGit: boolean,
+  lines: string[],
+): SnflowGitignoreResult {
+  const gitignore = applySnflowGitignorePolicy(cwd, trackInGit);
+  if (gitignore.action === "ignored") {
+    lines.push(
+      gitignore.changed
+        ? `Git: ignored managed SnFlow paths via ${path.basename(gitignore.path ?? ".gitignore")} (trackInGit=false).`
+        : "Git: managed SnFlow ignore block already present.",
+    );
+  } else if (gitignore.action === "tracked") {
+    lines.push("Git: removed SnFlow managed ignore block (trackInGit=true).");
+  } else if (gitignore.action === "noop") {
+    lines.push("Git: trackInGit=true and no .gitignore to edit.");
+  }
+  return gitignore;
+}
+
+export function initializeWorkflowProject(
+  cwd: string,
+  options: WorkflowSetupOptions = {},
+): WorkflowSetupCommandResponse {
+  const trackInGit = options.trackInGit === true;
   const ctx = createStoreContext(cwd);
   const created = !isDirectory(ctx.tasksRoot);
   const lines: string[] = [];
@@ -320,6 +354,8 @@ export function initializeWorkflowProject(cwd: string): WorkflowSetupCommandResp
   writeVersionFile(ctx.workflowsRoot, SNFLOW_ASSETS_VERSION);
   lines.push(`Wrote ${WORKFLOW_ROOT_SEGMENTS.join("/")}/${VERSION_FILE} = ${SNFLOW_ASSETS_VERSION}`);
 
+  const gitignore = applyGitPolicyLines(ctx.workspaceRoot, trackInGit, lines);
+
   const status = getWorkflowSetupStatus(ctx.workspaceRoot);
   // Fail closed: directories alone are not a successful full init.
   if (status.missingManagedFiles.length > 0 || !status.projectVersion) {
@@ -328,6 +364,7 @@ export function initializeWorkflowProject(cwd: string): WorkflowSetupCommandResp
       created,
       output: lines.join("\n"),
       status,
+      gitignore,
       error: `SnFlow assets incomplete after init: missing ${status.missingManagedFiles.join(", ") || ".version"}`,
     };
   }
@@ -336,10 +373,15 @@ export function initializeWorkflowProject(cwd: string): WorkflowSetupCommandResp
     created,
     output: lines.join("\n"),
     status,
+    gitignore,
   };
 }
 
-export function updateWorkflowProject(cwd: string): WorkflowSetupCommandResponse {
+export function updateWorkflowProject(
+  cwd: string,
+  options: WorkflowSetupOptions = {},
+): WorkflowSetupCommandResponse {
+  const trackInGit = options.trackInGit === true;
   const ctx = createStoreContext(cwd);
   if (!isDirectory(ctx.tasksRoot)) {
     return {
@@ -367,10 +409,13 @@ export function updateWorkflowProject(cwd: string): WorkflowSetupCommandResponse
   lines.push(`Updated ${WORKFLOW_ROOT_SEGMENTS.join("/")}/${VERSION_FILE} = ${SNFLOW_ASSETS_VERSION}`);
   lines.push("Task data under tasks/ and archived/ was not modified.");
 
+  const gitignore = applyGitPolicyLines(ctx.workspaceRoot, trackInGit, lines);
+
   const status = getWorkflowSetupStatus(ctx.workspaceRoot);
   return {
     success: true,
     output: lines.join("\n"),
     status,
+    gitignore,
   };
 }

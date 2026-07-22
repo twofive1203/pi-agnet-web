@@ -116,7 +116,10 @@ RPC (`worker` / `reviewer`) using a cwd-bound in-memory host session managed by
 `lib/workflow-run-manager.ts`. SnFlow agent models come only from native
 `settings.json → subagents`; SnFlow code must not read `trellis.subagents`.
 `pi-web.json → workflow` only keeps panel preferences such as
-`includeArchived` (legacy `enabled` is ignored).
+`includeArchived` and `trackInGit` (legacy `enabled` is ignored).
+`trackInGit` defaults to false so init/update writes a managed block into the
+project `.gitignore` covering SnFlow assets and the task store; set it true if
+the team wants those files committed.
 
 Project setup (Settings → SnFlow or the panel empty-state) installs managed
 assets from the bundled manifest in `lib/snflow-assets.ts`:

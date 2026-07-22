@@ -395,7 +395,7 @@ function trellisConfigsEqual(a: PiWebTrellisConfig | null, b: PiWebTrellisConfig
 
 function workflowConfigsEqual(a: PiWebWorkflowConfig | null, b: PiWebWorkflowConfig | null): boolean {
   if (!a || !b) return a === b;
-  return a.includeArchived === b.includeArchived;
+  return a.includeArchived === b.includeArchived && a.trackInGit === b.trackInGit;
 }
 
 function usageConfigsEqual(a: PiWebUsageConfig | null, b: PiWebUsageConfig | null): boolean {
@@ -1459,13 +1459,22 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
                         {t("settings.currentWorkspace")}{cwd ? <code style={{ fontFamily: "var(--font-mono)", color: "var(--text-muted)" }}>{cwd}</code> : t("settings.notSelected")}
                       </div>
                     </div>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 12 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                       <ToggleField
                         label={t("settings.workflowIncludeArchived")}
                         description={t("settings.workflowIncludeArchivedHint")}
                         checked={workflow.includeArchived}
                         onChange={(includeArchived) => updateWorkflow({ includeArchived })}
                       />
+                      <ToggleField
+                        label={t("settings.workflowTrackInGit")}
+                        description={t("settings.workflowTrackInGitHint")}
+                        checked={workflow.trackInGit}
+                        onChange={(trackInGit) => updateWorkflow({ trackInGit })}
+                      />
+                    </div>
+                    <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.45 }}>
+                      {t("settings.workflowTrackInGitApplyHint")}
                     </div>
                     <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5 }}>
                       {t("settings.workflowNativeModelsHint")}

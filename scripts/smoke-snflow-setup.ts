@@ -14,6 +14,11 @@ import {
 import { tmpdir } from "os";
 import path from "path";
 import {
+  SNFLOW_GITIGNORE_BEGIN,
+  SNFLOW_GITIGNORE_END,
+  applySnflowGitignorePolicy,
+} from "../lib/workflow-gitignore";
+import {
   getWorkflowSetupStatus,
   hasWorkflowExtension,
   initializeWorkflowProject,
@@ -37,9 +42,14 @@ try {
   assert(status.recommendedAction === "initialize", "fresh project should recommend initialize");
   assert(!status.initialized, "fresh project should not be initialized");
 
-  const init = initializeWorkflowProject(root);
+  const init = initializeWorkflowProject(root, { trackInGit: false });
   assert(init.success, "init should succeed");
   assert(init.created, "init should create tasks dir");
+  assert(init.gitignore?.action === "ignored", "default init should ignore in git");
+  assert(existsSync(path.join(root, ".gitignore")), ".gitignore should be created");
+  const gi = readFileSync(path.join(root, ".gitignore"), "utf8");
+  assert(gi.includes(SNFLOW_GITIGNORE_BEGIN) && gi.includes(SNFLOW_GITIGNORE_END), "gitignore block markers");
+  assert(gi.includes(".pi/snflows/"), "gitignore should list snflows");
   status = getWorkflowSetupStatus(root);
   assert(status.recommendedAction === "ready", `expected ready, got ${status.recommendedAction}`);
   assert(status.hasExtension && status.hasSkill && status.hasAgents && status.hasScript, "managed assets missing");
@@ -57,7 +67,7 @@ try {
   let legacyStatus = getWorkflowSetupStatus(legacy);
   assert(legacyStatus.initialized, "legacy tasks dir should count as initialized");
   assert(legacyStatus.recommendedAction === "update", "legacy without assets should need update");
-  const updated = updateWorkflowProject(legacy);
+  const updated = updateWorkflowProject(legacy, { trackInGit: false });
   assert(updated.success, "legacy update should succeed");
   legacyStatus = getWorkflowSetupStatus(legacy);
   assert(legacyStatus.recommendedAction === "ready", "legacy after update should be ready");
@@ -71,7 +81,7 @@ try {
   writeFileSync(path.join(root, ".pi", "snflows", ".version"), "0.9.0\n", "utf8");
   status = getWorkflowSetupStatus(root);
   assert(status.updateAvailable && status.recommendedAction === "update", "downgraded version should need update");
-  const bump = updateWorkflowProject(root);
+  const bump = updateWorkflowProject(root, { trackInGit: false });
   assert(bump.success, "version bump update should succeed");
   status = getWorkflowSetupStatus(root);
   assert(!status.updateAvailable && status.recommendedAction === "ready", "after bump should be ready");
@@ -79,7 +89,7 @@ try {
   // tasks data must survive update
   const marker = path.join(root, ".pi", "snflows", "tasks", "keep-me.txt");
   writeFileSync(marker, "safe\n", "utf8");
-  updateWorkflowProject(root);
+  updateWorkflowProject(root, { trackInGit: false });
   assert(readFileSync(marker, "utf8").includes("safe"), "update must not touch task files");
 
   assert(isSnflowActiveForSession(root), "initialized project should activate SnFlow");
@@ -99,6 +109,18 @@ try {
   assert(isSnflowManagedSkill({ name: "snflow-dev" }), "skill name detector");
   assert(isSnflowManagedAgentPath(path.join(root, ".pi", "agents", "snflow-implement.md")), "agent path detector");
   assert(!isSnflowManagedExtensionPath(path.join(root, ".pi", "extensions", "other", "index.ts")), "non-snflow ext");
+
+  const tracked = updateWorkflowProject(root, { trackInGit: true });
+  assert(tracked.success, "update trackInGit=true should succeed");
+  assert(
+    tracked.gitignore?.action === "tracked" || tracked.gitignore?.action === "unchanged",
+    "should remove ignore block",
+  );
+  const giTracked = readFileSync(path.join(root, ".gitignore"), "utf8");
+  assert(!giTracked.includes(SNFLOW_GITIGNORE_BEGIN), "managed block removed when trackInGit=true");
+
+  const ignoredAgain = applySnflowGitignorePolicy(root, false);
+  assert(ignoredAgain.changed && ignoredAgain.action === "ignored", "re-apply ignore policy");
 
   console.log("smoke-snflow-setup: OK");
 } finally {
