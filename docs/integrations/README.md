@@ -87,9 +87,16 @@ per-project initialization, not a global switch.
 
 SnFlow project initialization installs managed assets from the bundled manifest in
 `lib/snflow-assets.ts` into the selected workspace (extension, skill, agents, CLI
-wrapper, and `.pi/snflows/.version`). Update rewrites only that whitelist. When
-`.pi/extensions/snflow/` is present it owns chat guidance via `before_agent_start`;
-otherwise the WebUI keeps the legacy `lib/workflow-guidance.ts` injection path.
+wrapper, and `.pi/snflows/.version`). Update rewrites only that whitelist. The
+project-local `scripts/snflow-task.ts` wrapper records the validated absolute root
+of the Snail Pi Web instance that installed it and imports that instance's
+`scripts/workflow-task.ts` in the current `tsx` process; target projects do not
+need to install `@twofive/snail-pi-web`. Moving or replacing the WebUI install
+requires running SnFlow Update so the recorded root is refreshed. Published
+packages include `lib/` because the CLI imports the workflow modules directly.
+When `.pi/extensions/snflow/` is present it owns chat guidance via
+`before_agent_start`; otherwise the WebUI keeps the legacy
+`lib/workflow-guidance.ts` injection path.
 
 ### Settings Precedence (Native)
 

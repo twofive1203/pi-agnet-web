@@ -20,6 +20,7 @@ import { canonicalizeCwd } from "./cwd";
 import {
   SNFLOW_ASSET_FILES,
   SNFLOW_ASSETS_VERSION,
+  buildScriptSnflowTask,
   type SnflowAssetFile,
 } from "./snflow-assets";
 import {
@@ -158,6 +159,41 @@ function listMissingManagedFiles(workspaceRoot: string): string[] {
   return missing;
 }
 
+/**
+ * Resolve the WebUI's own package root directory.
+ *
+ * The explicit environment override is useful for linked/local installs. When
+ * it is absent, the WebUI server cwd is considered only after validating that
+ * it is this package, never merely a target project's package directory.
+ */
+export function resolveWebuiRoot(): string {
+  const fromEnv = process.env.SNAIL_PI_WEB_ROOT?.trim();
+  const rawCandidate = fromEnv && fromEnv.length > 0 ? fromEnv : process.cwd();
+  const candidate = path.resolve(rawCandidate);
+  const pkgJson = path.join(candidate, "package.json");
+  const scriptPath = path.join(candidate, "scripts", "workflow-task.ts");
+  let packageName: unknown;
+  try {
+    packageName = (JSON.parse(readFileSync(pkgJson, "utf8")) as { name?: unknown }).name;
+  } catch {
+    packageName = undefined;
+  }
+  if (packageName === "@twofive/snail-pi-web" && isFile(scriptPath)) {
+    return candidate;
+  }
+  const errors: string[] = [];
+  if (packageName !== "@twofive/snail-pi-web") {
+    errors.push(`package.json is not @twofive/snail-pi-web at ${pkgJson}`);
+  }
+  if (!isFile(scriptPath)) {
+    errors.push(`scripts/workflow-task.ts not found at ${scriptPath}`);
+  }
+  const hint = fromEnv
+    ? `SNAIL_PI_WEB_ROOT=${fromEnv}`
+    : `process.cwd()=${process.cwd()}`;
+  throw new Error(`Cannot resolve Snail Pi Web root (${hint}): ${errors.join("; ")}`);
+}
+
 function atomicWriteFile(filePath: string, content: string): void {
   const dir = path.dirname(filePath);
   mkdirSync(dir, { recursive: true });
@@ -169,7 +205,11 @@ function atomicWriteFile(filePath: string, content: string): void {
   renameSync(tmp, filePath);
 }
 
-function installManagedFiles(workspaceRoot: string, files: readonly SnflowAssetFile[]): string[] {
+function installManagedFiles(
+  workspaceRoot: string,
+  files: readonly SnflowAssetFile[],
+  webuiRoot?: string,
+): string[] {
   if (!files.length) {
     throw new Error("SnFlow asset manifest is empty; bundled templates failed to load");
   }
@@ -178,12 +218,18 @@ function installManagedFiles(workspaceRoot: string, files: readonly SnflowAssetF
     if (!file.path || typeof file.content !== "string" || file.content.length === 0) {
       throw new Error(`Invalid SnFlow asset entry: ${file.path || "(missing path)"}`);
     }
+    let content = file.content;
+    // When installing the wrapper script, embed the WebUI root directly
+    // to avoid fragile tsx resolution in the child process.
+    if (webuiRoot && file.path === "scripts/snflow-task.ts") {
+      content = buildScriptSnflowTask(webuiRoot);
+    }
     const abs = toAbsolute(workspaceRoot, file.path);
     // Defense in depth: only allow known whitelist relative paths under workspace.
     if (!pathIsInsideWorkspace(workspaceRoot, abs)) {
       throw new Error(`Refusing to write outside workspace: ${file.path}`);
     }
-    atomicWriteFile(path.resolve(abs), file.content);
+    atomicWriteFile(path.resolve(abs), content);
     written.push(file.path);
   }
   return written;
@@ -347,7 +393,19 @@ export function initializeWorkflowProject(
       : `SnFlow task directories already present under ${WORKFLOW_ROOT_SEGMENTS.join("/")}.`,
   );
 
-  const written = installManagedFiles(ctx.workspaceRoot, SNFLOW_ASSET_FILES);
+  let webuiRoot: string;
+  try {
+    webuiRoot = resolveWebuiRoot();
+  } catch (error) {
+    return {
+      success: false,
+      created,
+      output: lines.join("\n"),
+      status: getWorkflowSetupStatus(ctx.workspaceRoot),
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+  const written = installManagedFiles(ctx.workspaceRoot, SNFLOW_ASSET_FILES, webuiRoot);
   lines.push(`Installed ${written.length} managed SnFlow file(s):`);
   for (const file of written) lines.push(`  - ${file}`);
 
@@ -401,7 +459,18 @@ export function updateWorkflowProject(
   // Ensure archive dir exists; never touch tasks/ contents.
   mkdirSync(ctx.archiveRoot, { recursive: true });
 
-  const written = installManagedFiles(ctx.workspaceRoot, SNFLOW_ASSET_FILES);
+  let webuiRoot: string;
+  try {
+    webuiRoot = resolveWebuiRoot();
+  } catch (error) {
+    return {
+      success: false,
+      output: lines.join("\n"),
+      status: getWorkflowSetupStatus(ctx.workspaceRoot),
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+  const written = installManagedFiles(ctx.workspaceRoot, SNFLOW_ASSET_FILES, webuiRoot);
   lines.push(`Rewrote ${written.length} managed SnFlow file(s):`);
   for (const file of written) lines.push(`  - ${file}`);
 

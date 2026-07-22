@@ -23,12 +23,12 @@ import {
   getWorkflowCurrentTaskId,
   setWorkflowCurrentTask,
 } from "../lib/workflow-current";
-import {
-  cancelWorkflowRun,
-  getWorkflowRunStatus,
-  startWorkflowRun,
-} from "../lib/workflow-run-manager";
 import { WORKFLOW_TERMINAL_RUN_STATES } from "../lib/workflow-types";
+
+/** Lazy import for workflow-run-manager (requires pi SDK, which is ESM-only). */
+function lazyRunManager(): Promise<typeof import("../lib/workflow-run-manager")> {
+  return import("../lib/workflow-run-manager");
+}
 
 function usage(): never {
   console.log(`Usage:
@@ -103,9 +103,10 @@ function printActive(taskId: string) {
 }
 
 async function dispatchPhase(cwd: string, taskId: string, phase: "implement" | "check") {
+  const rm = await lazyRunManager();
   const detail = getWorkflowTaskDetail(cwd, taskId);
   setWorkflowCurrentTask(cwd, taskId, { source: "cli", sessionId: sessionIdFromEnv() });
-  const result = await startWorkflowRun({
+  const result = await rm.startWorkflowRun({
     cwd,
     taskId,
     phase,
@@ -123,9 +124,10 @@ async function dispatchPhase(cwd: string, taskId: string, phase: "implement" | "
 }
 
 async function waitForRun(cwd: string, runId: string, timeoutMs = 30 * 60_000) {
+  const rm = await lazyRunManager();
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
-    const { run, task } = await getWorkflowRunStatus(cwd, runId);
+    const { run, task } = await rm.getWorkflowRunStatus(cwd, runId);
     console.log(`state=${run.state} taskStatus=${task.status}`);
     if (WORKFLOW_TERMINAL_RUN_STATES.has(run.state)) {
       if (run.summary) console.log(`summary=${run.summary.slice(0, 2000)}`);
@@ -141,7 +143,7 @@ async function waitForRun(cwd: string, runId: string, timeoutMs = 30 * 60_000) {
   throw new Error(`Timed out waiting for run ${runId}`);
 }
 
-async function main() {
+export async function main() {
   const args = process.argv.slice(2);
   const cmd = args[0];
   if (!cmd) usage();
@@ -267,7 +269,8 @@ async function main() {
       runId = detail.activeRunId;
     }
     if (!runId) throw new Error("No run id to cancel");
-    const result = await cancelWorkflowRun(cwd, runId);
+    const rm = await lazyRunManager();
+    const result = await rm.cancelWorkflowRun(cwd, runId);
     console.log(`state=${result.run.state}`);
     console.log(`taskStatus=${result.task.status}`);
     return;
@@ -320,7 +323,15 @@ async function main() {
   usage();
 }
 
-main().catch((error) => {
-  console.error(error instanceof Error ? error.message : String(error));
-  process.exit(1);
-});
+// Auto-run when executed directly (not imported by the wrapper).
+const entryArg = process.argv[1]?.replace(/\\/g, "/");
+const isDirectRun = Boolean(
+  entryArg &&
+  (entryArg.endsWith("/workflow-task.ts") || entryArg.endsWith("/workflow-task")),
+);
+if (isDirectRun) {
+  main().catch((error) => {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  });
+}

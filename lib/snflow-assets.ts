@@ -6,7 +6,7 @@
  * Bump SNFLOW_ASSETS_VERSION (SemVer) whenever any managed file content changes.
  */
 
-export const SNFLOW_ASSETS_VERSION = "1.0.1";
+export const SNFLOW_ASSETS_VERSION = "1.0.2";
 
 export interface SnflowAssetFile {
   /** Project-relative path using forward slashes. */
@@ -487,70 +487,54 @@ You are already the check/review child.
 - Expanding into unrelated refactors
 `;
 
-const SCRIPT_SNFLOW_TASK = `#!/usr/bin/env npx tsx
 /**
- * Project-local SnFlow CLI wrapper.
- * Forwards to the Snail Pi Web package script (workflow-task.ts) when resolvable.
- *
- * Managed by SnFlow setup — do not hand-edit; re-run Update SnFlow instead.
+ * Build the project-local SnFlow CLI wrapper script that loads the WebUI CLI
+ * script in-process via dynamic import (avoids fragile --import tsx spawned
+ * process resolution). Uses an async IIFE wrapper so the script works in both
+ * CJS and ESM contexts (no top-level await).
  */
-
-import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
-import { createRequire } from "node:module";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-
-function candidates(): string[] {
-  const out: string[] = [];
-  const require = createRequire(path.join(process.cwd(), "package.json"));
-  try {
-    const pkgJson = require.resolve("@twofive/snail-pi-web/package.json");
-    out.push(path.join(path.dirname(pkgJson), "scripts", "workflow-task.ts"));
-  } catch {
-    // package not installed in this project
-  }
-
-  // Dev monorepo / linked checkout heuristics
-  const here = path.dirname(fileURLToPath(import.meta.url));
-  out.push(
-    path.resolve(here, "..", "node_modules", "@twofive", "snail-pi-web", "scripts", "workflow-task.ts"),
-    path.resolve(here, "..", "..", "scripts", "workflow-task.ts"),
-    path.resolve(here, "..", "scripts", "workflow-task.ts"),
-  );
-
-  if (process.env.SNAIL_PI_WEB_ROOT) {
-    out.push(path.join(process.env.SNAIL_PI_WEB_ROOT, "scripts", "workflow-task.ts"));
-  }
-  return out;
+export function buildScriptSnflowTask(webuiRoot: string): string {
+  const root = JSON.stringify(webuiRoot);
+  return [
+    '#!/usr/bin/env npx tsx',
+    '/**',
+    ' * Project-local SnFlow CLI wrapper for the Snail Pi Web development workflow.',
+    ' * Loads the WebUI package script in-process via dynamic import.',
+    ' * Uses async IIFE to avoid top-level await (portable across CJS/ESM).',
+    ' *',
+    ' * Managed by SnFlow setup — do not hand-edit; re-run Update SnFlow instead.',
+    ' */',
+    '',
+    'import { existsSync } from "node:fs";',
+    'import { pathToFileURL } from "node:url";',
+    'import path from "node:path";',
+    '',
+    `const WEBUI_ROOT = ${root};`,
+    'const TARGET = path.join(WEBUI_ROOT, "scripts", "workflow-task.ts");',
+    '',
+    'if (!existsSync(TARGET)) {',
+    '  console.error(',
+    '    "snflow-task: Snail Pi Web workflow-task.ts not found at " + TARGET,',
+    '    "Re-run SnFlow Update from the WebUI Settings panel, or check WebUI package installation.",',
+    '  );',
+    '  process.exit(2);',
+    '}',
+    '',
+    '(async () => {',
+    '  try {',
+    '    const { main } = await import(pathToFileURL(TARGET).href);',
+    '    await main();',
+    '  } catch (error) {',
+    '    console.error("snflow-task:", error instanceof Error ? error.message : String(error));',
+    '    process.exit(1);',
+    '  }',
+    '})();',
+  ].join("\n");
 }
 
-function resolveWorkflowTask(): string | null {
-  for (const candidate of candidates()) {
-    if (existsSync(candidate)) return candidate;
-  }
-  return null;
-}
-
-const target = resolveWorkflowTask();
-if (!target) {
-  console.error(
-    [
-      "snflow-task: could not resolve Snail Pi Web scripts/workflow-task.ts",
-      "Install @twofive/snail-pi-web in this project, set SNAIL_PI_WEB_ROOT, or use the SnFlow panel / manual task files.",
-    ].join("\\n"),
-  );
-  process.exit(2);
-}
-
-const result = spawnSync(
-  process.execPath,
-  ["--import", "tsx", target, ...process.argv.slice(2)],
-  { stdio: "inherit", cwd: process.cwd(), env: process.env },
-);
-
-process.exit(result.status ?? 1);
-`;
+/** Static script template used as fallback for listMissingManagedFiles / SNFLOW_MANIFEST.
+ *  The actual script with embedded webuiRoot is written at install time. */
+const _FALLBACK_SCRIPT = buildScriptSnflowTask("__SNFLOW_WEBUI_ROOT__");
 
 /** Managed files written by init/update (whitelist). */
 export const SNFLOW_ASSET_FILES: readonly SnflowAssetFile[] = [
@@ -558,7 +542,7 @@ export const SNFLOW_ASSET_FILES: readonly SnflowAssetFile[] = [
   { path: ".pi/skills/snflow-dev/SKILL.md", content: SKILL_MD },
   { path: ".pi/agents/snflow-implement.md", content: AGENT_IMPLEMENT },
   { path: ".pi/agents/snflow-check.md", content: AGENT_CHECK },
-  { path: "scripts/snflow-task.ts", content: SCRIPT_SNFLOW_TASK },
+  { path: "scripts/snflow-task.ts", content: _FALLBACK_SCRIPT },
 ] as const;
 
 export const SNFLOW_MANIFEST = {
