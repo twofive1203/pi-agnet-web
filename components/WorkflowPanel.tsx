@@ -92,6 +92,8 @@ export function WorkflowPanel({
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [conflictNote, setConflictNote] = useState<string | null>(null);
+  const [initializing, setInitializing] = useState(false);
+  const [initError, setInitError] = useState<string | null>(null);
 
   // Draft fields
   const [draftTitle, setDraftTitle] = useState("");
@@ -218,6 +220,27 @@ export function WorkflowPanel({
   useEffect(() => {
     void loadTasks();
   }, [loadTasks]);
+
+  // Per-project SnFlow enablement: create the .pi/snflows store for this cwd.
+  const handleInitialize = useCallback(async () => {
+    if (!cwd || initializing) return;
+    setInitializing(true);
+    setInitError(null);
+    try {
+      const res = await fetch("/api/workflows/setup/init", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cwd }),
+      });
+      const body = (await res.json()) as { success?: boolean; error?: string };
+      if (!res.ok || !body.success) throw new Error(body.error ?? `HTTP ${res.status}`);
+      await loadTasks();
+    } catch (error) {
+      setInitError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setInitializing(false);
+    }
+  }, [cwd, initializing, loadTasks]);
 
   useEffect(() => {
     setIncludeArchived(includeArchivedDefault);
@@ -643,19 +666,33 @@ export function WorkflowPanel({
           )}
           {!listLoading && !listError && !exists && (
             <div style={emptyStyle}>
-              <div style={{ marginBottom: 10 }}>{t("workflow.emptyNamespace")}</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {sessionId && (
-                  <ActionButton
-                    disabled={busy}
-                    onClick={() => void handleCreateFromSession()}
-                    label={t("workflow.createFromChat")}
-                  />
-                )}
-                <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.45 }}>
-                  {t("workflow.agentCreateHint")}
-                </div>
+              <div style={{ fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>
+                {t("workflow.notInitializedTitle")}
               </div>
+              <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.5, marginBottom: 10 }}>
+                {t("workflow.notInitializedHint")}
+              </div>
+              <button
+                type="button"
+                disabled={initializing}
+                onClick={() => void handleInitialize()}
+                style={{
+                  border: "1px solid var(--accent)",
+                  borderRadius: 8,
+                  padding: "6px 12px",
+                  background: "rgba(37,99,235,0.10)",
+                  color: "var(--accent)",
+                  fontSize: 12,
+                  fontWeight: 700,
+                  cursor: initializing ? "not-allowed" : "pointer",
+                  opacity: initializing ? 0.6 : 1,
+                }}
+              >
+                {initializing ? t("workflow.initializing") : t("workflow.initialize")}
+              </button>
+              {initError && (
+                <div style={{ marginTop: 8, fontSize: 11, color: "#f87171" }}>{initError}</div>
+              )}
             </div>
           )}
           {!listLoading && !listError && exists && filteredTasks.length === 0 && (

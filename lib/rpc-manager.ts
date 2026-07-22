@@ -511,11 +511,14 @@ export async function startRpcSession(
     // Trellis-like SnFlow breadcrumbs: when SnFlow is enabled, append active-task
     // guidance so chat agents follow create/plan/start/implement/check without
     // requiring the user to operate the panel first.
+    // SnFlow is per-project: only projects initialized from the SnFlow panel
+    // (with a .pi/snflows/tasks store) receive guidance.
     let resourceLoader: InstanceType<typeof DefaultResourceLoader> | undefined;
     try {
       const { readPiWebConfig } = await import("./pi-web-config");
+      const { isWorkflowProjectInitialized } = await import("./workflow-setup");
       const { buildWorkflowSystemGuidance } = await import("./workflow-guidance");
-      if (readPiWebConfig().workflow.enabled) {
+      if (readPiWebConfig().workflow.enabled && isWorkflowProjectInitialized(cwd)) {
         const guidance = buildWorkflowSystemGuidance(cwd);
         if (guidance) {
           const settingsManager = SettingsManager.create(cwd, agentDir);
