@@ -5,7 +5,7 @@ import {
   isOAuthProvider,
   type AuthInteraction,
 } from "@/lib/pi-auth";
-import { OPENAI_CODEX_PROVIDER_ID, saveOAuthAccountCredential, syncActiveOAuthAccountCredential } from "@/lib/oauth-accounts";
+import { isAccountSwitchingSupported, saveOAuthAccountCredential, syncActiveOAuthAccountCredential } from "@/lib/oauth-accounts";
 import { reloadRpcAuthState } from "@/lib/rpc-manager";
 
 export const dynamic = "force-dynamic";
@@ -72,8 +72,8 @@ export async function GET(
         controller.close();
         return;
       }
-      if (addAccountMode && provider !== OPENAI_CODEX_PROVIDER_ID) {
-        send(controller, { type: "error", message: `Account add mode is only supported for ${OPENAI_CODEX_PROVIDER_ID}` });
+      if (addAccountMode && !isAccountSwitchingSupported(provider)) {
+        send(controller, { type: "error", message: `Account add mode is not supported for ${provider}` });
         controller.close();
         return;
       }
@@ -207,7 +207,7 @@ export async function GET(
           const account = await saveOAuthAccountCredential(provider, credential);
           send(controller, { type: "success", account, message: "Account saved successfully." });
         } else {
-          if (provider === OPENAI_CODEX_PROVIDER_ID) {
+          if (isAccountSwitchingSupported(provider)) {
             await syncActiveOAuthAccountCredential(provider).catch(() => {});
           }
           reloadRpcAuthState();

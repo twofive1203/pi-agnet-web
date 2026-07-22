@@ -8,6 +8,13 @@ import { convertOAuthAccountCredential, type OAuthAccountImportMode } from "@/li
 import { FileCredentialStore } from "@/lib/file-credential-store";
 
 export const OPENAI_CODEX_PROVIDER_ID = "openai-codex";
+export const GROK_ACCOUNT_PROVIDER_IDS = ["grok-cli", "xai"] as const;
+
+const SUPPORTED_ACCOUNT_PROVIDER_IDS = new Set<string>([OPENAI_CODEX_PROVIDER_ID, ...GROK_ACCOUNT_PROVIDER_IDS]);
+
+export function isAccountSwitchingSupported(provider: string): boolean {
+  return SUPPORTED_ACCOUNT_PROVIDER_IDS.has(provider);
+}
 
 const ACCOUNT_STORE_DIR = "auth-accounts";
 const METADATA_FILE = "accounts.json";
@@ -20,16 +27,21 @@ const OPENAI_USERINFO_URLS = [
   "https://chatgpt.com/backend-api/me",
 ];
 
-interface StoredOpenAICodexCredential extends OAuthCredential {
+interface StoredOAuthAccountCredential extends Omit<OAuthCredential, "refresh" | "expires"> {
   type: "oauth";
   access: string;
-  refresh: string;
-  expires: number;
+  refresh?: string;
+  expires?: number;
   accountId?: string;
   [key: string]: unknown;
 }
 
-type NormalizedOpenAICodexCredential = StoredOpenAICodexCredential & { accountId: string };
+type NormalizedOAuthAccountCredential = StoredOAuthAccountCredential & { accountId: string };
+
+/** Grok credentials may lack refresh/expires; keep them absent instead of zero-filling. */
+function asOAuthCredential(credential: StoredOAuthAccountCredential): OAuthCredential {
+  return credential as unknown as OAuthCredential;
+}
 
 export interface OAuthAccountQuotaCacheTier {
   name: string;
@@ -111,8 +123,8 @@ function isNodeError(error: unknown): error is NodeJS.ErrnoException {
 }
 
 function assertSupportedProvider(provider: string): void {
-  if (provider !== OPENAI_CODEX_PROVIDER_ID) {
-    throw new OAuthAccountStoreError(`OAuth account switching is only supported for ${OPENAI_CODEX_PROVIDER_ID}`, 400);
+  if (!isAccountSwitchingSupported(provider)) {
+    throw new OAuthAccountStoreError(`OAuth account switching is not supported for ${provider}`, 400);
   }
 }
 
@@ -253,12 +265,14 @@ async function writeMetadata(provider: string, metadata: OAuthAccountStoreMetada
   await writeJsonFile(provider, metadataPath(provider), metadata);
 }
 
-function isStoredOpenAICodexCredential(value: unknown): value is StoredOpenAICodexCredential {
-  return isRecord(value)
-    && value.type === "oauth"
-    && typeof value.access === "string"
-    && typeof value.refresh === "string"
-    && typeof value.expires === "number";
+function isStoredAccountCredential(provider: string, value: unknown): value is StoredOAuthAccountCredential {
+  if (!isRecord(value) || value.type !== "oauth") return false;
+  if (typeof value.access !== "string" || value.access.length === 0) return false;
+  // Codex refresh flows require refresh/expires; grok (grok-cli/xai) only needs a usable access token.
+  if (provider === OPENAI_CODEX_PROVIDER_ID) {
+    return typeof value.refresh === "string" && typeof value.expires === "number";
+  }
+  return true;
 }
 
 function decodeJwtPayload(accessToken: string): Record<string, unknown> | null {
@@ -363,18 +377,34 @@ async function fetchOpenAICodexAccountLabel(accessToken: string, accountId: stri
     ?? null;
 }
 
-async function resolveOpenAICodexAccountLabel(credential: NormalizedOpenAICodexCredential): Promise<string | null> {
-  return fetchOpenAICodexAccountLabel(credential.access, credential.accountId);
+async function resolveAccountLabel(provider: string, credential: NormalizedOAuthAccountCredential): Promise<string | null> {
+  if (provider === OPENAI_CODEX_PROVIDER_ID) {
+    return fetchOpenAICodexAccountLabel(credential.access, credential.accountId);
+  }
+  // grok: xAI access tokens are JWTs; pull email/phone from claims only (no extra network call).
+  const claims = decodeJwtPayload(credential.access);
+  return findEmailInRecord(claims) ?? findPhoneInRecord(claims);
 }
 
-function deriveAccountId(credential: StoredOpenAICodexCredential): string {
+function extractGrokAccountId(accessToken: string): string | null {
+  const claims = decodeJwtPayload(accessToken);
+  if (!claims) return null;
+  const email = findEmailInRecord(claims);
+  if (email) return email;
+  const sub = claims.sub;
+  return typeof sub === "string" && sub.trim() ? sub.trim() : null;
+}
+
+function deriveAccountId(provider: string, credential: StoredOAuthAccountCredential): string {
   if (typeof credential.accountId === "string" && credential.accountId.trim()) return credential.accountId.trim();
 
-  const tokenAccountId = extractOpenAICodexAccountId(credential.access);
+  const tokenAccountId = provider === OPENAI_CODEX_PROVIDER_ID
+    ? extractOpenAICodexAccountId(credential.access)
+    : extractGrokAccountId(credential.access);
   if (tokenAccountId) return tokenAccountId;
 
   const hash = createHash("sha256")
-    .update(credential.refresh)
+    .update(credential.refresh ?? "")
     .update("\0")
     .update(credential.access)
     .digest("hex")
@@ -382,8 +412,8 @@ function deriveAccountId(credential: StoredOpenAICodexCredential): string {
   return `unknown-${hash}`;
 }
 
-function normalizeCredentialAccountId(credential: StoredOpenAICodexCredential): NormalizedOpenAICodexCredential {
-  return { ...credential, accountId: deriveAccountId(credential) };
+function normalizeCredentialAccountId(provider: string, credential: StoredOAuthAccountCredential): NormalizedOAuthAccountCredential {
+  return { ...credential, accountId: deriveAccountId(provider, credential) };
 }
 
 function upsertMetadataAccount(
@@ -453,12 +483,12 @@ async function backfillMissingAccountLabels(provider: string, accounts: OAuthAcc
     }
 
     const credential = await readJsonFile(credentialPath(provider, entry.accountId), "OAuth account credential");
-    if (!isStoredOpenAICodexCredential(credential)) {
+    if (!isStoredAccountCredential(provider, credential)) {
       nextAccounts.push(entry);
       continue;
     }
 
-    const label = await resolveOpenAICodexAccountLabel(normalizeCredentialAccountId(credential));
+    const label = await resolveAccountLabel(provider, normalizeCredentialAccountId(provider, credential));
     if (!label) {
       nextAccounts.push(entry);
       continue;
@@ -481,29 +511,29 @@ async function clearActiveAccount(provider: string): Promise<void> {
   await writeMetadata(provider, { ...metadata, activeAccountId: undefined });
 }
 
-export async function readOAuthAccountCredential(provider: string, accountId: string): Promise<NormalizedOpenAICodexCredential> {
+export async function readOAuthAccountCredential(provider: string, accountId: string): Promise<NormalizedOAuthAccountCredential> {
   if (!accountId.trim()) throw new OAuthAccountStoreError("accountId is required", 400);
 
   const credential = await readJsonFile(credentialPath(provider, accountId), "OAuth account credential");
   if (!credential) throw new OAuthAccountStoreError("Saved OAuth account not found", 404);
-  if (!isStoredOpenAICodexCredential(credential)) {
+  if (!isStoredAccountCredential(provider, credential)) {
     throw new OAuthAccountStoreError("Saved OAuth account credential is invalid", 500);
   }
-  return normalizeCredentialAccountId(credential);
+  return normalizeCredentialAccountId(provider, credential);
 }
 
-export async function getOAuthAccountAccessToken(provider: string, credential: NormalizedOpenAICodexCredential): Promise<string | undefined> {
+export async function getOAuthAccountAccessToken(provider: string, credential: NormalizedOAuthAccountCredential): Promise<string | undefined> {
   assertSupportedProvider(provider);
   // Resolve/refresh through ModelRuntime against an isolated credential store so
   // non-active saved accounts do not overwrite the active auth.json entry.
   const store = new InMemoryCredentialStore();
-  await store.modify(provider, async () => credential);
+  await store.modify(provider, async () => asOAuthCredential(credential));
   const runtime = await ModelRuntime.create({ credentials: store });
   const auth = await runtime.getAuth(provider);
   if (!auth?.auth?.apiKey) return undefined;
 
   const refreshed = await store.read(provider);
-  if (refreshed && isStoredOpenAICodexCredential(refreshed)) {
+  if (refreshed && isStoredAccountCredential(provider, refreshed)) {
     await saveOAuthAccountCredential(provider, {
       ...refreshed,
       accountId: credential.accountId,
@@ -518,11 +548,11 @@ export async function saveOAuthAccountCredential(
   options: SaveAccountOptions = {},
 ): Promise<OAuthAccountSummary> {
   assertSupportedProvider(provider);
-  if (!isStoredOpenAICodexCredential(credential)) {
+  if (!isStoredAccountCredential(provider, credential)) {
     throw new OAuthAccountStoreError("Expected an OAuth credential for the account store", 400);
   }
 
-  const normalizedCredential = normalizeCredentialAccountId(credential);
+  const normalizedCredential = normalizeCredentialAccountId(provider, credential);
   const accountId = normalizedCredential.accountId;
   await writeJsonFile(provider, credentialPath(provider, accountId), normalizedCredential);
 
@@ -540,7 +570,7 @@ export async function syncActiveOAuthAccountCredential(
 ): Promise<OAuthAccountSummary | null> {
   assertSupportedProvider(provider);
   const credential = authStorage.get(provider);
-  if (!isStoredOpenAICodexCredential(credential)) {
+  if (!isStoredAccountCredential(provider, credential)) {
     await clearActiveAccount(provider);
     return null;
   }
@@ -564,7 +594,7 @@ export async function importOAuthAccountCredential(
 
   for (let index = 0; index < rawCredentials.length; index += 1) {
     const rawCredential = rawCredentials[index];
-    if (!isStoredOpenAICodexCredential(rawCredential)) {
+    if (!isStoredAccountCredential(provider, rawCredential)) {
       throw new OAuthAccountStoreError(`Expected OAuth credential JSON with type, access, refresh, and expires at account ${index + 1}`, 400);
     }
     await saveOAuthAccountCredential(provider, rawCredential);
@@ -703,7 +733,7 @@ export async function activateOAuthAccount(provider: string, accountId: string):
 
   const credential = await readOAuthAccountCredential(provider, normalizedAccountId);
   try {
-    await authStorage.modify(provider, async () => credential);
+    await authStorage.modify(provider, async () => asOAuthCredential(credential));
   } catch {
     throw new OAuthAccountStoreError("Failed to update active OAuth credential", 500);
   }

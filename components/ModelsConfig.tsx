@@ -1600,6 +1600,7 @@ function OAuthAccountsView({
   accounts,
   loading,
   error,
+  supportsQuota,
   activatingAccountId,
   savingLabelAccountId,
   savingExtraInfoAccountId,
@@ -1619,6 +1620,7 @@ function OAuthAccountsView({
   accounts: OAuthAccountSummary[];
   loading: boolean;
   error: string | null;
+  supportsQuota: boolean;
   activatingAccountId: string | null;
   savingLabelAccountId: string | null;
   savingExtraInfoAccountId: string | null;
@@ -1643,13 +1645,15 @@ function OAuthAccountsView({
           <span style={{ fontSize: 11, color: "var(--text-dim)" }}>{loading ? "Loading…" : `${accounts.length} saved`}</span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <button
-            onClick={onWarmup}
-            disabled={loading || accounts.length === 0}
-            style={{ padding: "5px 10px", border: "1px solid var(--border)", borderRadius: 5, background: "var(--bg)", color: loading || accounts.length === 0 ? "var(--text-dim)" : "var(--accent)", cursor: loading || accounts.length === 0 ? "not-allowed" : "pointer", fontSize: 11, fontWeight: 700 }}
-          >
-            Warm up
-          </button>
+          {supportsQuota && (
+            <button
+              onClick={onWarmup}
+              disabled={loading || accounts.length === 0}
+              style={{ padding: "5px 10px", border: "1px solid var(--border)", borderRadius: 5, background: "var(--bg)", color: loading || accounts.length === 0 ? "var(--text-dim)" : "var(--accent)", cursor: loading || accounts.length === 0 ? "not-allowed" : "pointer", fontSize: 11, fontWeight: 700 }}
+            >
+              Warm up
+            </button>
+          )}
           <button
             onClick={onRefresh}
             disabled={loading}
@@ -1684,20 +1688,24 @@ function OAuthAccountsView({
                   <span style={{ fontSize: 12, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{account.displayName}</span>
                   <span style={{ fontSize: 10, color: "var(--text-dim)", fontFamily: "var(--font-mono)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{account.maskedAccountId}</span>
                   {account.extraInfo && <span style={{ fontSize: 11, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{account.extraInfo}</span>}
-                  <div style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0, fontSize: 10, color: account.quotaCache?.error ? "#fb923c" : "var(--text-dim)" }}>
-                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>
-                      Reset: {accountQuotaResetText(account)}{account.quotaCache?.queriedAt ? ` · ${formatQuotaQueriedAt(account.quotaCache.queriedAt)}` : ""}
-                    </span>
-                    <AccountQuotaMiniCharts account={account} />
-                  </div>
+                  {supportsQuota && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0, fontSize: 10, color: account.quotaCache?.error ? "#fb923c" : "var(--text-dim)" }}>
+                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>
+                        Reset: {accountQuotaResetText(account)}{account.quotaCache?.queriedAt ? ` · ${formatQuotaQueriedAt(account.quotaCache.queriedAt)}` : ""}
+                      </span>
+                      <AccountQuotaMiniCharts account={account} />
+                    </div>
+                  )}
                 </div>
-                <button
-                  onClick={() => onSelect(account)}
-                  disabled={selected || Boolean(refreshingQuotaAccountId) || quotaResetting}
-                  style={{ padding: "4px 9px", background: selected ? "var(--accent)" : "none", border: selected ? "1px solid var(--accent)" : "1px solid var(--border)", borderRadius: 4, color: selected ? "#fff" : quotaResetting ? "var(--text-dim)" : "var(--accent)", cursor: selected || refreshingQuotaAccountId || quotaResetting ? "default" : "pointer", fontSize: 11, fontWeight: 600 }}
-                >
-                  {selected ? "Viewing" : "View"}
-                </button>
+                {supportsQuota && (
+                  <button
+                    onClick={() => onSelect(account)}
+                    disabled={selected || Boolean(refreshingQuotaAccountId) || quotaResetting}
+                    style={{ padding: "4px 9px", background: selected ? "var(--accent)" : "none", border: selected ? "1px solid var(--accent)" : "1px solid var(--border)", borderRadius: 4, color: selected ? "#fff" : quotaResetting ? "var(--text-dim)" : "var(--accent)", cursor: selected || refreshingQuotaAccountId || quotaResetting ? "default" : "pointer", fontSize: 11, fontWeight: 600 }}
+                  >
+                    {selected ? "Viewing" : "View"}
+                  </button>
+                )}
                 <button
                   onClick={() => onEditLabel(account)}
                   disabled={savingLabelAccountId === account.accountId}
@@ -1732,20 +1740,22 @@ function OAuthAccountsView({
                     </button>
                   </>
                 )}
-                <button
-                  onClick={() => onRefreshQuota(account)}
-                  disabled={Boolean(refreshingQuotaAccountId) || quotaResetting}
-                  title="Refresh this account quota reset time"
-                  aria-label="Refresh this account quota reset time"
-                  style={{ width: 28, height: 28, padding: 0, background: "none", border: "1px solid var(--border)", borderRadius: 4, color: quotaRefreshing || quotaResetting ? "var(--text-dim)" : "var(--accent)", cursor: refreshingQuotaAccountId || quotaResetting ? "default" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
-                >
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M21 12a9 9 0 0 1-9 9 8.8 8.8 0 0 1-6.36-2.64" />
-                    <path d="M3 12a9 9 0 0 1 9-9 8.8 8.8 0 0 1 6.36 2.64" />
-                    <path d="M3 4v8h8" />
-                    <path d="M21 20v-8h-8" />
-                  </svg>
-                </button>
+                {supportsQuota && (
+                  <button
+                    onClick={() => onRefreshQuota(account)}
+                    disabled={Boolean(refreshingQuotaAccountId) || quotaResetting}
+                    title="Refresh this account quota reset time"
+                    aria-label="Refresh this account quota reset time"
+                    style={{ width: 28, height: 28, padding: 0, background: "none", border: "1px solid var(--border)", borderRadius: 4, color: quotaRefreshing || quotaResetting ? "var(--text-dim)" : "var(--accent)", cursor: refreshingQuotaAccountId || quotaResetting ? "default" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+                  >
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M21 12a9 9 0 0 1-9 9 8.8 8.8 0 0 1-6.36-2.64" />
+                      <path d="M3 12a9 9 0 0 1 9-9 8.8 8.8 0 0 1 6.36 2.64" />
+                      <path d="M3 4v8h8" />
+                      <path d="M21 20v-8h-8" />
+                    </svg>
+                  </button>
+                )}
               </div>
             );
           })}
@@ -1956,8 +1966,8 @@ function AddAccountDialog({
         {view === "method" ? (
           <div style={{ padding: 16, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(240px, 100%), 1fr))", gap: 10 }}>
             <button type="button" onClick={onCodexAuth} style={{ padding: 14, background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: 8, color: "var(--text)", cursor: "pointer", textAlign: "left" }}>
-              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 5 }}>{t("settings.models.codexAuth")}</div>
-              <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5 }}>{t("settings.models.codexAuthHint")}</div>
+              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 5 }}>{provider.id === "openai-codex" ? t("settings.models.codexAuth") : t("settings.models.oauthAuth")}</div>
+              <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5 }}>{provider.id === "openai-codex" ? t("settings.models.codexAuthHint") : t("settings.models.oauthAuthHint")}</div>
             </button>
             <button type="button" onClick={() => onViewChange("json")} style={{ padding: 14, background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: 8, color: "var(--text)", cursor: "pointer", textAlign: "left" }}>
               <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 5 }}>{t("settings.models.pasteJson")}</div>
@@ -2045,6 +2055,10 @@ function AddAccountDialog({
 
 function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefresh: () => void }) {
   const { t } = useI18n();
+  const isGrokProvider = provider.id === "grok-cli" || provider.id === "xai";
+  // Multi-account store is available for codex and grok; per-account quota tooling is codex-only.
+  const supportsAccounts = provider.id === "openai-codex" || isGrokProvider;
+  const supportsQuota = provider.id === "openai-codex";
   const [loginState, setLoginState] = useState<OAuthLoginState>({ phase: "idle" });
   const [inputValue, setInputValue] = useState("");
   const [quota, setQuota] = useState<SubscriptionQuota | null>(null);
@@ -2105,7 +2119,7 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
   }, []);
 
   const loadAccounts = useCallback(async () => {
-    if (provider.id !== "openai-codex") return;
+    if (!supportsAccounts) return;
     setAccountsLoading(true);
     setAccountsError(null);
     try {
@@ -2118,13 +2132,13 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
     } finally {
       setAccountsLoading(false);
     }
-  }, [provider.id]);
+  }, [provider.id, supportsAccounts]);
 
   useEffect(() => {
-    if (provider.id === "openai-codex") {
+    if (supportsAccounts) {
       void loadAccounts();
     }
-  }, [provider.id, provider.loggedIn, loadAccounts]);
+  }, [supportsAccounts, provider.loggedIn, loadAccounts]);
 
   useEffect(() => {
     if (provider.id !== "openai-codex") return;
@@ -2354,7 +2368,11 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
       setSelectedQuotaAccountId(accountId);
       setLoginState({ phase: "success", message: "Account activated." });
       onRefresh();
-      await loadQuota(true, accountId);
+      if (supportsQuota) {
+        await loadQuota(true, accountId);
+      } else if (isGrokProvider) {
+        await loadGrokUsage(true);
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to activate account";
       setAccountsError(message);
@@ -2362,7 +2380,7 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
     } finally {
       setActivatingAccountId(null);
     }
-  }, [provider.id, onRefresh, loadQuota]);
+  }, [provider.id, onRefresh, loadQuota, loadGrokUsage, supportsQuota, isGrokProvider]);
 
   const handleEditAccountLabel = useCallback(async (account: OAuthAccountSummary) => {
     const nextLabel = window.prompt("Account remark (leave empty to clear):", account.label ?? "");
@@ -2615,7 +2633,7 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
             >
               {provider.loggedIn ? "Re-login" : "Login"}
             </button>
-            {provider.id === "openai-codex" && provider.loggedIn && (
+            {supportsAccounts && provider.loggedIn && (
               <button
                 onClick={() => setAddAccountDialogView("method")}
                 style={{ padding: "5px 12px", background: "none", border: "1px solid var(--border)", borderRadius: 5, color: "var(--accent)", cursor: "pointer", fontSize: 12, fontWeight: 600 }}
@@ -2643,11 +2661,12 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
         <GrokUsageView result={grokUsage} loading={grokUsageLoading} onRefresh={() => void loadGrokUsage(true)} />
       )}
 
-      {provider.id === "openai-codex" && (
+      {supportsAccounts && (
         <OAuthAccountsView
           accounts={accounts}
           loading={accountsLoading}
           error={accountsError}
+          supportsQuota={supportsQuota}
           activatingAccountId={activatingAccountId}
           savingLabelAccountId={savingLabelAccountId}
           savingExtraInfoAccountId={savingExtraInfoAccountId}
@@ -2674,7 +2693,7 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
         />
       )}
 
-      {provider.id === "openai-codex" && editingExtraInfoAccount && (
+      {supportsAccounts && editingExtraInfoAccount && (
         <ExtraInfoDialog
           account={editingExtraInfoAccount}
           saving={savingExtraInfoAccountId === editingExtraInfoAccount.accountId}
@@ -2683,7 +2702,7 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
         />
       )}
 
-      {provider.id === "openai-codex" && addAccountDialogView && (
+      {supportsAccounts && addAccountDialogView && (
         <AddAccountDialog
           provider={provider}
           view={addAccountDialogView}
@@ -2693,7 +2712,7 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
             setAccounts(nextAccounts);
             setLoginState({ phase: "success", message: t("settings.models.accountSaved") });
             onRefresh();
-            if (provider.loggedIn) void loadQuota();
+            if (supportsQuota && provider.loggedIn) void loadQuota();
           }}
           onClose={() => setAddAccountDialogView(null)}
         />
