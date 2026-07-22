@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAllowedRoots, isPathAllowed } from "@/lib/allowed-roots";
-import { readPiWebConfig } from "@/lib/pi-web-config";
 import {
   createWorkflowTask,
   listWorkflowTasks,
@@ -19,10 +18,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 export async function GET(request: NextRequest) {
   try {
-    const config = readPiWebConfig();
-    if (!config.workflow.enabled) {
-      return NextResponse.json({ error: "SnFlow panel is disabled" }, { status: 403 });
-    }
 
     const cwd = request.nextUrl.searchParams.get("cwd");
     if (!cwd) {
@@ -43,10 +38,6 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const config = readPiWebConfig();
-    if (!config.workflow.enabled) {
-      return NextResponse.json({ error: "SnFlow panel is disabled" }, { status: 403 });
-    }
 
     const cwd = request.nextUrl.searchParams.get("cwd");
     if (!cwd) {

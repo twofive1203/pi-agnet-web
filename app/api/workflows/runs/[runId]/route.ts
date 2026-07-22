@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAllowedRoots, isPathAllowed } from "@/lib/allowed-roots";
-import { readPiWebConfig } from "@/lib/pi-web-config";
 import { getWorkflowRunStatus, WorkflowRuntimeError } from "@/lib/workflow-run-manager";
 import { WorkflowSecurityError, WorkflowStoreError } from "@/lib/workflow-store";
 import { isValidWorkflowRunId } from "@/lib/workflow-types";
@@ -12,10 +11,6 @@ export async function GET(
   { params }: { params: Promise<{ runId: string }> },
 ) {
   try {
-    const config = readPiWebConfig();
-    if (!config.workflow.enabled) {
-      return NextResponse.json({ error: "SnFlow panel is disabled" }, { status: 403 });
-    }
 
     const cwd = request.nextUrl.searchParams.get("cwd");
     if (!cwd) {

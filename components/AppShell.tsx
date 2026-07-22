@@ -361,7 +361,6 @@ export function AppShell() {
 
   const activeFileTab = fileTabs.find((t) => t.id === activeFileTabId) ?? null;
   const trellisEnabled = webConfig?.trellis.enabled ?? false;
-  const workflowEnabled = webConfig?.workflow.enabled ?? false;
   const terminalEnabled = webConfig?.terminal.enabled ?? false;
   const trellisIncludeArchivedDefault = webConfig?.trellis.includeArchived ?? false;
   const workflowIncludeArchivedDefault = webConfig?.workflow.includeArchived ?? false;
@@ -491,7 +490,7 @@ export function AppShell() {
   }, []);
 
   const loadWorkflowCurrentTask = useCallback(async (signal?: AbortSignal) => {
-    if (!workflowEnabled || !workflowCwd) {
+    if (!workflowCwd) {
       setWorkflowCurrentTask(null);
       return;
     }
@@ -523,7 +522,7 @@ export function AppShell() {
       if ((error as { name?: string }).name === "AbortError") return;
       setWorkflowCurrentTask(null);
     }
-  }, [workflowEnabled, workflowCwd]);
+  }, [workflowCwd]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -538,7 +537,6 @@ export function AppShell() {
   }, [loadWorkflowCurrentTask, focusedWorkflowTaskId]);
 
   const handleStartWorkflowFromChat = useCallback(async () => {
-    if (!workflowEnabled) return;
     const cwd = workflowCwd;
     if (!cwd) return;
     if (!selectedSession?.id) return;
@@ -555,7 +553,7 @@ export function AppShell() {
       console.error("Failed to create SnFlow task from chat", error);
       window.alert(error instanceof Error ? error.message : String(error));
     }
-  }, [workflowEnabled, workflowCwd, selectedSession?.id, handleWorkflowTaskCreated]);
+  }, [workflowCwd, selectedSession?.id, handleWorkflowTaskCreated]);
 
   useEffect(() => {
     if (!trellisEnabled && rightPanelMode === "trellis") {
@@ -564,14 +562,7 @@ export function AppShell() {
     }
   }, [trellisEnabled, rightPanelMode, fileTabs.length]);
 
-  useEffect(() => {
-    if (!workflowEnabled && rightPanelMode === "workflow") {
-      setRightPanelMode("files");
-      if (fileTabs.length === 0) setRightPanelOpen(false);
-    }
-  }, [workflowEnabled, rightPanelMode, fileTabs.length]);
-
-  const rightToggleCount = 1 + (trellisEnabled ? 1 : 0) + (workflowEnabled ? 1 : 0);
+  const rightToggleCount = 1 + (trellisEnabled ? 1 : 0) + 1; /* files + optional trellis + always-on SnFlow */
   const rightTogglePad = rightPanelOpen ? 12 : 12 + rightToggleCount * 36;
 
   useEffect(() => {
@@ -1254,7 +1245,7 @@ export function AppShell() {
           {showChat && trellisSessionTask?.task && !(rightPanelOpen && rightPanelMode === "trellis" && focusedTrellisTaskKey === trellisSessionTask.task.key) && (
             <TrellisSessionWidget task={trellisSessionTask.task} onClick={handleOpenTrellisSessionTask} />
           )}
-          {showChat && workflowEnabled && workflowCurrentTask?.task && !(rightPanelOpen && rightPanelMode === "workflow" && focusedWorkflowTaskId === workflowCurrentTask.task.id) && (
+          {showChat && workflowCurrentTask?.task && !(rightPanelOpen && rightPanelMode === "workflow" && focusedWorkflowTaskId === workflowCurrentTask.task.id) && (
             <WorkflowSessionWidget
               task={workflowCurrentTask.task}
               phase={workflowCurrentTask.phase}
@@ -1375,8 +1366,7 @@ export function AppShell() {
           <circle cx="12" cy="12" r="3" />
         </svg>
       </button>
-      {workflowEnabled && (
-        <button
+      <button
           onClick={(e) => {
             // Alt/Option+click: create SnFlow task from current chat (Trellis-like, no manual "+").
             if (e.altKey && selectedSession?.id && workflowCwd) {
@@ -1404,7 +1394,6 @@ export function AppShell() {
         >
           SF
         </button>
-      )}
       {trellisEnabled && (
         <button
           onClick={() => {

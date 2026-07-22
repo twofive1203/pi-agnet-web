@@ -87,7 +87,11 @@ export interface PiWebGrokConfig {
 }
 
 export interface PiWebWorkflowConfig {
-  enabled: boolean;
+  /**
+   * @deprecated Ignored. SnFlow is per-project: initialized projects use it,
+   * uninitialized ones do not. Kept optional so older pi-web.json files still parse.
+   */
+  enabled?: boolean;
   includeArchived: boolean;
 }
 
@@ -254,7 +258,6 @@ export const DEFAULT_PI_WEB_CONFIG: PiWebConfig = {
     },
   },
   workflow: {
-    enabled: false,
     includeArchived: false,
   },
   grok: {
@@ -504,7 +507,7 @@ function normalizePiWebConfig(raw: unknown): PiWebConfig {
       subagents: readTrellisSubagentsConfig(trellis.subagents, defaults.trellis.subagents),
     },
     workflow: {
-      enabled: readBoolean(workflow.enabled, defaults.workflow.enabled),
+      // enabled is intentionally ignored — SnFlow activation is project-local init only.
       includeArchived: readBoolean(workflow.includeArchived, defaults.workflow.includeArchived),
     },
   };
@@ -831,7 +834,6 @@ export function validatePiWebWorkflowConfig(value: unknown): PiWebWorkflowConfig
     throw new PiWebConfigValidationError("workflow config must be an object");
   }
   return {
-    enabled: requireBoolean(value.enabled, "workflow.enabled"),
     includeArchived: requireBoolean(value.includeArchived, "workflow.includeArchived"),
   };
 }

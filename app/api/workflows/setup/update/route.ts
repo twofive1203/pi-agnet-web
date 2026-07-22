@@ -1,15 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAllowedRoots, isPathAllowed } from "@/lib/allowed-roots";
 import { canonicalizeCwd } from "@/lib/cwd";
-import { initializeWorkflowProject } from "@/lib/workflow-setup";
+import { updateWorkflowProject } from "@/lib/workflow-setup";
 import { WorkflowSecurityError, WorkflowStoreError } from "@/lib/workflow-store";
 
 export const dynamic = "force-dynamic";
 
 /**
- * Initialize SnFlow for an authorized workspace: create task dirs, install
- * managed extension/skill/agent/script assets, and write .version.
- * Activation is project-local (tasks/ presence); there is no global enable switch.
+ * Rewrite managed SnFlow assets for an already-initialized project and bump
+ * .pi/snflows/.version. Never touches task data.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -25,9 +24,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
 
-    const result = initializeWorkflowProject(canonicalCwd);
+    const result = updateWorkflowProject(canonicalCwd);
     if (!result.success) {
-      return NextResponse.json(result, { status: 500 });
+      return NextResponse.json(result, { status: 400 });
     }
     return NextResponse.json(result);
   } catch (error) {

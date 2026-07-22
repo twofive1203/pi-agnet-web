@@ -79,9 +79,17 @@ Two separate subagent configuration systems exist:
 | Native pi-subagents | `settings.json → subagents` | User/Project | pi-subagents extension native model config (defaultModel, agentOverrides) |
 | Trellis routing | `pi-web.json → trellis.subagents` | User | Web UI Trellis workflow routing policy only |
 
-The WebUI-owned SnFlow panel (`pi-web.json → workflow` compatibility key) dispatches implement/check
+The WebUI-owned SnFlow panel (`pi-web.json → workflow` keeps preferences such as
+`includeArchived`; legacy `enabled` is ignored) dispatches implement/check
 through native pi-subagents RPC and uses the native `settings.json → subagents`
-model source only. It does not read Trellis routing policy.
+model source only. It does not read Trellis routing policy. SnFlow activation is
+per-project initialization, not a global switch.
+
+SnFlow project initialization installs managed assets from the bundled manifest in
+`lib/snflow-assets.ts` into the selected workspace (extension, skill, agents, CLI
+wrapper, and `.pi/snflows/.version`). Update rewrites only that whitelist. When
+`.pi/extensions/snflow/` is present it owns chat guidance via `before_agent_start`;
+otherwise the WebUI keeps the legacy `lib/workflow-guidance.ts` injection path.
 
 ### Settings Precedence (Native)
 

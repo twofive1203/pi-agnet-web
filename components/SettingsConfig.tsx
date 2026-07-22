@@ -20,6 +20,7 @@ import type {
   PiWebWorktreeConfig,
 } from "@/lib/pi-web-config";
 import type { TrellisCommandResponse, TrellisSetupStatus } from "@/lib/trellis-setup-types";
+import type { WorkflowSetupCommandResponse, WorkflowSetupStatus } from "@/lib/workflow-setup";
 import { useI18n } from "@/components/I18nProvider";
 import type { Locale } from "@/lib/i18n";
 
@@ -39,6 +40,16 @@ interface TrellisStatusResponse {
 
 interface TrellisActionResponse extends TrellisCommandResponse {
   config?: PiWebConfig;
+}
+
+interface WorkflowStatusResponse {
+  status?: WorkflowSetupStatus;
+  error?: string;
+}
+
+interface WorkflowActionResponse extends WorkflowSetupCommandResponse {
+  config?: PiWebConfig;
+  error?: string;
 }
 
 interface ModelListItem {
@@ -361,6 +372,13 @@ function formatRecommendedAction(status: TrellisSetupStatus, t: (key: string) =>
   return t("settings.selectWorkspace");
 }
 
+function formatWorkflowRecommendedAction(status: WorkflowSetupStatus, t: (key: string) => string): string {
+  if (status.recommendedAction === "initialize") return t("settings.workflowNeedsInit");
+  if (status.recommendedAction === "update") return t("settings.workflowNeedsUpdate");
+  if (status.recommendedAction === "ready") return t("settings.workflowReady");
+  return t("settings.selectWorkspace");
+}
+
 function worktreeConfigsEqual(a: PiWebWorktreeConfig | null, b: PiWebWorktreeConfig | null): boolean {
   if (!a || !b) return a === b;
   return a.baseRef === b.baseRef
@@ -377,7 +395,7 @@ function trellisConfigsEqual(a: PiWebTrellisConfig | null, b: PiWebTrellisConfig
 
 function workflowConfigsEqual(a: PiWebWorkflowConfig | null, b: PiWebWorkflowConfig | null): boolean {
   if (!a || !b) return a === b;
-  return a.enabled === b.enabled && a.includeArchived === b.includeArchived;
+  return a.includeArchived === b.includeArchived;
 }
 
 function usageConfigsEqual(a: PiWebUsageConfig | null, b: PiWebUsageConfig | null): boolean {
@@ -434,6 +452,11 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
   const [trellisAction, setTrellisAction] = useState<"init" | "update" | null>(null);
   const [trellisOutput, setTrellisOutput] = useState<string | null>(null);
   const [trellisWorkflowOpen, setTrellisWorkflowOpen] = useState(false);
+  const [workflowStatus, setWorkflowStatus] = useState<WorkflowSetupStatus | null>(null);
+  const [workflowStatusLoading, setWorkflowStatusLoading] = useState(false);
+  const [workflowStatusError, setWorkflowStatusError] = useState<string | null>(null);
+  const [workflowAction, setWorkflowAction] = useState<"init" | "update" | null>(null);
+  const [workflowOutput, setWorkflowOutput] = useState<string | null>(null);
   const [modelList, setModelList] = useState<ModelListItem[]>([]);
   const [modelsError, setModelsError] = useState<string | null>(null);
   const [developerName, setDeveloperName] = useState("");
@@ -521,6 +544,29 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
     }
   }, [cwd, developerNameTouched]);
 
+  const loadWorkflowStatus = useCallback(async (signal?: AbortSignal) => {
+    if (!cwd) {
+      setWorkflowStatus(null);
+      setWorkflowStatusError(null);
+      setWorkflowStatusLoading(false);
+      return;
+    }
+    setWorkflowStatusLoading(true);
+    setWorkflowStatusError(null);
+    try {
+      const res = await fetch(`/api/workflows/setup/status?cwd=${encodeURIComponent(cwd)}`, { signal });
+      const data = await res.json() as WorkflowStatusResponse;
+      if (!res.ok || data.error || !data.status) throw new Error(data.error ?? `HTTP ${res.status}`);
+      setWorkflowStatus(data.status);
+    } catch (err) {
+      if ((err as { name?: string }).name === "AbortError") return;
+      setWorkflowStatus(null);
+      setWorkflowStatusError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setWorkflowStatusLoading(false);
+    }
+  }, [cwd]);
+
   useEffect(() => {
     const controller = new AbortController();
     void loadConfig(controller.signal);
@@ -531,15 +577,17 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
     setDeveloperName("");
     setDeveloperNameTouched(false);
     setTrellisOutput(null);
+    setWorkflowOutput(null);
   }, [cwd]);
 
   useEffect(() => {
-    if (section !== "trellis" && section !== "terminal") return;
+    if (section !== "trellis" && section !== "terminal" && section !== "workflow") return;
     const controller = new AbortController();
     if (section === "trellis") void loadTrellisStatus(controller.signal);
-    void loadModels(controller.signal);
+    if (section === "workflow") void loadWorkflowStatus(controller.signal);
+    if (section === "trellis" || section === "terminal") void loadModels(controller.signal);
     return () => controller.abort();
-  }, [section, loadModels, loadTrellisStatus]);
+  }, [section, loadModels, loadTrellisStatus, loadWorkflowStatus]);
 
   const updateWorktree = useCallback((patch: Partial<PiWebWorktreeConfig>) => {
     setWorktree((prev) => prev ? { ...prev, ...patch } : prev);
@@ -843,6 +891,56 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
     }
   }, [cwd, developerName, dirty, loadTrellisStatus, onConfigChange, saveConfig, trellis, t]);
 
+  const applyConfigFromResponse = useCallback((config: PiWebConfig) => {
+    setWorktree(config.worktree);
+    setSavedWorktree(config.worktree);
+    setTrellis(config.trellis);
+    setSavedTrellis(config.trellis);
+    setWorkflow(config.workflow);
+    setSavedWorkflow(config.workflow);
+    setUsage(config.usage);
+    setSavedUsage(config.usage);
+    setTerminal(config.terminal);
+    setSavedTerminal(config.terminal);
+    setChatgpt(config.chatgpt);
+    setSavedChatgpt(config.chatgpt);
+    setGrok(config.grok);
+    setSavedGrok(config.grok);
+    setEditor(config.editor);
+    setSavedEditor(config.editor);
+    onConfigChange?.();
+  }, [onConfigChange]);
+
+  const runWorkflowSetupAction = useCallback(async (action: "init" | "update") => {
+    if (!cwd || !workflow) return;
+    if (dirty) {
+      const saved = await saveConfig();
+      if (!saved) return;
+    }
+    setWorkflowAction(action);
+    setError(null);
+    setNotice(null);
+    setWorkflowOutput(null);
+    try {
+      const res = await fetch(`/api/workflows/setup/${action}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cwd }),
+      });
+      const data = await res.json() as WorkflowActionResponse;
+      if (!res.ok || data.error || !data.status) throw new Error(data.error ?? `HTTP ${res.status}`);
+      setWorkflowStatus(data.status);
+      setWorkflowOutput(data.output || t("settings.operationDone"));
+      if (data.config) applyConfigFromResponse(data.config);
+      setNotice(action === "init" ? t("settings.workflowInitialized") : t("settings.workflowUpdated"));
+      void loadWorkflowStatus();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setWorkflowAction(null);
+    }
+  }, [applyConfigFromResponse, cwd, dirty, loadWorkflowStatus, saveConfig, t, workflow]);
+
   const renderSectionButton = (id: SettingsSection, label: string, description: string) => {
     const active = section === id;
     return (
@@ -878,6 +976,21 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
         : trellisStatus?.blockingReasons[0] ?? null;
   const canInitializeTrellis = !!cwd && !!trellisStatus?.canInitialize && !!developerName.trim() && !trellisBusy && !trellisStatusLoading;
   const canUpdateTrellis = !!cwd && !!trellisStatus?.canUpdate && !trellisBusy && !trellisStatusLoading;
+
+  const workflowBusy = !!workflowAction || saving;
+  const workflowBlockingReason = !cwd
+    ? t("settings.selectWorkspaceFirst")
+    : workflowStatusError
+      ? workflowStatusError
+      : null;
+  const canInitializeWorkflow =
+    !!cwd && workflowStatus?.recommendedAction === "initialize" && !workflowBusy && !workflowStatusLoading;
+  const canUpdateWorkflow =
+    !!cwd &&
+    !!workflowStatus?.initialized &&
+    !!workflowStatus.updateAvailable &&
+    !workflowBusy &&
+    !workflowStatusLoading;
 
   return (
     <>
@@ -1342,14 +1455,11 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
                       <p style={{ margin: "5px 0 0", color: "var(--text-muted)", fontSize: 12, lineHeight: 1.5 }}>
                         {t("settings.workflowDescription")}
                       </p>
+                      <div style={{ color: "var(--text-dim)", fontSize: 11, overflowWrap: "anywhere", marginTop: 6 }}>
+                        {t("settings.currentWorkspace")}{cwd ? <code style={{ fontFamily: "var(--font-mono)", color: "var(--text-muted)" }}>{cwd}</code> : t("settings.notSelected")}
+                      </div>
                     </div>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                      <ToggleField
-                        label={t("settings.enableWorkflow")}
-                        description={t("settings.enableWorkflowHint")}
-                        checked={workflow.enabled}
-                        onChange={(enabled) => updateWorkflow({ enabled })}
-                      />
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 12 }}>
                       <ToggleField
                         label={t("settings.workflowIncludeArchived")}
                         description={t("settings.workflowIncludeArchivedHint")}
@@ -1360,6 +1470,117 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
                     <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5 }}>
                       {t("settings.workflowNativeModelsHint")}
                     </div>
+
+                    <div style={{ padding: 12, borderRadius: 10, background: "var(--bg-subtle)", border: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: 10 }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                        <div>
+                          <div style={{ color: "var(--text)", fontSize: 13, fontWeight: 800 }}>{t("settings.workflowInspectionTitle")}</div>
+                          <div style={{ color: "var(--text-muted)", fontSize: 11, marginTop: 3 }}>
+                            {workflowStatus
+                              ? formatWorkflowRecommendedAction(workflowStatus, t)
+                              : (cwd ? t("settings.checking") : t("settings.selectWorkspaceToInitWorkflow"))}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => void loadWorkflowStatus()}
+                          disabled={!cwd || workflowStatusLoading || workflowBusy}
+                          style={{ padding: "6px 10px", borderRadius: 7, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-muted)", cursor: !cwd || workflowStatusLoading || workflowBusy ? "not-allowed" : "pointer", fontSize: 12 }}
+                        >
+                          {workflowStatusLoading ? t("settings.checkingShort") : t("settings.recheck")}
+                        </button>
+                      </div>
+
+                      {workflowStatusError && (
+                        <div style={{ padding: "8px 10px", borderRadius: 8, background: "rgba(239,68,68,0.12)", color: "#f87171", fontSize: 12, overflowWrap: "anywhere" }}>
+                          {workflowStatusError}
+                        </div>
+                      )}
+                      {workflowStatus && (
+                        <div>
+                          <StatusRow
+                            label={t("settings.workflowProjectRoot")}
+                            value={workflowStatus.initialized
+                              ? (workflowStatus.projectVersion
+                                ? t("settings.projectExistsVersion", { version: workflowStatus.projectVersion })
+                                : t("settings.projectExists"))
+                              : t("settings.notInitialized")}
+                            ok={workflowStatus.initialized}
+                            detail={workflowStatus.pathLabel}
+                          />
+                          <StatusRow
+                            label={t("settings.workflowVersion")}
+                            value={workflowStatus.projectVersion
+                              ? (workflowStatus.updateAvailable
+                                ? `${workflowStatus.projectVersion} → ${workflowStatus.bundledVersion}`
+                                : workflowStatus.projectVersion)
+                              : (workflowStatus.initialized
+                                ? t("settings.workflowVersionMissing", { bundled: workflowStatus.bundledVersion })
+                                : t("settings.notInitialized"))}
+                            ok={workflowStatus.initialized && !workflowStatus.updateAvailable}
+                            detail={t("settings.workflowBundledVersion", { version: workflowStatus.bundledVersion })}
+                          />
+                          <StatusRow
+                            label={t("settings.workflowExtension")}
+                            value={workflowStatus.hasExtension ? t("settings.installed") : t("settings.notInstalledShort")}
+                            ok={workflowStatus.hasExtension}
+                            detail=".pi/extensions/snflow/"
+                          />
+                          <StatusRow
+                            label={t("settings.workflowSkill")}
+                            value={workflowStatus.hasSkill ? t("settings.installed") : t("settings.notInstalledShort")}
+                            ok={workflowStatus.hasSkill}
+                            detail=".pi/skills/snflow-dev/"
+                          />
+                          <StatusRow
+                            label={t("settings.workflowAgents")}
+                            value={workflowStatus.hasAgents ? t("settings.installed") : t("settings.notInstalledShort")}
+                            ok={workflowStatus.hasAgents}
+                            detail=".pi/agents/snflow-*"
+                          />
+                          <StatusRow
+                            label={t("settings.workflowScript")}
+                            value={workflowStatus.hasScript ? t("settings.installed") : t("settings.notInstalledShort")}
+                            ok={workflowStatus.hasScript}
+                            detail="scripts/snflow-task.ts"
+                          />
+                        </div>
+                      )}
+                    </div>
+
+                    <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                      <button
+                        type="button"
+                        onClick={() => void runWorkflowSetupAction("init")}
+                        disabled={!canInitializeWorkflow}
+                        title={canInitializeWorkflow ? t("settings.initializeWorkflow") : workflowBlockingReason ?? t("settings.workflowAlreadyInitUseUpdate")}
+                        style={{ padding: "8px 12px", borderRadius: 8, border: "none", background: canInitializeWorkflow ? "var(--accent)" : "var(--border)", color: "white", cursor: canInitializeWorkflow ? "pointer" : "not-allowed", fontSize: 12, fontWeight: 700 }}
+                      >
+                        {workflowAction === "init" ? t("settings.initializing") : t("settings.initializeWorkflow")}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void runWorkflowSetupAction("update")}
+                        disabled={!canUpdateWorkflow}
+                        title={canUpdateWorkflow ? t("settings.updateWorkflow") : (workflowStatus && !workflowStatus.updateAvailable ? t("settings.workflowUpToDate") : workflowBlockingReason ?? t("settings.noWorkflowInitFirst"))}
+                        style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--bg)", color: canUpdateWorkflow ? "var(--text)" : "var(--text-dim)", cursor: canUpdateWorkflow ? "pointer" : "not-allowed", fontSize: 12, fontWeight: 700 }}
+                      >
+                        {workflowAction === "update"
+                          ? t("settings.updating")
+                          : (workflowStatus && workflowStatus.initialized && !workflowStatus.updateAvailable
+                            ? t("settings.workflowUpToDate")
+                            : t("settings.updateWorkflow"))}
+                      </button>
+                      {!canInitializeWorkflow && !canUpdateWorkflow && workflowBlockingReason && (
+                        <span style={{ color: "var(--text-dim)", fontSize: 11 }}>{workflowBlockingReason}</span>
+                      )}
+                    </div>
+
+                    {workflowOutput && (
+                      <pre style={{ margin: 0, maxHeight: 180, overflow: "auto", padding: 10, borderRadius: 8, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-muted)", fontSize: 11, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+                        {workflowOutput}
+                      </pre>
+                    )}
                   </div>
                 ) : (
                   <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>

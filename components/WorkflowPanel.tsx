@@ -94,6 +94,9 @@ export function WorkflowPanel({
   const [conflictNote, setConflictNote] = useState<string | null>(null);
   const [initializing, setInitializing] = useState(false);
   const [initError, setInitError] = useState<string | null>(null);
+  const [updateAvailable, setUpdateAvailable] = useState(false);
+  const [bundledVersion, setBundledVersion] = useState<string | null>(null);
+  const [projectVersion, setProjectVersion] = useState<string | null>(null);
 
   // Draft fields
   const [draftTitle, setDraftTitle] = useState("");
@@ -221,26 +224,89 @@ export function WorkflowPanel({
     void loadTasks();
   }, [loadTasks]);
 
-  // Per-project SnFlow enablement: create the .pi/snflows store for this cwd.
-  const handleInitialize = useCallback(async () => {
+  const loadSetupStatus = useCallback(async (signal?: AbortSignal) => {
+    if (!cwd) {
+      setUpdateAvailable(false);
+      setBundledVersion(null);
+      setProjectVersion(null);
+      return;
+    }
+    try {
+      const res = await fetch(`/api/workflows/setup/status?cwd=${encodeURIComponent(cwd)}`, { signal });
+      const body = (await res.json()) as {
+        status?: {
+          updateAvailable?: boolean;
+          bundledVersion?: string;
+          projectVersion?: string;
+        };
+        error?: string;
+      };
+      if (!res.ok || !body.status) return;
+      setUpdateAvailable(!!body.status.updateAvailable);
+      setBundledVersion(body.status.bundledVersion ?? null);
+      setProjectVersion(body.status.projectVersion ?? null);
+    } catch (error) {
+      if ((error as { name?: string }).name === "AbortError") return;
+      // Setup status is advisory in the panel.
+    }
+  }, [cwd]);
+
+  // Per-project SnFlow enablement: create the .pi/snflows store + managed assets.
+  // "update" rewrites missing/outdated extension/skill/agent files without touching tasks.
+  const handleSetupAction = useCallback(async (action: "init" | "update") => {
     if (!cwd || initializing) return;
     setInitializing(true);
     setInitError(null);
     try {
-      const res = await fetch("/api/workflows/setup/init", {
+      const res = await fetch(`/api/workflows/setup/${action}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ cwd }),
       });
-      const body = (await res.json()) as { success?: boolean; error?: string };
-      if (!res.ok || !body.success) throw new Error(body.error ?? `HTTP ${res.status}`);
+      const body = (await res.json()) as {
+        success?: boolean;
+        error?: string;
+        output?: string;
+        status?: {
+          missingManagedFiles?: string[];
+          updateAvailable?: boolean;
+          projectVersion?: string;
+          bundledVersion?: string;
+        };
+      };
+      if (!res.ok || !body.success) {
+        const missing = body.status?.missingManagedFiles?.length
+          ? ` missing: ${body.status.missingManagedFiles.join(", ")}`
+          : "";
+        throw new Error(`${body.error ?? `HTTP ${res.status}`}${missing}`);
+      }
+      if (body.status) {
+        setUpdateAvailable(!!body.status.updateAvailable);
+        setBundledVersion(body.status.bundledVersion ?? null);
+        setProjectVersion(body.status.projectVersion ?? null);
+      }
       await loadTasks();
+      await loadSetupStatus();
     } catch (error) {
       setInitError(error instanceof Error ? error.message : String(error));
     } finally {
       setInitializing(false);
     }
-  }, [cwd, initializing, loadTasks]);
+  }, [cwd, initializing, loadSetupStatus, loadTasks]);
+
+  const handleInitialize = useCallback(async () => {
+    await handleSetupAction("init");
+  }, [handleSetupAction]);
+
+  const handleUpdateAssets = useCallback(async () => {
+    await handleSetupAction("update");
+  }, [handleSetupAction]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void loadSetupStatus(controller.signal);
+    return () => controller.abort();
+  }, [loadSetupStatus]);
 
   useEffect(() => {
     setIncludeArchived(includeArchivedDefault);
@@ -689,6 +755,48 @@ export function WorkflowPanel({
                 }}
               >
                 {initializing ? t("workflow.initializing") : t("workflow.initialize")}
+              </button>
+              {initError && (
+                <div style={{ marginTop: 8, fontSize: 11, color: "#f87171" }}>{initError}</div>
+              )}
+            </div>
+          )}
+          {!listLoading && !listError && exists && updateAvailable && (
+            <div
+              style={{
+                margin: "0 10px 8px",
+                padding: "8px 10px",
+                borderRadius: 8,
+                border: "1px solid rgba(245,158,11,0.35)",
+                background: "rgba(245,158,11,0.10)",
+                color: "var(--text-muted)",
+                fontSize: 11,
+                lineHeight: 1.45,
+              }}
+            >
+              <div style={{ marginBottom: 8 }}>
+                {t("workflow.updateAvailableHint", {
+                  project: projectVersion ?? t("workflow.versionUnknown"),
+                  bundled: bundledVersion ?? t("workflow.versionUnknown"),
+                })}
+              </div>
+              <button
+                type="button"
+                disabled={initializing}
+                onClick={() => void handleUpdateAssets()}
+                style={{
+                  border: "1px solid rgba(245,158,11,0.55)",
+                  borderRadius: 7,
+                  padding: "5px 10px",
+                  background: "rgba(245,158,11,0.16)",
+                  color: "#b45309",
+                  fontSize: 11,
+                  fontWeight: 700,
+                  cursor: initializing ? "not-allowed" : "pointer",
+                  opacity: initializing ? 0.6 : 1,
+                }}
+              >
+                {initializing ? t("workflow.updatingAssets") : t("workflow.updateAssets")}
               </button>
               {initError && (
                 <div style={{ marginTop: 8, fontSize: 11, color: "#f87171" }}>{initError}</div>

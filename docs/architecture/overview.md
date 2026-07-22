@@ -105,19 +105,37 @@ other. The native config persists to `~/.pi/agent/settings.json` (user) or
 
 ### SnFlow (separate from Trellis)
 
-Snail Pi Web also owns a first-class development flow named SnFlow, gated by
-`pi-web.json → workflow.enabled` for compatibility. Task documents live under
+Snail Pi Web also owns a first-class development flow named SnFlow. There is no
+global enable switch: a project uses SnFlow only after it is initialized
+(`.pi/snflows/tasks/` exists). The SF drawer is always available so users can
+inspect or initialize the current workspace. Task documents live under
 `<cwd>/.pi/snflows/tasks/` (archived tasks move to the sibling
 `<cwd>/.pi/snflows/archived/`) and never share schema, import, or writeback with
 `.trellis/tasks/`. Implement/check phases dispatch through native `pi-subagents`
 RPC (`worker` / `reviewer`) using a cwd-bound in-memory host session managed by
 `lib/workflow-run-manager.ts`. SnFlow agent models come only from native
 `settings.json → subagents`; SnFlow code must not read `trellis.subagents`.
+`pi-web.json → workflow` only keeps panel preferences such as
+`includeArchived` (legacy `enabled` is ignored).
 
-Chat experience is intentionally Trellis-like: when SnFlow is enabled, RPC chat
-sessions receive active-task breadcrumbs via `lib/workflow-guidance.ts`, agents
-create/start/implement/check through `scripts/workflow-task.ts` (not panel
-clicking), and a current-task pointer lives at `.pi/snflows/current.json`.
+Project setup (Settings → SnFlow or the panel empty-state) installs managed
+assets from the bundled manifest in `lib/snflow-assets.ts`:
+`.pi/extensions/snflow/`, `.pi/skills/snflow-dev/`, `.pi/agents/snflow-*.md`,
+`scripts/snflow-task.ts`, and `.pi/snflows/.version`. Update rewrites only that
+whitelist and never touches task data. Old projects that only have a tasks
+directory remain initialized and are prompted to update.
+
+Chat experience is intentionally Trellis-like, but only when the selected project
+is initialized for SnFlow. If it is not, the WebUI does not force SnFlow —
+managed project extension/skill/agent files are filtered out of the session
+resource loader so leftover assets cannot pull chat onto the SnFlow path.
+
+When active and the project extension is installed, it owns `before_agent_start`
+guidance (and skips subagent children via `PI_SUBAGENT_CHILD`). Otherwise, for
+backward compatibility, RPC chat sessions still receive active-task breadcrumbs
+via `lib/workflow-guidance.ts`. Agents create/start/implement/check through
+`scripts/snflow-task.ts` (project) or `scripts/workflow-task.ts` (WebUI package),
+and a current-task pointer lives at `.pi/snflows/current.json`.
 
 ### Pi Settings Precedence
 

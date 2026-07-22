@@ -508,20 +508,46 @@ export async function startRpcSession(
       ? SessionManager.open(sessionFile, undefined)
       : SessionManager.create(cwd, undefined);
 
-    // Trellis-like SnFlow breadcrumbs: when SnFlow is enabled, append active-task
-    // guidance so chat agents follow create/plan/start/implement/check without
-    // requiring the user to operate the panel first.
-    // SnFlow is per-project: only projects initialized from the SnFlow panel
-    // (with a .pi/snflows/tasks store) receive guidance.
+    // SnFlow is opt-in per project init only (no global enable switch).
+    // - Not initialized: strip managed SnFlow extension/skill/agents so leftover
+    //   project files cannot force chat onto the SnFlow path.
+    // - Initialized without project extension: legacy WebUI appendSystemPrompt guidance.
+    // - Initialized with project extension: extension owns before_agent_start.
     let resourceLoader: InstanceType<typeof DefaultResourceLoader> | undefined;
     try {
-      const { readPiWebConfig } = await import("./pi-web-config");
-      const { isWorkflowProjectInitialized } = await import("./workflow-setup");
+      const {
+        hasWorkflowExtension,
+        isSnflowActiveForSession,
+        isSnflowManagedAgentPath,
+        isSnflowManagedExtensionPath,
+        isSnflowManagedSkill,
+      } = await import("./workflow-setup");
       const { buildWorkflowSystemGuidance } = await import("./workflow-guidance");
-      if (readPiWebConfig().workflow.enabled && isWorkflowProjectInitialized(cwd)) {
+      const snflowActive = isSnflowActiveForSession(cwd);
+      const settingsManager = SettingsManager.create(cwd, agentDir);
+
+      if (!snflowActive) {
+        resourceLoader = new DefaultResourceLoader({
+          cwd,
+          agentDir,
+          settingsManager,
+          extensionsOverride: (base) => ({
+            ...base,
+            extensions: base.extensions.filter((ext) => !isSnflowManagedExtensionPath(ext.path)),
+          }),
+          skillsOverride: (base) => ({
+            ...base,
+            skills: base.skills.filter((skill) => !isSnflowManagedSkill(skill)),
+          }),
+          agentsFilesOverride: (base) => ({
+            ...base,
+            agentsFiles: base.agentsFiles.filter((file) => !isSnflowManagedAgentPath(file.path)),
+          }),
+        });
+        await resourceLoader.reload();
+      } else if (!hasWorkflowExtension(cwd)) {
         const guidance = buildWorkflowSystemGuidance(cwd);
         if (guidance) {
-          const settingsManager = SettingsManager.create(cwd, agentDir);
           resourceLoader = new DefaultResourceLoader({
             cwd,
             agentDir,
@@ -532,7 +558,7 @@ export async function startRpcSession(
         }
       }
     } catch {
-      // SnFlow guidance is best-effort; never block chat session start.
+      // SnFlow guidance/filtering is best-effort; never block chat session start.
       resourceLoader = undefined;
     }
 

@@ -1,0 +1,131 @@
+---
+name: snflow-dev
+description: "Use Snail Pi Web native SnFlow tasks under .pi/snflows/tasks/ for development work. Create tasks from chat (like Trellis task.py create), maintain requirements/design/plan, and guide implement/check via the SnFlow panel or project CLI. Prefer this over Trellis when the user wants WebUI-owned workflow or the project has no .trellis."
+---
+
+# SnFlow development workflow
+
+This is **WebUI SnFlow** (`.pi/snflows/tasks/`), not Trellis (`.trellis/`).
+Experience should feel like Trellis: chat-orchestrated create → plan → start → implement → check → commit handoff.
+
+Panel (SF) is for visibility/emergency controls. **Do not make the user drive the lifecycle by clicking around.**
+
+## Phase index
+
+```
+Phase 1 Plan    → consent + create + requirements/design/plan
+Phase 2 Execute → start + implement + check loops
+Phase 3 Finish  → ready_to_commit + user commit + complete/archive
+```
+
+## CLI (preferred agent interface)
+
+Project-local wrapper (installed by SnFlow setup):
+
+```bash
+npx tsx scripts/snflow-task.ts create "<title>" --seed "<user goal>"
+npx tsx scripts/snflow-task.ts current
+npx tsx scripts/snflow-task.ts show
+npx tsx scripts/snflow-task.ts start
+npx tsx scripts/snflow-task.ts implement
+npx tsx scripts/snflow-task.ts wait
+npx tsx scripts/snflow-task.ts check
+npx tsx scripts/snflow-task.ts wait
+npx tsx scripts/snflow-task.ts complete --hash <sha>
+npx tsx scripts/snflow-task.ts archive
+```
+
+If the CLI wrapper cannot resolve the Snail Pi Web package, use the SnFlow panel actions or the manual file fallback below.
+
+Manual fallback layout:
+
+```text
+.pi/snflows/tasks/<slug>/
+  task.json
+  requirements.md
+  design.md
+  plan.md
+.pi/snflows/archived/<slug>/
+.pi/snflows/current.json
+```
+
+Minimum `task.json`:
+
+```json
+{
+  "schemaVersion": 1,
+  "id": "<slug>",
+  "title": "<title>",
+  "description": "<short description>",
+  "status": "planning",
+  "priority": "P2",
+  "createdAt": "<ISO timestamp>",
+  "updatedAt": "<ISO timestamp>",
+  "completedAt": null,
+  "revision": "manual",
+  "activeRunId": null,
+  "latestImplementRunId": null,
+  "latestCheckRunId": null,
+  "commit": null,
+  "archived": false
+}
+```
+
+`task.md` is not a valid primary SnFlow record.
+
+After create/start, acknowledge:
+
+```text
+Active SnFlow task: .pi/snflows/tasks/<id>
+```
+
+## Phase 1 — Plan
+
+- Simple chat: ask if a SnFlow task is needed; skip if user says no.
+- Real dev work: create the task yourself (never tell user to open SF and press +).
+- Edit `requirements.md`, `design.md`, `plan.md`.
+- Consent to create ≠ consent to implement.
+
+When user approves implementation, run in the same turn:
+
+```bash
+npx tsx scripts/snflow-task.ts start
+npx tsx scripts/snflow-task.ts implement
+npx tsx scripts/snflow-task.ts wait
+```
+
+## Phase 2 — Execute
+
+Main session is orchestrator only. Implementation runs in the worker subagent:
+
+```bash
+npx tsx scripts/snflow-task.ts implement
+npx tsx scripts/snflow-task.ts wait
+npx tsx scripts/snflow-task.ts check
+npx tsx scripts/snflow-task.ts wait
+```
+
+### Recursion guards
+- If you are already the implement/check child, do **not** re-dispatch SnFlow implement/check.
+- Only the main session should run `implement` / `check`.
+
+### Inline exception
+Do **not** edit project source in the main session except a trivial fix of roughly ≤10 lines with no new files — still run `check` afterwards.
+
+## Phase 3 — Finish
+
+- Do **not** git commit/push/PR unless user explicitly asks.
+- After user commits:
+
+```bash
+npx tsx scripts/snflow-task.ts complete --hash <git-sha>
+npx tsx scripts/snflow-task.ts archive
+```
+
+## Hard rules
+
+- Never write `.trellis/` for this workflow
+- Never run `python ./.trellis/scripts/task.py` for SnFlow tasks
+- Prefer CLI/panel over asking the user to click around
+- Keep one writer on the working tree
+- Fail closed on missing cwd/task context; print diagnostics

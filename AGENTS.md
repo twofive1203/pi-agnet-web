@@ -112,7 +112,7 @@ node_modules/.bin/tsc --noEmit
 | Model config | `~/.pi/agent/models.json` |
 | Settings/default model/native subagents | `~/.pi/agent/settings.json`, project override `<cwd>/.pi/settings.json` |
 | Web UI settings (WorkTree, Usage, Web Terminal, ChatGPT panel, Grok panel, Editor, SnFlow panel, Trellis routing) | `~/.pi/agent/pi-web.json` |
-| WebUI SnFlow tasks | `<cwd>/.pi/snflows/tasks/<task-id>/` (archived: `<cwd>/.pi/snflows/archived/<task-id>/`) |
+| WebUI SnFlow tasks | `<cwd>/.pi/snflows/tasks/<task-id>/` (archived: `<cwd>/.pi/snflows/archived/<task-id>/`; version/assets: `.pi/snflows/.version`, `.pi/extensions/snflow/`, `.pi/skills/snflow-dev/`, `.pi/agents/snflow-*.md`) |
 
 ## Archive Rules
 
