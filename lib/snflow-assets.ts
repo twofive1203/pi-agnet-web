@@ -6,7 +6,7 @@
  * Bump SNFLOW_ASSETS_VERSION (SemVer) whenever any managed file content changes.
  */
 
-export const SNFLOW_ASSETS_VERSION = "1.1.0";
+export const SNFLOW_ASSETS_VERSION = "1.2.0";
 
 export interface SnflowAssetFile {
   /** Project-relative path using forward slashes. */
@@ -173,12 +173,15 @@ function buildGuidance(cwd: string): string | null {
       "<workflow-state:spec_bootstrap>",
       ...header,
       "This special task initializes project specifications directly in the main session.",
-      "Read project source and configuration without modifying product files, then edit only files under .pi/snflows/spec/.",
+      "Read project source and configuration without modifying product files, then edit files under .pi/snflows/spec/ and project-root AGENTS.md.",
       "Do not dispatch implement/check agents or any other subagents for this bootstrap task.",
       "Replace every (To be filled) placeholder with evidence-based conventions and keep all spec index status tables synchronized.",
       "When the spec is complete, manually change " + base + "/task.json status to ready_to_commit and update updatedAt.",
       "Commit remains a user handoff; after the user commits, complete and optionally archive the task.",
-      "The task.json status handoff is the only write outside .pi/snflows/spec/ allowed by this branch.",
+      "The task.json status handoff and project-root AGENTS.md are the only writes outside .pi/snflows/spec/ allowed by this branch.",
+      "For AGENTS.md: create it if missing, replace only the inclusive SnFlow managed block when both markers exist, or append the block when neither exists.",
+      "If only one marker exists or marker order is invalid, stop and report it. Preserve all bytes outside the managed block.",
+      "Use the exact <!-- BEGIN SNFLOW SPEC --> / <!-- END SNFLOW SPEC --> block provided in the task plan.",
       "</workflow-state:spec_bootstrap>",
     ].join("\\n");
   }
@@ -190,6 +193,8 @@ function buildGuidance(cwd: string): string | null {
       "Stay in planning. Load skill snflow-dev if available.",
       \`Read first: \${base}/task.json, \${base}/requirements.md, \${base}/design.md, \${base}/plan.md\`,
       "Before development, read .pi/snflows/spec/index.md and relevant layer indexes when present.",
+      "Also read the project-root AGENTS.md SnFlow managed section (between <!-- BEGIN SNFLOW SPEC --> and",
+      "<!-- END SNFLOW SPEC -->) for spec-reading guidance specific to this project.",
       \`Edit docs only through the canonical files: \${base}/requirements.md, \${base}/design.md, \${base}/plan.md\`,
       "Do not create or update task.md as the task authority.",
       "When the user approves implementation, do all of this in the same turn without asking again:",
@@ -222,6 +227,7 @@ function buildGuidance(cwd: string): string | null {
       "  npx tsx scripts/snflow-task.ts check",
       "  npx tsx scripts/snflow-task.ts wait",
       "Before development, read .pi/snflows/spec/index.md and relevant layer indexes when present.",
+      "Also read the project-root AGENTS.md SnFlow managed section for spec-reading guidance.",
       "Do NOT edit project source files yourself in the main session for this task; files under .pi/snflows/spec/ are explicitly allowed for specification maintenance.",
       "Sole source-code inline exception: trivial fixes of roughly <=10 lines with no new files; still run check afterwards.",
       "Recursion guard: if you are already the implement/check child, do not re-dispatch SnFlow agents.",
@@ -237,6 +243,8 @@ function buildGuidance(cwd: string): string | null {
       ...header,
       "Check passed. Hand off commit to the user (do not commit unless asked).",
       "If this task produced reusable conventions or lessons, write them to the relevant .pi/snflows/spec/ files and update the spec index status tables.",
+      "Also update the project-root AGENTS.md SnFlow managed section if the reading-order or",
+      "spec-discovery guidance in that section should change.",
       "After commit: npx tsx scripts/snflow-task.ts complete --hash <git-sha>",
       "Then optional: npx tsx scripts/snflow-task.ts archive",
       "Manual fallback for complete: set task.json status:'completed', completedAt:'<ISO>',",
@@ -250,6 +258,8 @@ function buildGuidance(cwd: string): string | null {
       "<workflow-state:done>",
       ...header,
       "If this task produced reusable conventions or lessons, write them to the relevant .pi/snflows/spec/ files and update the spec index status tables.",
+      "Also update the project-root AGENTS.md SnFlow managed section if the reading-order or",
+      "spec-discovery guidance should change for future agents.",
       "Task is terminal. Archive if needed:",
       "  npx tsx scripts/snflow-task.ts archive",
       "Manual fallback for archive: move .pi/snflows/tasks/<id>/ to .pi/snflows/archived/<id>/,",
@@ -372,11 +382,12 @@ Active SnFlow task: .pi/snflows/tasks/<id>
 ## Project spec (\`.pi/snflows/spec/\`)
 
 - Before development, read \`.pi/snflows/spec/index.md\` and the relevant layer indexes when present.
+- Also read the project-root \`AGENTS.md\` SnFlow managed section (bounded by \`<!-- BEGIN SNFLOW SPEC -->\` / \`<!-- END SNFLOW SPEC -->\` markers) which directs agents to the spec index and requirements.
 - Implementation follows applicable specs; active task documents win on conflicts, and the conflict must be reported.
 - Check compares the diff against applicable specs and reports violations as findings.
 - Before finish, capture reusable conventions or lessons in the relevant spec file and update its index status table.
 - Specification maintenance under \`.pi/snflows/spec/\` is allowed in the main session even though product source remains worker-owned.
-- Special task \`00-bootstrap-spec\`: scan source read-only and fill the spec directly in the main session. Do not dispatch implement/check or other subagents. When complete, manually set its \`task.json\` status to \`ready_to_commit\` for user commit handoff.
+- Special task \`00-bootstrap-spec\`: scan source read-only, fill the spec, then create or idempotently update the project-root \`AGENTS.md\` with the exact managed block from the task plan. Preserve all content outside the markers. Do not dispatch implement/check or other subagents. When complete, manually set its \`task.json\` status to \`ready_to_commit\` for user commit handoff.
 
 ## Phase 1 — Plan
 
@@ -450,6 +461,7 @@ Then read:
 - \`.pi/snflows/tasks/<id>/design.md\`
 - \`.pi/snflows/tasks/<id>/plan.md\`
 - \`.pi/snflows/spec/index.md\` and relevant layer indexes (if present)
+- \`AGENTS.md\` SnFlow managed section (between \`<!-- BEGIN SNFLOW SPEC -->\` and \`<!-- END SNFLOW SPEC -->\` markers) for project-specific spec-entry guidance
 
 ## Recursion guard
 
@@ -494,6 +506,7 @@ Then read:
 - \`.pi/snflows/tasks/<id>/design.md\`
 - \`.pi/snflows/tasks/<id>/plan.md\`
 - \`.pi/snflows/spec/index.md\` and relevant layer indexes (if present)
+- \`AGENTS.md\` SnFlow managed section (between \`<!-- BEGIN SNFLOW SPEC -->\` and \`<!-- END SNFLOW SPEC -->\` markers) for project-specific spec-entry guidance
 - current git diff / changed files
 
 ## Recursion guard

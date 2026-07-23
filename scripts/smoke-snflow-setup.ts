@@ -24,6 +24,9 @@ import {
   SNFLOW_ASSETS_VERSION,
 } from "../lib/snflow-assets";
 import {
+  AGENTS_MD_MANAGED_SECTION,
+  AGENTS_MD_MARKER_BEGIN,
+  AGENTS_MD_MARKER_END,
   BOOTSTRAP_SPEC_TASK_ID,
   BOOTSTRAP_TASK_DOCS,
   SNFLOW_SPEC_FILES,
@@ -138,6 +141,7 @@ try {
   assert(hasWorkflowExtension(root), "hasWorkflowExtension should be true");
   assert(existsSync(path.join(root, ".pi", "snflows", ".version")), "version file missing");
   assert(existsSync(path.join(root, "scripts", "snflow-task.ts")), "script missing");
+  assert(!existsSync(path.join(root, "AGENTS.md")), "setup must leave AGENTS.md to the bootstrap task");
 
   // Seven skeleton files + bootstrap docs + current pointer on first init.
   assert(SNFLOW_SPEC_FILES.length === 7, `expected seven templates, got ${SNFLOW_SPEC_FILES.length}`);
@@ -166,6 +170,35 @@ try {
     readFileSync(path.join(bootstrapDir, "requirements.md"), "utf8") === BOOTSTRAP_TASK_DOCS.requirements,
     "bootstrap requirements mismatch",
   );
+  const bootstrapPlan = readFileSync(path.join(bootstrapDir, "plan.md"), "utf8");
+  assert(bootstrapPlan === BOOTSTRAP_TASK_DOCS.plan, "bootstrap plan mismatch");
+  assert(
+    bootstrapPlan.includes("Only after steps 1-5 are complete"),
+    "bootstrap plan must finish the specification before updating AGENTS.md",
+  );
+  assert(
+    bootstrapPlan.includes(AGENTS_MD_MANAGED_SECTION),
+    "bootstrap plan should carry the exact AGENTS.md managed section",
+  );
+  for (const directive of [
+    "If AGENTS.md is missing, create it with this block",
+    "If both markers already exist in the correct order, replace only the inclusive marked block",
+    "If neither marker exists, append one blank line and this block",
+    "If only one marker exists, or the end marker precedes the begin marker, stop and report",
+    "Preserve all bytes outside the managed block",
+  ]) {
+    assert(bootstrapPlan.includes(directive), `bootstrap plan missing AGENTS.md directive: ${directive}`);
+  }
+  assert(
+    AGENTS_MD_MANAGED_SECTION.startsWith(AGENTS_MD_MARKER_BEGIN) &&
+      AGENTS_MD_MANAGED_SECTION.endsWith(AGENTS_MD_MARKER_END),
+    "AGENTS.md managed section markers mismatch",
+  );
+  assert(
+    AGENTS_MD_MANAGED_SECTION.split(AGENTS_MD_MARKER_BEGIN).length === 2 &&
+      AGENTS_MD_MANAGED_SECTION.split(AGENTS_MD_MARKER_END).length === 2,
+    "AGENTS.md managed section must contain exactly one marker pair",
+  );
   assert(getWorkflowCurrentTaskId(root) === BOOTSTRAP_SPEC_TASK_ID, "bootstrap should be current after first init");
   assertGitIgnored(root, ".pi/snflows/tasks/00-bootstrap-spec/task.json", true);
   assertGitIgnored(root, ".pi/snflows/spec/index.md", false);
@@ -175,6 +208,10 @@ try {
   assert(ext.includes("buildGuidance"), "extension missing buildGuidance");
   assert(ext.includes(".join(\"\\n\")"), "extension should join with real newlines");
   assert(ext.includes("`Active SnFlow task: ${base}`"), "extension template literals broken");
+  assert(
+    ext.includes("If only one marker exists or marker order is invalid"),
+    "extension bootstrap guidance should fail closed on malformed AGENTS.md markers",
+  );
   const transpiledExtension = ts.transpileModule(ext, {
     compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2020 },
     reportDiagnostics: true,
@@ -193,6 +230,22 @@ try {
     readFileSync(path.join(webuiRoot, ".pi", "snflows", ".version"), "utf8").trim() === SNFLOW_ASSETS_VERSION,
     "repository asset version marker mismatch",
   );
+
+  // Setup/update own SnFlow assets and bootstrap docs, never project-root AGENTS.md.
+  const agentsOwnerProject = mkdtempSync(path.join(tmpdir(), "snflow-agents-owner-"));
+  try {
+    const agentsPath = path.join(agentsOwnerProject, "AGENTS.md");
+    const ownerBytes = Buffer.from("# Project instructions\r\n\r\nKeep these bytes unchanged.\r\n", "utf8");
+    writeFileSync(agentsPath, ownerBytes);
+    const ownerInit = initializeWorkflowProject(agentsOwnerProject, { trackInGit: false });
+    assert(ownerInit.success, "init with project-owned AGENTS.md should succeed");
+    assert(readFileSync(agentsPath).equals(ownerBytes), "init must preserve project-owned AGENTS.md bytes");
+    const ownerUpdate = updateWorkflowProject(agentsOwnerProject, { trackInGit: false });
+    assert(ownerUpdate.success, "update with project-owned AGENTS.md should succeed");
+    assert(readFileSync(agentsPath).equals(ownerBytes), "update must preserve project-owned AGENTS.md bytes");
+  } finally {
+    rmSync(agentsOwnerProject, { recursive: true, force: true });
+  }
 
   // Legacy project: update installs skeleton + bootstrap, restores prior current.
   mkdirSync(path.join(legacy, ".pi", "snflows", "tasks"), { recursive: true });

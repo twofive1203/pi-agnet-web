@@ -11,6 +11,24 @@ export interface SnflowSpecFile {
 const SKELETON_NOTICE =
   "> Skeleton installed by SnFlow setup. Fill via the 00-bootstrap-spec task. Never overwritten by SnFlow update.";
 
+/** Exact bounded section that the bootstrap task writes to project-root AGENTS.md. */
+export const AGENTS_MD_MARKER_BEGIN = "<!-- BEGIN SNFLOW SPEC -->";
+export const AGENTS_MD_MARKER_END = "<!-- END SNFLOW SPEC -->";
+
+export const AGENTS_MD_MANAGED_SECTION = `${AGENTS_MD_MARKER_BEGIN}
+## SnFlow Project Specifications
+
+Before implementation or review:
+
+1. Read \`.pi/snflows/spec/index.md\`.
+2. Read the relevant layer indexes under \`.pi/snflows/spec/\`.
+3. Follow the applicable project specifications.
+4. If an active task conflicts with a specification, follow the task and report the conflict.
+5. When reusable conventions or lessons are learned, update the relevant specification and its index status.
+
+Specification maintenance under \`.pi/snflows/spec/\` is allowed in the main session.
+${AGENTS_MD_MARKER_END}`;
+
 export const SNFLOW_SPEC_FILES: readonly SnflowSpecFile[] = [
   {
     path: `${SNFLOW_SPEC_DIR}/index.md`,
@@ -168,7 +186,7 @@ export const BOOTSTRAP_TASK_DOCS = {
 
 ## Goal
 
-Replace the placeholder skeleton under .pi/snflows/spec/ with specifications grounded in this project's real code.
+Replace the placeholder skeleton under .pi/snflows/spec/ with specifications grounded in this project's real code, and create or idempotently update the project-root AGENTS.md with a bounded SnFlow managed section.
 
 ## Requirements
 
@@ -176,12 +194,14 @@ Replace the placeholder skeleton under .pi/snflows/spec/ with specifications gro
 2. Replace every "(To be filled)" placeholder with project-specific content.
 3. Remove or rename layers that do not apply. Every added layer must have an index.md.
 4. Keep the root and layer status tables synchronized with the resulting specification files.
+5. Create or idempotently update AGENTS.md at the project root with a SnFlow managed section (bounded by <!-- BEGIN SNFLOW SPEC --> / <!-- END SNFLOW SPEC --> markers). If AGENTS.md exists, preserve all non-managed content; replace the marked section or append one if absent. If AGENTS.md is missing, create it.
 
 ## Acceptance Criteria
 
 - No "(To be filled)" placeholder remains under .pi/snflows/spec/.
 - Material conclusions cite real project file paths as evidence.
 - The root and layer indexes accurately describe the final specification structure.
+- AGENTS.md contains the SnFlow managed section; all existing non-managed content is preserved.
 
 ## Out Of Scope
 
@@ -191,13 +211,14 @@ Replace the placeholder skeleton under .pi/snflows/spec/ with specifications gro
 
 ## Approach
 
-Read the project source and configuration without modifying product files, then write the findings under .pi/snflows/spec/**.
+Read the project source and configuration without modifying product files, then write the findings under .pi/snflows/spec/** and update AGENTS.md.
 
 ## Decisions
 
-- Complete this task directly in the main session; specification files are the explicit main-session write exception.
+- Complete this task directly in the main session; specification files and AGENTS.md are the explicit main-session write exceptions.
 - Do not dispatch implement/check agents or other subagents for this bootstrap task.
 - Preserve the guideline structure of required rules, forbidden patterns, and grounded examples where applicable.
+- The AGENTS.md managed section is bounded by <!-- BEGIN SNFLOW SPEC --> / <!-- END SNFLOW SPEC --> markers for idempotent replacement.
 `,
   plan: `# Plan
 
@@ -206,11 +227,24 @@ Read the project source and configuration without modifying product files, then 
 3. Fill the backend specification layer from real server code, or remove/rename it if inapplicable.
 4. Fill the development guides with project-specific working principles.
 5. Update every layer index and the root status table to match the final files.
-6. Finish by manually changing task.json status to ready_to_commit; commit remains a user handoff.
+6. Only after steps 1-5 are complete, create or idempotently update the project-root AGENTS.md using the exact block below:
+   - If AGENTS.md is missing, create it with this block. A project-specific heading may precede it.
+   - If both markers already exist in the correct order, replace only the inclusive marked block.
+   - If neither marker exists, append one blank line and this block.
+   - If only one marker exists, or the end marker precedes the begin marker, stop and report the malformed file instead of rewriting it.
+   - Preserve all bytes outside the managed block; do not trim, reformat, or normalize unrelated content.
+
+\`\`\`markdown
+${AGENTS_MD_MANAGED_SECTION}
+\`\`\`
+
+7. Finish by manually changing task.json status to ready_to_commit; commit remains a user handoff.
 
 ## Validation
 
 - Search .pi/snflows/spec/ for "(To be filled)" and confirm there are no matches.
 - Confirm each material convention cites at least one real project path.
+- Confirm AGENTS.md contains exactly one well-ordered SnFlow managed section.
+- If AGENTS.md existed before, compare the prefix and suffix outside the markers and confirm they are byte-for-byte unchanged.
 `,
 } as const;

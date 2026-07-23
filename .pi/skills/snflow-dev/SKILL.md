@@ -82,11 +82,12 @@ Active SnFlow task: .pi/snflows/tasks/<id>
 ## Project spec (`.pi/snflows/spec/`)
 
 - Before development, read `.pi/snflows/spec/index.md` and the relevant layer indexes when present.
+- Also read the project-root `AGENTS.md` SnFlow managed section (bounded by `<!-- BEGIN SNFLOW SPEC -->` / `<!-- END SNFLOW SPEC -->` markers) which directs agents to the spec index and requirements.
 - Implementation follows applicable specs; active task documents win on conflicts, and the conflict must be reported.
 - Check compares the diff against applicable specs and reports violations as findings.
 - Before finish, capture reusable conventions or lessons in the relevant spec file and update its index status table.
 - Specification maintenance under `.pi/snflows/spec/` is allowed in the main session even though product source remains worker-owned.
-- Special task `00-bootstrap-spec`: scan source read-only and fill the spec directly in the main session. Do not dispatch implement/check or other subagents. When complete, manually set its `task.json` status to `ready_to_commit` for user commit handoff.
+- Special task `00-bootstrap-spec`: scan source read-only, fill the spec, then create or idempotently update the project-root `AGENTS.md` with the exact managed block from the task plan. Preserve all content outside the markers. Do not dispatch implement/check or other subagents. When complete, manually set its `task.json` status to `ready_to_commit` for user commit handoff.
 
 ## Phase 1 — Plan
 

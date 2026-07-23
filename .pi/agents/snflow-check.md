@@ -18,6 +18,7 @@ Then read:
 - `.pi/snflows/tasks/<id>/design.md`
 - `.pi/snflows/tasks/<id>/plan.md`
 - `.pi/snflows/spec/index.md` and relevant layer indexes (if present)
+- `AGENTS.md` SnFlow managed section (between `<!-- BEGIN SNFLOW SPEC -->` and `<!-- END SNFLOW SPEC -->` markers) for project-specific spec-entry guidance
 - current git diff / changed files
 
 ## Recursion guard

@@ -138,6 +138,23 @@ is initialized for SnFlow. If it is not, the WebUI does not force SnFlow —
 managed project extension/skill/agent files are filtered out of the session
 resource loader so leftover assets cannot pull chat onto the SnFlow path.
 
+### Spec Bootstrap and AGENTS.md Managed Section
+
+The bootstrap task `00-bootstrap-spec` fills the specification skeleton under
+`.pi/snflows/spec/` with project-specific conventions. After filling specs, it
+also creates or idempotently updates the project-root `AGENTS.md` with a bounded
+managed section (`<!-- BEGIN SNFLOW SPEC -->` / `<!-- END SNFLOW SPEC -->`).
+That section directs future agents to read the root spec index and relevant
+layer indexes before implementation or review, follow applicable specs, and
+update specs when reusable conventions are learned.
+
+`lib/snflow-spec-templates.ts` owns the exact managed block and embeds it in the
+bootstrap task plan. The task replaces only a complete, correctly ordered block,
+appends when neither marker exists, and fails visibly on malformed one-marker or
+reversed-marker files. Content outside the managed block remains byte-for-byte
+unchanged. SnFlow setup itself does not write `AGENTS.md`; the bootstrap task
+agent performs that project-specific update after completing the specs.
+
 When active and the project extension is installed, it owns `before_agent_start`
 guidance (and skips subagent children via `PI_SUBAGENT_CHILD`). Otherwise, for
 backward compatibility, RPC chat sessions still receive active-task breadcrumbs
