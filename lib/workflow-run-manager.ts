@@ -6,15 +6,7 @@
 import { createHash, randomUUID } from "crypto";
 import { existsSync, readFileSync } from "fs";
 import path from "path";
-import {
-  createAgentSession,
-  createEventBus,
-  DefaultResourceLoader,
-  getAgentDir,
-  SessionManager,
-  SettingsManager,
-  type EventBusController,
-} from "@earendil-works/pi-coding-agent";
+import type { EventBusController } from "@earendil-works/pi-coding-agent";
 import { canonicalizeCwd } from "./cwd";
 import { preparePiRuntimeEnvironment } from "./pi-runtime-resolver";
 import {
@@ -53,6 +45,11 @@ const SUBAGENT_RPC_REPLY_EVENT_PREFIX = "subagents:rpc:v1:reply:";
 const DEFAULT_RPC_TIMEOUT_MS = 30_000;
 const SPAWN_RPC_TIMEOUT_MS = 60_000;
 const HOST_IDLE_TTL_MS = 30 * 60_000;
+
+/** Keep Pi's extension loader in its native ESM graph under the tsx CLI. */
+async function piSdk() {
+  return import("@earendil-works/pi-coding-agent");
+}
 
 export class WorkflowRuntimeError extends Error {
   readonly status: number;
@@ -235,6 +232,18 @@ async function rpcRequest<T>(
 async function createWorkflowHost(cwd: string): Promise<WorkflowHost> {
   const canonical = canonicalProjectCwd(cwd);
   const hostSessionId = workflowHostSessionIdForCwd(canonical);
+
+  // Lazy-import Pi SDK at the async boundary so tsx/esbuild transformation
+  // does not break the SDK's ESM extension loader (import.meta.resolve).
+  const {
+    createAgentSession,
+    createEventBus,
+    DefaultResourceLoader,
+    getAgentDir,
+    SessionManager,
+    SettingsManager,
+  } = await piSdk();
+
   const agentDir = getAgentDir();
   preparePiRuntimeEnvironment({ cwd: canonical, agentDir });
 
@@ -271,8 +280,8 @@ async function createWorkflowHost(cwd: string): Promise<WorkflowHost> {
     rpcReady: false,
   };
 
-  // Wait briefly for RPC ready if the extension emits it; ping is authoritative.
-  await new Promise<void>((resolve) => {
+  // Bind after subscribing: pi-subagents captures cwd/session context during session_start.
+  const rpcReady = new Promise<void>((resolve) => {
     const timer = setTimeout(() => {
       cleanup();
       resolve();
@@ -294,6 +303,8 @@ async function createWorkflowHost(cwd: string): Promise<WorkflowHost> {
   });
 
   try {
+    await session.bindExtensions({ mode: "print" });
+    await rpcReady;
     const ping = await rpcRequest<{
       version?: number;
       session?: { cwd?: string; sessionId?: string };
@@ -453,7 +464,12 @@ function pickNativeRefs(data: unknown): {
 
   let state: WorkflowRunState | null = null;
   if (nativeStateRaw === "running" || nativeStateRaw === "starting") state = nativeStateRaw;
-  if (nativeStateRaw === "completed" || nativeStateRaw === "succeeded" || nativeStateRaw === "success") {
+  if (
+    nativeStateRaw === "complete" ||
+    nativeStateRaw === "completed" ||
+    nativeStateRaw === "succeeded" ||
+    nativeStateRaw === "success"
+  ) {
     state = "completed";
   }
   if (nativeStateRaw === "failed" || nativeStateRaw === "error") state = "failed";
@@ -692,6 +708,7 @@ export async function reconcileWorkflowRun(cwd: string, runId: string): Promise<
     }
 
     if (
+      nativeState === "complete" ||
       nativeState === "completed" ||
       nativeState === "failed" ||
       nativeState === "cancelled" ||
@@ -700,7 +717,7 @@ export async function reconcileWorkflowRun(cwd: string, runId: string): Promise<
       nativeState === "succeeded"
     ) {
       const mapped =
-        nativeState === "completed" || nativeState === "succeeded"
+        nativeState === "complete" || nativeState === "completed" || nativeState === "succeeded"
           ? "completed"
           : nativeState === "failed"
             ? "failed"

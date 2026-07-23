@@ -53,7 +53,7 @@ Shared logic lives under `lib/`. Prefer adding behavior here when it is used by 
 | `lib/workflow-gitignore.ts` | Maintains a marked SnFlow block in the project `.gitignore` when `workflow.trackInGit` is false (default). |
 | `lib/workflow-guidance.ts` | Legacy WebUI-side SnFlow system-prompt breadcrumbs for projects that are initialized but do not yet have the project extension installed. |
 | `lib/workflow-prompts.ts` | SnFlow implement/check prompt builders and structured-output normalizers for builtin `worker` / `reviewer`. |
-| `lib/workflow-run-manager.ts` | SnFlow cwd-bound in-memory Pi host sessions, native pi-subagents RPC (`ping`/`spawn`/`status`/`stop`), one-active-run-per-cwd lock, and restart-friendly run reconciliation. |
+| `lib/workflow-run-manager.ts` | SnFlow cwd-bound in-memory Pi host sessions, native pi-subagents RPC (`ping`/`spawn`/`status`/`stop`), tsx-safe lazy Pi SDK loading plus extension binding, one-active-run-per-cwd lock, and restart-friendly run reconciliation. |
 | `lib/workspace-title.ts` | Shared workspace title formatting from cwd and Git metadata. |
 | `lib/i18n/` | Lightweight zh/en i18n core: locale types, browser/storage detection, nested message catalogs, and `translate()` with `{param}` interpolation. Consumed by `components/I18nProvider.tsx`. |
 

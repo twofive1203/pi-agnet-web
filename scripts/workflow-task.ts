@@ -17,6 +17,7 @@ import {
   listWorkflowTasks,
   markWorkflowTaskReady,
   recordWorkflowCommit,
+  WorkflowNotFoundError,
 } from "../lib/workflow-store";
 import {
   clearWorkflowCurrentTask,
@@ -58,6 +59,16 @@ function argValue(args: string[], name: string): string | undefined {
 
 function hasFlag(args: string[], name: string): boolean {
   return args.includes(name);
+}
+
+function taskDetailForRunReference(cwd: string, value?: string) {
+  if (!value) return getWorkflowTaskDetail(cwd, resolveTaskId(cwd));
+  try {
+    return getWorkflowTaskDetail(cwd, value);
+  } catch (error) {
+    if (error instanceof WorkflowNotFoundError) return null;
+    throw error;
+  }
 }
 
 function positionalAfterCommand(args: string[]): string[] {
@@ -248,27 +259,20 @@ export async function main() {
 
   if (cmd === "wait") {
     const maybe = pos[0];
-    let runId: string | undefined = maybe;
-    if (!runId || !runId.includes("-")) {
-      const taskId = resolveTaskId(cwd, maybe);
-      const detail = getWorkflowTaskDetail(cwd, taskId);
-      runId = detail.activeRunId ?? detail.latestCheckRunId ?? detail.latestImplementRunId ?? undefined;
-      if (!runId) throw new Error(`No run to wait on for task ${taskId}`);
-    }
+    const detail = taskDetailForRunReference(cwd, maybe);
+    const runId = detail
+      ? detail.activeRunId ?? detail.latestCheckRunId ?? detail.latestImplementRunId ?? undefined
+      : maybe;
+    if (!runId) throw new Error(`No run to wait on for task ${detail?.id ?? "(current)"}`);
     await waitForRun(cwd, runId);
     return;
   }
 
   if (cmd === "cancel") {
     const maybe = pos[0];
-    let runId: string | undefined = maybe;
-    if (!runId || (!runId.includes("implement-") && !runId.includes("check-"))) {
-      const taskId = resolveTaskId(cwd, maybe);
-      const detail = getWorkflowTaskDetail(cwd, taskId);
-      if (!detail.activeRunId) throw new Error("No active run to cancel");
-      runId = detail.activeRunId;
-    }
-    if (!runId) throw new Error("No run id to cancel");
+    const detail = taskDetailForRunReference(cwd, maybe);
+    const runId = detail?.activeRunId ?? maybe;
+    if (!runId || (detail && !detail.activeRunId)) throw new Error("No active run to cancel");
     const rm = await lazyRunManager();
     const result = await rm.cancelWorkflowRun(cwd, runId);
     console.log(`state=${result.run.state}`);

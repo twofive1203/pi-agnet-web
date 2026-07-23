@@ -665,3 +665,78 @@ writeFileSync(settingsPath, JSON.stringify({ subagents: request.body }));
 // merges only present managed fields, then atomically returns a fresh projection.
 const result = applySubagentsPatch(settingsPath, patch, availableModelIds);
 ```
+
+### Scenario: tsx-hosted native subagent workflow sessions
+
+#### 1. Scope / Trigger
+
+Use this contract when a TypeScript CLI creates an in-process Pi SDK session and
+controls `pi-subagents` through its event-bus RPC bridge.
+
+#### 2. Signatures
+
+- Host creation: `getWorkflowHost(cwd): Promise<WorkflowHost>`.
+- Required RPC sequence: `ping` before `spawn`, then `status` / `stop` by native
+  run id or async directory.
+- CLI run references: `workflow-task wait|cancel [runId|taskId]`.
+
+#### 3. Contracts
+
+- Under `tsx`, load Pi SDK runtime values with native dynamic `import()`; a
+  static value import may CommonJS-transform Pi's ESM extension loader and
+  break `import.meta.resolve`.
+- Subscribe for RPC readiness, call `session.bindExtensions(...)`, and only then
+  require `ping.session.cwd` to equal the canonical requested cwd.
+- A binding or ping failure must dispose the session and event bus.
+- Map native lifecycle `complete` (and compatible `completed` / `succeeded`)
+  to the Workflow `completed` state.
+- For ambiguous CLI references, resolve an existing task id first; do not infer
+  run ids from hyphens or broad prefixes because both namespaces are slugs.
+
+#### 4. Validation & Error Matrix
+
+| Condition | Required behavior |
+| --- | --- |
+| SDK ESM loader is transformed and extensions fail | Host creation fails visibly with extension diagnostics; no spawn. |
+| Extensions are loaded but not bound | Missing ping cwd fails closed; no spawn. |
+| Ping cwd differs from canonical cwd | Return `cwd_mismatch`; no spawn. |
+| `bindExtensions()` or ping rejects | Dispose session/event bus and reject host creation. |
+| Native status is `complete` | Persist run as `completed` and project the task to its next phase. |
+| Explicit task id contains hyphens or starts with `implement-` / `check-` | Resolve the existing task before treating input as a run id. |
+
+#### 5. Good/Base/Bad Cases
+
+- Good: `npx tsx scripts/snflow-task.ts implement` dynamically loads Pi, binds
+  the in-memory session, verifies cwd by ping, and spawns the native worker.
+- Base: no run exists for a valid task id; `wait <task-id>` reports that task has
+  no run.
+- Bad: static-import Pi runtime values from the tsx entry graph, ping before
+  extension binding, or treat every hyphenated value as a native run id.
+
+#### 6. Tests Required
+
+- Run the host smoke through `npx tsx` and assert RPC ready plus exact cwd.
+- Exercise create → implement → wait → check → wait in a temporary workspace and
+  assert final `ready_to_commit` projection.
+- Verify a native `status.json` with `state: "complete"` stops polling.
+- Verify legal task ids such as `implement-auth-refresh` resolve as tasks.
+- Run lint and TypeScript validation.
+
+#### 7. Wrong vs Correct
+
+##### Wrong
+
+```typescript
+import { createAgentSession } from "@earendil-works/pi-coding-agent";
+const { session } = await createAgentSession(options);
+await rpcPing();
+```
+
+##### Correct
+
+```typescript
+const { createAgentSession } = await import("@earendil-works/pi-coding-agent");
+const { session } = await createAgentSession(options);
+await session.bindExtensions({ mode: "print" });
+await rpcPing();
+```
