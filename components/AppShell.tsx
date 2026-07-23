@@ -544,7 +544,9 @@ export function AppShell() {
       controller.abort();
       window.clearInterval(timer);
     };
-  }, [loadWorkflowSessionTask, focusedWorkflowTaskId]);
+  // loadWorkflowSessionTask already captures the selected session; keep the
+  // interval stable so opening the SF panel never tears down chat/session state.
+  }, [loadWorkflowSessionTask]);
 
   const handleStartWorkflowFromChat = useCallback(async () => {
     const cwd = workflowCwd;

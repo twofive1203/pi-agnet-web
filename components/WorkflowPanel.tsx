@@ -154,7 +154,9 @@ export function WorkflowPanel({
     }
     try {
       const res = await fetch(
-        `/api/workflows/tasks?cwd=${encodeURIComponent(cwd)}&includeArchived=${includeArchived ? "true" : "false"}`,
+        // Always fetch the full task set (active + archived); the checkbox
+        // filters client-side so toggling it never reloads the whole list.
+        `/api/workflows/tasks?cwd=${encodeURIComponent(cwd)}&includeArchived=true`,
       );
       const body = (await res.json()) as TasksResponse;
       if (!res.ok) {
@@ -187,7 +189,7 @@ export function WorkflowPanel({
     } finally {
       if (!silent) setListLoading(false);
     }
-  }, [cwd, includeArchived]);
+  }, [cwd]);
 
   const loadDetail = useCallback(
     async (taskId: string) => {
@@ -407,6 +409,7 @@ export function WorkflowPanel({
   const filteredTasks = useMemo(() => {
     const q = query.trim().toLowerCase();
     return tasks.filter((task) => {
+      if (!includeArchived && task.archived) return false;
       if (statusFilter !== "all" && task.status !== statusFilter) return false;
       if (!q) return true;
       return [task.title, task.id, task.description, task.status, task.priority]
@@ -414,7 +417,7 @@ export function WorkflowPanel({
         .toLowerCase()
         .includes(q);
     });
-  }, [tasks, query, statusFilter]);
+  }, [tasks, query, statusFilter, includeArchived]);
 
   async function runAction(fn: () => Promise<void>) {
     setBusy(true);
