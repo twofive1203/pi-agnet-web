@@ -21,6 +21,7 @@ import { WorkflowPanel } from "./WorkflowPanel";
 import { WorkflowSessionWidget } from "./WorkflowSessionWidget";
 import type { WorkflowTaskDetail } from "@/lib/workflow-types";
 import type { WorkflowPhaseLabel } from "@/lib/workflow-guidance";
+import type { WorkflowSessionTaskLinkResult } from "@/lib/workflow-session-link";
 import { workflowTaskToChatContext, type WorkflowTaskChatContext } from "@/lib/workflow-chat-context";
 import { BranchNavigator } from "./BranchNavigator";
 import { GitPanel } from "./GitPanel";
@@ -484,6 +485,10 @@ export function AppShell() {
     setRightPanelMode("workflow");
     setRightPanelOpen(true);
     setPendingWorkflowTaskContext(workflowTaskToChatContext(task));
+    if (!selectedSession || selectedSession.archived) {
+      setWorkflowCurrentTask(null);
+      return;
+    }
     setWorkflowCurrentTask({
       task: {
         id: task.id,
@@ -493,35 +498,25 @@ export function AppShell() {
       },
       phase: task.status === "planning" ? "plan" : task.status === "ready_to_commit" || task.status === "completed" || task.status === "cancelled" ? "finish" : "execute",
     });
-  }, []);
+  }, [selectedSession]);
 
-  const loadWorkflowCurrentTask = useCallback(async (signal?: AbortSignal) => {
-    if (!workflowCwd) {
+  const loadWorkflowSessionTask = useCallback(async (signal?: AbortSignal) => {
+    // Only session-scoped: the widget must show a task tied to the
+    // selected non-archived session, never a cwd-global pointer.
+    const session = selectedSession && !selectedSession.archived ? selectedSession : null;
+    if (!session) {
       setWorkflowCurrentTask(null);
       return;
     }
     try {
-      const res = await fetch(`/api/workflows/current?cwd=${encodeURIComponent(workflowCwd)}`, { signal });
-      const data = await res.json() as {
-        task?: WorkflowTaskDetail | null;
-        pointer?: { taskId?: string; sessionId?: string; updatedAt?: string };
-        phase?: WorkflowPhaseLabel;
-        error?: string;
-      };
+      const res = await fetch(`/api/sessions/${encodeURIComponent(session.id)}/snflow-task`, { signal });
+      const data = await res.json() as WorkflowSessionTaskLinkResult & { error?: string };
       if (!res.ok || data.error) {
         setWorkflowCurrentTask(null);
         return;
       }
       if (!data.task) {
         setWorkflowCurrentTask(null);
-        return;
-      }
-      // Client-side session scoping (Trellis parity): if the pointer is bound to
-      // a concrete session id and we have a different session open, don't surface it.
-      // Pointers without sessionId (CLI-created, older records) remain visible in all
-      // sessions so the widget stays when a task is created outside a session context.
-      const currentSessionId = selectedSession && !selectedSession.archived ? selectedSession.id : null;
-      if (data.pointer?.sessionId && currentSessionId && data.pointer.sessionId !== currentSessionId) {
         return;
       }
       setWorkflowCurrentTask({
@@ -537,19 +532,19 @@ export function AppShell() {
       if ((error as { name?: string }).name === "AbortError") return;
       setWorkflowCurrentTask(null);
     }
-  }, [workflowCwd, selectedSession]);
+  }, [selectedSession]);
 
   useEffect(() => {
     const controller = new AbortController();
-    void loadWorkflowCurrentTask(controller.signal);
+    void loadWorkflowSessionTask(controller.signal);
     const timer = window.setInterval(() => {
-      void loadWorkflowCurrentTask();
+      void loadWorkflowSessionTask(controller.signal);
     }, 5000);
     return () => {
       controller.abort();
       window.clearInterval(timer);
     };
-  }, [loadWorkflowCurrentTask, focusedWorkflowTaskId]);
+  }, [loadWorkflowSessionTask, focusedWorkflowTaskId]);
 
   const handleStartWorkflowFromChat = useCallback(async () => {
     const cwd = workflowCwd;

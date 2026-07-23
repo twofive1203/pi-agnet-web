@@ -143,7 +143,12 @@ guidance (and skips subagent children via `PI_SUBAGENT_CHILD`). Otherwise, for
 backward compatibility, RPC chat sessions still receive active-task breadcrumbs
 via `lib/workflow-guidance.ts`. Agents create/start/implement/check through
 `scripts/snflow-task.ts` (project) or `scripts/workflow-task.ts` (WebUI package),
-and a current-task pointer lives at `.pi/snflows/current.json`.
+and a current-task pointer lives at `.pi/snflows/current.json`. That pointer is
+workspace workflow state, not sufficient evidence for the floating chat widget:
+the widget resolves through `/api/sessions/[id]/snflow-task` and requires either
+an exact pointer `sessionId` match or explicit SnFlow task evidence in that
+session's transcript. Blank/new sessions therefore do not inherit another
+session's widget, while the owning session can restore it after a browser reload.
 
 ### Pi Settings Precedence
 
