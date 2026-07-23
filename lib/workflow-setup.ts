@@ -8,8 +8,10 @@
 
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
   readFileSync,
+  realpathSync,
   renameSync,
   statSync,
   writeFileSync,
@@ -30,8 +32,21 @@ import {
 import {
   WORKFLOW_ROOT_SEGMENTS,
   WORKFLOW_TASKS_DIR,
+  WorkflowSecurityError,
   createStoreContext,
+  createWorkflowTask,
+  hasActiveNonArchivedWorkflowTask,
 } from "./workflow-store";
+import {
+  getWorkflowCurrentTaskId,
+  setWorkflowCurrentTask,
+} from "./workflow-current";
+import {
+  BOOTSTRAP_SPEC_TASK_ID,
+  BOOTSTRAP_TASK_DOCS,
+  SNFLOW_SPEC_DIR,
+  SNFLOW_SPEC_FILES,
+} from "./snflow-spec-templates";
 
 export type WorkflowSetupRecommendedAction = "initialize" | "update" | "ready";
 
@@ -42,6 +57,8 @@ export interface WorkflowSetupStatus {
   hasSnflowsDir: boolean;
   hasTasksDir: boolean;
   hasArchivedDir: boolean;
+  /** Project-owned specification directory exists. */
+  hasSpec: boolean;
   /** Workspace-relative store root, e.g. ".pi/snflows". */
   pathLabel: string;
   /** Application-bundled asset version (manifest). */
@@ -128,7 +145,7 @@ function toAbsolute(workspaceRoot: string, relativePath: string): string {
   return path.join(workspaceRoot, ...parts);
 }
 
-/** Case-insensitive containment check (Windows drive letter / realpath safe). */
+/** Case-insensitive containment check for canonical and lexical paths. */
 function pathIsInsideWorkspace(workspaceRoot: string, target: string): boolean {
   const root = path.resolve(workspaceRoot);
   const resolved = path.resolve(target);
@@ -136,6 +153,128 @@ function pathIsInsideWorkspace(workspaceRoot: string, target: string): boolean {
   const normTarget = process.platform === "win32" ? resolved.toLowerCase() : resolved;
   const rootWithSep = normRoot.endsWith(path.sep) ? normRoot : normRoot + path.sep;
   return normTarget === normRoot || normTarget.startsWith(rootWithSep);
+}
+
+function relativeLabel(workspaceRoot: string, target: string): string {
+  return (path.relative(workspaceRoot, target) || ".").split(path.sep).join("/");
+}
+
+function fsErrorCode(error: unknown): string {
+  return error instanceof Error && "code" in error ? String(error.code) : "";
+}
+
+function tryLstat(target: string): ReturnType<typeof lstatSync> | null {
+  try {
+    return lstatSync(target);
+  } catch (error) {
+    const code = fsErrorCode(error);
+    if (code === "ENOENT" || code === "ENOTDIR") return null;
+    throw error;
+  }
+}
+
+function safeRealPath(workspaceRoot: string, target: string): string {
+  let real: string;
+  try {
+    real = realpathSync.native(target);
+  } catch {
+    throw new WorkflowSecurityError(
+      `Cannot safely resolve setup path: ${relativeLabel(workspaceRoot, target)}`,
+    );
+  }
+  if (!pathIsInsideWorkspace(workspaceRoot, real)) {
+    throw new WorkflowSecurityError(
+      `Path escapes workspace: ${relativeLabel(workspaceRoot, target)}`,
+    );
+  }
+  return real;
+}
+
+/**
+ * Validate every existing path component stays inside the canonical workspace.
+ * Used as the setup write boundary before creating/updating SnFlow assets.
+ */
+function assertExistingPathBoundary(workspaceRoot: string, target: string): void {
+  const root = path.resolve(workspaceRoot);
+  const resolvedTarget = path.resolve(target);
+  if (!pathIsInsideWorkspace(root, resolvedTarget)) {
+    throw new WorkflowSecurityError(
+      `Refusing to access outside workspace: ${relativeLabel(root, resolvedTarget)}`,
+    );
+  }
+
+  const relative = path.relative(root, resolvedTarget);
+  const parts = relative ? relative.split(path.sep).filter(Boolean) : [];
+  let current = root;
+  safeRealPath(root, current);
+
+  for (let index = 0; index < parts.length; index += 1) {
+    current = path.join(current, parts[index]);
+    const stat = tryLstat(current);
+    if (!stat) break;
+
+    const real = safeRealPath(root, current);
+    const isFinal = index === parts.length - 1;
+    if (!isFinal && !statSync(real).isDirectory()) {
+      throw new WorkflowSecurityError(
+        `Expected setup parent directory: ${relativeLabel(root, current)}`,
+      );
+    }
+  }
+}
+
+/**
+ * Preflight for bootstrap active/archived task directories.
+ * Missing paths are valid; external escapes and any linked final task dir
+ * fail closed before setup mutates managed assets or the current pointer.
+ */
+function assertBootstrapTaskPathBoundary(workspaceRoot: string, target: string): void {
+  assertExistingPathBoundary(workspaceRoot, target);
+  const stat = tryLstat(target);
+  if (!stat) return;
+  if (stat.isSymbolicLink()) {
+    throw new WorkflowSecurityError(
+      `Refusing linked bootstrap task path: ${relativeLabel(workspaceRoot, target)}`,
+    );
+  }
+  if (!stat.isDirectory()) {
+    throw new WorkflowSecurityError(
+      `Expected bootstrap task directory: ${relativeLabel(workspaceRoot, target)}`,
+    );
+  }
+  safeRealPath(workspaceRoot, target);
+}
+
+function assertSetupWriteBoundary(workspaceRoot: string): void {
+  const destinations = [
+    path.join(workspaceRoot, ...WORKFLOW_ROOT_SEGMENTS),
+    path.join(workspaceRoot, ...WORKFLOW_ROOT_SEGMENTS, WORKFLOW_TASKS_DIR),
+    path.join(workspaceRoot, ...WORKFLOW_ROOT_SEGMENTS, "archived"),
+    path.join(workspaceRoot, ...WORKFLOW_ROOT_SEGMENTS, VERSION_FILE),
+    // current.json is written during bootstrap pointer setup; reject escapes first.
+    path.join(workspaceRoot, ...WORKFLOW_ROOT_SEGMENTS, "current.json"),
+    path.join(workspaceRoot, ".gitignore"),
+    toAbsolute(workspaceRoot, SNFLOW_SPEC_DIR),
+    ...SNFLOW_ASSET_FILES.map((file) => toAbsolute(workspaceRoot, file.path)),
+  ];
+  for (const destination of destinations) {
+    assertExistingPathBoundary(workspaceRoot, destination);
+  }
+
+  const bootstrapActive = path.join(
+    workspaceRoot,
+    ...WORKFLOW_ROOT_SEGMENTS,
+    WORKFLOW_TASKS_DIR,
+    BOOTSTRAP_SPEC_TASK_ID,
+  );
+  const bootstrapArchived = path.join(
+    workspaceRoot,
+    ...WORKFLOW_ROOT_SEGMENTS,
+    "archived",
+    BOOTSTRAP_SPEC_TASK_ID,
+  );
+  assertBootstrapTaskPathBoundary(workspaceRoot, bootstrapActive);
+  assertBootstrapTaskPathBoundary(workspaceRoot, bootstrapArchived);
 }
 
 function readProjectVersion(workflowsRoot: string): string | undefined {
@@ -235,6 +374,144 @@ function installManagedFiles(
   return written;
 }
 
+interface SpecInstallResult {
+  installed: string[];
+  /** True when an existing user-owned/safe-linked spec was left untouched. */
+  existed: boolean;
+}
+
+/**
+ * True when a safe existing specification directory is present.
+ * External symlink/junction escapes fail closed. Internal safe links are
+ * treated as user-owned and count as existing (setup skips writing).
+ */
+function getExistingSpecDirectory(workspaceRoot: string, specRoot: string): boolean {
+  const stat = tryLstat(specRoot);
+  if (!stat) return false;
+  assertExistingPathBoundary(workspaceRoot, specRoot);
+  if (stat.isSymbolicLink()) {
+    const real = safeRealPath(workspaceRoot, specRoot);
+    if (!statSync(real).isDirectory()) {
+      throw new WorkflowSecurityError(
+        `Expected SnFlow specification directory: ${relativeLabel(workspaceRoot, specRoot)}`,
+      );
+    }
+    return true;
+  }
+  if (!stat.isDirectory()) {
+    throw new WorkflowSecurityError(
+      `Expected SnFlow specification directory: ${relativeLabel(workspaceRoot, specRoot)}`,
+    );
+  }
+  return true;
+}
+
+/**
+ * Install the project specification skeleton only when `.pi/snflows/spec/` is
+ * absent. Existing directories (including empty ones and internal safe links) are
+ * left untouched. Uses per-file atomicWriteFile; a mid-process crash may leave
+ * a partial directory (accepted residual risk from the source design).
+ */
+function installSpecSkeletonIfMissing(workspaceRoot: string): SpecInstallResult {
+  const specRoot = toAbsolute(workspaceRoot, SNFLOW_SPEC_DIR);
+  assertExistingPathBoundary(workspaceRoot, path.dirname(specRoot));
+
+  if (getExistingSpecDirectory(workspaceRoot, specRoot)) {
+    return { installed: [], existed: true };
+  }
+
+  const installed: string[] = [];
+  for (const file of SNFLOW_SPEC_FILES) {
+    const abs = toAbsolute(workspaceRoot, file.path);
+    if (!pathIsInsideWorkspace(workspaceRoot, abs)) {
+      throw new WorkflowSecurityError(`Refusing to write outside workspace: ${file.path}`);
+    }
+    assertExistingPathBoundary(workspaceRoot, path.dirname(abs));
+    atomicWriteFile(path.resolve(abs), file.content);
+    installed.push(file.path);
+  }
+  return { installed, existed: false };
+}
+
+/**
+ * Restore current only when it points at a physical, valid, non-archived task
+ * under tasks/<id>. Never falls through to archived/.
+ */
+function getRestorableCurrentTaskId(workspaceRoot: string): string | null {
+  const taskId = getWorkflowCurrentTaskId(workspaceRoot);
+  if (!taskId) return null;
+  return hasActiveNonArchivedWorkflowTask(workspaceRoot, taskId) ? taskId : null;
+}
+
+/**
+ * Ensure the bootstrap task exists. Idempotent for active or archived
+ * bootstrap directories. On update, restores a restorable prior current task.
+ */
+function isPhysicalDirectory(target: string): boolean {
+  const stat = tryLstat(target);
+  return Boolean(stat && !stat.isSymbolicLink() && stat.isDirectory());
+}
+
+function ensureBootstrapSpecTask(
+  workspaceRoot: string,
+  lines: string[],
+  options: { restorePreviousCurrent: boolean },
+): void {
+  const ctx = createStoreContext(workspaceRoot);
+  const activeDir = path.join(ctx.tasksRoot, BOOTSTRAP_SPEC_TASK_ID);
+  const archivedDir = path.join(ctx.archiveRoot, BOOTSTRAP_SPEC_TASK_ID);
+  // Do not follow junctions/symlinks when deciding whether bootstrap exists.
+  const activeExists = isPhysicalDirectory(activeDir);
+  if (activeExists || isPhysicalDirectory(archivedDir)) {
+    if (activeExists && !options.restorePreviousCurrent) {
+      setWorkflowCurrentTask(ctx.workspaceRoot, BOOTSTRAP_SPEC_TASK_ID, { source: "select" });
+    }
+    lines.push(`Specification bootstrap task ${BOOTSTRAP_SPEC_TASK_ID} already exists; skipped.`);
+    return;
+  }
+
+  const previousTaskId = options.restorePreviousCurrent
+    ? getRestorableCurrentTaskId(ctx.workspaceRoot)
+    : null;
+  try {
+    createWorkflowTask(ctx.workspaceRoot, {
+      id: BOOTSTRAP_SPEC_TASK_ID,
+      title: BOOTSTRAP_TASK_DOCS.title,
+      description: BOOTSTRAP_TASK_DOCS.description,
+      priority: "P1",
+      requirements: BOOTSTRAP_TASK_DOCS.requirements,
+      design: BOOTSTRAP_TASK_DOCS.design,
+      plan: BOOTSTRAP_TASK_DOCS.plan,
+    });
+    if (previousTaskId && previousTaskId !== BOOTSTRAP_SPEC_TASK_ID) {
+      setWorkflowCurrentTask(ctx.workspaceRoot, previousTaskId, { source: "select" });
+    }
+    lines.push(
+      `Created specification bootstrap task ${BOOTSTRAP_SPEC_TASK_ID}; open it from the SnFlow panel.`,
+    );
+  } catch (error) {
+    lines.push(
+      `Warning: could not create specification bootstrap task: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
+function applySpecInstallResult(
+  workspaceRoot: string,
+  lines: string[],
+  options: { restorePreviousCurrent: boolean },
+): void {
+  const spec = installSpecSkeletonIfMissing(workspaceRoot);
+  if (spec.existed) {
+    lines.push(`Project specification directory ${SNFLOW_SPEC_DIR} already exists; left unchanged.`);
+    return;
+  }
+  lines.push(`Installed ${spec.installed.length} project specification skeleton file(s).`);
+  ensureBootstrapSpecTask(workspaceRoot, lines, {
+    restorePreviousCurrent: options.restorePreviousCurrent,
+  });
+}
+
 function writeVersionFile(workflowsRoot: string, version: string): void {
   atomicWriteFile(path.join(workflowsRoot, VERSION_FILE), `${version}\n`);
 }
@@ -313,6 +590,16 @@ export function getWorkflowSetupStatus(cwd: string): WorkflowSetupStatus {
   const hasTasksDir = isDirectory(ctx.tasksRoot);
   const hasSnflowsDir = isDirectory(ctx.workflowsRoot);
   const hasArchivedDir = isDirectory(ctx.archiveRoot);
+  let hasSpec = false;
+  try {
+    hasSpec = getExistingSpecDirectory(
+      ctx.workspaceRoot,
+      toAbsolute(ctx.workspaceRoot, SNFLOW_SPEC_DIR),
+    );
+  } catch {
+    // Status is informational; unsafe linked paths are never reported as specs.
+    hasSpec = false;
+  }
   const projectVersion = readProjectVersion(ctx.workflowsRoot);
   const missingManagedFiles = listMissingManagedFiles(ctx.workspaceRoot);
   const hasExtension = isFile(toAbsolute(ctx.workspaceRoot, EXTENSION_REL));
@@ -343,6 +630,7 @@ export function getWorkflowSetupStatus(cwd: string): WorkflowSetupStatus {
     hasSnflowsDir,
     hasTasksDir,
     hasArchivedDir,
+    hasSpec,
     pathLabel: WORKFLOW_ROOT_SEGMENTS.join("/"),
     bundledVersion: SNFLOW_ASSETS_VERSION,
     ...(projectVersion ? { projectVersion } : {}),
@@ -382,6 +670,7 @@ export function initializeWorkflowProject(
 ): WorkflowSetupCommandResponse {
   const trackInGit = options.trackInGit === true;
   const ctx = createStoreContext(cwd);
+  assertSetupWriteBoundary(ctx.workspaceRoot);
   const created = !isDirectory(ctx.tasksRoot);
   const lines: string[] = [];
 
@@ -408,6 +697,10 @@ export function initializeWorkflowProject(
   const written = installManagedFiles(ctx.workspaceRoot, SNFLOW_ASSET_FILES, webuiRoot);
   lines.push(`Installed ${written.length} managed SnFlow file(s):`);
   for (const file of written) lines.push(`  - ${file}`);
+
+  applySpecInstallResult(ctx.workspaceRoot, lines, {
+    restorePreviousCurrent: !created,
+  });
 
   writeVersionFile(ctx.workflowsRoot, SNFLOW_ASSETS_VERSION);
   lines.push(`Wrote ${WORKFLOW_ROOT_SEGMENTS.join("/")}/${VERSION_FILE} = ${SNFLOW_ASSETS_VERSION}`);
@@ -441,6 +734,7 @@ export function updateWorkflowProject(
 ): WorkflowSetupCommandResponse {
   const trackInGit = options.trackInGit === true;
   const ctx = createStoreContext(cwd);
+  assertSetupWriteBoundary(ctx.workspaceRoot);
   if (!isDirectory(ctx.tasksRoot)) {
     return {
       success: false,
@@ -473,6 +767,10 @@ export function updateWorkflowProject(
   const written = installManagedFiles(ctx.workspaceRoot, SNFLOW_ASSET_FILES, webuiRoot);
   lines.push(`Rewrote ${written.length} managed SnFlow file(s):`);
   for (const file of written) lines.push(`  - ${file}`);
+
+  applySpecInstallResult(ctx.workspaceRoot, lines, {
+    restorePreviousCurrent: true,
+  });
 
   writeVersionFile(ctx.workflowsRoot, SNFLOW_ASSETS_VERSION);
   lines.push(`Updated ${WORKFLOW_ROOT_SEGMENTS.join("/")}/${VERSION_FILE} = ${SNFLOW_ASSETS_VERSION}`);

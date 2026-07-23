@@ -71,12 +71,28 @@ export function buildWorkflowSystemGuidance(cwd: string): string | null {
       "Task file contract: task.json is mandatory source-of-truth metadata; requirements.md, design.md, and plan.md are the long-form docs; task.md is not a valid primary SnFlow task record.",
     ];
 
+    if (task.id === "00-bootstrap-spec" && task.status !== "completed" && task.status !== "cancelled") {
+      return [
+        "<workflow-state:spec_bootstrap>",
+        ...header,
+        "This special task initializes project specifications directly in the main session.",
+        "Read project source and configuration without modifying product files, then edit only files under .pi/snflows/spec/.",
+        "Do not dispatch implement/check agents or any other subagents for this bootstrap task.",
+        "Replace every (To be filled) placeholder with evidence-based conventions and keep all spec index status tables synchronized.",
+        `When the spec is complete, manually change ${base}/task.json status to ready_to_commit and update updatedAt.`,
+        "Commit remains a user handoff; after the user commits, complete and optionally archive the task.",
+        "The task.json status handoff is the only write outside .pi/snflows/spec/ allowed by this branch.",
+        "</workflow-state:spec_bootstrap>",
+      ].join("\n");
+    }
+
     if (task.status === "planning") {
       return [
         "<workflow-state:planning>",
         ...header,
         "Stay in planning. Load skill workflow-dev if available.",
         `Read first: ${base}/task.json, ${base}/requirements.md, ${base}/design.md, ${base}/plan.md`,
+        "Before development, read .pi/snflows/spec/index.md and relevant layer indexes when present.",
         `Edit docs only through the canonical files: ${base}/requirements.md, ${base}/design.md, ${base}/plan.md`,
         "Do not create or update task.md as the task authority.",
         "If workflow-task.ts fails because of Node/ESM/runtime issues, update task.json manually instead of blocking on the CLI.",
@@ -109,8 +125,9 @@ export function buildWorkflowSystemGuidance(cwd: string): string | null {
         "  npx tsx scripts/workflow-task.ts wait",
         "  npx tsx scripts/workflow-task.ts check",
         "  npx tsx scripts/workflow-task.ts wait",
-        "Do NOT edit project source files yourself in the main session for this task.",
-        "Sole inline exception: trivial fixes of roughly <=10 lines with no new files; still run check afterwards.",
+        "Before development, read .pi/snflows/spec/index.md and relevant layer indexes when present.",
+        "Do NOT edit project source files yourself in the main session for this task; files under .pi/snflows/spec/ are explicitly allowed for specification maintenance.",
+        "Sole source-code inline exception: trivial fixes of roughly <=10 lines with no new files; still run check afterwards.",
         "Recursion guard: if you are already the implement/check child, do not re-dispatch SnFlow agents.",
         "Never git commit/push/PR unless the user explicitly asks.",
         "Read task docs before editing code.",
@@ -123,6 +140,7 @@ export function buildWorkflowSystemGuidance(cwd: string): string | null {
         "<workflow-state:ready_to_commit>",
         ...header,
         "Check passed. Hand off commit to the user (do not commit unless asked).",
+        "If this task produced reusable conventions or lessons, write them to the relevant .pi/snflows/spec/ files and update the spec index status tables.",
         "After commit: npx tsx scripts/workflow-task.ts complete --hash <git-sha>",
         "Then optional: npx tsx scripts/workflow-task.ts archive",
         "Manual fallback for complete: set task.json status:'completed', completedAt:'<ISO>',",
@@ -135,6 +153,7 @@ export function buildWorkflowSystemGuidance(cwd: string): string | null {
       return [
         "<workflow-state:done>",
         ...header,
+        "If this task produced reusable conventions or lessons, write them to the relevant .pi/snflows/spec/ files and update the spec index status tables.",
         "Task is terminal. Archive if needed:",
         "  npx tsx scripts/workflow-task.ts archive",
         "Manual fallback for archive: move .pi/snflows/tasks/<id>/ to .pi/snflows/archived/<id>/,",

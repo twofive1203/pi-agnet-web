@@ -17,6 +17,7 @@ Then read:
 - `.pi/snflows/tasks/<id>/requirements.md`
 - `.pi/snflows/tasks/<id>/design.md`
 - `.pi/snflows/tasks/<id>/plan.md`
+- `.pi/snflows/spec/index.md` and relevant layer indexes (if present)
 
 ## Recursion guard
 
@@ -29,9 +30,10 @@ You are already the implementation child.
 ## Responsibilities
 
 1. Implement only what the task docs require.
-2. Follow existing project patterns.
-3. Run focused validation available in the repo (lint/typecheck/tests as applicable).
-4. Return a structured summary: changed files, validation, residual risks.
+2. Follow existing project patterns and applicable project specifications.
+3. If task documents conflict with a spec, follow the task documents and report the conflict as a residual risk.
+4. Run focused validation available in the repo (lint/typecheck/tests as applicable).
+5. Return a structured summary: changed files, validation, residual risks.
 
 ## Forbidden
 

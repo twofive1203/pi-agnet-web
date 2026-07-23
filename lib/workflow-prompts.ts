@@ -74,9 +74,11 @@ export function buildImplementPrompt(ctx: WorkflowPromptContext): string {
     `- ${ctx.pathLabels.requirements}`,
     `- ${ctx.pathLabels.design}`,
     `- ${ctx.pathLabels.plan}`,
+    "- .pi/snflows/spec/index.md (if present; also read relevant layer indexes)",
     "",
     "Implementation contract:",
     "- Implement only what the requirements/design/plan require for this task.",
+    "- Follow applicable project specifications. Task documents win if they conflict with a spec; report the conflict in residualRisks.",
     "- Prefer focused, reviewable changes. Do not drive-by refactor unrelated code.",
     "- Never git commit, push, merge, tag, or open a PR.",
     "- Never modify .trellis/ task metadata as part of this SnFlow task.",
@@ -111,6 +113,7 @@ export function buildCheckPrompt(ctx: WorkflowPromptContext): string {
     `- ${ctx.pathLabels.requirements}`,
     `- ${ctx.pathLabels.design}`,
     `- ${ctx.pathLabels.plan}`,
+    "- .pi/snflows/spec/index.md (if present; also read relevant layer indexes)",
     "",
     ctx.implementSummary
       ? `Latest implementation summary:\n${ctx.implementSummary}`
@@ -118,6 +121,7 @@ export function buildCheckPrompt(ctx: WorkflowPromptContext): string {
     "",
     "Review contract:",
     "- Verify the implementation matches requirements/design/plan.",
+    "- Verify the changes follow applicable project specifications; report violations as findings.",
     "- Prefer concrete findings with paths when possible.",
     "- Never git commit, push, merge, tag, or open a PR.",
     "- Never dispatch implement/check SnFlow agents or other subagents.",

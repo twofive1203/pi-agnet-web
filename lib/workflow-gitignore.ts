@@ -21,7 +21,8 @@ export const SNFLOW_GITIGNORE_END = "# <<< snflow-managed <<<";
 
 /** Paths written by SnFlow init/update that should stay out of git by default. */
 export const SNFLOW_GITIGNORE_PATTERNS = [
-  ".pi/snflows/",
+  ".pi/snflows/*",
+  "!.pi/snflows/spec/",
   ".pi/extensions/snflow/",
   ".pi/skills/snflow-dev/",
   ".pi/agents/snflow-implement.md",

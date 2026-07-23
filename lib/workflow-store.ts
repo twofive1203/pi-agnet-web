@@ -841,6 +841,27 @@ export function getWorkflowTaskDetail(cwd: string, taskId: string): WorkflowTask
   };
 }
 
+/**
+ * True only when `taskId` exists under a real (non-linked) `tasks/<id>`
+ * directory with parseable metadata and `archived === false`.
+ * Never falls through to archived/; used for current-pointer restoration.
+ */
+export function hasActiveNonArchivedWorkflowTask(cwd: string, taskId: string): boolean {
+  if (!isValidWorkflowTaskId(taskId)) return false;
+  try {
+    const ctx = createStoreContext(cwd);
+    const active = taskDir(ctx, taskId, false);
+    const stat = lstatSync(active);
+    // Reject symlink/junction task dirs; require a physical tasks/<id> tree.
+    if (stat.isSymbolicLink() || !stat.isDirectory()) return false;
+    assertPathWithinWorkspace(active, ctx.workspaceRoot, "dir");
+    const task = readTaskJson(active, taskId, ctx.workspaceRoot);
+    return task.archived === false;
+  } catch {
+    return false;
+  }
+}
+
 export function createWorkflowTask(cwd: string, input: WorkflowCreateTaskInput): WorkflowTaskDetail {
   const ctx = createStoreContext(cwd);
   const title = input.title?.trim() ?? "";
