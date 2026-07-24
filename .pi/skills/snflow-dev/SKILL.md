@@ -1,6 +1,6 @@
 ---
 name: snflow-dev
-description: "Use Snail Pi Web native SnFlow tasks under .pi/snflows/tasks/ for development work. Create tasks from chat (like Trellis task.py create), maintain requirements/design/plan, and guide implement/check via the SnFlow panel or project CLI. Prefer this over Trellis when the user wants WebUI-owned workflow or the project has no .trellis."
+description: "Use Snail Pi Web native SnFlow tasks under .pi/snflows/tasks/ for development work. Create and plan tasks in chat, then dispatch the managed snflow-implement and snflow-check project agents. Prefer this over Trellis for WebUI-owned workflow."
 ---
 
 # SnFlow development workflow
@@ -84,7 +84,7 @@ Active SnFlow task: .pi/snflows/tasks/<id>
 - Implementation follows applicable specs; active task documents win on conflicts, and the conflict must be reported.
 - Check compares the diff against applicable specs and reports violations as findings.
 - Before finish, capture reusable conventions or lessons in the relevant spec file and update its index status table.
-- Specification maintenance under `.pi/snflows/spec/` is allowed in the main session even though product source remains worker-owned.
+- Specification maintenance under `.pi/snflows/spec/` is allowed in the main session even though product source remains phase-agent-owned.
 - Special task `00-bootstrap-spec`: scan source read-only, fill the spec, then create or idempotently update the project-root `AGENTS.md` with the exact managed block from the task plan. Preserve all content outside the markers. Do not dispatch implement/check or other subagents. When complete, manually set its `task.json` status to `ready_to_commit` for user commit handoff.
 
 ## Phase 1 — Plan
@@ -94,11 +94,11 @@ Active SnFlow task: .pi/snflows/tasks/<id>
 - Edit `requirements.md`, `design.md`, `plan.md`.
 - Consent to create ≠ consent to implement.
 
-When the user approves implementation, mark the task ready, re-read its revision, and call the current chat native `subagent` tool with builtin `worker`, `context:fresh`, canonical `cwd`, `async:false`, and `clarify:false`. The task prompt must begin with the exact `SNFLOW_DISPATCH` v1 marker.
+When the user approves implementation, mark the task ready, re-read its revision, and call the current chat native `subagent` tool with project agent `snflow-implement`, `context:fresh`, canonical `cwd`, `async:false`, and `clarify:false`. The task prompt must begin with the exact `SNFLOW_DISPATCH` v1 marker.
 
 ## Phase 2 — Execute
 
-Main session is orchestrator only. It directly calls builtin `worker` for implement and builtin `reviewer` for check using a marked foreground native `subagent` call. Native tool updates, cancellation, and the final result remain in the current chat; never substitute a bash/CLI wait.
+Main session is orchestrator only. It calls project agent `snflow-implement` for implement and `snflow-check` for check using a marked foreground native `subagent` call. The agent definitions own the stable phase responsibilities and safety boundaries; the marked task prompt supplies dynamic task context and the result contract. Native tool updates, cancellation, and the final result remain in the current chat; do not substitute a CLI/RPC wait.
 
 ### Recursion guards
 - If you are already the implement/check child, do **not** re-dispatch SnFlow implement/check.

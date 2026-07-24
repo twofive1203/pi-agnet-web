@@ -96,7 +96,7 @@ function directDispatch(cwd: string, task: { id: string; title: string; revision
   if (!task.revision) {
     return "Task revision is missing or stale. Open/save the task in SnFlow before dispatch; fail closed instead of inventing a revision.";
   }
-  const agent = phase === "implement" ? "worker" : "reviewer";
+  const agent = phase === "implement" ? "snflow-implement" : "snflow-check";
   const marker = "SNFLOW_DISPATCH " + JSON.stringify({
     v: 1,
     taskId: task.id,
@@ -113,7 +113,7 @@ function directDispatch(cwd: string, task: { id: string; title: string; revision
     "- clarify: false",
     "- task first line must be exactly:",
     marker,
-    "After that marker, include the task id/title, required task document paths, spec reads, no-recursion/no-commit rules, focused validation, and the structured result contract.",
+    "After the marker, provide the task id/title/revision, task document and spec paths, latest implement summary when checking, focused validation expectations, and the structured result contract.",
     "Do not run scripts/snflow-task.ts implement, check, or wait.",
   ].join("\n");
 }
@@ -215,10 +215,9 @@ function buildGuidance(cwd: string): string | null {
       "<!-- END SNFLOW SPEC -->) for spec-reading guidance specific to this project.",
       `Edit docs only through the canonical files: ${base}/requirements.md, ${base}/design.md, ${base}/plan.md`,
       "Do not create or update task.md as the task authority.",
-      "When the user approves implementation, mark the task ready, re-read task.json for its resulting revision, then call the current chat native subagent tool with builtin worker.",
+      "When the user approves implementation, mark the task ready, re-read task.json for its resulting revision, then dispatch the project agent snflow-implement.",
       "Use context:fresh, this canonical cwd, async:false and clarify:false. The task prompt must begin with the SNFLOW_DISPATCH v1 marker containing the resulting revision.",
-      "Do not run scripts/snflow-task.ts implement, check, or wait; do not replace native progress with a bash wait.",
-      "Approval to implement means dispatch the worker subagent — do NOT implement the code yourself in the main session.",
+      "Approval to implement means dispatch snflow-implement; the main session remains the orchestrator.",
       "The panel Mark Ready action or scripts/snflow-task.ts start may perform the planning-to-ready transition.",
       "Do not start large implementation before the task is ready.",
       "</workflow-state:planning>",
@@ -244,12 +243,8 @@ function buildGuidance(cwd: string): string | null {
       "Main-session default flow: implement -> check -> ready_to_commit -> user commit -> complete/archive.",
       "The current chat native subagent tool is the only implement/check path; its tool updates drive the top Subagents panel.",
       dispatch,
-      "Before development, read .pi/snflows/spec/index.md and relevant layer indexes when present.",
-      "Also read the project-root AGENTS.md SnFlow managed section for spec-reading guidance.",
-      "Do NOT edit project source files yourself in the main session for this task; files under .pi/snflows/spec/ are explicitly allowed for specification maintenance.",
-      "Recursion guard: if you are already the implement/check child, do not re-dispatch SnFlow agents.",
-      "Never git commit/push/PR unless the user explicitly asks.",
-      "Read task docs before editing code.",
+      "The main session coordinates lifecycle and spec maintenance; the dispatched phase agent owns product-source implementation or review.",
+      "Read the task documents and applicable spec indexes before dispatch, and hand commit control back to the user after check passes.",
       "</workflow-state:in_progress>",
     ].join("\n");
   }
