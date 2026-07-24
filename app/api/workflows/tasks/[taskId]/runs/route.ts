@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAllowedRoots, isPathAllowed } from "@/lib/allowed-roots";
-import { startWorkflowRun, WorkflowRuntimeError } from "@/lib/workflow-run-manager";
+import { prepareWorkflowChatDispatch } from "@/lib/workflow-chat-lifecycle";
 import { WorkflowSecurityError, WorkflowStoreError } from "@/lib/workflow-store";
 import { isValidWorkflowTaskId, isWorkflowRunPhase } from "@/lib/workflow-types";
 
@@ -42,21 +42,21 @@ export async function POST(
       return NextResponse.json({ error: "expectedRevision is required" }, { status: 400 });
     }
 
-    const result = await startWorkflowRun({
+    const result = prepareWorkflowChatDispatch(
       cwd,
       taskId,
-      phase: body.phase,
-      expectedRevision: body.expectedRevision,
-    });
+      body.phase,
+      body.expectedRevision,
+    );
 
-    return NextResponse.json(result, { status: 201 });
+    return NextResponse.json(result);
   } catch (error) {
     return errorResponse(error);
   }
 }
 
 function errorResponse(error: unknown): NextResponse {
-  if (error instanceof WorkflowStoreError || error instanceof WorkflowRuntimeError) {
+  if (error instanceof WorkflowStoreError) {
     const status = error instanceof WorkflowSecurityError ? 400 : error.status;
     return NextResponse.json({ error: error.message, code: error.code }, { status });
   }

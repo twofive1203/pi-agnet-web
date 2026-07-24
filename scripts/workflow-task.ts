@@ -3,10 +3,10 @@
  * Trellis-like SnFlow CLI for chat agents.
  *
  * Lifecycle:
- *   create → (edit docs) → start → implement → check → complete → archive
+ *   create → (edit docs) → start → direct native subagent → complete → archive
  *
- * implement/check dispatch through the same server-side native pi-subagents host
- * as the SnFlow panel (cwd-bound). No panel clicking required.
+ * Implement/check execution is owned by the current chat's foreground native
+ * subagent tool. This CLI remains task-management and legacy diagnostics only.
  */
 
 import {
@@ -24,8 +24,6 @@ import {
   getWorkflowCurrentTaskId,
   setWorkflowCurrentTask,
 } from "../lib/workflow-current";
-import { WORKFLOW_TERMINAL_RUN_STATES } from "../lib/workflow-types";
-
 /** Lazy import for workflow-run-manager (requires pi SDK, which is ESM-only). */
 function lazyRunManager(): Promise<typeof import("../lib/workflow-run-manager")> {
   return import("../lib/workflow-run-manager");
@@ -39,9 +37,9 @@ function usage(): never {
   workflow-task use <taskId> [--cwd <path>]
   workflow-task show [taskId] [--cwd <path>]
   workflow-task list [--cwd <path>]
-  workflow-task implement [--cwd <path>] [taskId]
-  workflow-task check [--cwd <path>] [taskId]
-  workflow-task wait [--cwd <path>] [runId|taskId]
+  workflow-task implement   # deprecated: use current-chat native subagent
+  workflow-task check       # deprecated: use current-chat native subagent
+  workflow-task wait        # deprecated: native tool lifecycle is foreground
   workflow-task cancel [--cwd <path>] [runId|taskId]
   workflow-task complete [--cwd <path>] [--hash <sha>] [--note <text>] [taskId]
   workflow-task commit --hash <sha> [--cwd <path>] [--note <text>] [taskId]
@@ -113,45 +111,10 @@ function printActive(taskId: string) {
   console.log(`Active SnFlow task: .pi/snflows/tasks/${taskId}`);
 }
 
-async function dispatchPhase(cwd: string, taskId: string, phase: "implement" | "check") {
-  const rm = await lazyRunManager();
-  const detail = getWorkflowTaskDetail(cwd, taskId);
-  setWorkflowCurrentTask(cwd, taskId, { source: "cli", sessionId: sessionIdFromEnv() });
-  const result = await rm.startWorkflowRun({
-    cwd,
-    taskId,
-    phase,
-    expectedRevision: detail.revision,
-  });
-  console.log(`phase=${phase}`);
-  console.log(`runId=${result.run.id}`);
-  console.log(`state=${result.run.state}`);
-  console.log(`taskStatus=${result.task.status}`);
-  printActive(taskId);
-  if (result.run.error) {
-    console.error(`error=${result.run.error.code}: ${result.run.error.message}`);
-    process.exitCode = 1;
-  }
-}
-
-async function waitForRun(cwd: string, runId: string, timeoutMs = 30 * 60_000) {
-  const rm = await lazyRunManager();
-  const started = Date.now();
-  while (Date.now() - started < timeoutMs) {
-    const { run, task } = await rm.getWorkflowRunStatus(cwd, runId);
-    console.log(`state=${run.state} taskStatus=${task.status}`);
-    if (WORKFLOW_TERMINAL_RUN_STATES.has(run.state)) {
-      if (run.summary) console.log(`summary=${run.summary.slice(0, 2000)}`);
-      if (run.error) {
-        console.error(`error=${run.error.code}: ${run.error.message}`);
-        process.exitCode = 1;
-      }
-      printActive(task.id);
-      return;
-    }
-    await new Promise((r) => setTimeout(r, 2500));
-  }
-  throw new Error(`Timed out waiting for run ${runId}`);
+function deprecatedDispatchCommand(command: "implement" | "check" | "wait"): never {
+  throw new Error(
+    `workflow-task ${command} is deprecated. Use the current chat foreground native subagent tool with the SnFlow dispatch marker; do not use a CLI wait.`,
+  );
 }
 
 export async function main() {
@@ -245,27 +208,8 @@ export async function main() {
     return;
   }
 
-  if (cmd === "implement") {
-    const taskId = resolveTaskId(cwd, pos[0]);
-    await dispatchPhase(cwd, taskId, "implement");
-    return;
-  }
-
-  if (cmd === "check") {
-    const taskId = resolveTaskId(cwd, pos[0]);
-    await dispatchPhase(cwd, taskId, "check");
-    return;
-  }
-
-  if (cmd === "wait") {
-    const maybe = pos[0];
-    const detail = taskDetailForRunReference(cwd, maybe);
-    const runId = detail
-      ? detail.activeRunId ?? detail.latestCheckRunId ?? detail.latestImplementRunId ?? undefined
-      : maybe;
-    if (!runId) throw new Error(`No run to wait on for task ${detail?.id ?? "(current)"}`);
-    await waitForRun(cwd, runId);
-    return;
+  if (cmd === "implement" || cmd === "check" || cmd === "wait") {
+    deprecatedDispatchCommand(cmd);
   }
 
   if (cmd === "cancel") {

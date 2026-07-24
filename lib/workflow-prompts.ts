@@ -2,17 +2,36 @@
  * Prompt builders and structured-output normalizers for SnFlow implement/check phases.
  */
 
-import type {
-  WorkflowCheckFinding,
-  WorkflowCheckResult,
-  WorkflowCheckVerdict,
-  WorkflowImplementResult,
-  WorkflowRunPhase,
-  WorkflowValidationResult,
+import {
+  isValidWorkflowTaskId,
+  isWorkflowRunPhase,
+  type WorkflowCheckFinding,
+  type WorkflowCheckResult,
+  type WorkflowCheckVerdict,
+  type WorkflowImplementResult,
+  type WorkflowRunPhase,
+  type WorkflowValidationResult,
 } from "./workflow-types";
 
+export const WORKFLOW_DISPATCH_PROTOCOL_VERSION = 1 as const;
+export const WORKFLOW_DISPATCH_MARKER_PREFIX = "SNFLOW_DISPATCH ";
 export const WORKFLOW_IMPLEMENT_AGENT = "worker";
 export const WORKFLOW_CHECK_AGENT = "reviewer";
+
+export interface WorkflowDispatchMarker {
+  v: typeof WORKFLOW_DISPATCH_PROTOCOL_VERSION;
+  taskId: string;
+  phase: WorkflowRunPhase;
+  revision: string;
+  cwd: string;
+}
+
+export class WorkflowDispatchMarkerError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "WorkflowDispatchMarkerError";
+  }
+}
 
 export interface WorkflowPromptContext {
   taskId: string;
@@ -41,6 +60,56 @@ function asString(value: unknown): string | undefined {
 function asStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+}
+
+export function buildWorkflowDispatchMarker(
+  marker: Omit<WorkflowDispatchMarker, "v">,
+): string {
+  return `${WORKFLOW_DISPATCH_MARKER_PREFIX}${JSON.stringify({
+    v: WORKFLOW_DISPATCH_PROTOCOL_VERSION,
+    taskId: marker.taskId,
+    phase: marker.phase,
+    revision: marker.revision,
+    cwd: marker.cwd,
+  })}`;
+}
+
+/** Returns null for ordinary prompts and throws for a malformed SnFlow marker. */
+export function parseWorkflowDispatchMarker(text: unknown): WorkflowDispatchMarker | null {
+  if (typeof text !== "string") return null;
+  const firstLine = text.split(/\r?\n/, 1)[0] ?? "";
+  if (!firstLine.startsWith(WORKFLOW_DISPATCH_MARKER_PREFIX)) return null;
+  if (firstLine.length > 4096) {
+    throw new WorkflowDispatchMarkerError("SnFlow dispatch marker exceeds 4096 characters");
+  }
+  let raw: unknown;
+  try {
+    raw = JSON.parse(firstLine.slice(WORKFLOW_DISPATCH_MARKER_PREFIX.length));
+  } catch {
+    throw new WorkflowDispatchMarkerError("SnFlow dispatch marker is not valid JSON");
+  }
+  if (!isRecord(raw) || raw.v !== WORKFLOW_DISPATCH_PROTOCOL_VERSION) {
+    throw new WorkflowDispatchMarkerError("Unsupported SnFlow dispatch marker version");
+  }
+  if (!isValidWorkflowTaskId(raw.taskId)) {
+    throw new WorkflowDispatchMarkerError("Invalid SnFlow dispatch task id");
+  }
+  if (!isWorkflowRunPhase(raw.phase)) {
+    throw new WorkflowDispatchMarkerError("Invalid SnFlow dispatch phase");
+  }
+  if (typeof raw.revision !== "string" || !/^[a-f0-9]{16}$/.test(raw.revision)) {
+    throw new WorkflowDispatchMarkerError("Invalid SnFlow dispatch task revision");
+  }
+  if (typeof raw.cwd !== "string" || !raw.cwd.trim() || raw.cwd.length > 2048) {
+    throw new WorkflowDispatchMarkerError("Invalid SnFlow dispatch cwd");
+  }
+  return {
+    v: WORKFLOW_DISPATCH_PROTOCOL_VERSION,
+    taskId: raw.taskId,
+    phase: raw.phase,
+    revision: raw.revision,
+    cwd: raw.cwd,
+  };
 }
 
 function normalizeValidation(value: unknown): WorkflowValidationResult[] {
@@ -139,7 +208,31 @@ export function buildCheckPrompt(ctx: WorkflowPromptContext): string {
 }
 
 export function buildPhasePrompt(ctx: WorkflowPromptContext): string {
-  return ctx.phase === "implement" ? buildImplementPrompt(ctx) : buildCheckPrompt(ctx);
+  const marker = buildWorkflowDispatchMarker({
+    taskId: ctx.taskId,
+    phase: ctx.phase,
+    revision: ctx.taskRevision,
+    cwd: ctx.cwd,
+  });
+  const body = ctx.phase === "implement" ? buildImplementPrompt(ctx) : buildCheckPrompt(ctx);
+  return `${marker}\n\n${body}`;
+}
+
+export function buildDirectSubagentInstruction(ctx: WorkflowPromptContext): string {
+  const agent = agentNameForPhase(ctx.phase);
+  return [
+    `Call the current chat's native subagent tool once using builtin ${agent}.`,
+    `agent: ${agent}`,
+    "context: fresh",
+    `cwd: ${ctx.cwd}`,
+    "async: false (foreground; do not detach)",
+    "clarify: false",
+    "task must be exactly the following marked prompt:",
+    "```text",
+    buildPhasePrompt(ctx),
+    "```",
+    "Do not run scripts/snflow-task.ts implement, check, or wait.",
+  ].join("\n");
 }
 
 export function agentNameForPhase(phase: WorkflowRunPhase): string {

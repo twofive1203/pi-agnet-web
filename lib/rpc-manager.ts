@@ -1,5 +1,7 @@
 import { createAgentSession, SessionManager } from "@earendil-works/pi-coding-agent";
 import { cleanupSessionResources } from "@earendil-works/pi-ai";
+import { statSync } from "fs";
+import path from "path";
 import { cacheSessionPath } from "./session-reader";
 import { recordSessionFileChangeEvent } from "./session-file-changes";
 import { canonicalizeCwd } from "./cwd";
@@ -26,6 +28,33 @@ interface ToolSelection {
 }
 
 const READ_ONLY_TOOL_NAMES = new Set(["read", "grep", "find", "ls"]);
+const SNFLOW_CHAT_LIFECYCLE_EXTENSION_PATH = "<inline:snflow-chat-lifecycle>";
+
+interface ExtensionLoadProjection {
+  extensions: Array<{ path: string }>;
+  errors: Array<{ path: string; error: string }>;
+}
+
+export function isSnflowLifecycleRequired(cwd: string): boolean {
+  try {
+    return statSync(path.join(canonicalizeCwd(cwd), ".pi", "snflows", "tasks")).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+export function getSnflowChatLifecycleLoadDiagnostic(result: ExtensionLoadProjection): string | null {
+  const matchingErrors = result.errors
+    .filter((error) => error.path === SNFLOW_CHAT_LIFECYCLE_EXTENSION_PATH)
+    .map((error) => error.error);
+  if (matchingErrors.length > 0) {
+    return `${SNFLOW_CHAT_LIFECYCLE_EXTENSION_PATH} failed to load: ${matchingErrors.join("; ")}`;
+  }
+  if (!result.extensions.some((extension) => extension.path === SNFLOW_CHAT_LIFECYCLE_EXTENSION_PATH)) {
+    return `${SNFLOW_CHAT_LIFECYCLE_EXTENSION_PATH} was not loaded`;
+  }
+  return null;
+}
 
 function isToolPresetMode(value: unknown): value is ToolPresetMode {
   return value === "all" || value === "read-only" || value === "none";
@@ -76,6 +105,7 @@ export class AgentSessionWrapper {
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
   private onDestroyCallback: (() => void) | null = null;
   private extensionUiBridge: ExtensionWebUiBridge;
+  private activeToolCallIds = new Set<string>();
   private _alive = true;
 
   constructor(public readonly inner: AgentSessionLike, public readonly cwd: string) {
@@ -97,9 +127,18 @@ export class AgentSessionWrapper {
     return this._alive;
   }
 
+  isToolCallActive(toolCallId: string): boolean {
+    return this.activeToolCallIds.has(toolCallId);
+  }
+
   start(): void {
     this.unsubscribe = this.inner.subscribe((event: AgentEvent) => {
       this.resetIdleTimer();
+      if (event.type === "tool_execution_start" && typeof event.toolCallId === "string") {
+        this.activeToolCallIds.add(event.toolCallId);
+      } else if (event.type === "tool_execution_end" && typeof event.toolCallId === "string") {
+        this.activeToolCallIds.delete(event.toolCallId);
+      }
       let fileChangeUpdate: AgentEvent | null = null;
       try {
         const result = recordSessionFileChangeEvent({
@@ -397,6 +436,7 @@ export class AgentSessionWrapper {
     this._alive = false;
     if (this.idleTimer) clearTimeout(this.idleTimer);
     this.unsubscribe?.();
+    this.activeToolCallIds.clear();
     this.extensionUiBridge.rejectAll();
     try {
       this.inner.dispose?.();
@@ -514,6 +554,7 @@ export async function startRpcSession(
     // - Initialized without project extension: legacy WebUI appendSystemPrompt guidance.
     // - Initialized with project extension: extension owns before_agent_start.
     let resourceLoader: InstanceType<typeof DefaultResourceLoader> | undefined;
+    const snflowLifecycleRequired = isSnflowLifecycleRequired(cwd);
     try {
       const {
         hasWorkflowExtension,
@@ -523,6 +564,7 @@ export async function startRpcSession(
         isSnflowManagedSkill,
       } = await import("./workflow-setup");
       const { buildWorkflowSystemGuidance } = await import("./workflow-guidance");
+      const { createWorkflowChatLifecycleExtension } = await import("./workflow-chat-lifecycle");
       const snflowActive = isSnflowActiveForSession(cwd);
       const settingsManager = SettingsManager.create(cwd, agentDir);
 
@@ -544,21 +586,29 @@ export async function startRpcSession(
             agentsFiles: base.agentsFiles.filter((file) => !isSnflowManagedAgentPath(file.path)),
           }),
         });
-        await resourceLoader.reload();
-      } else if (!hasWorkflowExtension(cwd)) {
-        const guidance = buildWorkflowSystemGuidance(cwd);
-        if (guidance) {
-          resourceLoader = new DefaultResourceLoader({
-            cwd,
-            agentDir,
-            settingsManager,
-            appendSystemPrompt: [guidance],
-          });
-          await resourceLoader.reload();
-        }
+      } else {
+        const guidance = hasWorkflowExtension(cwd) ? null : buildWorkflowSystemGuidance(cwd);
+        resourceLoader = new DefaultResourceLoader({
+          cwd,
+          agentDir,
+          settingsManager,
+          extensionFactories: [createWorkflowChatLifecycleExtension(cwd)],
+          ...(guidance ? { appendSystemPrompt: [guidance] } : {}),
+        });
       }
-    } catch {
-      // SnFlow guidance/filtering is best-effort; never block chat session start.
+      await resourceLoader.reload();
+      if (snflowActive) {
+        const lifecycleDiagnostic = getSnflowChatLifecycleLoadDiagnostic(resourceLoader.getExtensions());
+        if (lifecycleDiagnostic) throw new Error(lifecycleDiagnostic);
+      }
+    } catch (error) {
+      if (snflowLifecycleRequired) {
+        const message = error instanceof Error ? error.message : String(error);
+        throw new Error(
+          `SnFlow lifecycle validator failed to initialize; native subagent dispatch is blocked for this session: ${message}`,
+        );
+      }
+      // General sessions keep the SDK's default loader when optional SnFlow filtering is unavailable.
       resourceLoader = undefined;
     }
 

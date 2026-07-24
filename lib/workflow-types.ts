@@ -119,6 +119,9 @@ export interface WorkflowRunRecord {
   effectiveCwd: string;
   hostSessionId: string;
   taskRevision: string;
+  /** Parent chat correlation for direct foreground native subagent dispatch. */
+  parentSessionId?: string;
+  parentToolCallId?: string;
   nativeRunId: string | null;
   asyncDir: string | null;
   sessionFile: string | null;

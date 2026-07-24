@@ -4,8 +4,9 @@
  */
 
 import { getWorkflowCurrentTaskId } from "./workflow-current";
-import { getWorkflowTaskDetail } from "./workflow-store";
-import type { WorkflowTaskStatus } from "./workflow-types";
+import { getWorkflowTaskDetail, getWorkflowTaskDocumentsPaths } from "./workflow-store";
+import { buildDirectSubagentInstruction } from "./workflow-prompts";
+import type { WorkflowRunPhase, WorkflowTaskDetail, WorkflowTaskStatus } from "./workflow-types";
 
 export type WorkflowPhaseLabel = "plan" | "execute" | "finish" | "idle";
 
@@ -27,6 +28,27 @@ export function workflowPhaseForStatus(status: WorkflowTaskStatus): WorkflowPhas
     default:
       return "idle";
   }
+}
+
+function directDispatchInstruction(
+  cwd: string,
+  task: WorkflowTaskDetail,
+  phase: WorkflowRunPhase,
+): string {
+  const paths = getWorkflowTaskDocumentsPaths(cwd, task.id);
+  const implementSummary =
+    phase === "check"
+      ? task.runs.find((run) => run.id === task.latestImplementRunId)?.summary ?? null
+      : null;
+  return buildDirectSubagentInstruction({
+    taskId: task.id,
+    title: task.title,
+    cwd,
+    pathLabels: paths.pathLabels,
+    phase,
+    implementSummary,
+    taskRevision: task.revision,
+  });
 }
 
 export function buildWorkflowSystemGuidance(cwd: string): string | null {
@@ -101,13 +123,12 @@ export function buildWorkflowSystemGuidance(cwd: string): string | null {
         `Edit docs only through the canonical files: ${base}/requirements.md, ${base}/design.md, ${base}/plan.md`,
         "Do not create or update task.md as the task authority.",
         "If workflow-task.ts fails because of Node/ESM/runtime issues, update task.json manually instead of blocking on the CLI.",
-        "When the user approves implementation, do all of this in the same turn without asking again:",
-        "  npx tsx scripts/workflow-task.ts start",
-        "  npx tsx scripts/workflow-task.ts implement",
-        "  npx tsx scripts/workflow-task.ts wait",
+        "When the user approves implementation, mark the task ready, re-read task.json for its resulting revision, then call the current chat native subagent tool with builtin worker.",
+        "The native call must use context:fresh, this canonical cwd, async:false, and clarify:false; its task prompt must begin with the SNFLOW_DISPATCH v1 marker containing the resulting revision.",
+        "Do not run workflow-task.ts implement, check, or wait. Do not replace the native lifecycle with a bash wait.",
         "Approval to implement means dispatch the worker subagent — do NOT implement the code yourself in the main session.",
-        "Manual fallback for start: change task.json status from planning to ready and update updatedAt.",
-        "Do not start large implementation before start.",
+        "The panel Mark Ready action or workflow-task.ts start may perform the planning-to-ready transition.",
+        "Do not start large implementation before the task is ready.",
         "</workflow-state:planning>",
       ].join("\n");
     }
@@ -120,20 +141,21 @@ export function buildWorkflowSystemGuidance(cwd: string): string | null {
       task.status === "changes_requested" ||
       task.status === "failed"
     ) {
+      const dispatch =
+        task.status === "review_ready"
+          ? directDispatchInstruction(cwd, task, "check")
+          : task.status === "implementing" || task.status === "checking"
+            ? "A marked foreground native subagent call is already active. Do not dispatch a duplicate phase."
+            : directDispatchInstruction(cwd, task, "implement");
       return [
         "<workflow-state:in_progress>",
         ...header,
-        "Main-session default flow (Trellis-like):",
-        "  implement -> check -> ready_to_commit -> user commit -> complete/archive",
-        "You are the orchestrator. Implementation MUST run in the worker subagent, not the main session:",
-        "  npx tsx scripts/workflow-task.ts implement",
-        "  npx tsx scripts/workflow-task.ts wait",
-        "  npx tsx scripts/workflow-task.ts check",
-        "  npx tsx scripts/workflow-task.ts wait",
+        "Main-session default flow: implement -> check -> ready_to_commit -> user commit -> complete/archive.",
+        "The current chat native subagent tool is the only implement/check execution path; its normal tool updates drive the top Subagents panel.",
+        dispatch,
         "Before development, read .pi/snflows/spec/index.md and relevant layer indexes when present.",
         "Also read the project-root AGENTS.md SnFlow managed section for spec-reading guidance.",
         "Do NOT edit project source files yourself in the main session for this task; files under .pi/snflows/spec/ are explicitly allowed for specification maintenance.",
-        "Sole source-code inline exception: trivial fixes of roughly <=10 lines with no new files; still run check afterwards.",
         "Recursion guard: if you are already the implement/check child, do not re-dispatch SnFlow agents.",
         "Never git commit/push/PR unless the user explicitly asks.",
         "Read task docs before editing code.",

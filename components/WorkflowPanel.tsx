@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { MarkdownBody } from "./MarkdownBody";
 import { useT } from "./I18nProvider";
+import { sendAgentCommand } from "@/lib/agent-client";
 import type {
   WorkflowPriority,
   WorkflowRunRecord,
@@ -31,6 +32,7 @@ interface TasksResponse extends WorkflowTasksListResponse {
 
 interface DetailResponse {
   task?: WorkflowTaskDetail;
+  dispatchPrompt?: string;
   error?: string;
   code?: string;
 }
@@ -547,26 +549,41 @@ export function WorkflowPanel({
 
   async function handleStartRun(phase: "implement" | "check") {
     if (!cwd || !detail) return;
+    if (!sessionId) {
+      setActionError("Open a chat session in this workspace to run SnFlow through the native subagent tool.");
+      return;
+    }
     await runAction(async () => {
       const res = await fetch(
-        `/api/workflows/tasks/${encodeURIComponent(detail.id)}/runs?cwd=${encodeURIComponent(cwd)}`,
+        `/api/workflows/tasks/${encodeURIComponent(detail.id)}/runs?cwd=${encodeURIComponent(resolvedCwd ?? cwd)}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ phase, expectedRevision: detail.revision }),
         },
       );
-      const body = (await res.json()) as DetailResponse & { run?: WorkflowRunRecord };
-      if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
-      if (body.task) applyDetail(body.task);
+      const body = (await res.json()) as DetailResponse;
+      if (!res.ok || !body.dispatchPrompt) {
+        throw new Error(body.error || `HTTP ${res.status}`);
+      }
+      await sendAgentCommand(sessionId, {
+        type: "prompt",
+        message: body.dispatchPrompt,
+      });
       setDocTab("runs");
-      await loadTasks();
+      await loadTasks({ silent: true });
     });
   }
 
   async function handleCancelRun() {
     if (!cwd || !detail?.activeRunId) return;
     await runAction(async () => {
+      const activeRun = detail.runs.find((run) => run.id === detail.activeRunId);
+      if (sessionId && activeRun?.parentSessionId === sessionId) {
+        await sendAgentCommand(sessionId, { type: "abort" });
+        await loadTasks({ silent: true });
+        return;
+      }
       const res = await fetch(
         `/api/workflows/runs/${encodeURIComponent(detail.activeRunId!)}/cancel?cwd=${encodeURIComponent(cwd)}`,
         { method: "POST" },
@@ -892,8 +909,8 @@ export function WorkflowPanel({
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                 <ActionButton disabled={busy || !detail.allowedActions.save || !dirty} onClick={() => void handleSave()} label={t("workflow.save")} />
                 <ActionButton disabled={busy || !detail.allowedActions.markReady} title={detail.allowedActions.reasons.markReady} onClick={() => void handleMarkReady()} label={t("workflow.markReady")} />
-                <ActionButton disabled={busy || !detail.allowedActions.runImplement} title={detail.allowedActions.reasons.runImplement} onClick={() => void handleStartRun("implement")} label={t("workflow.runImplement")} />
-                <ActionButton disabled={busy || !detail.allowedActions.runCheck} title={detail.allowedActions.reasons.runCheck} onClick={() => void handleStartRun("check")} label={t("workflow.runCheck")} />
+                <ActionButton disabled={busy || !sessionId || !detail.allowedActions.runImplement} title={!sessionId ? "Open a chat session to run the native worker" : detail.allowedActions.reasons.runImplement} onClick={() => void handleStartRun("implement")} label={t("workflow.runImplement")} />
+                <ActionButton disabled={busy || !sessionId || !detail.allowedActions.runCheck} title={!sessionId ? "Open a chat session to run the native reviewer" : detail.allowedActions.reasons.runCheck} onClick={() => void handleStartRun("check")} label={t("workflow.runCheck")} />
                 <ActionButton disabled={busy || !detail.allowedActions.cancelRun} title={detail.allowedActions.reasons.cancelRun} onClick={() => void handleCancelRun()} label={t("workflow.cancelRun")} />
                 <ActionButton disabled={busy || !detail.allowedActions.complete} title={detail.allowedActions.reasons.complete} onClick={() => void handleComplete()} label={t("workflow.complete")} />
                 <ActionButton disabled={busy || !detail.allowedActions.archive} title={detail.allowedActions.reasons.archive} onClick={() => void handleArchive()} label={t("workflow.archive")} />

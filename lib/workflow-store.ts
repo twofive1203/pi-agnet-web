@@ -38,6 +38,7 @@ import {
   isWorkflowRunPhase,
   isWorkflowRunState,
   isWorkflowTaskStatus,
+  projectStatusAfterRun,
   type WorkflowAllowedActions,
   type WorkflowCreateTaskInput,
   type WorkflowDocuments,
@@ -489,6 +490,14 @@ export function parseRunRecord(raw: unknown, expectedId?: string): WorkflowRunRe
     effectiveCwd: raw.effectiveCwd as string,
     hostSessionId: raw.hostSessionId as string,
     taskRevision: raw.taskRevision as string,
+    parentSessionId:
+      typeof raw.parentSessionId === "string" && raw.parentSessionId.trim()
+        ? raw.parentSessionId
+        : undefined,
+    parentToolCallId:
+      typeof raw.parentToolCallId === "string" && raw.parentToolCallId.trim()
+        ? raw.parentToolCallId
+        : undefined,
     nativeRunId: nullableString(raw.nativeRunId),
     asyncDir: nullableString(raw.asyncDir),
     sessionFile: nullableString(raw.sessionFile),
@@ -1128,6 +1137,8 @@ export interface BeginWorkflowRunInput {
   requestedCwd: string;
   effectiveCwd: string;
   runId?: string;
+  parentSessionId?: string;
+  parentToolCallId?: string;
 }
 
 export function beginWorkflowRun(cwd: string, taskId: string, input: BeginWorkflowRunInput): {
@@ -1190,6 +1201,8 @@ export function beginWorkflowRun(cwd: string, taskId: string, input: BeginWorkfl
     effectiveCwd: input.effectiveCwd,
     hostSessionId: input.hostSessionId,
     taskRevision: current.revision,
+    parentSessionId: input.parentSessionId,
+    parentToolCallId: input.parentToolCallId,
     nativeRunId: null,
     asyncDir: null,
     sessionFile: null,
@@ -1247,6 +1260,44 @@ export function updateWorkflowTaskProjection(
   const next = withRevision({ ...nextBase, updatedAt: nowIso() });
   writeTaskBundle(ctx, located.dir, next);
   return getWorkflowTaskDetail(ctx.workspaceRoot, taskId);
+}
+
+/** Repair the task-side projection after a terminal run record was persisted. */
+export function repairWorkflowTerminalProjection(
+  cwd: string,
+  taskId: string,
+  run: WorkflowRunRecord,
+): WorkflowTaskDetail {
+  const current = getWorkflowTaskDetail(cwd, taskId);
+  const currentLatestRunId = run.phase === "implement"
+    ? current.latestImplementRunId
+    : current.latestCheckRunId;
+  const ownsProjection = current.activeRunId === run.id ||
+    (current.activeRunId === null && currentLatestRunId === run.id);
+  const projected = projectStatusAfterRun(run.phase, run.state, run.checkResult?.verdict ?? null);
+  if (!ownsProjection || (
+    current.activeRunId === null &&
+    currentLatestRunId === run.id &&
+    (!projected || current.status === projected)
+  )) {
+    return current;
+  }
+
+  return updateWorkflowTaskProjection(cwd, taskId, (task) => {
+    const latestRunId = run.phase === "implement" ? task.latestImplementRunId : task.latestCheckRunId;
+    if (task.activeRunId !== run.id && (task.activeRunId !== null || latestRunId !== run.id)) {
+      return task;
+    }
+    return {
+      ...task,
+      status: projected ?? task.status,
+      activeRunId: null,
+      latestImplementRunId:
+        run.phase === "implement" ? run.id : task.latestImplementRunId,
+      latestCheckRunId:
+        run.phase === "check" ? run.id : task.latestCheckRunId,
+    };
+  });
 }
 
 export function completeWorkflowTask(

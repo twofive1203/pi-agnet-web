@@ -4,8 +4,9 @@
  */
 
 import { createHash, randomUUID } from "crypto";
-import { existsSync, readFileSync } from "fs";
+import { createReadStream, existsSync, readFileSync } from "fs";
 import path from "path";
+import { createInterface } from "readline";
 import type { EventBusController } from "@earendil-works/pi-coding-agent";
 import { canonicalizeCwd } from "./cwd";
 import { preparePiRuntimeEnvironment } from "./pi-runtime-resolver";
@@ -21,13 +22,13 @@ import {
   getWorkflowTaskDetail,
   getWorkflowTaskDocumentsPaths,
   readWorkflowRunRecord,
+  repairWorkflowTerminalProjection,
   updateWorkflowTaskProjection,
   writeWorkflowRunRecord,
   WorkflowConflictError,
   WorkflowStoreError,
 } from "./workflow-store";
 import {
-  projectStatusAfterRun,
   WORKFLOW_ACTIVE_RUN_STATES,
   WORKFLOW_TERMINAL_RUN_STATES,
   type WorkflowRunPhase,
@@ -512,6 +513,80 @@ function readStatusJson(asyncDir: string | null | undefined): Record<string, unk
   }
 }
 
+function textBlocks(value: unknown): string {
+  if (!Array.isArray(value)) return "";
+  return value
+    .map((block) => (isRecord(block) && typeof block.text === "string" ? block.text : ""))
+    .join("");
+}
+
+async function readPersistedToolResult(
+  sessionFile: string,
+  toolCallId: string,
+): Promise<{ isError: boolean; text: string; details?: unknown } | null> {
+  const lines = createInterface({
+    input: createReadStream(sessionFile, { encoding: "utf8" }),
+    crlfDelay: Infinity,
+  });
+  let match: { isError: boolean; text: string; details?: unknown } | null = null;
+  for await (const line of lines) {
+    if (!line.trim()) continue;
+    let entry: unknown;
+    try {
+      entry = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (!isRecord(entry) || !isRecord(entry.message)) continue;
+    const message = entry.message;
+    if (message.role !== "toolResult" || message.toolCallId !== toolCallId) continue;
+    match = {
+      isError: message.isError === true,
+      text: textBlocks(message.content),
+      details: message.details,
+    };
+  }
+  return match;
+}
+
+async function reconcileChatCorrelatedRun(
+  cwd: string,
+  run: WorkflowRunRecord,
+): Promise<{ terminal?: WorkflowRunRecord; running: boolean }> {
+  if (!run.parentSessionId || !run.parentToolCallId) return { running: false };
+
+  try {
+    const { resolveSessionPath } = await import("./session-reader");
+    const sessionFile = await resolveSessionPath(run.parentSessionId);
+    if (sessionFile && existsSync(sessionFile)) {
+      const persisted = await readPersistedToolResult(sessionFile, run.parentToolCallId);
+      if (persisted) {
+        const { finalizeWorkflowChatRun } = await import("./workflow-chat-lifecycle");
+        return {
+          running: false,
+          terminal: finalizeWorkflowChatRun(cwd, run, persisted),
+        };
+      }
+    }
+  } catch {
+    // Live correlation and the bounded stale policy below remain available.
+  }
+
+  try {
+    const { getRpcSession } = await import("./rpc-manager");
+    const live = getRpcSession(run.parentSessionId);
+    if (live?.isAlive() && live.isToolCallActive(run.parentToolCallId)) {
+      return { running: true };
+    }
+  } catch {
+    // Fall through to bounded stale handling.
+  }
+
+  const baseline = Date.parse(run.startedAt ?? run.createdAt);
+  const ageMs = Number.isFinite(baseline) ? Date.now() - baseline : Number.POSITIVE_INFINITY;
+  return { running: ageMs < 2 * 60_000 };
+}
+
 async function withCwdRunLock<T>(cwd: string, fn: () => Promise<T>): Promise<T> {
   const canonical = canonicalProjectCwd(cwd);
   const locks = runLocks();
@@ -650,19 +725,7 @@ function applyTerminalProjection(
   taskId: string,
   run: WorkflowRunRecord,
 ): WorkflowTaskDetail {
-  const projected = projectStatusAfterRun(
-    run.phase,
-    run.state,
-    run.checkResult?.verdict ?? null,
-  );
-  return updateWorkflowTaskProjection(cwd, taskId, (task) => ({
-    ...task,
-    status: projected ?? task.status,
-    activeRunId: WORKFLOW_ACTIVE_RUN_STATES.has(run.state) ? run.id : null,
-    latestImplementRunId:
-      run.phase === "implement" ? run.id : task.latestImplementRunId,
-    latestCheckRunId: run.phase === "check" ? run.id : task.latestCheckRunId,
-  }));
+  return repairWorkflowTerminalProjection(cwd, taskId, run);
 }
 
 export async function reconcileWorkflowRun(cwd: string, runId: string): Promise<{
@@ -676,9 +739,36 @@ export async function reconcileWorkflowRun(cwd: string, runId: string): Promise<
 
   if (WORKFLOW_TERMINAL_RUN_STATES.has(run.state)) {
     return {
-      task: getWorkflowTaskDetail(canonical, taskId),
+      task: applyTerminalProjection(canonical, taskId, run),
       run,
     };
+  }
+
+  if (run.parentSessionId && run.parentToolCallId) {
+    const chatState = await reconcileChatCorrelatedRun(canonical, run);
+    if (chatState.terminal) {
+      return {
+        task: getWorkflowTaskDetail(canonical, taskId),
+        run: chatState.terminal,
+      };
+    }
+    if (chatState.running) {
+      run = {
+        ...run,
+        state: "running",
+        startedAt: run.startedAt ?? new Date().toISOString(),
+        lastReconciledAt: new Date().toISOString(),
+      };
+      writeWorkflowRunRecord(canonical, taskId, run);
+      return { task: getWorkflowTaskDetail(canonical, taskId), run };
+    }
+    run = finalizeRunRecord(
+      run,
+      "stale",
+      "The parent chat has no live or persisted evidence for this foreground subagent run.",
+    );
+    writeWorkflowRunRecord(canonical, taskId, run);
+    return { task: applyTerminalProjection(canonical, taskId, run), run };
   }
 
   // Prefer native lifecycle artifacts when available (survives host recycle).
