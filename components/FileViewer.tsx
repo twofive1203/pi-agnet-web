@@ -4,6 +4,8 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import dynamic from "next/dynamic";
 import ReactMarkdown from "react-markdown";
 import { useTheme } from "@/hooks/useTheme";
+import { useI18n } from "@/components/I18nProvider";
+import { useAppDialog } from "@/components/AppDialogProvider";
 import { encodeFilePathForApi, getFileName, getRelativeFilePath } from "@/lib/file-paths";
 import { markdownPreviewRehypePlugins, markdownPreviewRemarkPlugins } from "@/lib/markdown";
 import type { PiWebEditorConfig } from "@/lib/pi-web-config";
@@ -802,6 +804,8 @@ export function FileViewer({ filePath, cwd, initialLine, editorConfig, onAddChat
 
 function TextFileViewer({ filePath, cwd, initialLine, editorConfig, onAddChat, onOpenFile }: Props) {
   const { isDark } = useTheme();
+  const { t } = useI18n();
+  const appDialog = useAppDialog();
   const effectiveEditorConfig = editorConfig ?? DEFAULT_EDITOR_CONFIG;
   const [data, setData] = useState<FileData | null>(null);
   const [editorContent, setEditorContent] = useState("");
@@ -907,11 +911,14 @@ function TextFileViewer({ filePath, cwd, initialLine, editorConfig, onAddChat, o
       .finally(() => setSaving(false));
   }, [data, filePath, saving]);
 
-  const handleReloadFromDisk = useCallback(() => {
-    if (dirtyRef.current && !window.confirm("Discard unsaved edits and reload the file from disk?")) return;
+  const handleReloadFromDisk = useCallback(async () => {
+    if (dirtyRef.current) {
+      const confirmed = await appDialog.confirm({ message: t("panels.fileViewer.discardChanges"), tone: "danger" });
+      if (!confirmed) return;
+    }
     setLoading(true);
     fetchContent(filePath).finally(() => setLoading(false));
-  }, [fetchContent, filePath]);
+  }, [fetchContent, filePath, appDialog, t]);
 
   const handleEditorChange = useCallback((value: string) => {
     editorContentRef.current = value;

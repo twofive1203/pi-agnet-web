@@ -30,6 +30,7 @@ import { getRelativeFilePath } from "@/lib/file-paths";
 import { formatWorkspaceTitle } from "@/lib/workspace-title";
 import { useTheme } from "@/hooks/useTheme";
 import { useI18n } from "@/components/I18nProvider";
+import { useAppDialog } from "@/components/AppDialogProvider";
 import type { GitInfo, SessionInfo, SessionTreeNode } from "@/lib/types";
 import type { PiWebConfig } from "@/lib/pi-web-config";
 import type { TrellisSessionTaskLinkResult, TrellisTaskDetail } from "@/lib/trellis-types";
@@ -49,6 +50,7 @@ export function AppShell() {
   const searchParams = useSearchParams();
   const { isDark, toggleTheme } = useTheme();
   const { locale, setLocale, t } = useI18n();
+  const appDialog = useAppDialog();
   const [selectedSession, setSelectedSession] = useState<SessionInfo | null>(null);
   // When user clicks +, we only store the cwd — no fake session id
   const [newSessionCwd, setNewSessionCwd] = useState<string | null>(null);
@@ -563,9 +565,9 @@ export function AppShell() {
       handleWorkflowTaskCreated(data.task);
     } catch (error) {
       console.error("Failed to create SnFlow task from chat", error);
-      window.alert(error instanceof Error ? error.message : String(error));
+      await appDialog.alert({ title: t("common.alertTitle"), message: error instanceof Error ? error.message : String(error) });
     }
-  }, [workflowCwd, selectedSession?.id, handleWorkflowTaskCreated]);
+  }, [workflowCwd, selectedSession?.id, handleWorkflowTaskCreated, appDialog, t]);
 
   useEffect(() => {
     if (!trellisEnabled && rightPanelMode === "trellis") {
@@ -1020,7 +1022,7 @@ export function AppShell() {
           )}
           {terminalEnabled && terminalCwd && (
             <button
-              onClick={() => {
+              onClick={async () => {
                 if (!terminalOpen) {
                   setTerminalDockCwd(terminalCwd);
                   setTerminalOpen(true);
@@ -1028,7 +1030,8 @@ export function AppShell() {
                   return;
                 }
                 if (terminalDockCwd && terminalDockCwd !== terminalCwd) {
-                  if (!window.confirm("Close the current terminal dock and terminate its sessions before opening a terminal for the selected workspace?")) return;
+                  const confirmed = await appDialog.confirm({ message: t("app.switchWorkspaceTerminalConfirm"), tone: "danger" });
+                  if (!confirmed) return;
                   setTerminalOpen(false);
                   setTerminalCollapsed(false);
                   window.setTimeout(() => {

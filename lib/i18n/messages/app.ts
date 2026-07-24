@@ -34,6 +34,7 @@ export const appZh = {
   languageSwitch: "切换语言",
   languageZh: "中文",
   languageEn: "English",
+  switchWorkspaceTerminalConfirm: "关闭当前终端并结束所有会话后，才能为所选工作区打开终端。继续？",
 } as const satisfies MessageTree;
 
 export const appEn = {
@@ -70,4 +71,5 @@ export const appEn = {
   languageSwitch: "Switch language",
   languageZh: "中文",
   languageEn: "English",
+  switchWorkspaceTerminalConfirm: "Close the current terminal dock and terminate its sessions before opening a terminal for the selected workspace?",
 } as const satisfies MessageTree;

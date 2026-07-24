@@ -46,6 +46,9 @@ export const commonZh = {
   open: "打开",
   hide: "隐藏",
   show: "显示",
+  alertTitle: "提示",
+  confirmTitle: "确认",
+  promptTitle: "输入",
 } as const satisfies MessageTree;
 
 export const commonEn = {
@@ -94,4 +97,7 @@ export const commonEn = {
   open: "Open",
   hide: "Hide",
   show: "Show",
+  alertTitle: "Alert",
+  confirmTitle: "Confirm",
+  promptTitle: "Input",
 } as const satisfies MessageTree;

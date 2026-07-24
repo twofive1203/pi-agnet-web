@@ -5,6 +5,7 @@ import type { GitInfo, SessionInfo, WorktreeInfo } from "@/lib/types";
 import { formatWorkspaceHeaderTitle, formatWorkspaceSubtitle, formatWorkspaceTitle } from "@/lib/workspace-title";
 import { FileExplorer } from "./FileExplorer";
 import { useI18n } from "@/components/I18nProvider";
+import { useAppDialog } from "@/components/AppDialogProvider";
 import type { MessageParams } from "@/lib/i18n";
 
 interface Props {
@@ -334,6 +335,7 @@ function buildSessionTree(sessions: SessionInfo[]): SessionTreeNode[] {
 
 export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSession, initialSessionId, onInitialRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onOpenFile, explorerRefreshKey, onAtMention }: Props) {
   const { t } = useI18n();
+  const appDialog = useAppDialog();
   const [allSessions, setAllSessions] = useState<SessionInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -494,7 +496,8 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
 
   const handleDeleteSession = useCallback(async (session: SessionInfo) => {
     const title = session.name || session.firstMessage.slice(0, 50) || session.id.slice(0, 12);
-    if (!window.confirm(t("sidebar.deleteSessionConfirm", { title }))) return;
+    const confirmed = await appDialog.confirm({ message: t("sidebar.deleteSessionConfirm", { title }), tone: "danger" });
+    if (!confirmed) return;
     try {
       const res = await fetch(`/api/sessions/${encodeURIComponent(session.id)}`, { method: "DELETE" });
       if (res.ok) {
@@ -510,7 +513,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     } catch {
       // ignore
     }
-  }, [loadSessions, onSessionDeleted, t]);
+  }, [loadSessions, onSessionDeleted, t, appDialog]);
 
   const initialLoadDone = useRef(false);
   useEffect(() => {

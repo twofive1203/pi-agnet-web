@@ -1,6 +1,7 @@
 "use client";
 
 import { useI18n } from "@/components/I18nProvider";
+import { useAppDialog } from "@/components/AppDialogProvider";
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -2382,8 +2383,10 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
     }
   }, [provider.id, onRefresh, loadQuota, loadGrokUsage, supportsQuota, isGrokProvider]);
 
+  const appDialog = useAppDialog();
+
   const handleEditAccountLabel = useCallback(async (account: OAuthAccountSummary) => {
-    const nextLabel = window.prompt("Account remark (leave empty to clear):", account.label ?? "");
+    const nextLabel = await appDialog.prompt({ message: t("settings.models.editAccountLabelPrompt"), defaultValue: account.label ?? "" });
     if (nextLabel === null) return;
 
     setSavingLabelAccountId(account.accountId);
@@ -2405,7 +2408,7 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
     } finally {
       setSavingLabelAccountId(null);
     }
-  }, [provider.id]);
+  }, [provider.id, appDialog, t]);
 
   const handleEditAccountExtraInfo = useCallback((account: OAuthAccountSummary) => {
     setEditingExtraInfoAccount(account);
@@ -2457,7 +2460,7 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
   const handleResetQuota = useCallback(async () => {
     const quotaAccountId = selectedQuotaAccountId;
     if (!quotaAccountId || quotaResetting) return;
-    const ok = window.confirm(t("settings.models.resetConfirm"));
+    const ok = await appDialog.confirm({ message: t("settings.models.resetConfirm"), tone: "danger" });
     if (!ok) return;
 
     setQuotaResetting(true);
@@ -2480,10 +2483,11 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
     } finally {
       setQuotaResetting(false);
     }
-  }, [loadAccounts, provider.id, quotaResetting, selectedQuotaAccountId, t]);
+  }, [loadAccounts, provider.id, quotaResetting, selectedQuotaAccountId, t, appDialog]);
 
   const handleDeleteAccount = useCallback(async (account: OAuthAccountSummary) => {
-    if (!window.confirm(`Delete saved credentials for ${account.displayName}?\n\nThe account must be added again to restore it.`)) return;
+    const confirmed = await appDialog.confirm({ message: t("settings.models.deleteAccountConfirm", { name: account.displayName }), tone: "danger" });
+    if (!confirmed) return;
 
     setDeletingAccountId(account.accountId);
     setAccountsError(null);
@@ -2504,7 +2508,7 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
     } finally {
       setDeletingAccountId(null);
     }
-  }, [provider.id]);
+  }, [provider.id, appDialog, t]);
 
   const selectedQuotaAccount = accounts.find((account) => account.accountId === selectedQuotaAccountId)
     ?? accounts.find((account) => account.active)

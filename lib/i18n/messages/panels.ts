@@ -12,6 +12,7 @@ export const panelsZh = {
     renameTab: "重命名标签",
     closeTab: "关闭标签",
     confirmClose: "关闭终端将结束所有进程。继续？",
+    confirmCloseLastTab: "关闭最后一个终端标签将结束进程并关闭终端面板。继续？",
     fullscreen: "全屏",
     exitFullscreen: "退出全屏",
     minimized: "终端已最小化",
@@ -104,6 +105,7 @@ export const panelsZh = {
     saved: "已保存",
     saveFile: "保存文件 (⌘S)",
     unsaved: "未保存",
+    discardChanges: "放弃未保存的修改并重新从磁盘加载文件？",
   },
   sessionChanges: {
     title: "会话变更文件",
@@ -139,6 +141,7 @@ export const panelsEn = {
     renameTab: "Rename tab",
     closeTab: "Close tab",
     confirmClose: "Closing the terminal will end all processes. Continue?",
+    confirmCloseLastTab: "Close the last terminal tab and terminate its process? This will close the terminal dock.",
     fullscreen: "Fullscreen",
     exitFullscreen: "Exit fullscreen",
     minimized: "Terminal minimized",
@@ -231,6 +234,7 @@ export const panelsEn = {
     saved: "Saved",
     saveFile: "Save file (⌘S)",
     unsaved: "Unsaved",
+    discardChanges: "Discard unsaved edits and reload the file from disk?",
   },
   sessionChanges: {
     title: "Session file changes",

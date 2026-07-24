@@ -334,6 +334,8 @@ export const settingsZh = {
     noCreditExpiry: "无额度过期详情",
     noResetTime: "无重置时间",
     noQuotaCache: "无额度缓存",
+    editAccountLabelPrompt: "账号备注（留空清除）：",
+    deleteAccountConfirm: "将删除 {name} 的已保存凭据。需重新添加账号才能恢复。",
   },
   // Section nav labels
   sectionWorktree: "工作目录",
@@ -756,6 +758,8 @@ export const settingsEn = {
     noCreditExpiry: "No credit expiration details",
     noResetTime: "No reset time",
     noQuotaCache: "No quota cache",
+    editAccountLabelPrompt: "Account remark (leave empty to clear):",
+    deleteAccountConfirm: "Delete saved credentials for {name}? The account must be added again to restore it.",
   },
   // Section nav labels
   sectionWorktree: "WorkTree",

@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useI18n } from "@/components/I18nProvider";
+import { useAppDialog } from "@/components/AppDialogProvider";
 import { earliestResetCreditExpiration, formatQuotaQueriedAt, formatResetCountdown, knownQuotaTiers, quotaColor, QUOTA_TIER_LABELS, type CodexResetCreditDisplay, type QuotaDisplayTier } from "@/lib/quota-display";
 
 type CredentialStatus = "valid" | "expired" | "not_found" | "parse_error";
@@ -108,6 +110,8 @@ function formatTime(value: number | null): string {
 }
 
 export function ChatGptUsagePanel() {
+  const { t } = useI18n();
+  const appDialog = useAppDialog();
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -271,7 +275,7 @@ export function ChatGptUsagePanel() {
 
   const resetQuota = useCallback(async () => {
     if (!account || resetting) return;
-    const ok = window.confirm("将消耗一次 Codex 重置机会，确认继续？");
+    const ok = await appDialog.confirm({ message: t("panels.chatgpt.resetConfirm"), tone: "danger" });
     if (!ok) return;
 
     setResetting(true);
@@ -302,7 +306,7 @@ export function ChatGptUsagePanel() {
     } finally {
       setResetting(false);
     }
-  }, [account, loadAccounts, resetting]);
+  }, [account, loadAccounts, resetting, appDialog, t]);
 
   const activateAccount = useCallback(async (accountId: string) => {
     setActivatingAccountId(accountId);
@@ -326,7 +330,7 @@ export function ChatGptUsagePanel() {
   }, []);
 
   const repairLock = useCallback(async () => {
-    const ok = window.confirm("风险提示：修复会删除当前 ChatGPT 自动刷新锁。如果另一个健康的蜗牛派进程仍在运行，可能短时间产生重复刷新。确认只在刷新器明显卡住或锁文件 stale 时继续？");
+    const ok = await appDialog.confirm({ message: t("panels.chatgpt.fixLockConfirm"), tone: "danger" });
     if (!ok) return;
     setRepairingLock(true);
     setSchedulerError(null);
@@ -344,7 +348,7 @@ export function ChatGptUsagePanel() {
     } finally {
       setRepairingLock(false);
     }
-  }, []);
+  }, [appDialog, t]);
 
   const quotaCache = account?.quotaCache ?? null;
   const displayedQuota = quotaResult?.success ? quotaResult : quotaCache;
