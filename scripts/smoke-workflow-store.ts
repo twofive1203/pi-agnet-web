@@ -37,8 +37,8 @@ assert(isValidWorkflowTaskId("fix-auth"), "valid id");
 assert(!isValidWorkflowTaskId("../x"), "reject traversal");
 assert(canStartImplement("ready"), "implement ready");
 assert(!canStartCheck("ready"), "check not from ready");
-assert(agentNameForPhase("implement") === "worker", "worker");
-assert(agentNameForPhase("check") === "reviewer", "reviewer");
+assert(agentNameForPhase("implement") === "snflow-implement", "snflow implement agent");
+assert(agentNameForPhase("check") === "snflow-check", "snflow check agent");
 
 const impl = normalizeImplementResult(
   '```json\n{"summary":"ok","changedFiles":["a.ts"],"validation":[],"residualRisks":[]}\n```',

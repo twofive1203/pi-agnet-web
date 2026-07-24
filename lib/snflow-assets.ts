@@ -6,7 +6,7 @@
  * Bump SNFLOW_ASSETS_VERSION (SemVer) whenever any managed file content changes.
  */
 
-export const SNFLOW_ASSETS_VERSION = "1.3.0";
+export const SNFLOW_ASSETS_VERSION = "1.4.0";
 
 export interface SnflowAssetFile {
   /** Project-relative path using forward slashes. */
@@ -112,7 +112,7 @@ function directDispatch(cwd: string, task: { id: string; title: string; revision
   if (!task.revision) {
     return "Task revision is missing or stale. Open/save the task in SnFlow before dispatch; fail closed instead of inventing a revision.";
   }
-  const agent = phase === "implement" ? "worker" : "reviewer";
+  const agent = phase === "implement" ? "snflow-implement" : "snflow-check";
   const marker = "SNFLOW_DISPATCH " + JSON.stringify({
     v: 1,
     taskId: task.id,
@@ -129,7 +129,7 @@ function directDispatch(cwd: string, task: { id: string; title: string; revision
     "- clarify: false",
     "- task first line must be exactly:",
     marker,
-    "After that marker, include the task id/title, required task document paths, spec reads, no-recursion/no-commit rules, focused validation, and the structured result contract.",
+    "After the marker, provide the task id/title/revision, task document and spec paths, latest implement summary when checking, focused validation expectations, and the structured result contract.",
     "Do not run scripts/snflow-task.ts implement, check, or wait.",
   ].join("\\n");
 }
@@ -231,10 +231,9 @@ function buildGuidance(cwd: string): string | null {
       "<!-- END SNFLOW SPEC -->) for spec-reading guidance specific to this project.",
       \`Edit docs only through the canonical files: \${base}/requirements.md, \${base}/design.md, \${base}/plan.md\`,
       "Do not create or update task.md as the task authority.",
-      "When the user approves implementation, mark the task ready, re-read task.json for its resulting revision, then call the current chat native subagent tool with builtin worker.",
+      "When the user approves implementation, mark the task ready, re-read task.json for its resulting revision, then dispatch the project agent snflow-implement.",
       "Use context:fresh, this canonical cwd, async:false and clarify:false. The task prompt must begin with the SNFLOW_DISPATCH v1 marker containing the resulting revision.",
-      "Do not run scripts/snflow-task.ts implement, check, or wait; do not replace native progress with a bash wait.",
-      "Approval to implement means dispatch the worker subagent — do NOT implement the code yourself in the main session.",
+      "Approval to implement means dispatch snflow-implement; the main session remains the orchestrator.",
       "The panel Mark Ready action or scripts/snflow-task.ts start may perform the planning-to-ready transition.",
       "Do not start large implementation before the task is ready.",
       "</workflow-state:planning>",
@@ -260,12 +259,8 @@ function buildGuidance(cwd: string): string | null {
       "Main-session default flow: implement -> check -> ready_to_commit -> user commit -> complete/archive.",
       "The current chat native subagent tool is the only implement/check path; its tool updates drive the top Subagents panel.",
       dispatch,
-      "Before development, read .pi/snflows/spec/index.md and relevant layer indexes when present.",
-      "Also read the project-root AGENTS.md SnFlow managed section for spec-reading guidance.",
-      "Do NOT edit project source files yourself in the main session for this task; files under .pi/snflows/spec/ are explicitly allowed for specification maintenance.",
-      "Recursion guard: if you are already the implement/check child, do not re-dispatch SnFlow agents.",
-      "Never git commit/push/PR unless the user explicitly asks.",
-      "Read task docs before editing code.",
+      "The main session coordinates lifecycle and spec maintenance; the dispatched phase agent owns product-source implementation or review.",
+      "Read the task documents and applicable spec indexes before dispatch, and hand commit control back to the user after check passes.",
       "</workflow-state:in_progress>",
     ].join("\\n");
   }
@@ -333,7 +328,7 @@ export default function snflowExtension(pi: PiExtensionAPI): void {
 
 const SKILL_MD = `---
 name: snflow-dev
-description: "Use Snail Pi Web native SnFlow tasks under .pi/snflows/tasks/ for development work. Create tasks from chat (like Trellis task.py create), maintain requirements/design/plan, and guide implement/check via the SnFlow panel or project CLI. Prefer this over Trellis when the user wants WebUI-owned workflow or the project has no .trellis."
+description: "Use Snail Pi Web native SnFlow tasks under .pi/snflows/tasks/ for development work. Create and plan tasks in chat, then dispatch the managed snflow-implement and snflow-check project agents. Prefer this over Trellis for WebUI-owned workflow."
 ---
 
 # SnFlow development workflow
@@ -417,7 +412,7 @@ Active SnFlow task: .pi/snflows/tasks/<id>
 - Implementation follows applicable specs; active task documents win on conflicts, and the conflict must be reported.
 - Check compares the diff against applicable specs and reports violations as findings.
 - Before finish, capture reusable conventions or lessons in the relevant spec file and update its index status table.
-- Specification maintenance under \`.pi/snflows/spec/\` is allowed in the main session even though product source remains worker-owned.
+- Specification maintenance under \`.pi/snflows/spec/\` is allowed in the main session even though product source remains phase-agent-owned.
 - Special task \`00-bootstrap-spec\`: scan source read-only, fill the spec, then create or idempotently update the project-root \`AGENTS.md\` with the exact managed block from the task plan. Preserve all content outside the markers. Do not dispatch implement/check or other subagents. When complete, manually set its \`task.json\` status to \`ready_to_commit\` for user commit handoff.
 
 ## Phase 1 — Plan
@@ -427,11 +422,11 @@ Active SnFlow task: .pi/snflows/tasks/<id>
 - Edit \`requirements.md\`, \`design.md\`, \`plan.md\`.
 - Consent to create ≠ consent to implement.
 
-When the user approves implementation, mark the task ready, re-read its revision, and call the current chat native \`subagent\` tool with builtin \`worker\`, \`context:fresh\`, canonical \`cwd\`, \`async:false\`, and \`clarify:false\`. The task prompt must begin with the exact \`SNFLOW_DISPATCH\` v1 marker.
+When the user approves implementation, mark the task ready, re-read its revision, and call the current chat native \`subagent\` tool with project agent \`snflow-implement\`, \`context:fresh\`, canonical \`cwd\`, \`async:false\`, and \`clarify:false\`. The task prompt must begin with the exact \`SNFLOW_DISPATCH\` v1 marker.
 
 ## Phase 2 — Execute
 
-Main session is orchestrator only. It directly calls builtin \`worker\` for implement and builtin \`reviewer\` for check using a marked foreground native \`subagent\` call. Native tool updates, cancellation, and the final result remain in the current chat; never substitute a bash/CLI wait.
+Main session is orchestrator only. It calls project agent \`snflow-implement\` for implement and \`snflow-check\` for check using a marked foreground native \`subagent\` call. The agent definitions own the stable phase responsibilities and safety boundaries; the marked task prompt supplies dynamic task context and the result contract. Native tool updates, cancellation, and the final result remain in the current chat; do not substitute a CLI/RPC wait.
 
 ### Recursion guards
 - If you are already the implement/check child, do **not** re-dispatch SnFlow implement/check.
@@ -462,91 +457,49 @@ npx tsx scripts/snflow-task.ts archive
 const AGENT_IMPLEMENT = `---
 name: snflow-implement
 description: |
-  SnFlow implementation agent. Reads the active .pi/snflows task docs and implements the requested change. No git commit allowed.
+  Dedicated SnFlow implementation agent. Executes an approved task from its marked dispatch context and returns validated, reviewable changes.
 tools: read, write, edit, bash, grep, find, ls
 ---
 
-## Required: Load SnFlow context first
+You implement one approved SnFlow task directly; you are not the workflow orchestrator.
 
-1. Look at the dispatch prompt for \`Active SnFlow task: .pi/snflows/tasks/<id>\` or \`Active task:\`.
-2. Otherwise read \`.pi/snflows/current.json\` for \`taskId\`.
-3. If still unknown, stop and report that no SnFlow task is selected.
+## Execution
 
-Then read:
+1. Resolve the task only from the marked dispatch prompt and its explicit document paths. Stop if the marker, cwd, revision, or task documents are missing.
+2. Read task.json, requirements.md, design.md, plan.md, applicable .pi/snflows/spec indexes, and project AGENTS.md before editing.
+3. Inspect affected code and callers, implement the approved scope using existing patterns, and keep the diff reviewable.
+4. Run focused tests plus repository lint/typecheck when practical.
+5. Return the result contract requested by the dispatch prompt, including changed files, validation, and residual risks.
 
-- \`.pi/snflows/tasks/<id>/task.json\`
-- \`.pi/snflows/tasks/<id>/requirements.md\`
-- \`.pi/snflows/tasks/<id>/design.md\`
-- \`.pi/snflows/tasks/<id>/plan.md\`
-- \`.pi/snflows/spec/index.md\` and relevant layer indexes (if present)
-- \`AGENTS.md\` SnFlow managed section (between \`<!-- BEGIN SNFLOW SPEC -->\` and \`<!-- END SNFLOW SPEC -->\` markers) for project-specific spec-entry guidance
+## Boundaries
 
-## Recursion guard
-
-You are already the implementation child.
-
-- Do NOT spawn another snflow-implement / snflow-check / worker / reviewer for this workflow.
-- Do NOT run \`scripts/snflow-task.ts implement|check\`.
-- Do the implementation work directly.
-
-## Responsibilities
-
-1. Implement only what the task docs require.
-2. Follow existing project patterns and applicable project specifications.
-3. If task documents conflict with a spec, follow the task documents and report the conflict as a residual risk.
-4. Run focused validation available in the repo (lint/typecheck/tests as applicable).
-5. Return a structured summary: changed files, validation, residual risks.
-
-## Forbidden
-
-- \`git commit\` / \`git push\` / \`git merge\`
-- Writing \`.trellis/\`
-- Expanding scope beyond the task
+- Work in the dispatched cwd and task only; task documents win over conflicting specs, with the conflict reported.
+- Do not dispatch subagents or start another SnFlow phase.
+- Do not commit, push, merge, tag, open a PR, or write Trellis task metadata.
 `;
 
 const AGENT_CHECK = `---
 name: snflow-check
 description: |
-  SnFlow review agent. Reviews implementation against the active .pi/snflows task docs and reports pass or changes_requested. No recursive dispatch.
-tools: read, write, edit, bash, grep, find, ls
+  Dedicated SnFlow review agent. Independently validates an implementation against its approved task, project specs, and regression risks.
+tools: read, bash, grep, find, ls
 ---
 
-## Required: Load SnFlow context first
+You independently review one completed SnFlow implementation; you do not implement or orchestrate the workflow.
 
-1. Look at the dispatch prompt for \`Active SnFlow task: .pi/snflows/tasks/<id>\` or the latest implement summary.
-2. Otherwise read \`.pi/snflows/current.json\` for \`taskId\`.
-3. If still unknown, stop and report that no SnFlow task is selected.
+## Execution
 
-Then read:
+1. Resolve the task only from the marked dispatch prompt and its explicit document paths. Stop if the marker, cwd, revision, or task documents are missing.
+2. Read task.json, requirements.md, design.md, plan.md, applicable .pi/snflows/spec indexes, project AGENTS.md, the current diff, and affected callers.
+3. Evaluate correctness, acceptance criteria, regressions, project conventions, and validation coverage.
+4. Run focused tests plus repository lint/typecheck when practical.
+5. Return the verdict contract requested by the dispatch prompt with concrete, path-based findings.
 
-- \`.pi/snflows/tasks/<id>/task.json\`
-- \`.pi/snflows/tasks/<id>/requirements.md\`
-- \`.pi/snflows/tasks/<id>/design.md\`
-- \`.pi/snflows/tasks/<id>/plan.md\`
-- \`.pi/snflows/spec/index.md\` and relevant layer indexes (if present)
-- \`AGENTS.md\` SnFlow managed section (between \`<!-- BEGIN SNFLOW SPEC -->\` and \`<!-- END SNFLOW SPEC -->\` markers) for project-specific spec-entry guidance
-- current git diff / changed files
+## Boundaries
 
-## Recursion guard
-
-You are already the check/review child.
-
-- Do NOT spawn snflow-implement / snflow-check / worker / reviewer.
-- Do NOT run \`scripts/snflow-task.ts implement|check\`.
-- Review (and fix only clearly in-scope issues) directly.
-
-## Responsibilities
-
-1. Compare the diff to acceptance criteria and plan.
-2. Flag regressions, missing validation, contract violations, and violations of applicable project specifications.
-3. Run focused validation available in the repo.
-4. Return a structured verdict: \`pass\` or \`changes_requested\`, with findings and summary.
-
-## Forbidden
-
-- \`git commit\` / \`git push\` / \`git merge\`
-- Writing \`.trellis/\`
-- Expanding into unrelated refactors
+- Remain independent and read-only; request changes instead of editing the implementation.
+- Do not dispatch subagents or start another SnFlow phase.
+- Do not commit, push, merge, tag, open a PR, or write task/spec metadata.
 `;
 
 /**

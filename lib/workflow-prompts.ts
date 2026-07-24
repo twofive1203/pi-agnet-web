@@ -15,8 +15,8 @@ import {
 
 export const WORKFLOW_DISPATCH_PROTOCOL_VERSION = 1 as const;
 export const WORKFLOW_DISPATCH_MARKER_PREFIX = "SNFLOW_DISPATCH ";
-export const WORKFLOW_IMPLEMENT_AGENT = "worker";
-export const WORKFLOW_CHECK_AGENT = "reviewer";
+export const WORKFLOW_IMPLEMENT_AGENT = "snflow-implement";
+export const WORKFLOW_CHECK_AGENT = "snflow-check";
 
 export interface WorkflowDispatchMarker {
   v: typeof WORKFLOW_DISPATCH_PROTOCOL_VERSION;
@@ -130,31 +130,23 @@ function normalizeValidation(value: unknown): WorkflowValidationResult[] {
 
 export function buildImplementPrompt(ctx: WorkflowPromptContext): string {
   return [
-    "You are the SnFlow implementation agent for Snail Pi Web.",
-    "You are a child worker, not an orchestrator. Do not spawn subagents, do not call the subagent tool, and do not start other SnFlow phases.",
-    "",
-    `Project cwd (must remain your working directory): ${ctx.cwd}`,
-    `Task id: ${ctx.taskId}`,
-    `Task title: ${ctx.title}`,
+    `Implement SnFlow task ${ctx.taskId}: ${ctx.title}`,
+    `Project cwd: ${ctx.cwd}`,
     `Task revision: ${ctx.taskRevision}`,
     "",
-    "Read these project-relative task documents before editing code:",
+    "Read:",
     `- ${ctx.pathLabels.taskJson}`,
     `- ${ctx.pathLabels.requirements}`,
     `- ${ctx.pathLabels.design}`,
     `- ${ctx.pathLabels.plan}`,
-    "- .pi/snflows/spec/index.md (if present; also read relevant layer indexes)",
+    "- .pi/snflows/spec/index.md and applicable layer indexes",
+    "- project-root AGENTS.md",
     "",
-    "Implementation contract:",
-    "- Implement only what the requirements/design/plan require for this task.",
-    "- Follow applicable project specifications. Task documents win if they conflict with a spec; report the conflict in residualRisks.",
-    "- Prefer focused, reviewable changes. Do not drive-by refactor unrelated code.",
-    "- Never git commit, push, merge, tag, or open a PR.",
-    "- Never modify .trellis/ task metadata as part of this SnFlow task.",
-    "- Never treat task.md as the task source of truth; task.json is mandatory.",
-    "- Run focused validation that is practical for the change (lint/typecheck/tests as appropriate).",
-    "- If task.json is missing or malformed, stop and report it instead of inventing a markdown-only task.",
-    "- When finished, respond with a concise human summary AND a final fenced JSON block with this exact shape:",
+    "Execute:",
+    "1. Implement the approved requirements and design using existing project patterns.",
+    "2. Keep the diff focused and report any task/spec conflict in residualRisks.",
+    "3. Run practical focused validation for the changed area.",
+    "4. Return a concise summary followed by this final fenced JSON result:",
     "```json",
     "{",
     '  "summary": "what changed",',
@@ -168,34 +160,27 @@ export function buildImplementPrompt(ctx: WorkflowPromptContext): string {
 
 export function buildCheckPrompt(ctx: WorkflowPromptContext): string {
   return [
-    "You are the SnFlow check/review agent for Snail Pi Web.",
-    "You are an independent reviewer, not an implementer and not an orchestrator.",
-    "Do not spawn subagents, do not call the subagent tool, and do not edit project files unless a tiny read-only note is absolutely required (prefer zero writes).",
+    `Review SnFlow task ${ctx.taskId}: ${ctx.title}`,
+    `Project cwd: ${ctx.cwd}`,
+    `Task revision: ${ctx.taskRevision}`,
     "",
-    `Project cwd (must remain your working directory): ${ctx.cwd}`,
-    `Task id: ${ctx.taskId}`,
-    `Task title: ${ctx.title}`,
-    `Task revision under review: ${ctx.taskRevision}`,
-    "",
-    "Review against these project-relative documents:",
+    "Read:",
     `- ${ctx.pathLabels.taskJson}`,
     `- ${ctx.pathLabels.requirements}`,
     `- ${ctx.pathLabels.design}`,
     `- ${ctx.pathLabels.plan}`,
-    "- .pi/snflows/spec/index.md (if present; also read relevant layer indexes)",
+    "- .pi/snflows/spec/index.md and applicable layer indexes",
+    "- project-root AGENTS.md",
+    "- the current diff and affected callers",
     "",
     ctx.implementSummary
       ? `Latest implementation summary:\n${ctx.implementSummary}`
-      : "No implementation summary was provided; inspect the working tree and task documents directly.",
+      : "No implementation summary was provided; derive scope from the task documents and diff.",
     "",
-    "Review contract:",
-    "- Verify the implementation matches requirements/design/plan.",
-    "- Verify the changes follow applicable project specifications; report violations as findings.",
-    "- Prefer concrete findings with paths when possible.",
-    "- Never git commit, push, merge, tag, or open a PR.",
-    "- Never dispatch implement/check SnFlow agents or other subagents.",
-    "- Never treat task.md as the source of truth; if task.json is missing or invalid, report that explicitly.",
-    "- When finished, respond with a concise human summary AND a final fenced JSON block with this exact shape:",
+    "Execute:",
+    "1. Check the implementation against the acceptance criteria, design, project specs, and regression risks.",
+    "2. Run practical focused validation and cite concrete paths for findings.",
+    "3. Return a concise review followed by this final fenced JSON result:",
     "```json",
     "{",
     '  "verdict": "pass" | "changes_requested",',
@@ -221,7 +206,7 @@ export function buildPhasePrompt(ctx: WorkflowPromptContext): string {
 export function buildDirectSubagentInstruction(ctx: WorkflowPromptContext): string {
   const agent = agentNameForPhase(ctx.phase);
   return [
-    `Call the current chat's native subagent tool once using builtin ${agent}.`,
+    `Call the current chat's native subagent tool once using project agent ${agent}.`,
     `agent: ${agent}`,
     "context: fresh",
     `cwd: ${ctx.cwd}`,

@@ -9,6 +9,7 @@ Shared logic lives under `lib/`. Prefer adding behavior here when it is used by 
 | `lib/types.ts` | Shared TypeScript types for messages, sessions, Git status/graph/commit/diff wire payloads, and API payloads. |
 | `lib/pi-types.ts` | `AgentSessionLike` wrapper interface expected by hooks/components. |
 | `lib/normalize.ts` | Normalize pi tool-call fields to web UI shape. |
+| `lib/subagent-runs.ts` | Shared Subagent panel projection types and logic. Expands single/parallel/chain execution calls and rebuilds completed/failed run rows from persisted assistant tool calls plus tool results, including output, routing, and child session paths. Used by session reload and nested-child JSONL parsing. |
 | `lib/session-file-changes.ts` | Non-Git session file-change tracker: observes edit/write tool events, persists sidecar summaries, and serves browser-safe changed-file projections. |
 | `lib/unified-diff.ts` | Wrapper around the `diff` package for bounded unified diff generation and addition/deletion counting. |
 | `lib/agent-client.ts` | Client-side helper for `POST /api/agent/[id]`. |
@@ -54,7 +55,7 @@ Shared logic lives under `lib/`. Prefer adding behavior here when it is used by 
 | `lib/workflow-gitignore.ts` | Maintains a marked SnFlow block in the project `.gitignore` when `workflow.trackInGit` is false (default). |
 | `lib/workflow-guidance.ts` | Legacy WebUI-side SnFlow system-prompt breadcrumbs for projects that are initialized but do not yet have the project extension installed. |
 | `lib/workflow-session-link.ts` | Session-scoped SnFlow task resolver for the floating widget. Accepts an exact `current.json.sessionId` match or explicit task evidence from that session transcript; unbound cwd-global pointers do not associate blank/new sessions. |
-| `lib/workflow-prompts.ts` | SnFlow dispatch marker, implement/check prompt builders, parser, and structured-output normalizers for builtin `worker` / `reviewer`. |
+| `lib/workflow-prompts.ts` | SnFlow dispatch marker, concise task-context prompt builders, phase routing to managed project agents `snflow-implement` / `snflow-check`, parser, and structured-output normalizers. |
 | `lib/workflow-chat-lifecycle.ts` | Current-chat SnFlow native-subagent boundary: prepares selected-task-bound dispatch instructions, validates marked `subagent` calls before execution, correlates session/tool-call progress and terminal results, and persists task/run projections without affecting ordinary subagents. |
 | `lib/workflow-run-manager.ts` | Restart/reconnect reconciliation for SnFlow run records and native artifacts, including exact parent session/tool-call recovery, stale-run handling, and idempotent terminal task-projection repair. The hidden RPC host remains compatibility code, not the normal implement/check path. |
 | `lib/workspace-title.ts` | Shared workspace title formatting from cwd and Git metadata. |

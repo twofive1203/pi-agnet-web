@@ -64,6 +64,7 @@ The archive directory is scanned separately from `SessionManager.listAll()` (whi
 - Pi stores tool calls as `{type:"toolCall", id, name, arguments}`.
 - Web UI types use `{toolCallId, toolName, input}`.
 - Normalize with `normalizeToolCalls()` in `lib/normalize.ts`; it is used during file load and streaming.
+- The Subagent panel uses `lib/subagent-runs.ts` for both live tool-call row expansion and persisted message replay. Session/branch loads pair normalized assistant `subagent` calls with tool results to restore final status, output, routing, and child session paths. Live progress/recent-tool snapshots are not persisted by the session format and intentionally degrade after reload.
 - Newer pi emits `compaction_start` / `compaction_end`; older pi emits `auto_compaction_start` / `auto_compaction_end`. Handle both.
 
 ### Session file-change projection
@@ -112,8 +113,11 @@ inspect or initialize the current workspace. Task documents live under
 `<cwd>/.pi/snflows/tasks/` (archived tasks move to the sibling
 `<cwd>/.pi/snflows/archived/`) and never share schema, import, or writeback with
 `.trellis/tasks/`. Implement/check phases run as foreground native
-`pi-subagents` tool calls (`worker` / `reviewer`) in the current chat session.
-The task-bound API prepares a strict dispatch marker with the selected task id,
+`pi-subagents` tool calls using the managed project agents `snflow-implement` and
+`snflow-check` in the current chat session. Their agent definitions own stable
+phase responsibilities and safety boundaries, while each marked dispatch carries
+only task-specific context and the structured result contract. The task-bound API
+prepares a strict dispatch marker with the selected task id,
 revision, phase, and canonical cwd; `lib/workflow-chat-lifecycle.ts` validates
 that marker before execution and projects native tool progress/end events into
 SnFlow run records. This keeps the existing top-bar Subagent panel authoritative

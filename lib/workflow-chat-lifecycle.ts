@@ -328,7 +328,7 @@ export class WorkflowChatLifecycleObserver {
       const agent = agentNameForPhase(marker.phase);
       if (event.input.agent !== agent) {
         throw new WorkflowDispatchMarkerError(
-          `SnFlow ${marker.phase} must use builtin ${agent}`,
+          `SnFlow ${marker.phase} must use project agent ${agent}`,
         );
       }
       if (event.input.context !== "fresh") {

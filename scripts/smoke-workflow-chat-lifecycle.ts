@@ -109,7 +109,7 @@ try {
       toolCallId: "ordinary-call",
       toolName: "subagent",
       input: {
-        agent: "worker",
+        agent: "snflow-implement",
         task: "Inspect this code without a SnFlow marker",
         context: "fresh",
         cwd: project,
@@ -143,7 +143,7 @@ try {
       toolCallId: "stale-call",
       toolName: "subagent",
       input: {
-        agent: "worker",
+        agent: "snflow-implement",
         task: staleMarker,
         context: "fresh",
         cwd: project,
@@ -161,7 +161,7 @@ try {
       toolCallId: "wrong-cwd-call",
       toolName: "subagent",
       input: {
-        agent: "worker",
+        agent: "snflow-implement",
         task: buildWorkflowDispatchMarker({
           taskId: first.id,
           phase: "implement",
@@ -178,9 +178,9 @@ try {
   );
   assert(wrongCwd.block, "marker/input cwd mismatch blocks before launch");
 
-  const start = observer.beforeToolCall(
+  const builtinAgent = observer.beforeToolCall(
     {
-      toolCallId: "worker-call",
+      toolCallId: "builtin-agent-call",
       toolName: "subagent",
       input: {
         agent: "worker",
@@ -193,10 +193,28 @@ try {
     },
     "chat-session",
   );
-  assert(!start.block, `valid direct worker was blocked: ${start.reason ?? ""}`);
+  assert(builtinAgent.block, "marked implement rejects builtin worker");
+  assert(builtinAgent.reason?.includes("snflow-implement"), "rejection names required project agent");
+
+  const start = observer.beforeToolCall(
+    {
+      toolCallId: "worker-call",
+      toolName: "subagent",
+      input: {
+        agent: "snflow-implement",
+        task: phasePrompt(project, first, "implement"),
+        context: "fresh",
+        cwd: project,
+        async: false,
+        clarify: false,
+      },
+    },
+    "chat-session",
+  );
+  assert(!start.block, `valid direct snflow-implement was blocked: ${start.reason ?? ""}`);
   const active = getWorkflowTaskDetail(project, first.id);
-  assert(active.status === "implementing", "worker projects implementing");
-  assert(active.activeRunId !== null, "worker owns active run lock");
+  assert(active.status === "implementing", "snflow-implement projects implementing");
+  assert(active.activeRunId !== null, "snflow-implement owns active run lock");
   const activeRun = active.runs.find((run) => run.id === active.activeRunId);
   assert(activeRun?.parentSessionId === "chat-session", "parent chat session persisted");
   assert(activeRun?.parentToolCallId === "worker-call", "parent tool call persisted");
@@ -207,7 +225,7 @@ try {
       toolCallId: "concurrent-call",
       toolName: "subagent",
       input: {
-        agent: "worker",
+        agent: "snflow-implement",
         task: phasePrompt(project, second, "implement"),
         context: "fresh",
         cwd: project,
@@ -260,7 +278,7 @@ try {
       toolCallId: "reviewer-call",
       toolName: "subagent",
       input: {
-        agent: "reviewer",
+        agent: "snflow-check",
         task: phasePrompt(project, implemented, "check"),
         context: "fresh",
         cwd: project,
@@ -270,7 +288,7 @@ try {
     },
     "chat-session",
   );
-  assert(!checkStart.block, `valid direct reviewer was blocked: ${checkStart.reason ?? ""}`);
+  assert(!checkStart.block, `valid direct snflow-check was blocked: ${checkStart.reason ?? ""}`);
   observer.onToolResult(
     {
       toolCallId: "reviewer-call",
@@ -282,7 +300,7 @@ try {
     "chat-session",
   );
   const checked = getWorkflowTaskDetail(project, first.id);
-  assert(checked.status === "ready_to_commit", "passing reviewer projects ready_to_commit");
+  assert(checked.status === "ready_to_commit", "passing snflow-check projects ready_to_commit");
   assert(checked.activeRunId === null, "review terminal result releases lock");
 
   const cancelProject = mkdtempSync(path.join(tmpdir(), "snflow-chat-cancel-"));
@@ -294,7 +312,7 @@ try {
         toolCallId: "cancel-call",
         toolName: "subagent",
         input: {
-          agent: "worker",
+          agent: "snflow-implement",
           task: phasePrompt(cancelProject, cancelTask, "implement"),
           context: "fresh",
           cwd: cancelProject,
@@ -339,7 +357,7 @@ try {
         toolCallId: fixture.id,
         toolName: "subagent",
         input: {
-          agent: "worker",
+          agent: "snflow-implement",
           task: phasePrompt(fixtureProject, fixtureTask, "implement"),
           context: "fresh",
           cwd: fixtureProject,
@@ -384,7 +402,7 @@ try {
     const accepted = repairObserver.beforeToolCall({
       toolCallId: "repair-call",
       toolName: "subagent",
-      input: { agent: "worker", task: phasePrompt(repairProject, repairTask, "implement"), context: "fresh", cwd: repairProject, async: false, clarify: false },
+      input: { agent: "snflow-implement", task: phasePrompt(repairProject, repairTask, "implement"), context: "fresh", cwd: repairProject, async: false, clarify: false },
     }, "repair-session");
     assert(!accepted.block, "repair fixture starts");
     repairObserver.onToolResult({
@@ -445,6 +463,9 @@ try {
   assert(!managedGuidance.includes("scripts/snflow-task.ts implement\n"), "managed guidance removes CLI implement command");
   assert(!managedGuidance.includes("scripts/snflow-task.ts wait\n"), "managed guidance removes CLI wait command");
   assert(managedGuidance.includes("SNFLOW_DISPATCH"), "managed guidance documents direct marker");
+  assert(managedGuidance.includes("snflow-implement"), "managed guidance routes implementation to project agent");
+  assert(managedGuidance.includes("snflow-check"), "managed guidance routes review to project agent");
+  assert(!managedGuidance.includes("builtin worker"), "managed guidance no longer routes to builtin worker");
   assert(!managedGuidance.includes(".trellis/tasks"), "direct path does not require Trellis task storage");
 
   console.log("OK workflow chat lifecycle smoke");
