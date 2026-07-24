@@ -55,9 +55,15 @@ Archived sessions are stored at:
 ~/.pi/agent/sessions-archive/<encoded-cwd>/<timestamp>_<uuid>.jsonl
 ```
 
-Archive/unarchive is a pure file move (`renameSync`) between `sessions/` and `sessions-archive/`. The session JSONL content is never modified. Active RPC sessions are destroyed before the file is moved.
+Archive/unarchive moves the parent JSONL and its path-derived companion directory between `sessions/` and `sessions-archive/`. The session JSONL content is never modified. Active RPC sessions are destroyed before the artifacts move. Reads retain compatibility with older archives that moved only the parent JSONL and left the companion directory under active sessions.
 
 The archive directory is scanned separately from `SessionManager.listAll()` (which only scans `sessions/`). Project visibility is preserved by returning `archivedCwds` and `archivedCounts` from `GET /api/sessions`, allowing the CWD picker to include projects that have only archived sessions.
+
+### Usage accounting
+
+- Usage starts from top-level sessions returned by the active/archive session readers. It never recursively scans the global sessions tree, so orphaned subagent directories whose parent was deleted are not billed.
+- For each parent `<session>.jsonl`, `lib/session-artifacts.ts` discovers nested pi-subagents `session.jsonl` files only under the path-derived `<session>/` companion directory. Nested assistant usage contributes to daily/model/provider totals and is attributed to the parent in `bySession`.
+- API results expose `mainTotals`, `subagentTotals`, and `subagentSessions` globally and per parent session. Persisted message `usage.cost.total` remains authoritative; Usage does not reprice historical calls from the current model catalog.
 
 ### Tool calls and events
 

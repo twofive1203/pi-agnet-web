@@ -1,6 +1,7 @@
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { listAllArchivedSessions, listAllSessions } from "@/lib/session-reader";
 import { canonicalizeCwd, expandCwd } from "@/lib/cwd";
+import { listSessionUsageFiles, type SessionUsageFile } from "@/lib/session-artifacts";
 import type { SessionEntry, SessionInfo, SessionMessageEntry, AssistantMessage } from "@/lib/types";
 
 export interface UsageTotals {
@@ -31,6 +32,9 @@ export interface UsageSessionSummary {
   created: string;
   modified: string;
   totals: UsageTotals;
+  mainTotals: UsageTotals;
+  subagentTotals: UsageTotals;
+  subagentSessions: number;
 }
 
 export interface UsageStatsResult {
@@ -42,6 +46,9 @@ export interface UsageStatsResult {
     includeArchived: boolean;
   };
   totals: UsageTotals;
+  mainTotals: UsageTotals;
+  subagentTotals: UsageTotals;
+  subagentSessions: number;
   byDay: UsageDaySummary[];
   byModel: UsageModelSummary[];
   byProvider: UsageModelSummary[];
@@ -66,6 +73,7 @@ interface UsageRecord {
   entry: SessionMessageEntry;
   message: AssistantMessage;
   session: SessionInfo;
+  source: SessionUsageFile;
 }
 
 function cwdKeys(cwd: string | undefined): Set<string> {
@@ -171,30 +179,43 @@ export async function getUsageStats(options: UsageStatsOptions): Promise<UsageSt
   const matchedActiveSessions = matchedSessions.filter((session) => !session.archived);
   const matchedArchivedSessions = matchedSessions.filter((session) => session.archived);
   const records: UsageRecord[] = [];
+  const matchedSubagentFilesByParent = new Map<string, Set<string>>();
   let skippedEntries = 0;
 
   for (const session of matchedSessions) {
-    let entries: SessionEntry[];
-    try {
-      entries = SessionManager.open(session.path).getEntries() as unknown as SessionEntry[];
-    } catch {
-      skippedEntries += 1;
-      continue;
-    }
+    const usageFiles = listSessionUsageFiles(session.path);
 
-    for (const entry of entries) {
-      if (!isUsageMessageEntry(entry)) continue;
-      const at = new Date(entry.timestamp).getTime();
-      if (!Number.isFinite(at)) {
+    for (const source of usageFiles) {
+      let entries: SessionEntry[];
+      try {
+        entries = SessionManager.open(source.path).getEntries() as unknown as SessionEntry[];
+      } catch {
         skippedEntries += 1;
         continue;
       }
-      if (at < options.from.getTime() || at > options.to.getTime()) continue;
-      records.push({ entry, message: entry.message, session });
+
+      for (const entry of entries) {
+        if (!isUsageMessageEntry(entry)) continue;
+        const at = new Date(entry.timestamp).getTime();
+        if (!Number.isFinite(at)) {
+          skippedEntries += 1;
+          continue;
+        }
+        if (at < options.from.getTime() || at > options.to.getTime()) continue;
+        records.push({ entry, message: entry.message, session, source });
+        if (source.kind === "subagent") {
+          if (!matchedSubagentFilesByParent.has(session.id)) {
+            matchedSubagentFilesByParent.set(session.id, new Set());
+          }
+          matchedSubagentFilesByParent.get(session.id)!.add(source.path);
+        }
+      }
     }
   }
 
   const totals = createTotals();
+  const mainTotals = createTotals();
+  const subagentTotals = createTotals();
   const byDay = new Map<string, UsageTotals>();
   const byModel = new Map<string, UsageModelSummary>();
   const byProvider = new Map<string, UsageModelSummary>();
@@ -203,6 +224,7 @@ export async function getUsageStats(options: UsageStatsOptions): Promise<UsageSt
   for (const record of records) {
     const usage = record.message.usage;
     addUsage(totals, usage);
+    addUsage(record.source.kind === "subagent" ? subagentTotals : mainTotals, usage);
 
     const dayKey = formatLocalDate(new Date(record.entry.timestamp));
     if (!byDay.has(dayKey)) byDay.set(dayKey, createTotals());
@@ -226,9 +248,14 @@ export async function getUsageStats(options: UsageStatsOptions): Promise<UsageSt
         created: record.session.created,
         modified: record.session.modified,
         totals: createTotals(),
+        mainTotals: createTotals(),
+        subagentTotals: createTotals(),
+        subagentSessions: matchedSubagentFilesByParent.get(record.session.id)?.size ?? 0,
       });
     }
-    addUsage(bySession.get(record.session.id)!.totals, usage);
+    const sessionSummary = bySession.get(record.session.id)!;
+    addUsage(sessionSummary.totals, usage);
+    addUsage(record.source.kind === "subagent" ? sessionSummary.subagentTotals : sessionSummary.mainTotals, usage);
   }
 
   return {
@@ -240,6 +267,9 @@ export async function getUsageStats(options: UsageStatsOptions): Promise<UsageSt
       includeArchived: options.includeArchived !== false,
     },
     totals,
+    mainTotals,
+    subagentTotals,
+    subagentSessions: [...matchedSubagentFilesByParent.values()].reduce((sum, files) => sum + files.size, 0),
     byDay: [...byDay.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([date, dayTotals]) => ({ date, totals: dayTotals })),

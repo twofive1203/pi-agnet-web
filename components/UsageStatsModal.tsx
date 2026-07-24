@@ -230,9 +230,12 @@ export function UsageStatsModal({ cwd, onClose }: UsageStatsModalProps) {
             <>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 8, marginBottom: 12 }}>
                 <Metric label="Cost" value={formatCost(stats?.totals.cost ?? 0)} strong />
+                <Metric label="Main cost" value={formatCost(stats?.mainTotals.cost ?? 0)} />
+                <Metric label="Subagent cost" value={formatCost(stats?.subagentTotals.cost ?? 0)} />
                 <Metric label="Tokens" value={`${formatTokens(totalTokens(stats?.totals ?? zeroTotals))} (${formatTokensM(totalTokens(stats?.totals ?? zeroTotals))})`} />
                 <Metric label="Calls" value={formatTokens(stats?.totals.calls ?? 0)} />
                 <Metric label="Sessions" value={`${stats?.bySession.length ?? 0}/${stats?.matchedSessions ?? 0}`} />
+                <Metric label="Subagent sessions" value={formatTokens(stats?.subagentSessions ?? 0)} />
                 <Metric label="Scanned active/archive" value={`${stats?.scannedActiveSessions ?? 0}/${stats?.scannedArchivedSessions ?? 0}`} />
                 <Metric label="Matched active/archive" value={`${stats?.matchedActiveSessions ?? 0}/${stats?.matchedArchivedSessions ?? 0}`} />
               </div>
@@ -283,6 +286,11 @@ export function UsageStatsModal({ cwd, onClose }: UsageStatsModalProps) {
                         <div style={{ fontSize: 10, color: "var(--text-dim)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginTop: 2 }}>
                           {session.cwd}
                         </div>
+                        {session.subagentSessions > 0 && (
+                          <div style={{ fontSize: 10, color: "var(--text-dim)", marginTop: 2 }}>
+                            Main {formatCost(session.mainTotals.cost)} · Subagents {formatCost(session.subagentTotals.cost)} ({session.subagentSessions})
+                          </div>
+                        )}
                       </div>
                       <span style={{ fontSize: 11, color: "var(--text-muted)", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{formatTokens(totalTokens(session.totals))}</span>
                       <span style={{ fontSize: 12, color: "var(--text)", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{formatCost(session.totals.cost)}</span>

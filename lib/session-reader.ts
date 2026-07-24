@@ -1,11 +1,16 @@
 import { SessionManager, buildSessionContext as piBuildSessionContext, getAgentDir } from "@earendil-works/pi-coding-agent";
-import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmdirSync, statSync, unlinkSync, writeFileSync } from "fs";
+import { existsSync, readFileSync, readdirSync, rmdirSync, statSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import type { SessionEntry, SessionInfo, SessionContext, SessionTreeNode, AssistantMessage } from "./types";
 import type { SessionEntry as PiSessionEntry, SessionInfo as PiSessionInfo } from "@earendil-works/pi-coding-agent";
 import { normalizeToolCalls } from "./normalize";
 import { getGitMetadataForCwd } from "./git-worktree";
 import { canonicalizeCwd, expandCwd } from "./cwd";
+import {
+  archiveSessionArtifacts,
+  deleteSessionArtifacts,
+  unarchiveSessionArtifacts,
+} from "./session-artifacts";
 
 export { getAgentDir };
 
@@ -48,9 +53,9 @@ function isDeletedWorktreeCwd(cwd: string | undefined): boolean {
 
 function deleteSessionFile(session: Pick<PiSessionInfo, "id" | "path" | "cwd">): DeletedSessionFile | null {
   try {
-    unlinkSync(session.path);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") return null;
+    deleteSessionArtifacts(session.path);
+  } catch {
+    return null;
   }
 
   invalidateSessionPathCache(session.id);
@@ -301,9 +306,7 @@ export function getSessionsArchiveDir(): string {
  * Returns the new archive path.
  */
 export function archiveSessionFile(sessionPath: string): string {
-  const target = sessionPath.replace("/sessions/", "/sessions-archive/");
-  mkdirSync(dirname(target), { recursive: true });
-  renameSync(sessionPath, target);
+  const target = archiveSessionArtifacts(sessionPath);
   // Update parentSession refs in sibling files
   updateParentSessionRefs(dirname(sessionPath), sessionPath, target);
   return target;
@@ -314,9 +317,7 @@ export function archiveSessionFile(sessionPath: string): string {
  * Returns the new active path.
  */
 export function unarchiveSessionFile(archivePath: string): string {
-  const target = archivePath.replace("/sessions-archive/", "/sessions/");
-  mkdirSync(dirname(target), { recursive: true });
-  renameSync(archivePath, target);
+  const target = unarchiveSessionArtifacts(archivePath);
   // Update parentSession refs in sibling files
   updateParentSessionRefs(dirname(archivePath), archivePath, target);
   return target;

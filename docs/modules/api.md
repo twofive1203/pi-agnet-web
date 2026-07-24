@@ -76,7 +76,7 @@ API routes live under `app/api/`. When adding, removing, or changing routes, upd
 | `trellis/setup/update/` | POST | Upgrade/install the Trellis CLI and run `trellis update` for an authorized workspace that already has `.trellis`. |
 | `default-cwd/` | POST | Create and return `~/pi-cwd-<YYYYMMDD>`. |
 | `home/` | GET | Return `os.homedir()`. |
-| `usage/` | GET | Aggregate token/cost usage across active-only or active-plus-archived sessions based on `pi-web.json` Usage settings. |
+| `usage/` | GET | Aggregate persisted token/cost usage across active-only or active-plus-archived parent sessions and their nested native subagent sessions, including main/subagent splits. |
 | `auth/providers/` | GET | List OAuth/subscription providers. `loggedIn` is true only when the active auth is OAuth (API-key-only credentials on dual-auth providers like `xai` do not count). |
 | `auth/all-providers/` | GET | List API-key-capable built-in providers (excludes primary OAuth-only ids and `models.json` custom keys). `configured` is true only for non-OAuth auth so an xAI subscription login does not also surface a separate active "xAI" API-key row. |
 | `auth/accounts/[provider]/` | GET/POST/PATCH/DELETE | List saved OAuth accounts, import one or more raw/CPA/SUB2API OAuth account JSON entries, update account remarks/extra info, return cached quota reset metadata, and soft-delete inactive saved accounts for supported providers (`openai-codex`). |

@@ -44,7 +44,7 @@
 | `components/UnifiedDiffView.tsx` | Theme-aware unified diff renderer for added, removed, hunk, header, and context lines. |
 | `components/TerminalPanel.tsx` | Bottom-dock Web Terminal workspace using xterm; manages ephemeral multi-tab terminal sessions, per-pane tab strips, tab renaming, nested drag-to-split panes, pane and dock resizing, minimize/restore, app-local fullscreen, and destructive close confirmation while reusing existing terminal session APIs per tab. |
 | `components/ModelPricingCatalog.tsx` | Searchable, provider-filterable read-only view of the locally cached pi.dev model pricing catalog, including context-window and token-price columns. |
-| `components/UsageStatsModal.tsx` | Token/cost usage statistics modal with active/archive scan counts and rounded M-token conversions. |
+| `components/UsageStatsModal.tsx` | Token/cost usage statistics modal with active/archive scan counts, parent-attributed native subagent costs, main/subagent splits, and rounded M-token conversions. |
 | `components/FileExplorer.tsx` | On-demand file tree inside the sidebar; root loads are abortable and workspace changes clear old roots before applying the new response. |
 | `components/FileViewer.tsx` | File content viewer/editor in a tab; routes media/document previews, orchestrates text editing state, and exposes Java implementation lookup results. |
 | `components/MonacoFileEditor.tsx` | Monaco-backed source editor for text files, including language mapping, basic completions, word wrap, theme, and line-selection callbacks. |
