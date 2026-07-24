@@ -14,6 +14,28 @@ import { normalizeToolCalls } from "@/lib/normalize";
 import { sendAgentCommand } from "@/lib/agent-client";
 import type { ToolEntry, ToolPreset } from "@/components/ToolPanel";
 import type { TrellisTaskChatContext } from "@/lib/trellis-chat-context";
+import {
+  extractSubagentRuns,
+  isSubagentResultFailure,
+  mergePersistedSubagentRuns,
+  parsePersistedSubagentRuns,
+  resultIndexForRun,
+  routingFromResult,
+  type SubagentActivityState,
+  type SubagentProgressSnapshot,
+  type SubagentProgressStatus,
+  type SubagentRecentTool,
+  type SubagentResultMetadata,
+  type SubagentRun,
+} from "@/lib/subagent-runs";
+
+export type {
+  SubagentActivityState,
+  SubagentProgressSnapshot,
+  SubagentProgressStatus,
+  SubagentRecentTool,
+  SubagentRun,
+} from "@/lib/subagent-runs";
 
 export interface SessionData {
   sessionId: string;
@@ -64,71 +86,6 @@ interface AgentEvent {
   type: string;
   [key: string]: unknown;
 }
-
-export type SubagentProgressStatus = "pending" | "running" | "completed" | "failed" | "detached";
-export type SubagentActivityState = "active_long_running" | "needs_attention";
-
-export interface SubagentRecentTool {
-  tool: string;
-  args: string;
-  endMs: number;
-}
-
-/** App-owned live progress snapshot projected from pi-subagents tool updates. */
-export interface SubagentProgressSnapshot {
-  index: number;
-  agent: string;
-  status: SubagentProgressStatus;
-  currentTool?: string;
-  currentToolArgs?: string;
-  currentToolStartedAt?: number;
-  recentTools: SubagentRecentTool[];
-  toolCount: number;
-  turnCount?: number;
-  tokens: number;
-  durationMs: number;
-  activityState?: SubagentActivityState;
-  error?: string;
-  failedTool?: string;
-}
-
-export interface SubagentRun {
-  id: string;
-  agent: string;
-  task: string;
-  status: "running" | "completed" | "failed";
-  partialOutput: string;
-  result?: string;
-  startedAt: number;
-  depth: number;
-  parentId?: string;
-  routing?: {
-    source?: string;
-    model?: string;
-    thinking?: string;
-    modality?: string;
-    tier?: string;
-    routerModel?: string;
-    confidence?: number;
-    fallbackReason?: string;
-  };
-  /** Latest live progress snapshot from tool_execution_update (full replace per update). */
-  progress?: SubagentProgressSnapshot;
-  /** Path to this subagent's own session JSONL (for recursive child lookup) */
-  sessionFile?: string;
-  /** Lazily-loaded nested children */
-  children?: SubagentRun[];
-  loaded?: boolean;
-}
-
-type SubagentResultMetadata = {
-  agent?: string;
-  sessionFile?: string;
-  routing?: SubagentRun["routing"];
-  model?: string;
-  thinking?: string;
-  thinkingLevel?: string;
-};
 
 const SUBAGENT_PROGRESS_STATUSES = new Set<SubagentProgressStatus>([
   "pending",
@@ -347,38 +304,6 @@ function readPartialRouting(details: Record<string, unknown> | undefined): Subag
   return undefined;
 }
 
-function routingFromResult(
-  result: SubagentResultMetadata | undefined,
-  source = "result",
-): SubagentRun["routing"] | undefined {
-  if (!result) return undefined;
-  if (result.routing) return result.routing;
-  if (!result.model && !result.thinking && !result.thinkingLevel) return undefined;
-  return {
-    source,
-    model: result.model,
-    thinking: result.thinking ?? result.thinkingLevel,
-  };
-}
-
-function routingFromExecutionArgs(
-  local: Record<string, unknown> | undefined,
-  root: Record<string, unknown>,
-): SubagentRun["routing"] | undefined {
-  const model = typeof local?.model === "string"
-    ? local.model
-    : typeof root.model === "string"
-      ? root.model
-      : undefined;
-  const thinking = typeof local?.thinking === "string"
-    ? local.thinking
-    : typeof root.thinking === "string"
-      ? root.thinking
-      : undefined;
-  if (!model && !thinking) return undefined;
-  return { source: "toolCall", model, thinking };
-}
-
 function liveResultForRun(
   rawResults: unknown,
   run: Pick<SubagentRun, "id" | "agent">,
@@ -399,19 +324,6 @@ function liveResultForRun(
   }
   const byAgent = results.filter((result) => result.agent === run.agent);
   return byAgent.length === 1 ? byAgent[0] as SubagentResultMetadata : undefined;
-}
-
-function resultIndexForRun(runId: string, toolCallId: string): number | null {
-  if (runId === toolCallId) return 0;
-  if (runId.startsWith(toolCallId + "-c")) {
-    const idx = parseInt(runId.slice(toolCallId.length + 2), 10);
-    return Number.isNaN(idx) ? null : idx;
-  }
-  if (runId.startsWith(toolCallId + "-")) {
-    const idx = parseInt(runId.slice(toolCallId.length + 1), 10);
-    return Number.isNaN(idx) ? null : idx;
-  }
-  return null;
 }
 
 /** Lightweight projection used to decide whether AppShell should re-render the panel. */
@@ -604,79 +516,6 @@ function loadModelMetadata(cwd: string, refreshGeneration: number): Promise<Mode
   return request;
 }
 
-/** Extract SubagentRun(s) from a subagent tool call's args.
- *  Handles single-agent, parallel (tasks[]), and chain modes. */
-function extractSubagentRuns(
-  toolCallId: string,
-  args: Record<string, unknown>,
-  fallbackAgent: string,
-): SubagentRun[] {
-  const depth = (args.parentDepth ?? 0) as number;
-  const parentId = (args.parentRunId as string) ?? undefined;
-  const now = Date.now();
-
-  // Parallel mode: { tasks: [{ agent, task }, ...] }
-  const tasks = args.tasks;
-  if (Array.isArray(tasks) && tasks.length > 0) {
-    return tasks.map((t: unknown, i: number) => {
-      const taskObj = t as Record<string, unknown> | undefined;
-      const agent = String(taskObj?.agent ?? "?");
-      const task = String(taskObj?.task ?? taskObj?.prompt ?? "");
-      return {
-        id: `${toolCallId}-${i}`,
-        agent,
-        task: task.slice(0, 200),
-        status: "running" as const,
-        partialOutput: "",
-        startedAt: now + i,
-        depth,
-        parentId,
-        routing: routingFromExecutionArgs(taskObj, args),
-      };
-    });
-  }
-
-  // Chain mode: { chain: [{ agent, task }, ...] }
-  const chain = args.chain;
-  if (Array.isArray(chain) && chain.length > 0) {
-    return chain.map((t: unknown, i: number) => {
-      const step = t as Record<string, unknown> | undefined;
-      const agent = String(step?.agent ?? "?");
-      const task = String(step?.task ?? step?.prompt ?? "");
-      return {
-        id: `${toolCallId}-c${i}`,
-        agent,
-        task: task.slice(0, 200),
-        status: "running" as const,
-        partialOutput: "",
-        startedAt: now + i,
-        depth,
-        parentId,
-        routing: routingFromExecutionArgs(step, args),
-      };
-    });
-  }
-
-  // Single-agent mode: { agent, task/prompt }
-  const agent = (args.agent ?? fallbackAgent) as string;
-  if (agent) {
-    const task = (args.task ?? args.prompt ?? "") as string;
-    return [{
-      id: toolCallId,
-      agent: String(agent),
-      task: typeof task === "string" ? task.slice(0, 200) : "",
-      status: "running" as const,
-      partialOutput: "",
-      startedAt: now,
-      depth,
-      parentId,
-      routing: routingFromExecutionArgs(undefined, args),
-    }];
-  }
-
-  return [];
-}
-
 export function useAgentSession(opts: UseAgentSessionOptions) {
   const {
     session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked,
@@ -738,6 +577,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const autoScrollEnabledRef = useRef(autoScrollEnabled);
   const autoScrollStickyRef = useRef(true);
+  const sessionLoadRequestRef = useRef(0);
+  const contextLoadRequestRef = useRef(0);
 
   const setNewSessionModel = opts.setNewSessionModel ?? setNewSessionModelState;
   const setToolPresetState = opts.setToolPreset ?? setToolPreset;
@@ -763,12 +604,16 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   })();
 
   const loadSession = useCallback(async (sid: string, showLoading = false, includeState = false) => {
+    const requestId = ++sessionLoadRequestRef.current;
+    const requestedAt = Date.now();
+    ++contextLoadRequestRef.current;
     try {
       if (showLoading) setLoading(true);
       const url = includeState
         ? `/api/sessions/${encodeURIComponent(sid)}?includeState`
         : `/api/sessions/${encodeURIComponent(sid)}`;
       const res = await fetch(url);
+      if (requestId !== sessionLoadRequestRef.current || sid !== sessionIdRef.current) return null;
       if (res.status === 404) {
         if (showLoading) {
           setData(null);
@@ -780,10 +625,16 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       }
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const d = await res.json() as SessionData & { agentState?: { running: boolean; state?: { isStreaming?: boolean; isCompacting?: boolean; contextUsage?: { percent: number | null; contextWindow: number; tokens: number | null } | null; systemPrompt?: string; thinkingLevel?: string } } };
+      if (requestId !== sessionLoadRequestRef.current || sid !== sessionIdRef.current) return null;
       setData(d);
       setActiveLeafId(d.leafId);
       setMessages(d.context.messages);
       setEntryIds(d.context.entryIds ?? []);
+      setSubagentRuns((current) => mergePersistedSubagentRuns(
+        parsePersistedSubagentRuns(d.context.messages),
+        current,
+        requestedAt,
+      ));
       setCurrentModelOverride(null);
       setError(null);
       // If no live agent state, fall back to thinking level from session file
@@ -792,14 +643,18 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       }
       return d.agentState ?? null;
     } catch (e) {
-      setError(String(e));
+      if (requestId === sessionLoadRequestRef.current && sid === sessionIdRef.current) {
+        setError(String(e));
+      }
       return null;
     } finally {
-      if (showLoading) setLoading(false);
+      if (showLoading && requestId === sessionLoadRequestRef.current) setLoading(false);
     }
   }, []);
 
   const loadContext = useCallback(async (sid: string, leafId: string | null) => {
+    ++sessionLoadRequestRef.current;
+    const requestId = ++contextLoadRequestRef.current;
     try {
       const url = leafId
         ? `/api/sessions/${encodeURIComponent(sid)}/context?leafId=${encodeURIComponent(leafId)}`
@@ -807,10 +662,15 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       const res = await fetch(url);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const d = await res.json() as { context: { messages: AgentMessage[]; entryIds: string[] } };
+      if (requestId !== contextLoadRequestRef.current || sid !== sessionIdRef.current) return;
       setMessages(d.context.messages);
       setEntryIds(d.context.entryIds ?? []);
+      setSubagentRuns((current) => mergePersistedSubagentRuns(
+        parsePersistedSubagentRuns(d.context.messages),
+        current,
+      ));
     } catch (e) {
-      console.error("Failed to load context:", e);
+      if (requestId === contextLoadRequestRef.current) console.error("Failed to load context:", e);
     }
   }, []);
 
@@ -991,7 +851,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       case "agent_start":
         setAgentRunning(true);
         setAgentPhase({ kind: "waiting_model" });
-        setSubagentRuns([]);
         dispatch({ type: "start" });
         break;
       case "prompt_settled":
@@ -1055,7 +914,11 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           if (args && !("action" in args)) {
             const runs = extractSubagentRuns(id, args, name);
             if (runs.length > 0) {
-              setSubagentRuns((prev) => [...prev, ...runs]);
+              setSubagentRuns((prev) => {
+                const existing = new Set(prev.map((run) => run.id));
+                const additions = runs.filter((run) => !existing.has(run.id));
+                return additions.length > 0 ? [...prev, ...additions] : prev;
+              });
             }
           }
         }
@@ -1160,7 +1023,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
               const result = details?.results?.[resultIndex];
               const sessionFile = result?.sessionFile;
               const routing = routingFromResult(result) ?? fallbackRouting;
-              return { ...r, status: isError ? "failed" : "completed", result: resultText, partialOutput: "", sessionFile: sessionFile ?? r.sessionFile, routing: routing ?? r.routing };
+              return { ...r, status: isError || isSubagentResultFailure(result) ? "failed" : "completed", result: resultText, partialOutput: "", sessionFile: sessionFile ?? r.sessionFile, routing: routing ?? r.routing };
             }
             return r;
           }),
