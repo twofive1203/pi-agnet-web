@@ -11,6 +11,13 @@
 - Danger destructive confirmations must use `tone: "danger"` option.
 - Always include `appDialog` and `t` in `useCallback` dependency arrays when used inside.
 
+## Panel Resize Handles
+
+- Prefer lightweight Pointer Events separators (no third-party split-pane libs) for desktop Explorer height and shared right-panel width.
+- Persist pixel sizes in versioned `localStorage` keys, re-clamp on viewport/sidebar changes, and keep collapse/expand from clearing the last good size.
+- Hide/disable drag handles at `max-width: 640px` so mobile drawers stay full-width; expanded Explorer must keep equal remaining-height sharing with the session list (do not apply a 1px/collapsed flex basis).
+- When viewport width cannot fit `260 + 360 + 300` (sidebar + chat min + right min), dock the right panel as an overlay drawer and disable its resize handle instead of compressing chat.
+
 ## Forbidden
 
 - Do not use `window.alert()`, `window.confirm()`, or `window.prompt()` for business-logic dialogs in client components.

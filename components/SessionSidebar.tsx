@@ -8,6 +8,36 @@ import { useI18n } from "@/components/I18nProvider";
 import { useAppDialog } from "@/components/AppDialogProvider";
 import type { MessageParams } from "@/lib/i18n";
 
+const EXPLORER_HEIGHT_STORAGE_KEY = "pi-web-explorer-height-v1";
+const DEFAULT_EXPLORER_HEIGHT = 240;
+const MIN_EXPLORER_HEIGHT = 120;
+const MIN_SESSION_LIST_HEIGHT = 80;
+const EXPLORER_RESIZE_STEP = 10;
+const EXPLORER_RESIZE_STEP_LARGE = 40;
+
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+function readStoredExplorerHeight(): number {
+  try {
+    const raw = window.localStorage.getItem(EXPLORER_HEIGHT_STORAGE_KEY);
+    if (raw == null) return DEFAULT_EXPLORER_HEIGHT;
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) ? parsed : DEFAULT_EXPLORER_HEIGHT;
+  } catch {
+    return DEFAULT_EXPLORER_HEIGHT;
+  }
+}
+
+function writeStoredExplorerHeight(height: number): void {
+  try {
+    window.localStorage.setItem(EXPLORER_HEIGHT_STORAGE_KEY, String(height));
+  } catch {
+    // Ignore quota / private-mode failures.
+  }
+}
+
 interface Props {
   selectedSessionId: string | null;
   onSelectSession: (session: SessionInfo, isRestore?: boolean) => void;
@@ -358,6 +388,9 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const [archiveAllBusy, setArchiveAllBusy] = useState(false);
   const [explorerOpen, setExplorerOpen] = useState(false);
   const [explorerKey, setExplorerKey] = useState(0);
+  const [explorerHeight, setExplorerHeight] = useState(DEFAULT_EXPLORER_HEIGHT);
+  const [explorerResizing, setExplorerResizing] = useState(false);
+  const [isDesktopLayout, setIsDesktopLayout] = useState(false);
   const [sessionRefreshDone, setSessionRefreshDone] = useState(false);
   const [explorerRefreshDone, setExplorerRefreshDone] = useState(false);
   const [creatingWorktree, setCreatingWorktree] = useState(false);
@@ -374,6 +407,8 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const [archivedExpanded, setArchivedExpanded] = useState(false);
   const sessionRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const explorerRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sidebarRootRef = useRef<HTMLDivElement>(null);
+  const explorerHeightRef = useRef(explorerHeight);
 
   const resetCwdPickerView = useCallback(() => {
     setAllProjectsOpen(false);
@@ -384,6 +419,102 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     setDropdownOpen(false);
     resetCwdPickerView();
   }, [resetCwdPickerView]);
+
+  useEffect(() => {
+    explorerHeightRef.current = explorerHeight;
+  }, [explorerHeight]);
+
+  useEffect(() => {
+    setExplorerHeight(readStoredExplorerHeight());
+  }, []);
+
+  useEffect(() => {
+    const media = window.matchMedia("(min-width: 641px)");
+    const sync = () => setIsDesktopLayout(media.matches);
+    sync();
+    media.addEventListener("change", sync);
+    return () => media.removeEventListener("change", sync);
+  }, []);
+
+  const getExplorerHeightBounds = useCallback(() => {
+    const root = sidebarRootRef.current;
+    if (!root) {
+      return { min: MIN_EXPLORER_HEIGHT, max: Math.max(MIN_EXPLORER_HEIGHT, DEFAULT_EXPLORER_HEIGHT) };
+    }
+    const headerEl = root.firstElementChild as HTMLElement | null;
+    const headerHeight = headerEl?.offsetHeight ?? 0;
+    const max = Math.max(
+      MIN_EXPLORER_HEIGHT,
+      root.clientHeight - headerHeight - MIN_SESSION_LIST_HEIGHT,
+    );
+    return { min: MIN_EXPLORER_HEIGHT, max };
+  }, []);
+
+  const clampExplorerHeight = useCallback((value: number) => {
+    const { min, max } = getExplorerHeightBounds();
+    return clampNumber(Math.round(value), min, max);
+  }, [getExplorerHeightBounds]);
+
+  const commitExplorerHeight = useCallback((value: number, persist: boolean) => {
+    const next = clampExplorerHeight(value);
+    explorerHeightRef.current = next;
+    setExplorerHeight(next);
+    if (persist) writeStoredExplorerHeight(next);
+    return next;
+  }, [clampExplorerHeight]);
+
+  useEffect(() => {
+    if (!isDesktopLayout || !explorerOpen) return;
+    const reclamp = () => {
+      setExplorerHeight((current) => clampExplorerHeight(current));
+    };
+    reclamp();
+    window.addEventListener("resize", reclamp);
+    return () => window.removeEventListener("resize", reclamp);
+  }, [clampExplorerHeight, explorerOpen, isDesktopLayout]);
+
+  const handleExplorerResizePointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (!isDesktopLayout || !explorerOpen) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const root = sidebarRootRef.current;
+    if (!root) return;
+
+    const bottom = root.getBoundingClientRect().bottom;
+    const previousUserSelect = document.body.style.userSelect;
+    const previousCursor = document.body.style.cursor;
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = "row-resize";
+    setExplorerResizing(true);
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      commitExplorerHeight(bottom - moveEvent.clientY, false);
+    };
+    const handlePointerUp = () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerUp);
+      document.body.style.userSelect = previousUserSelect;
+      document.body.style.cursor = previousCursor;
+      setExplorerResizing(false);
+      writeStoredExplorerHeight(explorerHeightRef.current);
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerUp);
+  }, [commitExplorerHeight, explorerOpen, isDesktopLayout]);
+
+  const handleExplorerResizeKeyDown = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!isDesktopLayout || !explorerOpen) return;
+    const step = event.shiftKey ? EXPLORER_RESIZE_STEP_LARGE : EXPLORER_RESIZE_STEP;
+    let delta = 0;
+    if (event.key === "ArrowUp") delta = step;
+    else if (event.key === "ArrowDown") delta = -step;
+    else return;
+    event.preventDefault();
+    commitExplorerHeight(explorerHeightRef.current + delta, true);
+  }, [commitExplorerHeight, explorerOpen, isDesktopLayout]);
 
   const loadSessions = useCallback(async (showLoading = false) => {
     try {
@@ -793,8 +924,20 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   // Build parent-child tree within the filtered set
   const sessionTree = buildSessionTree(filteredSessions);
 
+  const explorerCwd = selectedCwdProp || selectedCwd;
+  const explorerHeightBounds = getExplorerHeightBounds();
+  // Desktop uses a persisted pixel height; mobile keeps the prior equal remaining-space split.
+  const sizedExplorerOpen = Boolean(explorerOpen && explorerCwd && isDesktopLayout);
+  const equalShareExplorerOpen = Boolean(explorerOpen && explorerCwd && !isDesktopLayout);
+  const explorerSectionFlex = !explorerOpen
+    ? "0 0 auto"
+    : sizedExplorerOpen
+      ? `0 0 ${explorerHeight}px`
+      : "1 1 0";
+  const sessionListFlex = equalShareExplorerOpen ? "1 1 0" : "1 1 auto";
+
   return (
-    <div className="session-sidebar-root" style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
+    <div ref={sidebarRootRef} className="session-sidebar-root" style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
       {/* Header */}
       <div
         style={{
@@ -1564,7 +1707,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       )}
 
       {/* Session list */}
-      <div style={{ flex: explorerOpen && (selectedCwdProp || selectedCwd) ? "1 1 0" : "1 1 auto", overflowY: "auto", padding: "0", minHeight: 80 }}>
+      <div style={{ flex: sessionListFlex, overflowY: "auto", padding: "0", minHeight: MIN_SESSION_LIST_HEIGHT }}>
         {loading && (
           <div style={{ padding: "16px 14px", color: "var(--text-muted)", fontSize: 12 }}>
             Loading...
@@ -1707,91 +1850,110 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       </div>
 
       {/* File Explorer section */}
-      {(selectedCwdProp || selectedCwd) && (
-        <div
-          style={{
-            borderTop: "1px solid var(--border)",
-            display: "flex",
-            flexDirection: "column",
-            flex: explorerOpen ? "1 1 0" : "0 0 auto",
-            minHeight: 0,
-            overflow: "hidden",
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", flexShrink: 0 }}>
-            <button
-              onClick={() => setExplorerOpen((v) => !v)}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                flex: 1,
-                padding: "6px 10px",
-                background: "none",
-                border: "none",
-                color: "var(--text-muted)",
-                cursor: "pointer",
-                fontSize: 11,
-                fontWeight: 600,
-                letterSpacing: "0.05em",
-                textTransform: "uppercase",
-                textAlign: "left",
-              }}
-            >
-              <svg
-                width="9" height="9" viewBox="0 0 10 10" fill="none"
-                stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"
-                style={{ transform: explorerOpen ? "rotate(90deg)" : "none", transition: "transform 0.15s", flexShrink: 0 }}
-              >
-                <polyline points="3 2 7 5 3 8" />
-              </svg>
-              Explorer
-            </button>
-            <button
-              onClick={() => {
-                setExplorerKey((k) => k + 1);
-                setExplorerRefreshDone(true);
-                if (explorerRefreshTimerRef.current) clearTimeout(explorerRefreshTimerRef.current);
-                explorerRefreshTimerRef.current = setTimeout(() => setExplorerRefreshDone(false), 2000);
-              }}
-              title={t("sidebar.refreshExplorer")}
-              style={{
-                display: "flex", alignItems: "center", justifyContent: "center",
-                width: 26, height: 26, padding: 0, marginRight: 6,
-                background: explorerRefreshDone ? "rgba(74,222,128,0.18)" : "none",
-                border: "none",
-                color: explorerRefreshDone ? "#4ade80" : "var(--text-dim)",
-                cursor: "pointer",
-                borderRadius: 5,
-                flexShrink: 0,
-                transition: "color 0.3s, background 0.3s",
-              }}
-              onMouseEnter={(e) => { if (explorerRefreshDone) return; e.currentTarget.style.color = "var(--text-muted)"; e.currentTarget.style.background = "var(--bg-hover)"; }}
-              onMouseLeave={(e) => { if (explorerRefreshDone) return; e.currentTarget.style.color = "var(--text-dim)"; e.currentTarget.style.background = "none"; }}
-            >
-              {explorerRefreshDone ? (
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="20 6 9 17 4 12" />
-                </svg>
-              ) : (
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-                  <path d="M3 3v5h5" />
-                </svg>
-              )}
-            </button>
-          </div>
-          {explorerOpen && (
-            <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden" }}>
-              <FileExplorer
-                cwd={selectedCwdProp ?? selectedCwd!}
-                onOpenFile={onOpenFile ?? (() => {})}
-                refreshKey={explorerKey}
-                onAtMention={onAtMention}
-              />
-            </div>
+      {explorerCwd && (
+        <>
+          {explorerOpen && isDesktopLayout && (
+            <div
+              className={`panel-resize-handle panel-resize-handle-horizontal${explorerResizing ? " is-active" : ""}`}
+              role="separator"
+              aria-orientation="horizontal"
+              aria-valuemin={explorerHeightBounds.min}
+              aria-valuemax={explorerHeightBounds.max}
+              aria-valuenow={clampExplorerHeight(explorerHeight)}
+              aria-label={t("sidebar.resizeExplorer")}
+              title={t("sidebar.resizeExplorer")}
+              tabIndex={0}
+              onPointerDown={handleExplorerResizePointerDown}
+              onKeyDown={handleExplorerResizeKeyDown}
+            />
           )}
-        </div>
+          <div
+            className="session-sidebar-explorer"
+            style={{
+              borderTop: "1px solid var(--border)",
+              display: "flex",
+              flexDirection: "column",
+              flex: explorerSectionFlex,
+              height: sizedExplorerOpen ? explorerHeight : undefined,
+              minHeight: 0,
+              overflow: "hidden",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", flexShrink: 0 }}>
+              <button
+                onClick={() => setExplorerOpen((v) => !v)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  flex: 1,
+                  padding: "6px 10px",
+                  background: "none",
+                  border: "none",
+                  color: "var(--text-muted)",
+                  cursor: "pointer",
+                  fontSize: 11,
+                  fontWeight: 600,
+                  letterSpacing: "0.05em",
+                  textTransform: "uppercase",
+                  textAlign: "left",
+                }}
+              >
+                <svg
+                  width="9" height="9" viewBox="0 0 10 10" fill="none"
+                  stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"
+                  style={{ transform: explorerOpen ? "rotate(90deg)" : "none", transition: "transform 0.15s", flexShrink: 0 }}
+                >
+                  <polyline points="3 2 7 5 3 8" />
+                </svg>
+                Explorer
+              </button>
+              <button
+                onClick={() => {
+                  setExplorerKey((k) => k + 1);
+                  setExplorerRefreshDone(true);
+                  if (explorerRefreshTimerRef.current) clearTimeout(explorerRefreshTimerRef.current);
+                  explorerRefreshTimerRef.current = setTimeout(() => setExplorerRefreshDone(false), 2000);
+                }}
+                title={t("sidebar.refreshExplorer")}
+                style={{
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  width: 26, height: 26, padding: 0, marginRight: 6,
+                  background: explorerRefreshDone ? "rgba(74,222,128,0.18)" : "none",
+                  border: "none",
+                  color: explorerRefreshDone ? "#4ade80" : "var(--text-dim)",
+                  cursor: "pointer",
+                  borderRadius: 5,
+                  flexShrink: 0,
+                  transition: "color 0.3s, background 0.3s",
+                }}
+                onMouseEnter={(e) => { if (explorerRefreshDone) return; e.currentTarget.style.color = "var(--text-muted)"; e.currentTarget.style.background = "var(--bg-hover)"; }}
+                onMouseLeave={(e) => { if (explorerRefreshDone) return; e.currentTarget.style.color = "var(--text-dim)"; e.currentTarget.style.background = "none"; }}
+              >
+                {explorerRefreshDone ? (
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                ) : (
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                    <path d="M3 3v5h5" />
+                  </svg>
+                )}
+              </button>
+            </div>
+            {explorerOpen && (
+              <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden", minHeight: 0 }}>
+                <FileExplorer
+                  cwd={selectedCwdProp ?? selectedCwd!}
+                  onOpenFile={onOpenFile ?? (() => {})}
+                  refreshKey={explorerKey}
+                  onAtMention={onAtMention}
+                />
+              </div>
+            )}
+          </div>
+        </>
       )}
     </div>
   );

@@ -38,11 +38,83 @@ import { trellisTaskDetailToChatContext, type TrellisTaskChatContext } from "@/l
 import type { ChatInputHandle } from "./ChatInput";
 
 const TOP_PANEL_SAFE_SELECTOR = ".app-top-aux-panel, .app-top-aux-tab, .branch-navigator-inline";
+const RIGHT_PANEL_WIDTH_STORAGE_KEY = "pi-web-right-panel-width-v1";
+const DEFAULT_RIGHT_PANEL_RATIO = 0.42;
+const MAX_RIGHT_PANEL_RATIO = 0.7;
+const MIN_RIGHT_PANEL_WIDTH = 300;
+const MIN_CHAT_WIDTH = 360;
+const DESKTOP_SIDEBAR_WIDTH = 260;
+/** Inline dock needs sidebar + chat min + right min; below this use overlay drawer. */
+const RIGHT_PANEL_INLINE_MIN_VIEWPORT =
+  DESKTOP_SIDEBAR_WIDTH + MIN_CHAT_WIDTH + MIN_RIGHT_PANEL_WIDTH; // 920
+const RIGHT_PANEL_RESIZE_STEP = 10;
+const RIGHT_PANEL_RESIZE_STEP_LARGE = 40;
 
 function isTopPanelSafeTarget(target: EventTarget | null): boolean {
   if (target instanceof Element) return Boolean(target.closest(TOP_PANEL_SAFE_SELECTOR));
   if (target instanceof Node) return Boolean(target.parentElement?.closest(TOP_PANEL_SAFE_SELECTOR));
   return false;
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+function isDesktopLayoutViewport(): boolean {
+  return typeof window !== "undefined" && window.matchMedia("(min-width: 641px)").matches;
+}
+
+function isRightPanelInlineViewport(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    window.matchMedia(`(min-width: ${RIGHT_PANEL_INLINE_MIN_VIEWPORT}px)`).matches
+  );
+}
+
+function getDefaultRightPanelWidth(): number {
+  if (typeof window === "undefined") return MIN_RIGHT_PANEL_WIDTH;
+  return Math.round(window.innerWidth * DEFAULT_RIGHT_PANEL_RATIO);
+}
+
+function readStoredRightPanelWidth(): number {
+  try {
+    const raw = window.localStorage.getItem(RIGHT_PANEL_WIDTH_STORAGE_KEY);
+    if (raw == null) return getDefaultRightPanelWidth();
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) ? parsed : getDefaultRightPanelWidth();
+  } catch {
+    return getDefaultRightPanelWidth();
+  }
+}
+
+function writeStoredRightPanelWidth(width: number): void {
+  try {
+    window.localStorage.setItem(RIGHT_PANEL_WIDTH_STORAGE_KEY, String(width));
+  } catch {
+    // Ignore quota / private-mode failures.
+  }
+}
+
+function getRightPanelWidthBounds(sidebarOpen: boolean): { min: number; max: number } {
+  if (typeof window === "undefined") {
+    return { min: MIN_RIGHT_PANEL_WIDTH, max: MIN_RIGHT_PANEL_WIDTH };
+  }
+  const maxByRatio = Math.floor(window.innerWidth * MAX_RIGHT_PANEL_RATIO);
+  // Overlay / non-inline: drawer floats over chat, so only ratio/viewport bounds apply.
+  if (!isRightPanelInlineViewport()) {
+    const max = Math.max(MIN_RIGHT_PANEL_WIDTH, Math.min(window.innerWidth, maxByRatio || window.innerWidth));
+    const min = Math.min(MIN_RIGHT_PANEL_WIDTH, max);
+    return { min, max };
+  }
+  const sidebarWidth = sidebarOpen && isDesktopLayoutViewport() ? DESKTOP_SIDEBAR_WIDTH : 0;
+  const maxByChat = window.innerWidth - sidebarWidth - MIN_CHAT_WIDTH;
+  const max = Math.max(MIN_RIGHT_PANEL_WIDTH, Math.min(maxByChat, maxByRatio));
+  return { min: MIN_RIGHT_PANEL_WIDTH, max };
+}
+
+function clampRightPanelWidth(width: number, sidebarOpen: boolean): number {
+  const { min, max } = getRightPanelWidthBounds(sidebarOpen);
+  return clampNumber(Math.round(width), min, max);
 }
 
 export function AppShell() {
@@ -194,6 +266,13 @@ export function AppShell() {
   const [activeFileTabId, setActiveFileTabId] = useState<string | null>(null);
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
   const [rightPanelMode, setRightPanelMode] = useState<"files" | "trellis" | "workflow">("files");
+  const [rightPanelWidth, setRightPanelWidth] = useState(MIN_RIGHT_PANEL_WIDTH);
+  const [rightPanelResizing, setRightPanelResizing] = useState(false);
+  const [isDesktopLayout, setIsDesktopLayout] = useState(false);
+  const [rightPanelInline, setRightPanelInline] = useState(false);
+  const rightPanelWidthRef = useRef(rightPanelWidth);
+  const rightPanelRef = useRef<HTMLDivElement>(null);
+  const rightPanelResizable = isDesktopLayout && rightPanelInline;
   const [focusedTrellisTaskKey, setFocusedTrellisTaskKey] = useState<string | null>(null);
   const [trellisSessionTask, setTrellisSessionTask] = useState<TrellisSessionTaskLinkResult | null>(null);
   const [trellisSessionTaskRefreshKey, setTrellisSessionTaskRefreshKey] = useState(0);
@@ -208,6 +287,93 @@ export function AppShell() {
   const handleAtMention = useCallback((relativePath: string) => {
     chatInputRef.current?.addFileReference(relativePath);
   }, []);
+
+  useEffect(() => {
+    rightPanelWidthRef.current = rightPanelWidth;
+  }, [rightPanelWidth]);
+
+  useEffect(() => {
+    setRightPanelWidth(clampRightPanelWidth(readStoredRightPanelWidth(), sidebarOpen));
+    // Hydrate once from localStorage; later reclamps keep the in-memory value.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only restore
+  }, []);
+
+  useEffect(() => {
+    const desktopMedia = window.matchMedia("(min-width: 641px)");
+    const inlineMedia = window.matchMedia(`(min-width: ${RIGHT_PANEL_INLINE_MIN_VIEWPORT}px)`);
+    const sync = () => {
+      setIsDesktopLayout(desktopMedia.matches);
+      setRightPanelInline(inlineMedia.matches);
+    };
+    sync();
+    desktopMedia.addEventListener("change", sync);
+    inlineMedia.addEventListener("change", sync);
+    return () => {
+      desktopMedia.removeEventListener("change", sync);
+      inlineMedia.removeEventListener("change", sync);
+    };
+  }, []);
+
+  const commitRightPanelWidth = useCallback((width: number, persist: boolean) => {
+    const next = clampRightPanelWidth(width, sidebarOpen);
+    rightPanelWidthRef.current = next;
+    setRightPanelWidth(next);
+    if (persist) writeStoredRightPanelWidth(next);
+    return next;
+  }, [sidebarOpen]);
+
+  useEffect(() => {
+    if (!isDesktopLayout) return;
+    const reclamp = () => {
+      setRightPanelWidth((current) => clampRightPanelWidth(current, sidebarOpen));
+    };
+    reclamp();
+    window.addEventListener("resize", reclamp);
+    return () => window.removeEventListener("resize", reclamp);
+  }, [isDesktopLayout, rightPanelInline, sidebarOpen]);
+
+  const handleRightPanelResizePointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (!rightPanelResizable || !rightPanelOpen) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const panel = rightPanelRef.current;
+    if (!panel) return;
+
+    const rightEdge = panel.getBoundingClientRect().right;
+    const previousUserSelect = document.body.style.userSelect;
+    const previousCursor = document.body.style.cursor;
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = "col-resize";
+    setRightPanelResizing(true);
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      commitRightPanelWidth(rightEdge - moveEvent.clientX, false);
+    };
+    const handlePointerUp = () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerUp);
+      document.body.style.userSelect = previousUserSelect;
+      document.body.style.cursor = previousCursor;
+      setRightPanelResizing(false);
+      writeStoredRightPanelWidth(rightPanelWidthRef.current);
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerUp);
+  }, [commitRightPanelWidth, rightPanelOpen, rightPanelResizable]);
+
+  const handleRightPanelResizeKeyDown = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!rightPanelResizable || !rightPanelOpen) return;
+    const step = event.shiftKey ? RIGHT_PANEL_RESIZE_STEP_LARGE : RIGHT_PANEL_RESIZE_STEP;
+    let delta = 0;
+    if (event.key === "ArrowLeft") delta = step;
+    else if (event.key === "ArrowRight") delta = -step;
+    else return;
+    event.preventDefault();
+    commitRightPanelWidth(rightPanelWidthRef.current + delta, true);
+  }, [commitRightPanelWidth, rightPanelOpen, rightPanelResizable]);
 
   const [initialSessionId] = useState<string | null>(() => searchParams.get("session"));
   const [activeCwd, setActiveCwd] = useState<string | null>(null);
@@ -724,7 +890,16 @@ export function AppShell() {
 
   return (
     <>
-    <div className="app-shell-root" style={{ display: "flex", height: "100dvh", overflow: "hidden", background: "var(--bg)" }}>
+    <div
+      className="app-shell-root"
+      style={{
+        display: "flex",
+        height: "100dvh",
+        overflow: "hidden",
+        background: "var(--bg)",
+        ["--right-panel-width" as string]: `${rightPanelWidth}px`,
+      }}
+    >
       {/* Mobile overlay backdrop */}
       <div
         className="sidebar-overlay-backdrop"
@@ -1295,14 +1470,31 @@ export function AppShell() {
 
       {/* Right panel: file viewer or Trellis — always mounted, width animated via CSS */}
       <div
-        className={`right-panel-container${rightPanelOpen ? " right-panel-open" : " right-panel-closed"}`}
+        ref={rightPanelRef}
+        className={`right-panel-container${rightPanelOpen ? " right-panel-open" : " right-panel-closed"}${rightPanelResizing ? " right-panel-resizing" : ""}`}
         style={{
           display: "flex",
           flexDirection: "column",
           borderLeft: "1px solid var(--border)",
           background: "var(--bg)",
+          position: "relative",
         }}
       >
+        {rightPanelOpen && rightPanelResizable && (
+          <div
+            className={`panel-resize-handle panel-resize-handle-vertical${rightPanelResizing ? " is-active" : ""}`}
+            role="separator"
+            aria-orientation="vertical"
+            aria-valuemin={getRightPanelWidthBounds(sidebarOpen).min}
+            aria-valuemax={getRightPanelWidthBounds(sidebarOpen).max}
+            aria-valuenow={clampRightPanelWidth(rightPanelWidth, sidebarOpen)}
+            aria-label={t("app.resizeRightPanel")}
+            title={t("app.resizeRightPanel")}
+            tabIndex={0}
+            onPointerDown={handleRightPanelResizePointerDown}
+            onKeyDown={handleRightPanelResizeKeyDown}
+          />
+        )}
         {rightPanelMode === "files" ? (
           <>
             {/* Right panel tab bar */}
