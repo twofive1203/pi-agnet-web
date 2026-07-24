@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import type { AgentMessage, SessionInfo, SessionTreeNode } from "@/lib/types";
 import { MessageView } from "./MessageView";
 import { ChatInput, type ChatInputHandle } from "./ChatInput";
@@ -106,7 +106,7 @@ function Typewriter({ phrases }: { phrases: string[] }) {
   );
 }
 
-export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSubagentChange, onInteractiveShellRequest, onSessionStatsChange, onContextUsageChange }: Props) {
+export const ChatWindow = memo(function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSubagentChange, onInteractiveShellRequest, onSessionStatsChange, onContextUsageChange }: Props) {
   const { t } = useI18n();
   const { autoScrollEnabled, onAutoScrollToggle } = useAutoScroll();
   const {
@@ -466,4 +466,4 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
       <ExtensionToastHost toasts={extensionToasts} onDismiss={dismissExtensionToast} />
     </div>
   );
-}
+});

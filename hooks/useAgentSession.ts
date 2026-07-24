@@ -383,6 +383,7 @@ type ExtensionUiRequestEvent = AgentEvent & {
 };
 
 const EXTENSION_TOAST_TTL_MS = 5000;
+const SUBAGENT_UI_FLUSH_MS = 150;
 
 function toDialogRequest(event: ExtensionUiRequestEvent): ExtensionDialogRequest | null {
   if (event.method === "confirm") {
@@ -555,7 +556,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [isCompacting, setIsCompacting] = useState(false);
   const [compactError, setCompactError] = useState<string | null>(null);
   const [agentPhase, setAgentPhase] = useState<AgentPhase>(null);
-  const [subagentRuns, setSubagentRuns] = useState<SubagentRun[]>([]);
+  const subagentRunsRef = useRef<SubagentRun[]>([]);
+  const subagentFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const subagentChangeRef = useRef(onSubagentChange);
+  subagentChangeRef.current = onSubagentChange;
   const [sessionChangesRefreshKey, setSessionChangesRefreshKey] = useState(0);
   const [extensionStatuses, setExtensionStatuses] = useState<ExtensionStatusItem[]>([]);
   const [extensionWidgets, setExtensionWidgets] = useState<ExtensionWidgetItem[]>([]);
@@ -582,6 +586,27 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
 
   const setNewSessionModel = opts.setNewSessionModel ?? setNewSessionModelState;
   const setToolPresetState = opts.setToolPreset ?? setToolPreset;
+
+  const prevRunsJsonRef = useRef("");
+  const flushSubagentRuns = useCallback(() => {
+    subagentFlushTimerRef.current = null;
+    const runs = subagentRunsRef.current;
+    const json = serializeSubagentRunsForFlush(runs);
+    if (json === prevRunsJsonRef.current) return;
+    prevRunsJsonRef.current = json;
+    subagentChangeRef.current?.(runs);
+  }, []);
+  const scheduleSubagentFlush = useCallback(() => {
+    if (subagentFlushTimerRef.current) return;
+    subagentFlushTimerRef.current = setTimeout(flushSubagentRuns, SUBAGENT_UI_FLUSH_MS);
+  }, [flushSubagentRuns]);
+  const updateSubagentRuns = useCallback((update: (runs: SubagentRun[]) => SubagentRun[]) => {
+    const current = subagentRunsRef.current;
+    const next = update(current);
+    if (next === current) return;
+    subagentRunsRef.current = next;
+    scheduleSubagentFlush();
+  }, [scheduleSubagentFlush]);
 
   const currentModel = currentModelOverride ?? data?.context.model ?? pendingModel ?? null;
   const displayModel = isNew ? newSessionModel : currentModel;
@@ -630,7 +655,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       setActiveLeafId(d.leafId);
       setMessages(d.context.messages);
       setEntryIds(d.context.entryIds ?? []);
-      setSubagentRuns((current) => mergePersistedSubagentRuns(
+      updateSubagentRuns((current) => mergePersistedSubagentRuns(
         parsePersistedSubagentRuns(d.context.messages),
         current,
         requestedAt,
@@ -650,7 +675,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     } finally {
       if (showLoading && requestId === sessionLoadRequestRef.current) setLoading(false);
     }
-  }, []);
+  }, [updateSubagentRuns]);
 
   const loadContext = useCallback(async (sid: string, leafId: string | null) => {
     ++sessionLoadRequestRef.current;
@@ -665,14 +690,14 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       if (requestId !== contextLoadRequestRef.current || sid !== sessionIdRef.current) return;
       setMessages(d.context.messages);
       setEntryIds(d.context.entryIds ?? []);
-      setSubagentRuns((current) => mergePersistedSubagentRuns(
+      updateSubagentRuns((current) => mergePersistedSubagentRuns(
         parsePersistedSubagentRuns(d.context.messages),
         current,
       ));
     } catch (e) {
       if (requestId === contextLoadRequestRef.current) console.error("Failed to load context:", e);
     }
-  }, []);
+  }, [updateSubagentRuns]);
 
   const loadTools = useCallback(async (sid: string) => {
     try {
@@ -715,16 +740,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   useEffect(() => {
     agentRunningRef.current = agentRunning;
   }, [agentRunning]);
-
-  // Flush subagent runs upward on visible progress/status changes (not full output text).
-  const prevRunsJsonRef = useRef("");
-  useEffect(() => {
-    const json = serializeSubagentRunsForFlush(subagentRuns);
-    if (json !== prevRunsJsonRef.current) {
-      prevRunsJsonRef.current = json;
-      onSubagentChange?.(subagentRuns);
-    }
-  });
 
   const clearExtensionChrome = useCallback(() => {
     extensionStatusMapRef.current.clear();
@@ -914,7 +929,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           if (args && !("action" in args)) {
             const runs = extractSubagentRuns(id, args, name);
             if (runs.length > 0) {
-              setSubagentRuns((prev) => {
+              updateSubagentRuns((prev) => {
                 const existing = new Set(prev.map((run) => run.id));
                 const additions = runs.filter((run) => !existing.has(run.id));
                 return additions.length > 0 ? [...prev, ...additions] : prev;
@@ -960,15 +975,16 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         const controlEvents = details?.controlEvents;
         if (!text && !routing && progressList.length === 0 && !Array.isArray(controlEvents)) break;
 
-        setSubagentRuns((prev) => {
+        updateSubagentRuns((prev) => {
           let changed = false;
           const next = prev.map((r) => {
             const related = r.id === updateId || r.id.startsWith(`${updateId}-`);
             if (!related) return r;
 
             let updated = r;
-            if (text) {
-              updated = { ...updated, partialOutput: updated.partialOutput + text };
+            if (text && text !== updated.partialOutput) {
+              // pi-subagents publishes the current full output snapshot, not a text delta.
+              updated = { ...updated, partialOutput: text };
               changed = true;
             }
             const liveResult = liveResultForRun(details?.results, updated, updateId);
@@ -1016,7 +1032,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         // Extract sessionFile/routing metadata from subagent tool-call details.
         const details = (event.result as { details?: { results?: SubagentResultMetadata[]; routing?: SubagentRun["routing"]; runs?: { routing?: SubagentRun["routing"] }[] } } | undefined)?.details;
         const fallbackRouting = details?.routing ?? details?.runs?.find((run) => run.routing)?.routing;
-        setSubagentRuns((prev) =>
+        updateSubagentRuns((prev) =>
           prev.map((r) => {
             const resultIndex = resultIndexForRun(r.id, endId);
             if (resultIndex !== null) {
@@ -1062,7 +1078,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         }
         break;
     }
-  }, [chatInputRef, dismissExtensionToast, loadSession, onAgentEnd]);
+  }, [chatInputRef, dismissExtensionToast, loadSession, onAgentEnd, updateSubagentRuns]);
   handleAgentEventRef.current = handleAgentEvent;
 
   const handleSend = useCallback(async (message: string, images?: AttachedImage[]) => {
@@ -1324,6 +1340,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       eventSourceRef.current = null;
       for (const timer of toastTimers.values()) clearTimeout(timer);
       toastTimers.clear();
+      if (subagentFlushTimerRef.current) {
+        clearTimeout(subagentFlushTimerRef.current);
+        subagentFlushTimerRef.current = null;
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -1438,7 +1458,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     agentRunning, modelNames, modelList, modelThinkingLevels, modelThinkingLevelMaps, newSessionModel, toolPreset, thinkingLevel,
     retryInfo, contextUsage, systemPrompt, forkingEntryId,
     isCompacting, compactError, currentModel, displayModel, sessionStats,
-    agentPhase, subagentRuns,
+    agentPhase, subagentRuns: subagentRunsRef.current,
     sessionChangesRefreshKey,
     extensionStatuses,
     extensionWidgets,

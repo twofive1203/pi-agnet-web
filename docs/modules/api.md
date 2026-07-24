@@ -15,7 +15,7 @@ API routes live under `app/api/`. When adding, removing, or changing routes, upd
 | `sessions/new/` | 410 | Deprecated route kept for compatibility. |
 | `agent/new/` | POST | Create a new session and send the first message. |
 | `agent/[id]/` | GET/POST | Get agent state or send a command. |
-| `agent/[id]/events/` | GET | SSE event stream. |
+| `agent/[id]/events/` | GET | SSE event stream. High-frequency live subagent updates are projected to browser-safe metadata/progress/results and bounded output text; full child message history remains in persisted session artifacts. |
 | `files/[...path]/` | GET/PUT | List/read/watch/preview workspace files for the file viewer and safely save existing editable text files. |
 | `files/search/` | GET | Search files in the selected workspace. |
 | `files/definitions/` | GET | Lightweight workspace text/code symbol definition search for editor drill-down actions. |

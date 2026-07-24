@@ -126,6 +126,9 @@ export function AppShell() {
   const handleSubagentChange = useCallback((runs: import("@/hooks/useAgentSession").SubagentRun[]) => {
     setSubagentRuns(runs);
   }, []);
+  useEffect(() => {
+    setSubagentRuns([]);
+  }, [sessionKey]);
 
   const handleInteractiveShellRequest = useCallback((request: { cwd: string; command?: string; reason?: string }) => {
     // When config is still loading, optimistically open; createTerminalSession enforces enablement.
