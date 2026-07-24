@@ -54,8 +54,9 @@ Shared logic lives under `lib/`. Prefer adding behavior here when it is used by 
 | `lib/workflow-gitignore.ts` | Maintains a marked SnFlow block in the project `.gitignore` when `workflow.trackInGit` is false (default). |
 | `lib/workflow-guidance.ts` | Legacy WebUI-side SnFlow system-prompt breadcrumbs for projects that are initialized but do not yet have the project extension installed. |
 | `lib/workflow-session-link.ts` | Session-scoped SnFlow task resolver for the floating widget. Accepts an exact `current.json.sessionId` match or explicit task evidence from that session transcript; unbound cwd-global pointers do not associate blank/new sessions. |
-| `lib/workflow-prompts.ts` | SnFlow implement/check prompt builders and structured-output normalizers for builtin `worker` / `reviewer`. |
-| `lib/workflow-run-manager.ts` | SnFlow cwd-bound in-memory Pi host sessions, native pi-subagents RPC (`ping`/`spawn`/`status`/`stop`), tsx-safe lazy Pi SDK loading plus extension binding, one-active-run-per-cwd lock, and restart-friendly run reconciliation. |
+| `lib/workflow-prompts.ts` | SnFlow dispatch marker, implement/check prompt builders, parser, and structured-output normalizers for builtin `worker` / `reviewer`. |
+| `lib/workflow-chat-lifecycle.ts` | Current-chat SnFlow native-subagent boundary: prepares selected-task-bound dispatch instructions, validates marked `subagent` calls before execution, correlates session/tool-call progress and terminal results, and persists task/run projections without affecting ordinary subagents. |
+| `lib/workflow-run-manager.ts` | Restart/reconnect reconciliation for SnFlow run records and native artifacts, including exact parent session/tool-call recovery, stale-run handling, and idempotent terminal task-projection repair. The hidden RPC host remains compatibility code, not the normal implement/check path. |
 | `lib/workspace-title.ts` | Shared workspace title formatting from cwd and Git metadata. |
 | `lib/i18n/` | Lightweight zh/en i18n core: locale types, browser/storage detection, nested message catalogs, and `translate()` with `{param}` interpolation. Consumed by `components/I18nProvider.tsx`. |
 

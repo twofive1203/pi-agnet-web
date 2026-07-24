@@ -80,10 +80,13 @@ Two separate subagent configuration systems exist:
 | Trellis routing | `pi-web.json → trellis.subagents` | User | Web UI Trellis workflow routing policy only |
 
 The WebUI-owned SnFlow panel (`pi-web.json → workflow` keeps preferences such as
-`includeArchived`; legacy `enabled` is ignored) dispatches implement/check
-through native pi-subagents RPC and uses the native `settings.json → subagents`
-model source only. It does not read Trellis routing policy. SnFlow activation is
-per-project initialization, not a global switch.
+`includeArchived`; legacy `enabled` is ignored) prepares a selected-task-bound
+instruction for the current chat, which calls the native `subagent` tool directly
+for implement/check. The SnFlow chat lifecycle validator checks the marker before
+execution and persists the native tool result; the existing Subagent panel owns
+live progress. Models come only from native `settings.json → subagents`. SnFlow
+does not read Trellis routing policy, and activation remains per-project
+initialization rather than a global switch.
 
 SnFlow project initialization installs managed assets from the bundled manifest in
 `lib/snflow-assets.ts` into the selected workspace (extension, skill, agents, CLI

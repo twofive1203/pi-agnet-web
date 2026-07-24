@@ -6,7 +6,7 @@
  * Installed/updated by the WebUI SnFlow setup (manifest-managed).
  */
 
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 type JsonObject = Record<string, unknown>;
@@ -57,7 +57,12 @@ function isValidTaskId(value: unknown): value is string {
 function resolveCwd(ctxCwd: string | undefined): string | null {
   const candidate = typeof ctxCwd === "string" && ctxCwd.trim() ? ctxCwd.trim() : "";
   if (!candidate) return null;
-  return isDirectory(candidate) ? candidate : null;
+  if (!isDirectory(candidate)) return null;
+  try {
+    return realpathSync.native(candidate);
+  } catch {
+    return null;
+  }
 }
 
 function snflowsRoot(cwd: string): string {
@@ -74,14 +79,43 @@ function currentTaskId(cwd: string): string | null {
   return pointer.taskId;
 }
 
-function taskStatus(cwd: string, taskId: string): { id: string; title: string; status: string } | null {
+function taskStatus(cwd: string, taskId: string): { id: string; title: string; status: string; revision: string | null } | null {
   const active = join(snflowsRoot(cwd), "tasks", taskId, "task.json");
   const archived = join(snflowsRoot(cwd), "archived", taskId, "task.json");
   const record = readJson(active) ?? readJson(archived);
   if (!record || !isValidTaskId(record.id)) return null;
   const title = typeof record.title === "string" && record.title.trim() ? record.title.trim() : taskId;
   const status = typeof record.status === "string" ? record.status : "planning";
-  return { id: record.id, title, status };
+  const revision = typeof record.revision === "string" && /^[a-f0-9]{16}$/.test(record.revision)
+    ? record.revision
+    : null;
+  return { id: record.id, title, status, revision };
+}
+
+function directDispatch(cwd: string, task: { id: string; title: string; revision: string | null }, phase: "implement" | "check"): string {
+  if (!task.revision) {
+    return "Task revision is missing or stale. Open/save the task in SnFlow before dispatch; fail closed instead of inventing a revision.";
+  }
+  const agent = phase === "implement" ? "worker" : "reviewer";
+  const marker = "SNFLOW_DISPATCH " + JSON.stringify({
+    v: 1,
+    taskId: task.id,
+    phase,
+    revision: task.revision,
+    cwd,
+  });
+  return [
+    "Call the current chat native subagent tool once (foreground, not CLI/RPC wait):",
+    "- agent: " + agent,
+    "- context: fresh",
+    "- cwd: " + cwd,
+    "- async: false",
+    "- clarify: false",
+    "- task first line must be exactly:",
+    marker,
+    "After that marker, include the task id/title, required task document paths, spec reads, no-recursion/no-commit rules, focused validation, and the structured result contract.",
+    "Do not run scripts/snflow-task.ts implement, check, or wait.",
+  ].join("\n");
 }
 
 function phaseForStatus(status: string): "plan" | "execute" | "finish" | "idle" {
@@ -181,13 +215,12 @@ function buildGuidance(cwd: string): string | null {
       "<!-- END SNFLOW SPEC -->) for spec-reading guidance specific to this project.",
       `Edit docs only through the canonical files: ${base}/requirements.md, ${base}/design.md, ${base}/plan.md`,
       "Do not create or update task.md as the task authority.",
-      "When the user approves implementation, do all of this in the same turn without asking again:",
-      "  npx tsx scripts/snflow-task.ts start",
-      "  npx tsx scripts/snflow-task.ts implement",
-      "  npx tsx scripts/snflow-task.ts wait",
+      "When the user approves implementation, mark the task ready, re-read task.json for its resulting revision, then call the current chat native subagent tool with builtin worker.",
+      "Use context:fresh, this canonical cwd, async:false and clarify:false. The task prompt must begin with the SNFLOW_DISPATCH v1 marker containing the resulting revision.",
+      "Do not run scripts/snflow-task.ts implement, check, or wait; do not replace native progress with a bash wait.",
       "Approval to implement means dispatch the worker subagent — do NOT implement the code yourself in the main session.",
-      "Manual fallback for start: change task.json status from planning to ready and update updatedAt.",
-      "Do not start large implementation before start.",
+      "The panel Mark Ready action or scripts/snflow-task.ts start may perform the planning-to-ready transition.",
+      "Do not start large implementation before the task is ready.",
       "</workflow-state:planning>",
     ].join("\n");
   }
@@ -200,20 +233,20 @@ function buildGuidance(cwd: string): string | null {
     task.status === "changes_requested" ||
     task.status === "failed"
   ) {
+    const dispatch = task.status === "review_ready"
+      ? directDispatch(cwd, task, "check")
+      : task.status === "implementing" || task.status === "checking"
+        ? "A marked foreground native subagent call is already active. Do not dispatch a duplicate phase."
+        : directDispatch(cwd, task, "implement");
     return [
       "<workflow-state:in_progress>",
       ...header,
-      "Main-session default flow (Trellis-like):",
-      "  implement -> check -> ready_to_commit -> user commit -> complete/archive",
-      "You are the orchestrator. Implementation MUST run in the worker subagent, not the main session:",
-      "  npx tsx scripts/snflow-task.ts implement",
-      "  npx tsx scripts/snflow-task.ts wait",
-      "  npx tsx scripts/snflow-task.ts check",
-      "  npx tsx scripts/snflow-task.ts wait",
+      "Main-session default flow: implement -> check -> ready_to_commit -> user commit -> complete/archive.",
+      "The current chat native subagent tool is the only implement/check path; its tool updates drive the top Subagents panel.",
+      dispatch,
       "Before development, read .pi/snflows/spec/index.md and relevant layer indexes when present.",
       "Also read the project-root AGENTS.md SnFlow managed section for spec-reading guidance.",
       "Do NOT edit project source files yourself in the main session for this task; files under .pi/snflows/spec/ are explicitly allowed for specification maintenance.",
-      "Sole source-code inline exception: trivial fixes of roughly <=10 lines with no new files; still run check afterwards.",
       "Recursion guard: if you are already the implement/check child, do not re-dispatch SnFlow agents.",
       "Never git commit/push/PR unless the user explicitly asks.",
       "Read task docs before editing code.",

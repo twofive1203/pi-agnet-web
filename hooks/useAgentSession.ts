@@ -347,15 +347,58 @@ function readPartialRouting(details: Record<string, unknown> | undefined): Subag
   return undefined;
 }
 
-function routingFromResult(result: SubagentResultMetadata | undefined): SubagentRun["routing"] | undefined {
+function routingFromResult(
+  result: SubagentResultMetadata | undefined,
+  source = "result",
+): SubagentRun["routing"] | undefined {
   if (!result) return undefined;
   if (result.routing) return result.routing;
   if (!result.model && !result.thinking && !result.thinkingLevel) return undefined;
   return {
-    source: "result",
+    source,
     model: result.model,
     thinking: result.thinking ?? result.thinkingLevel,
   };
+}
+
+function routingFromExecutionArgs(
+  local: Record<string, unknown> | undefined,
+  root: Record<string, unknown>,
+): SubagentRun["routing"] | undefined {
+  const model = typeof local?.model === "string"
+    ? local.model
+    : typeof root.model === "string"
+      ? root.model
+      : undefined;
+  const thinking = typeof local?.thinking === "string"
+    ? local.thinking
+    : typeof root.thinking === "string"
+      ? root.thinking
+      : undefined;
+  if (!model && !thinking) return undefined;
+  return { source: "toolCall", model, thinking };
+}
+
+function liveResultForRun(
+  rawResults: unknown,
+  run: Pick<SubagentRun, "id" | "agent">,
+  toolCallId: string,
+): SubagentResultMetadata | undefined {
+  if (!Array.isArray(rawResults)) return undefined;
+  const results = rawResults.filter(isRecord);
+  const runIndex = resultIndexForRun(run.id, toolCallId);
+  if (runIndex !== null) {
+    const indexed = results.find((result) => {
+      const progress = isRecord(result.progress) ? result.progress : undefined;
+      return readNonNegativeInt(progress?.index) === runIndex;
+    });
+    if (indexed) return indexed as SubagentResultMetadata;
+  }
+  if (run.id === toolCallId && results.length === 1) {
+    return results[0] as SubagentResultMetadata;
+  }
+  const byAgent = results.filter((result) => result.agent === run.agent);
+  return byAgent.length === 1 ? byAgent[0] as SubagentResultMetadata : undefined;
 }
 
 function resultIndexForRun(runId: string, toolCallId: string): number | null {
@@ -588,6 +631,7 @@ function extractSubagentRuns(
         startedAt: now + i,
         depth,
         parentId,
+        routing: routingFromExecutionArgs(taskObj, args),
       };
     });
   }
@@ -608,6 +652,7 @@ function extractSubagentRuns(
         startedAt: now + i,
         depth,
         parentId,
+        routing: routingFromExecutionArgs(step, args),
       };
     });
   }
@@ -625,6 +670,7 @@ function extractSubagentRuns(
       startedAt: now,
       depth,
       parentId,
+      routing: routingFromExecutionArgs(undefined, args),
     }];
   }
 
@@ -1062,8 +1108,11 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
               updated = { ...updated, partialOutput: updated.partialOutput + text };
               changed = true;
             }
-            if (routing) {
-              updated = { ...updated, routing };
+            const liveResult = liveResultForRun(details?.results, updated, updateId);
+            const liveRouting = routingFromResult(liveResult, "liveResult");
+            const nextRouting = liveRouting ?? routing;
+            if (nextRouting) {
+              updated = { ...updated, routing: nextRouting };
               changed = true;
             }
 

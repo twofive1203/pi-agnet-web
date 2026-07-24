@@ -111,14 +111,16 @@ global enable switch: a project uses SnFlow only after it is initialized
 inspect or initialize the current workspace. Task documents live under
 `<cwd>/.pi/snflows/tasks/` (archived tasks move to the sibling
 `<cwd>/.pi/snflows/archived/`) and never share schema, import, or writeback with
-`.trellis/tasks/`. Implement/check phases dispatch through native `pi-subagents`
-RPC (`worker` / `reviewer`) using a cwd-bound in-memory host session managed by
-`lib/workflow-run-manager.ts`. The CLI loads Pi SDK runtime values through a
-native dynamic import so tsx does not CommonJS-transform Pi's ESM extension
-loader, then binds extensions to the in-memory session before RPC ping/spawn so
-the bridge receives the authoritative cwd/session context. Lifecycle
-reconciliation accepts pi-subagents' `complete` terminal state as SnFlow
-`completed`. SnFlow agent models come only from native
+`.trellis/tasks/`. Implement/check phases run as foreground native
+`pi-subagents` tool calls (`worker` / `reviewer`) in the current chat session.
+The task-bound API prepares a strict dispatch marker with the selected task id,
+revision, phase, and canonical cwd; `lib/workflow-chat-lifecycle.ts` validates
+that marker before execution and projects native tool progress/end events into
+SnFlow run records. This keeps the existing top-bar Subagent panel authoritative
+for live progress and removes the blocking CLI implement/check/wait path.
+`lib/workflow-run-manager.ts` retains artifact/session reconciliation for restart
+and terminal-projection repair, but is no longer the normal execution host.
+SnFlow agent models come only from native
 `settings.json → subagents`; SnFlow code must not read `trellis.subagents`.
 `pi-web.json → workflow` only keeps panel preferences such as
 `includeArchived` and `trackInGit` (legacy `enabled` is ignored).

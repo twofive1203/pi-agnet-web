@@ -62,7 +62,7 @@ API routes live under `app/api/`. When adding, removing, or changing routes, upd
 | `workflows/current/` | GET | Return the cwd current SnFlow task pointer and detail (Trellis-like active task) for an authorized cwd. |
 | `workflows/tasks/` | GET/POST | List or create WebUI-owned SnFlow tasks under `<cwd>/.pi/snflows/tasks/` for an authorized cwd. Uninitialized projects return an empty state. POST may seed from `sessionId` / `seedText`. |
 | `workflows/tasks/[taskId]/` | GET/PUT | Read or revision-checked update one SnFlow task metadata/documents. |
-| `workflows/tasks/[taskId]/runs/` | POST | Start implement or check phase via native pi-subagents for one SnFlow task. |
+| `workflows/tasks/[taskId]/runs/` | POST | Validate the selected SnFlow task/revision/phase and return an exact current-chat native `subagent` dispatch instruction. The run starts only when that marked tool call passes the server lifecycle validator. |
 | `workflows/runs/[runId]/` | GET | Reconcile and return one SnFlow run plus parent task projection. |
 | `workflows/runs/[runId]/cancel/` | POST | Stop an active native SnFlow run and reconcile. |
 | `workflows/tasks/[taskId]/complete/` | POST | Record commit metadata and/or mark a SnFlow task completed. |

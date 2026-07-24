@@ -18,22 +18,20 @@ Phase 2 Execute → start + implement + check loops
 Phase 3 Finish  → ready_to_commit + user commit + complete/archive
 ```
 
-## CLI (preferred agent interface)
+## Task-management CLI
 
-Project-local wrapper (installed by SnFlow setup):
+The project-local wrapper manages task state only. Implement/check run through the current chat native `subagent` tool:
 
 ```bash
 npx tsx scripts/snflow-task.ts create "<title>" --seed "<user goal>"
 npx tsx scripts/snflow-task.ts current
 npx tsx scripts/snflow-task.ts show
 npx tsx scripts/snflow-task.ts start
-npx tsx scripts/snflow-task.ts implement
-npx tsx scripts/snflow-task.ts wait
-npx tsx scripts/snflow-task.ts check
-npx tsx scripts/snflow-task.ts wait
 npx tsx scripts/snflow-task.ts complete --hash <sha>
 npx tsx scripts/snflow-task.ts archive
 ```
+
+`implement`, `check`, and `wait` are deprecated and must not be used for execution.
 
 If the CLI wrapper cannot resolve the Snail Pi Web package, use the SnFlow panel actions or the manual file fallback below.
 
@@ -96,28 +94,15 @@ Active SnFlow task: .pi/snflows/tasks/<id>
 - Edit `requirements.md`, `design.md`, `plan.md`.
 - Consent to create ≠ consent to implement.
 
-When user approves implementation, run in the same turn:
-
-```bash
-npx tsx scripts/snflow-task.ts start
-npx tsx scripts/snflow-task.ts implement
-npx tsx scripts/snflow-task.ts wait
-```
+When the user approves implementation, mark the task ready, re-read its revision, and call the current chat native `subagent` tool with builtin `worker`, `context:fresh`, canonical `cwd`, `async:false`, and `clarify:false`. The task prompt must begin with the exact `SNFLOW_DISPATCH` v1 marker.
 
 ## Phase 2 — Execute
 
-Main session is orchestrator only. Implementation runs in the worker subagent:
-
-```bash
-npx tsx scripts/snflow-task.ts implement
-npx tsx scripts/snflow-task.ts wait
-npx tsx scripts/snflow-task.ts check
-npx tsx scripts/snflow-task.ts wait
-```
+Main session is orchestrator only. It directly calls builtin `worker` for implement and builtin `reviewer` for check using a marked foreground native `subagent` call. Native tool updates, cancellation, and the final result remain in the current chat; never substitute a bash/CLI wait.
 
 ### Recursion guards
 - If you are already the implement/check child, do **not** re-dispatch SnFlow implement/check.
-- Only the main session should run `implement` / `check`.
+- Only the main session should issue the marked native implement/check tool call.
 
 ### Inline exception
 Do **not** edit project source in the main session except a trivial fix of roughly ≤10 lines with no new files — still run `check` afterwards.
