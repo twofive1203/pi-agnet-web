@@ -181,6 +181,7 @@ export class AgentSessionWrapper {
   private unsubscribe: (() => void) | null = null;
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
   private onDestroyCallback: (() => void) | null = null;
+  private destroyPromise: Promise<void> | null = null;
   private extensionUiBridge: ExtensionWebUiBridge;
   private activeToolCallIds = new Set<string>();
   private activeSubagentToolCallIds = new Set<string>();
@@ -420,7 +421,7 @@ export class AgentSessionWrapper {
 
         const newSessionId = SessionManager.open(newSessionFile, sessionDir).getSessionId();
         cacheSessionPath(newSessionId, newSessionFile);
-        this.destroy();
+        await this.destroyForReplacement("fork");
         return { cancelled: false, newSessionId };
       }
 
@@ -519,31 +520,59 @@ export class AgentSessionWrapper {
   }
 
   destroy(): void {
-    if (!this._alive) return;
+    void this.destroyWithReason("quit").catch(() => {
+      // Teardown is best-effort for idle/process shutdown paths.
+    });
+  }
+
+  private destroyForReplacement(reason: "new" | "resume" | "fork"): Promise<void> {
+    return this.destroyWithReason(reason);
+  }
+
+  private destroyWithReason(reason: "quit" | "new" | "resume" | "fork"): Promise<void> {
+    if (this.destroyPromise) return this.destroyPromise;
+
     this._alive = false;
     if (this.idleTimer) clearTimeout(this.idleTimer);
     this.unsubscribe?.();
     this.activeToolCallIds.clear();
     this.extensionUiBridge.rejectAll();
-    try {
-      // Browser tab bindings are temporary and must not survive wrapper teardown/fork.
-      const sessionId = this.inner.sessionId;
-      if (sessionId) {
-        void import("./browser-binding-manager").then(({ getBrowserBindingManager }) => {
-          getBrowserBindingManager().invalidateSession(sessionId);
-        }).catch(() => {
-          // Browser control is optional; destroy must still complete.
-        });
+
+    this.destroyPromise = (async () => {
+      // The SDK's replacement flow emits session_shutdown before invalidating
+      // extension contexts. WebUI fork/worktree teardown bypasses that flow, so
+      // reproduce the lifecycle signal before calling AgentSession.dispose().
+      try {
+        const runner = this.inner.extensionRunner;
+        if (runner.hasHandlers?.("session_shutdown") && runner.emit) {
+          await runner.emit({ type: "session_shutdown", reason });
+        }
+      } catch {
+        // Extension cleanup must not prevent the underlying session from closing.
       }
-    } catch {
-      // ignore
-    }
-    try {
-      this.inner.dispose?.();
-    } catch {
-      // Dispose is best-effort; registry cleanup must still run.
-    }
-    this.onDestroyCallback?.();
+
+      try {
+        // Browser tab bindings are temporary and must not survive wrapper teardown/fork.
+        const sessionId = this.inner.sessionId;
+        if (sessionId) {
+          void import("./browser-binding-manager").then(({ getBrowserBindingManager }) => {
+            getBrowserBindingManager().invalidateSession(sessionId);
+          }).catch(() => {
+            // Browser control is optional; destroy must still complete.
+          });
+        }
+      } catch {
+        // ignore
+      }
+      try {
+        this.inner.dispose?.();
+      } catch {
+        // Dispose is best-effort; registry cleanup must still run.
+      }
+      this.onDestroyCallback?.();
+    })();
+
+    return this.destroyPromise;
   }
 }
 

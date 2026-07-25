@@ -34,6 +34,7 @@ Browser                Next.js Server              AgentSession (in-process)
 - Idle timeout is 10 minutes.
 - Concurrent `startRpcSession()` calls must share `globalThis.__piStartLocks`.
 - After `send("fork")`, capture the new session id and destroy the wrapper immediately. `AgentSession.fork()` mutates `inner.sessionId`; leaving the old wrapper alive can corrupt `parentSession` chains.
+- WebUI-owned wrapper teardown emits the SDK `session_shutdown` lifecycle event before `AgentSession.dispose()`. This is required for extension timers, pollers, and UI contexts to release references before the SDK marks them stale.
 
 ### Branching model
 

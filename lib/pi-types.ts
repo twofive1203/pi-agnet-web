@@ -70,6 +70,11 @@ interface ExtensionRunnerLike {
     sourceInfo: SlashCommandInfo["sourceInfo"];
   }>;
   setUIContext?(uiContext?: unknown, mode?: "tui" | "rpc" | "json" | "print"): void;
+  hasHandlers?(eventType: string): boolean;
+  emit?(event: {
+    type: "session_shutdown";
+    reason: "quit" | "reload" | "new" | "resume" | "fork";
+  }): Promise<unknown>;
 }
 
 type DialogOptionsLike = {
