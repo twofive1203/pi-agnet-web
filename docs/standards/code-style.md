@@ -33,6 +33,7 @@ There is no full app test framework. Targeted smoke scripts cover high-risk flow
 
 ```bash
 npm run test:browser   # browser binding protocol/manager + chrome-tab-debug artifact harness
+npm run test:runtime   # Next server externals + published launcher invariants
 ```
 
 For other data-flow changes, use lint + type-check and manually verify the affected browser/API flow. Headed Chrome-only gaps for the tab-debug extension are listed in `docs/operations/troubleshooting.md`.

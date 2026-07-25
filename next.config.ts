@@ -17,6 +17,7 @@ const nextConfig: NextConfig = {
     "@earendil-works/pi-tui",
     "glob",
     "@lydell/node-pty",
+    "ws",
   ],
   outputFileTracingExcludes: {
     "/*": [".pi/**/*"],

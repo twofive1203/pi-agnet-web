@@ -40,7 +40,8 @@
     "start": "next start -p 62666",
     "lint": "eslint .",
     "test:browser": "tsx scripts/smoke-browser-binding.ts && tsx scripts/smoke-chrome-extension-artifacts.ts",
-    "prepublishOnly": "npm run lint && tsc --noEmit && npm run build",
+    "test:runtime": "tsx scripts/smoke-runtime-packaging.ts",
+    "prepublishOnly": "npm run lint && tsc --noEmit && npm run test:runtime && npm run build",
     "release:patch": "npm version patch && npm publish --access public",
     "release": "npm run release:patch"
   },

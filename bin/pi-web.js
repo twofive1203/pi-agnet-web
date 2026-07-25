@@ -98,8 +98,8 @@ child.stdout.on("data", (chunk) => {
     browserOpened = true;
     const isWindows = process.platform === "win32";
     const isMac = process.platform === "darwin";
-    const openCmd = isWindows ? "start" : isMac ? "open" : "xdg-open";
-    spawn(openCmd, [url], { shell: isWindows, stdio: "ignore", detached: true }).unref();
+    const openCmd = isWindows ? "explorer.exe" : isMac ? "open" : "xdg-open";
+    spawn(openCmd, [url], { stdio: "ignore", detached: true, windowsHide: true }).unref();
   }
 });
 
