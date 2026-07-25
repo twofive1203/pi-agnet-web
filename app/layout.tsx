@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Noto_Sans_Mono } from "next/font/google";
 import "katex/dist/katex.min.css";
 import "./globals.css";
+import { THEME_META, THEME_PREFERENCES } from "@/lib/theme";
 
 const notoSansMono = Noto_Sans_Mono({
   subsets: ["latin", "cyrillic"],
@@ -17,7 +18,10 @@ export const metadata: Metadata = {
   },
 };
 
-const BOOT_SCRIPT = `(function(){try{var t=localStorage.getItem("pi-theme");if(t==="dark")document.documentElement.classList.add("dark");var l=localStorage.getItem("pi-locale");if(l!=="zh"&&l!=="en"){var n=(navigator.language||"").toLowerCase();l=n.indexOf("zh")===0?"zh":"en";}document.documentElement.lang=l==="zh"?"zh-CN":"en";document.documentElement.dataset.locale=l;}catch(e){}})();`;
+const THEME_MODES = Object.fromEntries(
+  THEME_PREFERENCES.map((preference) => [preference, THEME_META[preference].mode]),
+);
+const BOOT_SCRIPT = `(function(){try{var r=document.documentElement,m=${JSON.stringify(THEME_MODES)},t=localStorage.getItem("pi-theme");if(!Object.prototype.hasOwnProperty.call(m,t))t="system";var d=t==="system"?window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches:m[t]==="dark";r.dataset.themePreference=t;if(t==="paper"||t==="graphite"||t==="ocean"||t==="forest")r.dataset.themeSkin=t;r.classList.toggle("dark",!!d);r.style.colorScheme=d?"dark":"light";var l=localStorage.getItem("pi-locale");if(l!=="zh"&&l!=="en"){var n=(navigator.language||"").toLowerCase();l=n.indexOf("zh")===0?"zh":"en";}r.lang=l==="zh"?"zh-CN":"en";r.dataset.locale=l;}catch(e){}})();`;
 
 export default function RootLayout({
   children,

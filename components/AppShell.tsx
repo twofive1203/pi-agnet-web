@@ -29,7 +29,7 @@ import { GitPanel } from "./GitPanel";
 import { TerminalPanel } from "./TerminalPanel";
 import { getRelativeFilePath } from "@/lib/file-paths";
 import { formatWorkspaceTitle } from "@/lib/workspace-title";
-import { useTheme } from "@/hooks/useTheme";
+import { ThemePicker } from "./ThemePicker";
 import { useI18n } from "@/components/I18nProvider";
 import { useAppDialog } from "@/components/AppDialogProvider";
 import type { GitInfo, SessionInfo, SessionTreeNode } from "@/lib/types";
@@ -121,7 +121,6 @@ function clampRightPanelWidth(width: number, sidebarOpen: boolean): number {
 export function AppShell() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { isDark, toggleTheme } = useTheme();
   const { locale, setLocale, t } = useI18n();
   const appDialog = useAppDialog();
   const [selectedSession, setSelectedSession] = useState<SessionInfo | null>(null);
@@ -957,37 +956,7 @@ export function AppShell() {
               </svg>
             )}
           </button>
-          <button
-            onClick={(e) => {
-              const rect = e.currentTarget.getBoundingClientRect();
-              toggleTheme({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
-            }}
-            title={isDark ? t("app.switchToLight") : t("app.switchToDark")}
-            aria-label={isDark ? t("app.switchToLight") : t("app.switchToDark")}
-            aria-pressed={isDark}
-            style={{
-              display: "flex", alignItems: "center", justifyContent: "center",
-              width: 36, height: 36, padding: 0,
-              background: "none", border: "none", borderRight: "1px solid var(--border)",
-              color: "var(--text-muted)", cursor: "pointer", flexShrink: 0, transition: "color 0.12s",
-            }}
-            onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text)"; }}
-            onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-muted)"; }}
-          >
-            {isDark ? (
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="5" />
-                <line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" />
-                <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
-                <line x1="1" y1="12" x2="3" y2="12" /><line x1="21" y1="12" x2="23" y2="12" />
-                <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
-              </svg>
-            ) : (
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-              </svg>
-            )}
-          </button>
+          <ThemePicker />
           <button
             type="button"
             onClick={() => setLocale(locale === "zh" ? "en" : "zh")}
@@ -1008,6 +977,7 @@ export function AppShell() {
           {showChat && (
             <div className="app-top-actions" style={{ display: "flex", alignItems: "stretch", height: "100%" }}>
               <button
+                className="app-top-pill"
                 onClick={handleExportSession}
                 disabled={!selectedSession}
                 title={selectedSession ? t("app.exportHtml") : t("app.exportHtmlDisabled")}
@@ -1071,7 +1041,7 @@ export function AppShell() {
               />
               <button
                 ref={systemBtnRef}
-                className="app-top-aux-tab"
+                className={`app-top-aux-tab app-top-pill${activeTopPanel === "system" ? " app-top-pill-active" : ""}`}
                 onClick={() => toggleTopPanel("system")}
                 style={{
                   display: "flex", alignItems: "center", gap: 6,
@@ -1096,7 +1066,7 @@ export function AppShell() {
                 <span className="app-top-label">{t("app.system")}</span>
               </button>
               <button
-                className="app-top-aux-tab"
+                className={`app-top-aux-tab app-top-pill${activeTopPanel === "subagents" ? " app-top-pill-active" : ""}`}
                 onClick={() => toggleTopPanel("subagents")}
                 style={{
                   display: "flex", alignItems: "center", gap: 6,
@@ -1142,7 +1112,7 @@ export function AppShell() {
                 })()}
               </button>
               <button
-                className="app-top-aux-tab"
+                className={`app-top-aux-tab app-top-pill${activeTopPanel === "intercom" ? " app-top-pill-active" : ""}`}
                 onClick={() => toggleTopPanel("intercom")}
                 style={{
                   display: "flex", alignItems: "center", gap: 6,
@@ -1165,7 +1135,7 @@ export function AppShell() {
                 <span className="app-top-label">{t("app.intercom")}</span>
               </button>
               <button
-                className="app-top-aux-tab"
+                className={`app-top-aux-tab app-top-pill${activeTopPanel === "git" ? " app-top-pill-active" : ""}`}
                 onClick={() => toggleTopPanel("git")}
                 style={{
                   display: "flex", alignItems: "center", gap: 6,
@@ -1201,6 +1171,7 @@ export function AppShell() {
           )}
           {terminalEnabled && terminalCwd && (
             <button
+              className={`app-top-pill${terminalOpen ? " app-top-pill-active" : ""}`}
               onClick={async () => {
                 if (!terminalOpen) {
                   setTerminalDockCwd(terminalCwd);
@@ -1571,6 +1542,7 @@ export function AppShell() {
     {/* Right panel mode toggles — Preview first, optional Trellis to its right. */}
     <div className="right-panel-toggle-strip" style={{ position: "fixed", top: 0, right: 0, zIndex: 300, display: "flex", flexDirection: "row" }}>
       <button
+        className={`right-panel-toggle${rightPanelOpen && rightPanelMode === "files" ? " right-panel-toggle-active" : ""}`}
         onClick={() => {
           if (rightPanelOpen && rightPanelMode === "files") setRightPanelOpen(false);
           else {
@@ -1596,6 +1568,7 @@ export function AppShell() {
         </svg>
       </button>
       <button
+          className={`right-panel-toggle${rightPanelOpen && rightPanelMode === "workflow" ? " right-panel-toggle-active" : ""}`}
           onClick={(e) => {
             // Alt/Option+click: create SnFlow task from current chat (Trellis-like, no manual "+").
             if (e.altKey && selectedSession?.id && workflowCwd) {
@@ -1625,6 +1598,7 @@ export function AppShell() {
         </button>
       {trellisEnabled && (
         <button
+          className={`right-panel-toggle${rightPanelOpen && rightPanelMode === "trellis" ? " right-panel-toggle-active" : ""}`}
           onClick={() => {
             if (rightPanelOpen && rightPanelMode === "trellis") setRightPanelOpen(false);
             else {

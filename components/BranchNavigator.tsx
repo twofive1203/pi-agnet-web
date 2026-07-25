@@ -3,6 +3,7 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import type { SessionEntry, SessionTreeNode } from "@/lib/types";
+import { useI18n } from "./I18nProvider";
 
 interface Props {
   tree: SessionTreeNode[];
@@ -216,6 +217,7 @@ function TreeNodeView({ node, activePathIds, depth, isLast, parentLines, onSelec
 }
 
 export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, containerRef, open: openProp, onToggle, hasSession }: Props) {
+  const { t } = useI18n();
   const [openInternal, setOpenInternal] = useState(false);
   const open = openProp !== undefined ? openProp : openInternal;
   const btnRef = useRef<HTMLButtonElement>(null);
@@ -276,7 +278,11 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, cont
       <div className="branch-navigator-inline" style={{ height: "100%", display: "flex", alignItems: "stretch" }}>
         <button
           ref={btnRef}
+          className={`app-top-pill${open ? " app-top-pill-active" : ""}`}
           onClick={() => onToggle ? onToggle() : setOpenInternal((v) => !v)}
+          title={t("app.branches")}
+          aria-label={t("app.branches")}
+          aria-expanded={open}
           style={{
             display: "flex",
             alignItems: "center",
@@ -297,7 +303,7 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, cont
           onMouseLeave={(e) => { e.currentTarget.style.color = open ? "var(--text)" : "var(--text-muted)"; }}
         >
           {branchIcon}
-          <span>Branches</span>
+          <span className="app-top-label">{t("app.branches")}</span>
         </button>
         {open && dropdownPos && typeof document !== "undefined" && createPortal((
           <div className="app-top-aux-panel" style={{
