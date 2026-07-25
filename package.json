@@ -30,6 +30,7 @@
     "lib",
     "public",
     "scripts",
+    "extensions/chrome-tab-debug",
     "next.config.ts",
     "package.json"
   ],
@@ -38,6 +39,7 @@
     "build": "node scripts/build-next.js",
     "start": "next start -p 62666",
     "lint": "eslint .",
+    "test:browser": "tsx scripts/smoke-browser-binding.ts && tsx scripts/smoke-chrome-extension-artifacts.ts",
     "prepublishOnly": "npm run lint && tsc --noEmit && npm run build",
     "release:patch": "npm version patch && npm publish --access public",
     "release": "npm run release:patch"
@@ -65,13 +67,15 @@
     "rehype-raw": "^7.0.0",
     "rehype-sanitize": "^6.0.0",
     "remark-gfm": "^4.0.1",
-    "remark-math": "^6.0.0"
+    "remark-math": "^6.0.0",
+    "ws": "^8.18.3"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.2.2",
     "@types/node": "^25",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/ws": "^8.18.1",
     "eslint": "^9",
     "eslint-config-next": "16.2.9",
     "postcss": "^8",

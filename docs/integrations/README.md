@@ -15,6 +15,8 @@ See `package.json` for exact versions.
 | `@lobehub/icons` | Provider/model icon assets. |
 | `@xterm/xterm`, `@xterm/addon-fit` | Browser-side Web Terminal rendering and sizing. |
 | `@lydell/node-pty` | Server-side local PTY process for interactive Web Terminal sessions; selected because the original `node-pty` failed under the local Node 26 runtime. |
+| `ws` | Loopback browser-bridge WebSocket server used by the Chrome tab debugging extension. |
+| `extensions/chrome-tab-debug` | First-party Chrome MV3 extension (unpacked) for temporary tab binding and restricted DOM/debug tools. |
 
 ## pi SDK Documentation
 

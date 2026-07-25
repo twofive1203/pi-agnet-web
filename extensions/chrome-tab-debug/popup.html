@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Snail Pi</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>Snail Pi</h1>
+        <p id="connection" class="muted">Checking…</p>
+      </header>
+
+      <section id="pair-section" class="card hidden">
+        <h2>Pair with local Snail Pi</h2>
+        <label>
+          Pairing code
+          <input id="pairing-code" placeholder="ABCD-EFGH" autocomplete="off" />
+        </label>
+        <label>
+          Web UI port
+          <input id="web-port" type="number" value="62666" />
+        </label>
+        <button id="pair-btn" type="button">Pair</button>
+        <p class="hint">Only communicates with 127.0.0.1. Pairing does not grant tab access.</p>
+      </section>
+
+      <section id="pending-section" class="card hidden">
+        <h2>Confirm tab binding</h2>
+        <p id="pending-detail"></p>
+        <p id="page-detail" class="mono"></p>
+        <p class="hint">Capabilities requested: <strong>DOM inspect & controlled actions</strong></p>
+        <button id="accept-btn" type="button" class="primary">Bind this tab</button>
+      </section>
+
+      <section id="bindings-section" class="card hidden">
+        <h2>Active bindings</h2>
+        <ul id="bindings-list"></ul>
+      </section>
+
+      <section id="actions" class="row">
+        <button id="reconnect-btn" type="button">Reconnect</button>
+        <button id="unpair-btn" type="button" class="danger">Unpair</button>
+      </section>
+
+      <p id="error" class="error"></p>
+    </main>
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>

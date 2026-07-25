@@ -29,7 +29,13 @@ Do not run `next build` directly during development. Use `npm run build` only fo
 
 ## Tests
 
-There is no dedicated automated test suite in the current repository. For changes that affect data flow, use lint + type-check and manually verify the affected browser/API flow. If a test framework is introduced later, document it here and update `AGENTS.md`.
+There is no full app test framework. Targeted smoke scripts cover high-risk flows:
+
+```bash
+npm run test:browser   # browser binding protocol/manager + chrome-tab-debug artifact harness
+```
+
+For other data-flow changes, use lint + type-check and manually verify the affected browser/API flow. Headed Chrome-only gaps for the tab-debug extension are listed in `docs/operations/troubleshooting.md`.
 
 ## Trellis Specs
 

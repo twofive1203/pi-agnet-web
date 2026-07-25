@@ -127,6 +127,12 @@ export const panelsZh = {
     selectPlaceholder: "选择一项",
     inputPlaceholder: "输入…",
   },
+  browser: {
+    revokeTitle: "解除浏览器标签绑定",
+    revokeMessage: "解除此浏览器标签绑定？会话将失去访问权限，需重新绑定后才能继续。",
+    revokeAllTitle: "解除全部浏览器标签绑定",
+    revokeAllMessage: "解除此会话的全部浏览器标签绑定？此操作无法撤销。",
+  },
 } as const satisfies MessageTree;
 
 export const panelsEn = {
@@ -255,5 +261,11 @@ export const panelsEn = {
     ok: "OK",
     selectPlaceholder: "Select an option",
     inputPlaceholder: "Enter a value…",
+  },
+  browser: {
+    revokeTitle: "Revoke browser tab",
+    revokeMessage: "Revoke this browser tab binding? The session will lose access until the tab is bound again.",
+    revokeAllTitle: "Revoke all browser tabs",
+    revokeAllMessage: "Revoke all browser tab bindings for this session? This cannot be undone.",
   },
 } as const satisfies MessageTree;

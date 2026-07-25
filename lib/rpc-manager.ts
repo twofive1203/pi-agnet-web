@@ -526,6 +526,19 @@ export class AgentSessionWrapper {
     this.activeToolCallIds.clear();
     this.extensionUiBridge.rejectAll();
     try {
+      // Browser tab bindings are temporary and must not survive wrapper teardown/fork.
+      const sessionId = this.inner.sessionId;
+      if (sessionId) {
+        void import("./browser-binding-manager").then(({ getBrowserBindingManager }) => {
+          getBrowserBindingManager().invalidateSession(sessionId);
+        }).catch(() => {
+          // Browser control is optional; destroy must still complete.
+        });
+      }
+    } catch {
+      // ignore
+    }
+    try {
       this.inner.dispose?.();
     } catch {
       // Dispose is best-effort; registry cleanup must still run.
@@ -703,10 +716,14 @@ export async function startRpcSession(
     // The `tools` param acts as a global allowlist that filters out extension
     // tools (e.g. `subagent` from pi-subagents). Instead, let all built-in and
     // extension tools load, then control activation via setActiveToolsByName.
+    // Browser tools are customTools (not extension_ui_request) and inject session
+    // id from ctx.sessionManager at execute time.
+    const { createBrowserToolDefinitions } = await import("./browser-tools");
     const { session: inner, extensionsResult } = await createAgentSession({
       cwd,
       agentDir,
       sessionManager,
+      customTools: createBrowserToolDefinitions(),
       ...(resourceLoader ? { resourceLoader } : {}),
     });
 

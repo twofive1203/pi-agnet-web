@@ -16,3 +16,17 @@
 ## Network / Proxy
 
 Use `scripts/start-pi-web-proxy.sh` or `scripts/start-pi-web-proxy.ps1` when provider calls need the local proxy. They set common proxy env vars and `NODE_OPTIONS=--use-env-proxy` for modern Node fetch/undici behavior.
+
+## Chrome Tab Debugging Extension
+
+- Pairing and bridge traffic are loopback-only (`127.0.0.1`). Remote/LAN Snail Pi is not supported in v1.
+- Default ports: Web UI `62666`, browser WebSocket bridge `62667`. Bridge state/pairing metadata lives in `~/.pi/agent/browser-bridge.json`.
+- Load the unpacked extension from `extensions/chrome-tab-debug` (see that folder's README).
+- If the extension cannot pair: confirm browser control is enabled from the chat Browser panel, regenerate a pairing code, and verify nothing else is bound to the bridge port.
+- If tools return `BRIDGE_DISCONNECTED`: open the extension popup and click Reconnect; the MV3 service worker may have stopped.
+- If tools return `BINDING_SUSPENDED`: the tab navigated cross-origin; re-confirm binding on the new page.
+- If debug tools return `CAPABILITY_UNAVAILABLE`: DevTools or another debugger may have detached `chrome.debugger`. DOM tools should still work; re-enable debug from Snail Pi after closing the conflicting debugger.
+- Tab bindings are temporary (`chrome.storage.session` + in-memory manager). Chrome/Snail Pi restart and session fork do not restore them.
+- Never expect raw CDP, arbitrary JS evaluation, cookies, or network bodies from v1 tools.
+- Automated coverage: `npm run test:browser` runs protocol/manager smoke checks plus an artifact harness that loads production `extensions/chrome-tab-debug` files under mocked Chrome/WebSocket/DOM (manifest permissions, local authorization rejections, action policy, console redaction, cancel/wait, popup status). It does **not** replace headed Chrome validation.
+- Still headed-Chrome-only (not covered by the Node artifact harness): real `activeTab` user-gesture injection, live viewport screenshots/focus restore, MV3 service-worker kill/restart against a real browser process, DevTools debugger contention with a real `chrome.debugger` attach, cross-origin navigation suspension on a live tab, and end-to-end CDP event delivery from an actual page.

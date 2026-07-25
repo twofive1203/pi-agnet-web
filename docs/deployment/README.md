@@ -11,8 +11,11 @@ This guide covers local runtime, npm installation, source builds, production dep
 | pi agent data directory | Defaults to `~/.pi/agent/` | Stores sessions, model config, settings, and pi-web settings. |
 | Git | Optional, recommended | Required for Git status, branch switching, graph, and WorkTree features. |
 | Local shell | Optional | Required only when Web Terminal is enabled. |
+| Chrome (desktop) | Optional | Required only for the unpacked Tab Debug extension and browser tools. |
 
 Web Terminal uses `@lydell/node-pty` as the server-side PTY dependency. If a target machine has native dependency issues, keep Web Terminal disabled; the session browser and chat flows do not require PTY support.
+
+Browser tab debugging adds a loopback-only WebSocket bridge (default `127.0.0.1:62667`) started lazily when browser control is enabled. The Chrome MV3 extension package lives at `extensions/chrome-tab-debug` and is loaded unpacked during development. Pairing metadata is stored in `~/.pi/agent/browser-bridge.json`; temporary tab bindings are never restored across process restarts.
 
 ## npm Package Runtime
 

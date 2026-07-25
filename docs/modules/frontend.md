@@ -44,6 +44,7 @@
 | `components/SideBySideDiffView.tsx` | Theme-aware side-by-side unified diff parser/renderer with old/new line numbers, aligned modification rows, and metadata/hunk rows. |
 | `components/UnifiedDiffView.tsx` | Theme-aware unified diff renderer for added, removed, hunk, header, and context lines. |
 | `components/TerminalPanel.tsx` | Bottom-dock Web Terminal workspace using xterm; manages ephemeral multi-tab terminal sessions, per-pane tab strips, tab renaming, nested drag-to-split panes, pane and dock resizing, minimize/restore, app-local fullscreen, and destructive close confirmation while reusing existing terminal session APIs per tab. |
+| `components/BrowserBindingPanel.tsx` | Compact session-level browser control UI: enable/pair extension, create pending tab bind requests, list primary/additional bindings, toggle read-only debug, and revoke. Uses `/api/browser/*` only (not chat SSE). |
 | `components/ModelPricingCatalog.tsx` | Searchable, provider-filterable read-only view of the locally cached pi.dev model pricing catalog, including context-window and token-price columns. |
 | `components/UsageStatsModal.tsx` | Token/cost usage statistics modal with active/archive scan counts, parent-attributed native subagent costs, main/subagent splits, and rounded M-token conversions. |
 | `components/FileExplorer.tsx` | On-demand file tree inside the sidebar; root loads are abortable and workspace changes clear old roots before applying the new response. |
