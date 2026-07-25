@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Snail Pi Tab Debug",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Temporarily bind selected Chrome tabs to a local Snail Pi session for restricted DOM debugging.",
   "action": {
     "default_title": "Snail Pi",

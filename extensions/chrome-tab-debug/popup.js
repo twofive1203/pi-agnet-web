@@ -5,13 +5,28 @@ function showError(message) {
 }
 
 async function send(type, payload = {}) {
-  return await chrome.runtime.sendMessage({ channel: "snail-pi-popup", type, ...payload });
+  let timer;
+  try {
+    return await Promise.race([
+      chrome.runtime.sendMessage({ channel: "snail-pi-popup", type, ...payload }),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error("Extension service worker did not respond")), 4000);
+      }),
+    ]);
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : String(error) };
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 async function refresh() {
   showError("");
   const status = await send("status");
   if (status?.error) {
+    $("connection").textContent = "Extension unavailable";
+    $("pair-section").classList.add("hidden");
+    $("actions").classList.add("hidden");
     showError(status.error);
     return;
   }

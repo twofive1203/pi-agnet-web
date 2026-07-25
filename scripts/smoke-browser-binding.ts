@@ -7,6 +7,7 @@ import { createHash } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import WebSocket from "ws";
 import {
   BrowserControlError,
@@ -649,6 +650,30 @@ async function main(): Promise<void> {
     assert(!authorizeLocalBinding(state, { bindingId: "bind_1", sessionId: "sess_b" }, {}, { mode: "manage" }).ok, "manage session reject");
     const plain = extSanitize("token=plain-secret-value");
     assert(!plain.includes("plain-secret-value"), "ext plain token redacted");
+  });
+
+  await check("connect tokens survive isolated API and bridge module contexts", async () => {
+    setBrowserBridgeEnabled(true, agentDir);
+    const offer = issuePairingCode({ agentDir, ttlMs: 60_000 });
+    const exchanged = exchangePairingCode({ pairingCode: offer.pairingCode, agentDir });
+    const token = issueConnectToken({
+      clientId: exchanged.clientId,
+      installationSecret: exchanged.installationSecret,
+      agentDir,
+    });
+    const handshakeResponse = createHash("sha256")
+      .update(`snail-pi-browser-v1:${token.nonce}:${token.connectToken}`)
+      .digest("hex");
+
+    const isolatedModuleUrl = `${pathToFileURL(join(process.cwd(), "lib/browser-pairing.ts")).href}?isolated=${Date.now()}`;
+    const isolated = await import(isolatedModuleUrl) as typeof import("../lib/browser-pairing");
+    assert(isolated.verifyConnectHandshake({
+      clientId: exchanged.clientId,
+      connectToken: token.connectToken,
+      nonce: token.nonce,
+      response: handshakeResponse,
+      agentDir,
+    }), "file-backed token verifies from an isolated module context");
   });
 
   await check("bridge rejects missing Origin when pairedOrigin recorded", async () => {

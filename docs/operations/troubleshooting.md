@@ -20,9 +20,10 @@ Use `scripts/start-pi-web-proxy.sh` or `scripts/start-pi-web-proxy.ps1` when pro
 ## Chrome Tab Debugging Extension
 
 - Pairing and bridge traffic are loopback-only (`127.0.0.1`). Remote/LAN Snail Pi is not supported in v1.
-- Default ports: Web UI `62666`, browser WebSocket bridge `62667`. Bridge state/pairing metadata lives in `~/.pi/agent/browser-bridge.json`.
-- Load the unpacked extension from `extensions/chrome-tab-debug` (see that folder's README).
+- Default ports: Web UI `62666`, browser WebSocket bridge `62667`. Bridge state/pairing metadata lives in `~/.pi/agent/browser-bridge.json`; one-time, hashed handshake records briefly use `~/.pi/agent/browser-connect-tokens/` so REST and WebSocket handlers can authenticate across isolated Next.js module contexts.
+- Load the unpacked extension from `extensions/chrome-tab-debug` (see that folder's README). After updating the source, click **Reload** for the unpacked extension in `chrome://extensions`.
 - If the extension cannot pair: confirm browser control is enabled from the chat Browser panel, regenerate a pairing code, and verify nothing else is bound to the bridge port.
+- If the popup remains on `Checking…`: reload the unpacked extension and restart Snail Pi so both sides use the current protocol implementation. The popup should report `Extension unavailable` instead of waiting indefinitely when its MV3 service worker does not respond.
 - If tools return `BRIDGE_DISCONNECTED`: open the extension popup and click Reconnect; the MV3 service worker may have stopped.
 - If tools return `BINDING_SUSPENDED`: the tab navigated cross-origin; re-confirm binding on the new page.
 - If debug tools return `CAPABILITY_UNAVAILABLE`: DevTools or another debugger may have detached `chrome.debugger`. DOM tools should still work; re-enable debug from Snail Pi after closing the conflicting debugger.

@@ -4,7 +4,7 @@
  */
 
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import {
@@ -305,20 +305,55 @@ export function verifyChallengeResponse(input: {
 }
 
 type ConnectTokenRecord = {
+  version: 1;
   clientId: string;
   tokenHash: string;
+  nonce: string;
   expiresAt: number;
 };
 
-declare global {
-  var __piBrowserConnectTokens: Map<string, ConnectTokenRecord> | undefined;
+function getConnectTokenPath(clientId: string, agentDir = getAgentDir()): string {
+  const clientHash = createHash("sha256").update(clientId).digest("hex");
+  return join(agentDir, "browser-connect-tokens", `${clientHash}.json`);
 }
 
-function getConnectTokenMap(): Map<string, ConnectTokenRecord> {
-  if (!globalThis.__piBrowserConnectTokens) {
-    globalThis.__piBrowserConnectTokens = new Map();
+function writeConnectToken(record: ConnectTokenRecord, agentDir = getAgentDir()): void {
+  const path = getConnectTokenPath(record.clientId, agentDir);
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, `${JSON.stringify(record)}\n`, { encoding: "utf8", mode: 0o600 });
+}
+
+function readConnectToken(clientId: string, agentDir = getAgentDir()): ConnectTokenRecord | null {
+  const path = getConnectTokenPath(clientId, agentDir);
+  if (!existsSync(path)) return null;
+  try {
+    const raw = JSON.parse(readFileSync(path, "utf8")) as unknown;
+    if (!isRecord(raw)
+      || raw.version !== 1
+      || raw.clientId !== clientId
+      || typeof raw.tokenHash !== "string"
+      || typeof raw.nonce !== "string"
+      || typeof raw.expiresAt !== "number") {
+      return null;
+    }
+    return {
+      version: 1,
+      clientId,
+      tokenHash: raw.tokenHash,
+      nonce: raw.nonce,
+      expiresAt: raw.expiresAt,
+    };
+  } catch {
+    return null;
   }
-  return globalThis.__piBrowserConnectTokens;
+}
+
+function deleteConnectToken(clientId: string, agentDir = getAgentDir()): void {
+  try {
+    unlinkSync(getConnectTokenPath(clientId, agentDir));
+  } catch {
+    // Missing/locked token files are equivalent to an already-consumed token.
+  }
 }
 
 export function issueConnectToken(input: {
@@ -334,13 +369,13 @@ export function issueConnectToken(input: {
   const nonce = randomBytes(16).toString("base64url");
   const expiresAt = Date.now() + (input.ttlMs ?? 60_000);
   const tokenHash = createHash("sha256").update(connectToken).digest("hex");
-  getConnectTokenMap().set(input.clientId, { clientId: input.clientId, tokenHash, expiresAt });
-  // Attach nonce in map via composite — store as tokenHash|nonce in a side structure.
-  getConnectTokenMap().set(`${input.clientId}:nonce`, {
+  writeConnectToken({
+    version: 1,
     clientId: input.clientId,
-    tokenHash: nonce,
+    tokenHash,
+    nonce,
     expiresAt,
-  });
+  }, input.agentDir);
   return { connectToken, expiresAt, nonce };
 }
 
@@ -349,26 +384,23 @@ export function verifyConnectHandshake(input: {
   connectToken: string;
   nonce: string;
   response: string;
+  agentDir?: string;
 }): boolean {
-  const map = getConnectTokenMap();
-  const tokenRec = map.get(input.clientId);
-  const nonceRec = map.get(`${input.clientId}:nonce`);
-  if (!tokenRec || !nonceRec) return false;
+  const tokenRec = readConnectToken(input.clientId, input.agentDir);
+  if (!tokenRec) return false;
   if (tokenRec.expiresAt <= Date.now()) {
-    map.delete(input.clientId);
-    map.delete(`${input.clientId}:nonce`);
+    deleteConnectToken(input.clientId, input.agentDir);
     return false;
   }
-  if (nonceRec.tokenHash !== input.nonce) return false;
+  if (tokenRec.nonce !== input.nonce) return false;
   const tokenHash = createHash("sha256").update(input.connectToken).digest("hex");
   if (!safeEqualHex(tokenHash, tokenRec.tokenHash)) return false;
   const expected = createHash("sha256")
     .update(`snail-pi-browser-v1:${input.nonce}:${input.connectToken}`)
     .digest("hex");
   if (!safeEqualHex(expected, input.response)) return false;
-  // one-time
-  map.delete(input.clientId);
-  map.delete(`${input.clientId}:nonce`);
+  // The token is deleted only after a successful proof so malformed attempts cannot consume it.
+  deleteConnectToken(input.clientId, input.agentDir);
   return true;
 }
 

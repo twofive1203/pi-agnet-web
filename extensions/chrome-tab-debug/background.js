@@ -27,6 +27,7 @@ import {
 } from "./shared.js";
 
 let socket = null;
+let socketAuthenticated = false;
 let reconnectAttempt = 0;
 let reconnectTimer = null;
 let heartbeatTimer = null;
@@ -132,12 +133,15 @@ async function connectBridge() {
   }
 
   const url = wsUrl(token.port || install.bridgePort);
-  socket = new WebSocket(url);
+  socketAuthenticated = false;
+  const currentSocket = new WebSocket(url);
+  socket = currentSocket;
 
-  socket.addEventListener("open", async () => {
+  currentSocket.addEventListener("open", async () => {
+    if (socket !== currentSocket) return;
     reconnectAttempt = 0;
     const response = await sha256Hex(`snail-pi-browser-v1:${token.nonce}:${token.connectToken}`);
-    socket.send(JSON.stringify({
+    currentSocket.send(JSON.stringify({
       type: "auth",
       protocolVersion: PROTOCOL_VERSION,
       clientId: install.clientId,
@@ -147,8 +151,8 @@ async function connectBridge() {
     }));
     if (heartbeatTimer) clearInterval(heartbeatTimer);
     heartbeatTimer = setInterval(() => {
-      if (socket?.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({
+      if (socket === currentSocket && socketAuthenticated && currentSocket.readyState === WebSocket.OPEN) {
+        currentSocket.send(JSON.stringify({
           protocolVersion: PROTOCOL_VERSION,
           kind: "ping",
           requestId: crypto.randomUUID(),
@@ -160,12 +164,16 @@ async function connectBridge() {
     }, 20000);
   });
 
-  socket.addEventListener("message", (event) => {
-    void onSocketMessage(String(event.data || ""));
+  currentSocket.addEventListener("message", (event) => {
+    if (socket === currentSocket) {
+      void onSocketMessage(String(event.data || ""));
+    }
   });
 
-  socket.addEventListener("close", () => {
+  currentSocket.addEventListener("close", () => {
+    if (socket !== currentSocket) return;
     socket = null;
+    socketAuthenticated = false;
     if (heartbeatTimer) {
       clearInterval(heartbeatTimer);
       heartbeatTimer = null;
@@ -173,8 +181,8 @@ async function connectBridge() {
     scheduleReconnect();
   });
 
-  socket.addEventListener("error", () => {
-    try { socket?.close(); } catch { /* ignore */ }
+  currentSocket.addEventListener("error", () => {
+    try { currentSocket.close(); } catch { /* ignore */ }
   });
 }
 
@@ -248,6 +256,7 @@ async function onSocketMessage(text) {
     return;
   }
   if (msg.type === "auth_ok") {
+    socketAuthenticated = true;
     await setBadge("", "#22c55e");
     // After auth, request/accept reconcile so restart cannot leave stale authorizations.
     try {
@@ -336,8 +345,8 @@ async function onSocketMessage(text) {
 
 async function sendClientRequest(command, params = {}) {
   const install = await getLocalInstall();
-  if (!install || !socket || socket.readyState !== WebSocket.OPEN) {
-    throw new Error("Extension bridge is not connected");
+  if (!install || !socket || socket.readyState !== WebSocket.OPEN || !socketAuthenticated) {
+    throw new Error("Extension bridge is not authenticated");
   }
   const requestId = crypto.randomUUID();
   const envelope = {
@@ -1050,7 +1059,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       const install = await getLocalInstall();
       const bindings = await getSessionBindings();
       let pending = bindings.pendingRequest || cachedPending;
-      if (install && socket && socket.readyState === WebSocket.OPEN) {
+      if (install && socket && socket.readyState === WebSocket.OPEN && socketAuthenticated) {
         try {
           const pull = await sendClientRequest("binding.pending", {});
           pending = pull?.result?.pending || pending;
@@ -1061,7 +1070,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       const debuggerPermission = await hasDebuggerPermission();
       return {
         install: install ? { clientId: install.clientId, webPort: install.webPort, bridgePort: install.bridgePort, pairedAt: install.pairedAt } : null,
-        connected: Boolean(socket && socket.readyState === WebSocket.OPEN),
+        connected: Boolean(socket && socket.readyState === WebSocket.OPEN && socketAuthenticated),
         bindings: Object.values(bindings.bindings),
         pending,
         debugConsent: bindings.debugConsent || {},
@@ -1087,6 +1096,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       }
       try { socket?.close(); } catch { /* ignore */ }
       socket = null;
+      socketAuthenticated = false;
       await clearLocalInstall();
       await resetTemporaryState();
       debugBuffers.clear();
@@ -1104,6 +1114,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       return await grantDebugConsent(message.bindingId);
     }
     if (message.type === "reconnect") {
+      if (socket && !socketAuthenticated) {
+        try { socket.close(); } catch { /* ignore */ }
+        socket = null;
+      }
       await connectBridge();
       return { ok: true };
     }
