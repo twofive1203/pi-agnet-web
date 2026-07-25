@@ -178,9 +178,12 @@ export function buildCheckPrompt(ctx: WorkflowPromptContext): string {
       : "No implementation summary was provided; derive scope from the task documents and diff.",
     "",
     "Execute:",
-    "1. Check the implementation against the acceptance criteria, design, project specs, and regression risks.",
-    "2. Run practical focused validation and cite concrete paths for findings.",
-    "3. Return a concise review followed by this final fenced JSON result:",
+    "1. Check the implementation against the acceptance criteria, design, project specs, and concrete regression risks without expanding the approved scope.",
+    "2. Classify only must-fix issues as error: violated acceptance criteria, incorrect behavior, security/data-loss risk, concrete regressions, or required validation failures attributable to the implementation.",
+    "3. Classify optional hardening, maintainability, style, extra tests, and out-of-scope improvements as warning or info.",
+    "4. Return changes_requested only when at least one error finding exists. Warnings/info are advisory and must produce pass so the user can choose whether to address them.",
+    "5. Run practical focused validation and cite concrete paths for findings.",
+    "6. Return a concise review followed by this final fenced JSON result:",
     "```json",
     "{",
     '  "verdict": "pass" | "changes_requested",',
@@ -305,12 +308,23 @@ export function normalizeCheckResult(text: string | null | undefined): WorkflowC
     };
   }
   const rawVerdict = asString(candidate.verdict)?.toLowerCase();
+  const findings = normalizeFindings(candidate.findings);
+  const hasBlockingFinding = findings.some((finding) => finding.severity === "error");
   let verdict: WorkflowCheckVerdict = "changes_requested";
-  if (rawVerdict === "pass" || rawVerdict === "passed") verdict = "pass";
+  if (!hasBlockingFinding && (rawVerdict === "pass" || rawVerdict === "passed")) {
+    verdict = "pass";
+  }
+  if (rawVerdict === "changes_requested" && !hasBlockingFinding) {
+    verdict = "pass";
+    findings.push({
+      severity: "info",
+      summary: "Check returned only advisory findings; normalized verdict to pass for user choice.",
+    });
+  }
   return {
     verdict,
     summary: asString(candidate.summary) ?? text.trim().slice(0, 2000),
-    findings: normalizeFindings(candidate.findings),
+    findings,
     validation: normalizeValidation(candidate.validation),
   };
 }

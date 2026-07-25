@@ -6,7 +6,7 @@
  * Bump SNFLOW_ASSETS_VERSION (SemVer) whenever any managed file content changes.
  */
 
-export const SNFLOW_ASSETS_VERSION = "1.4.0";
+export const SNFLOW_ASSETS_VERSION = "1.5.0";
 
 export interface SnflowAssetFile {
   /** Project-relative path using forward slashes. */
@@ -15,8 +15,8 @@ export interface SnflowAssetFile {
 }
 
 const EXTENSION_INDEX = `/**
- * SnFlow project extension — injects Trellis-like task breadcrumbs into the
- * system prompt when the project has an active .pi/snflows task store.
+ * SnFlow project extension — injects opt-in task breadcrumbs into the system
+ * prompt when the project has an available .pi/snflows task store.
  *
  * Self-contained: do not import Snail Pi Web lib modules from here.
  * Installed/updated by the WebUI SnFlow setup (manifest-managed).
@@ -130,6 +130,9 @@ function directDispatch(cwd: string, task: { id: string; title: string; revision
     "- task first line must be exactly:",
     marker,
     "After the marker, provide the task id/title/revision, task document and spec paths, latest implement summary when checking, focused validation expectations, and the structured result contract.",
+    phase === "check"
+      ? "For check: only error findings are blockers; warnings/info are advisory and must still pass for user choice."
+      : "Keep implementation within the approved task scope.",
     "Do not run scripts/snflow-task.ts implement, check, or wait.",
   ].join("\\n");
 }
@@ -167,10 +170,12 @@ function buildGuidance(cwd: string): string | null {
       "- task.json is mandatory and is the task source of truth.",
       "- task.md is legacy or scratch output only; do not rely on it for the panel.",
       "- A valid task directory should contain: task.json, requirements.md, design.md, and plan.md.",
-      "Triage:",
-      "- Simple chat: ask whether to create a SnFlow task; if user says no, skip.",
-      "- Real dev work: create a task yourself (do not ask the user to click panel +).",
-      "Create (preferred):",
+      "Entry policy (soft gate):",
+      "- Default to ordinary direct development. Initialization makes SnFlow available; it does not opt coding requests into it.",
+      "- Enter only when the user explicitly asks for SnFlow, invokes snflow-dev, asks to create/run a SnFlow task, or continues a non-terminal task.",
+      "- For clearly cross-module, high-risk, or long-running work, you may ask once whether SnFlow would help. This is an offer, not a prerequisite.",
+      "- If the user does not opt in, continue directly and do not create a task.",
+      "Create after opt-in (preferred):",
       '  npx tsx scripts/snflow-task.ts create "<title>" --seed "<user goal>"',
       "If the project CLI wrapper cannot resolve Snail Pi Web, use the panel Create action or write the task files manually under .pi/snflows/tasks/<slug>/.",
       "Manual fallback task.json must include schemaVersion:1, id:<slug>, title, description, status:'planning', priority:'P2', createdAt, updatedAt, completedAt:null, revision:'manual', activeRunId:null, latestImplementRunId:null, latestCheckRunId:null, commit:null, archived:false.",
@@ -270,6 +275,7 @@ function buildGuidance(cwd: string): string | null {
       "<workflow-state:ready_to_commit>",
       ...header,
       "Check passed. Hand off commit to the user (do not commit unless asked).",
+      "Warnings and informational findings are advisory: summarize them and let the user choose whether to address them before commit; do not automatically restart implementation.",
       "If this task produced reusable conventions or lessons, write them to the relevant .pi/snflows/spec/ files and update the spec index status tables.",
       "Also update the project-root AGENTS.md SnFlow managed section if the reading-order or",
       "spec-discovery guidance in that section should change.",
@@ -292,7 +298,7 @@ function buildGuidance(cwd: string): string | null {
       "  npx tsx scripts/snflow-task.ts archive",
       "Manual fallback for archive: move .pi/snflows/tasks/<id>/ to .pi/snflows/archived/<id>/,",
       "set archived:true and activeRunId:null in task.json, and remove .pi/snflows/current.json if it points at this task.",
-      "Or create a new task for new work.",
+      "This terminal task does not opt new work into SnFlow. Default to direct development; create a new task only after explicit opt-in.",
       "</workflow-state:done>",
     ].join("\\n");
   }
@@ -310,7 +316,7 @@ export default function snflowExtension(pi: PiExtensionAPI): void {
       if (webFlag === "0" || webFlag === "false") return;
       const cwd = resolveCwd(ctx?.cwd);
       if (!cwd) return;
-      // Only initialized projects opted into SnFlow (tasks/ exists).
+      // Initialization makes SnFlow resources available; entry remains opt-in.
       if (!isInitialized(cwd)) return;
       const guidance = buildGuidance(cwd);
       if (!guidance) return;
@@ -328,15 +334,23 @@ export default function snflowExtension(pi: PiExtensionAPI): void {
 
 const SKILL_MD = `---
 name: snflow-dev
-description: "Use Snail Pi Web native SnFlow tasks under .pi/snflows/tasks/ for development work. Create and plan tasks in chat, then dispatch the managed snflow-implement and snflow-check project agents. Prefer this over Trellis for WebUI-owned workflow."
+description: "Use Snail Pi Web native SnFlow tasks only when the user explicitly requests SnFlow, invokes snflow-dev, or continues an active non-terminal SnFlow task. Ordinary development stays outside the workflow by default."
 ---
 
 # SnFlow development workflow
 
 This is **WebUI SnFlow** (\`.pi/snflows/tasks/\`), not Trellis (\`.trellis/\`).
-Experience should feel like Trellis: chat-orchestrated create → plan → start → implement → check → commit handoff.
+It is an opt-in workflow: chat-orchestrated create → plan → start → implement → check → commit handoff.
 
 Panel (SF) is for visibility/emergency controls. **Do not make the user drive the lifecycle by clicking around.**
+
+## Entry policy (soft gate)
+
+- Default to ordinary direct development. Project initialization only makes SnFlow available; it does not opt every coding request into the workflow.
+- Enter SnFlow when the user explicitly asks to use SnFlow, invokes \`snflow-dev\`, asks to create/run a SnFlow task, or continues an existing non-terminal task.
+- For work that is clearly cross-module, high-risk, long-running, or benefits from independent acceptance checks, ask once whether the user wants SnFlow. This is an offer, not a prerequisite.
+- Do not create a task from an ambiguous or routine development request. If the user declines or does not opt in, continue directly without SnFlow.
+- A completed, cancelled, or archived task never opts subsequent work into SnFlow.
 
 ## Phase index
 
@@ -417,8 +431,8 @@ Active SnFlow task: .pi/snflows/tasks/<id>
 
 ## Phase 1 — Plan
 
-- Simple chat: ask if a SnFlow task is needed; skip if user says no.
-- Real dev work: create the task yourself (never tell user to open SF and press +).
+- Begin only after the entry policy opts this request into SnFlow.
+- Create the task yourself (never tell the user to open SF and press +).
 - Edit \`requirements.md\`, \`design.md\`, \`plan.md\`.
 - Consent to create ≠ consent to implement.
 
@@ -434,6 +448,14 @@ Main session is orchestrator only. It calls project agent \`snflow-implement\` f
 
 ### Inline exception
 Do **not** edit project source in the main session except a trivial fix of roughly ≤10 lines with no new files — still run \`check\` afterwards.
+
+### Check decision policy
+
+- \`error\` means a must-fix blocker: a violated acceptance criterion, incorrect behavior, security or data-loss risk, concrete regression, or required validation failure attributable to the implementation.
+- \`warning\` and \`info\` are advisory. They may cover optional hardening, maintainability, style, extra tests, or improvements outside the approved scope.
+- Return \`changes_requested\` only when at least one \`error\` finding exists. Advisory findings must not fail the check.
+- Do not expand task scope during check or require unrelated files to be changed.
+- After a passing check with advisory findings, report them to the user and let the user choose whether to address them. Do not automatically dispatch another implement loop.
 
 ## Phase 3 — Finish
 
@@ -491,9 +513,17 @@ You independently review one completed SnFlow implementation; you do not impleme
 
 1. Resolve the task only from the marked dispatch prompt and its explicit document paths. Stop if the marker, cwd, revision, or task documents are missing.
 2. Read task.json, requirements.md, design.md, plan.md, applicable .pi/snflows/spec indexes, project AGENTS.md, the current diff, and affected callers.
-3. Evaluate correctness, acceptance criteria, regressions, project conventions, and validation coverage.
+3. Evaluate correctness, acceptance criteria, regressions, project conventions, and validation coverage without expanding the approved scope.
 4. Run focused tests plus repository lint/typecheck when practical.
-5. Return the verdict contract requested by the dispatch prompt with concrete, path-based findings.
+5. Classify findings using the decision policy below and return the verdict contract requested by the dispatch prompt with concrete, path-based findings.
+
+## Decision policy
+
+- Use \`error\` only for a must-fix blocker: a violated acceptance criterion, incorrect behavior, security or data-loss risk, concrete regression, or required validation failure attributable to the implementation.
+- Use \`warning\` or \`info\` for advisory items such as optional hardening, maintainability, style, extra tests, or improvements outside the approved scope.
+- Return \`changes_requested\` only when at least one \`error\` finding exists. Warnings and informational findings must still produce \`pass\`.
+- Do not require changes to unrelated files or turn personal preference into a blocker.
+- Keep advisory findings in the final report so the main agent can let the user choose whether to address them.
 
 ## Boundaries
 

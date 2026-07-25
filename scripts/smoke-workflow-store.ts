@@ -48,6 +48,23 @@ const check = normalizeCheckResult(
   '```json\n{"verdict":"pass","summary":"good","findings":[],"validation":[]}\n```',
 );
 assert(check?.verdict === "pass", "check normalize");
+const advisoryCheck = normalizeCheckResult(
+  '```json\n{"verdict":"changes_requested","summary":"optional cleanup","findings":[{"severity":"warning","summary":"consider refactor"}],"validation":[]}\n```',
+);
+assert(advisoryCheck?.verdict === "pass", "advisory findings do not block check");
+assert(advisoryCheck?.findings.some((finding) => finding.summary.includes("user choice")), "advisory normalization is visible");
+const passingAdvisoryCheck = normalizeCheckResult(
+  '```json\n{"verdict":"pass","summary":"good with note","findings":[{"severity":"info","summary":"optional follow-up"}],"validation":[]}\n```',
+);
+assert(passingAdvisoryCheck?.verdict === "pass", "passing advisory result stays pass");
+const emptyChangesCheck = normalizeCheckResult(
+  '```json\n{"verdict":"changes_requested","summary":"no blockers","findings":[],"validation":[]}\n```',
+);
+assert(emptyChangesCheck?.verdict === "pass", "changes_requested without blockers normalizes to pass");
+const blockingCheck = normalizeCheckResult(
+  '```json\n{"verdict":"pass","summary":"incorrect pass","findings":[{"severity":"error","summary":"acceptance criterion failed"}],"validation":[]}\n```',
+);
+assert(blockingCheck?.verdict === "changes_requested", "error findings always block check");
 assert(normalizeCheckResult("plain")?.verdict === "changes_requested", "missing json");
 
 const projectA = mkdtempSync(path.join(tmpdir(), "wf-a-"));

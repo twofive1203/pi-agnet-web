@@ -537,9 +537,9 @@ export function hasWorkflowExtension(cwd: string): boolean {
 }
 
 /**
- * SnFlow is active for a session only when the selected project has been
- * initialized (`.pi/snflows/tasks/` exists). There is no global enable switch:
- * uninitialized projects never force SnFlow guidance/skills/agents.
+ * SnFlow resources are available to a session only when the selected project
+ * has been initialized (`.pi/snflows/tasks/` exists). Workflow entry remains
+ * opt-in; this availability signal only controls managed guidance/skills/agents.
  */
 export function isSnflowActiveForSession(cwd: string): boolean {
   return isWorkflowProjectInitialized(cwd);

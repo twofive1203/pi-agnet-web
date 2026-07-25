@@ -457,7 +457,11 @@ try {
   assert(!historical.parentSessionId && !historical.parentToolCallId, "historical runs remain readable");
 
   const managedGuidance = SNFLOW_ASSET_FILES
-    .filter((file) => file.path.includes("extensions/snflow") || file.path.includes("skills/snflow-dev"))
+    .filter((file) =>
+      file.path.includes("extensions/snflow") ||
+      file.path.includes("skills/snflow-dev") ||
+      file.path.includes("agents/snflow"),
+    )
     .map((file) => file.content)
     .join("\n");
   assert(!managedGuidance.includes("scripts/snflow-task.ts implement\n"), "managed guidance removes CLI implement command");
@@ -465,6 +469,10 @@ try {
   assert(managedGuidance.includes("SNFLOW_DISPATCH"), "managed guidance documents direct marker");
   assert(managedGuidance.includes("snflow-implement"), "managed guidance routes implementation to project agent");
   assert(managedGuidance.includes("snflow-check"), "managed guidance routes review to project agent");
+  assert(managedGuidance.includes("Default to ordinary direct development"), "managed guidance defaults to direct work");
+  assert(managedGuidance.includes("explicitly asks to use SnFlow"), "managed skill requires explicit opt-in");
+  assert(managedGuidance.includes("Warnings and informational findings must still produce `pass`"), "managed check agent keeps advisory findings non-blocking");
+  assert(!managedGuidance.includes("Real dev work: create"), "managed guidance removes automatic task creation");
   assert(!managedGuidance.includes("builtin worker"), "managed guidance no longer routes to builtin worker");
   assert(!managedGuidance.includes(".trellis/tasks"), "direct path does not require Trellis task storage");
 

@@ -1,6 +1,6 @@
 /**
- * SnFlow project extension — injects Trellis-like task breadcrumbs into the
- * system prompt when the project has an active .pi/snflows task store.
+ * SnFlow project extension — injects opt-in task breadcrumbs into the system
+ * prompt when the project has an available .pi/snflows task store.
  *
  * Self-contained: do not import Snail Pi Web lib modules from here.
  * Installed/updated by the WebUI SnFlow setup (manifest-managed).
@@ -114,6 +114,9 @@ function directDispatch(cwd: string, task: { id: string; title: string; revision
     "- task first line must be exactly:",
     marker,
     "After the marker, provide the task id/title/revision, task document and spec paths, latest implement summary when checking, focused validation expectations, and the structured result contract.",
+    phase === "check"
+      ? "For check: only error findings are blockers; warnings/info are advisory and must still pass for user choice."
+      : "Keep implementation within the approved task scope.",
     "Do not run scripts/snflow-task.ts implement, check, or wait.",
   ].join("\n");
 }
@@ -151,10 +154,12 @@ function buildGuidance(cwd: string): string | null {
       "- task.json is mandatory and is the task source of truth.",
       "- task.md is legacy or scratch output only; do not rely on it for the panel.",
       "- A valid task directory should contain: task.json, requirements.md, design.md, and plan.md.",
-      "Triage:",
-      "- Simple chat: ask whether to create a SnFlow task; if user says no, skip.",
-      "- Real dev work: create a task yourself (do not ask the user to click panel +).",
-      "Create (preferred):",
+      "Entry policy (soft gate):",
+      "- Default to ordinary direct development. Initialization makes SnFlow available; it does not opt coding requests into it.",
+      "- Enter only when the user explicitly asks for SnFlow, invokes snflow-dev, asks to create/run a SnFlow task, or continues a non-terminal task.",
+      "- For clearly cross-module, high-risk, or long-running work, you may ask once whether SnFlow would help. This is an offer, not a prerequisite.",
+      "- If the user does not opt in, continue directly and do not create a task.",
+      "Create after opt-in (preferred):",
       '  npx tsx scripts/snflow-task.ts create "<title>" --seed "<user goal>"',
       "If the project CLI wrapper cannot resolve Snail Pi Web, use the panel Create action or write the task files manually under .pi/snflows/tasks/<slug>/.",
       "Manual fallback task.json must include schemaVersion:1, id:<slug>, title, description, status:'planning', priority:'P2', createdAt, updatedAt, completedAt:null, revision:'manual', activeRunId:null, latestImplementRunId:null, latestCheckRunId:null, commit:null, archived:false.",
@@ -254,6 +259,7 @@ function buildGuidance(cwd: string): string | null {
       "<workflow-state:ready_to_commit>",
       ...header,
       "Check passed. Hand off commit to the user (do not commit unless asked).",
+      "Warnings and informational findings are advisory: summarize them and let the user choose whether to address them before commit; do not automatically restart implementation.",
       "If this task produced reusable conventions or lessons, write them to the relevant .pi/snflows/spec/ files and update the spec index status tables.",
       "Also update the project-root AGENTS.md SnFlow managed section if the reading-order or",
       "spec-discovery guidance in that section should change.",
@@ -276,7 +282,7 @@ function buildGuidance(cwd: string): string | null {
       "  npx tsx scripts/snflow-task.ts archive",
       "Manual fallback for archive: move .pi/snflows/tasks/<id>/ to .pi/snflows/archived/<id>/,",
       "set archived:true and activeRunId:null in task.json, and remove .pi/snflows/current.json if it points at this task.",
-      "Or create a new task for new work.",
+      "This terminal task does not opt new work into SnFlow. Default to direct development; create a new task only after explicit opt-in.",
       "</workflow-state:done>",
     ].join("\n");
   }
@@ -294,7 +300,7 @@ export default function snflowExtension(pi: PiExtensionAPI): void {
       if (webFlag === "0" || webFlag === "false") return;
       const cwd = resolveCwd(ctx?.cwd);
       if (!cwd) return;
-      // Only initialized projects opted into SnFlow (tasks/ exists).
+      // Initialization makes SnFlow resources available; entry remains opt-in.
       if (!isInitialized(cwd)) return;
       const guidance = buildGuidance(cwd);
       if (!guidance) return;

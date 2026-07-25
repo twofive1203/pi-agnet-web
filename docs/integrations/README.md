@@ -87,8 +87,12 @@ instruction for the current chat, which calls the native `subagent` tool directl
 for implement/check. The SnFlow chat lifecycle validator checks the marker before
 execution and persists the native tool result; the existing Subagent panel owns
 live progress. Models come only from native `settings.json → subagents`. SnFlow
-does not read Trellis routing policy, and activation remains per-project
-initialization rather than a global switch.
+does not read Trellis routing policy. Project initialization makes the managed
+resources available, while actual workflow entry is soft-gated: ordinary work
+stays direct unless the user explicitly requests SnFlow, invokes `snflow-dev`,
+or continues an active non-terminal task. Check runs treat only `error` findings
+as blockers; warnings and informational findings pass and are reported for user
+choice.
 
 SnFlow project initialization installs managed assets from the bundled manifest in
 `lib/snflow-assets.ts` into the selected workspace (extension, skill, agents, CLI

@@ -648,9 +648,9 @@ export async function startRpcSession(
       ? SessionManager.open(sessionFile, undefined)
       : SessionManager.create(cwd, undefined);
 
-    // SnFlow is opt-in per project init only (no global enable switch).
+    // Project init makes SnFlow resources available; conversational entry stays opt-in.
     // - Not initialized: strip managed SnFlow extension/skill/agents so leftover
-    //   project files cannot force chat onto the SnFlow path.
+    //   project files cannot expose an unavailable workflow path.
     // - Initialized without project extension: legacy WebUI appendSystemPrompt guidance.
     // - Initialized with project extension: extension owns before_agent_start.
     let resourceLoader: InstanceType<typeof DefaultResourceLoader> | undefined;

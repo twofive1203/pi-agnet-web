@@ -112,17 +112,25 @@ other. The native config persists to `~/.pi/agent/settings.json` (user) or
 
 ### SnFlow (separate from Trellis)
 
-Snail Pi Web also owns a first-class development flow named SnFlow. There is no
-global enable switch: a project uses SnFlow only after it is initialized
-(`.pi/snflows/tasks/` exists). The SF drawer is always available so users can
-inspect or initialize the current workspace. Task documents live under
+Snail Pi Web also owns a first-class, opt-in development flow named SnFlow. There
+is no global enable switch: project initialization (`.pi/snflows/tasks/` exists)
+makes SnFlow resources available but does not route ordinary development through
+the workflow. A request enters SnFlow only when the user explicitly asks for it,
+invokes `snflow-dev`, asks to create/run a SnFlow task, or continues an active
+non-terminal task. For clearly cross-module, high-risk, or long-running work the
+agent may ask once whether SnFlow would help; declining keeps the normal direct
+path. The SF drawer is always available so users can inspect or initialize the
+current workspace. Task documents live under
 `<cwd>/.pi/snflows/tasks/` (archived tasks move to the sibling
 `<cwd>/.pi/snflows/archived/`) and never share schema, import, or writeback with
 `.trellis/tasks/`. Implement/check phases run as foreground native
 `pi-subagents` tool calls using the managed project agents `snflow-implement` and
 `snflow-check` in the current chat session. Their agent definitions own stable
 phase responsibilities and safety boundaries, while each marked dispatch carries
-only task-specific context and the structured result contract. The task-bound API
+only task-specific context and the structured result contract. Check findings are
+severity-gated: only `error` findings block and project `changes_requested`;
+`warning` and `info` findings remain advisory, pass the check, and are presented
+to the user as optional follow-up work. The task-bound API
 prepares a strict dispatch marker with the selected task id,
 revision, phase, and canonical cwd; `lib/workflow-chat-lifecycle.ts` validates
 that marker before execution and projects native tool progress/end events into
@@ -145,10 +153,11 @@ assets from the bundled manifest in `lib/snflow-assets.ts`:
 whitelist and never touches task data. Old projects that only have a tasks
 directory remain initialized and are prompted to update.
 
-Chat experience is intentionally Trellis-like, but only when the selected project
-is initialized for SnFlow. If it is not, the WebUI does not force SnFlow —
-managed project extension/skill/agent files are filtered out of the session
-resource loader so leftover assets cannot pull chat onto the SnFlow path.
+Chat experience is intentionally Trellis-like after a request opts into SnFlow.
+Initialization controls resource availability, not default workflow entry. If a
+project is not initialized, managed project extension/skill/agent files are
+filtered out of the session resource loader so leftover assets cannot expose an
+unavailable SnFlow path.
 
 ### Spec Bootstrap and AGENTS.md Managed Section
 

@@ -1,14 +1,22 @@
 ---
 name: snflow-dev
-description: "Use Snail Pi Web native SnFlow tasks under .pi/snflows/tasks/ for development work. Create and plan tasks in chat, then dispatch the managed snflow-implement and snflow-check project agents. Prefer this over Trellis for WebUI-owned workflow."
+description: "Use Snail Pi Web native SnFlow tasks only when the user explicitly requests SnFlow, invokes snflow-dev, or continues an active non-terminal SnFlow task. Ordinary development stays outside the workflow by default."
 ---
 
 # SnFlow development workflow
 
 This is **WebUI SnFlow** (`.pi/snflows/tasks/`), not Trellis (`.trellis/`).
-Experience should feel like Trellis: chat-orchestrated create → plan → start → implement → check → commit handoff.
+It is an opt-in workflow: chat-orchestrated create → plan → start → implement → check → commit handoff.
 
 Panel (SF) is for visibility/emergency controls. **Do not make the user drive the lifecycle by clicking around.**
+
+## Entry policy (soft gate)
+
+- Default to ordinary direct development. Project initialization only makes SnFlow available; it does not opt every coding request into the workflow.
+- Enter SnFlow when the user explicitly asks to use SnFlow, invokes `snflow-dev`, asks to create/run a SnFlow task, or continues an existing non-terminal task.
+- For work that is clearly cross-module, high-risk, long-running, or benefits from independent acceptance checks, ask once whether the user wants SnFlow. This is an offer, not a prerequisite.
+- Do not create a task from an ambiguous or routine development request. If the user declines or does not opt in, continue directly without SnFlow.
+- A completed, cancelled, or archived task never opts subsequent work into SnFlow.
 
 ## Phase index
 
@@ -89,8 +97,8 @@ Active SnFlow task: .pi/snflows/tasks/<id>
 
 ## Phase 1 — Plan
 
-- Simple chat: ask if a SnFlow task is needed; skip if user says no.
-- Real dev work: create the task yourself (never tell user to open SF and press +).
+- Begin only after the entry policy opts this request into SnFlow.
+- Create the task yourself (never tell the user to open SF and press +).
 - Edit `requirements.md`, `design.md`, `plan.md`.
 - Consent to create ≠ consent to implement.
 
@@ -106,6 +114,14 @@ Main session is orchestrator only. It calls project agent `snflow-implement` for
 
 ### Inline exception
 Do **not** edit project source in the main session except a trivial fix of roughly ≤10 lines with no new files — still run `check` afterwards.
+
+### Check decision policy
+
+- `error` means a must-fix blocker: a violated acceptance criterion, incorrect behavior, security or data-loss risk, concrete regression, or required validation failure attributable to the implementation.
+- `warning` and `info` are advisory. They may cover optional hardening, maintainability, style, extra tests, or improvements outside the approved scope.
+- Return `changes_requested` only when at least one `error` finding exists. Advisory findings must not fail the check.
+- Do not expand task scope during check or require unrelated files to be changed.
+- After a passing check with advisory findings, report them to the user and let the user choose whether to address them. Do not automatically dispatch another implement loop.
 
 ## Phase 3 — Finish
 
