@@ -7,7 +7,9 @@ This document holds the architecture details that should not live in `AGENTS.md`
 ```text
 Browser                Next.js Server              AgentSession (in-process)
   │                        │                               │
-  ├─ GET /api/sessions ───▶ reads ~/.pi/agent/sessions/    │
+  ├─ GET /api/sessions?view=projects ─▶ project dir scan   │
+  ├─ GET /api/sessions?cwd=&limit=10 ─▶ recent sessions    │
+  ├─ GET /api/sessions (default) ─────▶ full active list   │
   ├─ GET /api/sessions/[id] reads .jsonl file directly     │
   │                        │                               │
   ├─ send message ────────▶ POST /api/agent/[id]           │
@@ -18,6 +20,8 @@ Browser                Next.js Server              AgentSession (in-process)
   │                        │   session.onEvent() ◀─────────│ session.subscribe()
   │◀── data: {...} ────────│                               │
 ```
+
+Sidebar browsing is intentionally split from full-scan consumers: project discovery and per-cwd recent lists use filesystem metadata plus bounded JSONL parsing; Usage and other bulk features keep calling `listAllSessions()` / `listAllArchivedSessions()`.
 
 ## Key Boundaries
 
@@ -58,7 +62,9 @@ Archived sessions are stored at:
 
 Archive/unarchive moves the parent JSONL and its path-derived companion directory between `sessions/` and `sessions-archive/`. The session JSONL content is never modified. Active RPC sessions are destroyed before the artifacts move. Reads retain compatibility with older archives that moved only the parent JSONL and left the companion directory under active sessions.
 
-The archive directory is scanned separately from `SessionManager.listAll()` (which only scans `sessions/`). Project visibility is preserved by returning `archivedCwds` and `archivedCounts` from `GET /api/sessions`, allowing the CWD picker to include projects that have only archived sessions.
+The archive directory is scanned separately from `SessionManager.listAll()` (which only scans `sessions/`). Project visibility is preserved by returning `archivedCwds` and `archivedCounts` from `GET /api/sessions` (including `view=projects` and per-cwd recent modes), allowing the CWD picker to include projects that have only archived sessions.
+
+Recent-session browse order uses file mtime (then filename timestamp, then path). That differs from historical `SessionManager.listAll()` `modified`, which prefers last message activity time. Document this when changing ordering semantics.
 
 ### Usage accounting
 

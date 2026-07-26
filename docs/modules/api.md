@@ -4,7 +4,7 @@ API routes live under `app/api/`. When adding, removing, or changing routes, upd
 
 | Route | Methods | Purpose |
 | --- | --- | --- |
-| `sessions/` | GET | List sessions grouped by cwd (includes `archivedCwds` and `archivedCounts`). |
+| `sessions/` | GET | Session browser/list API. Modes: `?view=projects` returns lightweight project summaries for the sidebar; `?cwd=<path>&limit=10` returns at most 10 recent active sessions for one project (mtime-ordered, bounded JSONL parse); default (no view/cwd) remains the full active session list for Usage/compat callers. Always includes `archivedCwds` / `archivedCounts`. |
 | `sessions/[id]/` | GET/PATCH/DELETE | Read session detail, rename, delete. Returns `archived: true` for archived sessions. |
 | `sessions/[id]/context/` | GET | Get context for a specific `leafId`. |
 | `sessions/[id]/changes/` | GET | List files changed by tracked agent file tools in this session from non-Git sidecar data. |

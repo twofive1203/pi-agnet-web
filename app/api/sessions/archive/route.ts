@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import {
   archiveSessionFile,
   invalidateSessionPathCache,
+  isArchivedSessionPath,
   resolveSessionPath,
 } from "@/lib/session-reader";
 import { getRpcSession } from "@/lib/rpc-manager";
@@ -23,7 +24,7 @@ export async function POST(req: Request) {
           errors.push({ id, error: "Session not found" });
           continue;
         }
-        if (filePath.includes("/sessions-archive/")) {
+        if (isArchivedSessionPath(filePath)) {
           errors.push({ id, error: "Session is already archived" });
           continue;
         }

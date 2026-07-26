@@ -317,6 +317,17 @@ export interface SessionInfo {
   git?: GitInfo;
 }
 
+/** Lightweight project row for sidebar discovery (no full session scan). */
+export interface ProjectSummary {
+  cwd: string;
+  sessionCount: number;
+  /** Best-effort recent activity time used for project ordering (file mtime of newest candidate). */
+  latestModified: string;
+  latestSession?: Pick<SessionInfo, "id" | "name" | "firstMessage" | "modified" | "created" | "messageCount">;
+  worktree?: WorktreeInfo;
+  git?: GitInfo;
+}
+
 export interface SessionContext {
   messages: AgentMessage[];
   entryIds: string[]; // parallel to messages — the session entry id for each message

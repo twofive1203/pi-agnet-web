@@ -6,11 +6,14 @@ import {
   resolveSessionPath,
   invalidateSessionPathCache,
   buildSessionContext,
-  listAllSessions,
+  isArchivedSessionPath,
+  sessionIdFromFilePath,
+  readSessionHeaderLine,
 } from "@/lib/session-reader";
 import { getRpcSession } from "@/lib/rpc-manager";
 import { deleteSessionChangesSidecar } from "@/lib/session-file-changes";
 import { deleteSessionArtifacts } from "@/lib/session-artifacts";
+import { canonicalizeCwd } from "@/lib/cwd";
 
 // BranchNavigator still traverses recursively, so keep the response tree shallow.
 const MAX_PROJECTED_TREE_DEPTH = 200;
@@ -123,22 +126,47 @@ export async function GET(
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
     }
 
-    const sm = SessionManager.open(filePath);
-    const entries = sm.getEntries() as never;
-    const leafId = sm.getLeafId();
-    const tree = projectTreeForResponse(sm.getTree());
+    // Fail closed on exact-id matches that point at malformed/invalid JSONL so detail
+    // loading returns a normal 404 instead of bubbling SessionManager.open → 500.
+    const peeked = readSessionHeaderLine(filePath);
+    if (!peeked || peeked.id !== id) {
+      invalidateSessionPathCache(id);
+      return NextResponse.json({ error: "Session not found" }, { status: 404 });
+    }
+
+    let sm: SessionManager;
+    let header: ReturnType<SessionManager["getHeader"]>;
+    let entries: never;
+    let leafId: string | null;
+    let tree: ReturnType<typeof projectTreeForResponse>;
+    try {
+      sm = SessionManager.open(filePath);
+      header = sm.getHeader();
+      // Guard against substring/path-cache mismatches: requested id must equal header id.
+      if (!header?.id || header.id !== id) {
+        invalidateSessionPathCache(id);
+        return NextResponse.json({ error: "Session not found" }, { status: 404 });
+      }
+      entries = sm.getEntries() as never;
+      leafId = sm.getLeafId();
+      tree = projectTreeForResponse(sm.getTree());
+    } catch {
+      // Header peeked ok but body/open failed — treat as not-found, not 500.
+      invalidateSessionPathCache(id);
+      return NextResponse.json({ error: "Session not found" }, { status: 404 });
+    }
     const context = buildSessionContext(entries, leafId);
 
-    const header = sm.getHeader();
     let modified = header?.timestamp ?? new Date().toISOString();
     try { modified = statSync(filePath).mtime.toISOString(); } catch { /* use header timestamp */ }
-    const allSessions = await listAllSessions();
-    const parentSessionId = allSessions.find((s) => s.id === id)?.parentSessionId;
-    const archived = filePath.includes("/sessions-archive/");
+    const parentSessionId = header?.parentSession
+      ? sessionIdFromFilePath(header.parentSession)
+      : undefined;
+    const archived = isArchivedSessionPath(filePath);
     const info = header ? {
       path: filePath,
       id: header.id,
-      cwd: header.cwd ?? "",
+      cwd: header.cwd ? canonicalizeCwd(header.cwd) : "",
       name: sm.getSessionName(),
       created: header.timestamp,
       modified,

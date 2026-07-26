@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
-import type { GitInfo, SessionInfo, WorktreeInfo } from "@/lib/types";
+import type { GitInfo, ProjectSummary, SessionInfo, WorktreeInfo } from "@/lib/types";
+import { RECENT_SESSIONS_LIMIT } from "@/lib/session-reader-constants";
 import { formatWorkspaceHeaderTitle, formatWorkspaceSubtitle, formatWorkspaceTitle } from "@/lib/workspace-title";
 import { FileExplorer } from "./FileExplorer";
 import { useI18n } from "@/components/I18nProvider";
@@ -67,19 +68,12 @@ function formatRelativeTime(dateStr: string, t: (key: string, params?: MessagePa
   return date.toLocaleDateString();
 }
 
-/** Return all known cwds, keeping pinned entries ahead of recent-session order. */
-function getOrderedCwds(sessions: SessionInfo[], extraCwds: string[] = []): string[] {
-  const latestByCwd = new Map<string, string>(); // cwd -> most recent modified
-  for (const s of sessions) {
-    if (!s.cwd) continue;
-    const prev = latestByCwd.get(s.cwd);
-    if (!prev || s.modified > prev) {
-      latestByCwd.set(s.cwd, s.modified);
-    }
-  }
-  const recent = [...latestByCwd.entries()]
-    .sort((a, b) => b[1].localeCompare(a[1]))
-    .map(([cwd]) => cwd);
+/** Return project cwds ordered by latest activity, keeping pinned entries first. */
+function getOrderedCwds(projects: ProjectSummary[], extraCwds: string[] = []): string[] {
+  const recent = [...projects]
+    .sort((a, b) => b.latestModified.localeCompare(a.latestModified))
+    .map((p) => p.cwd)
+    .filter(Boolean);
   return [...extraCwds, ...recent.filter((cwd) => !extraCwds.includes(cwd))];
 }
 
@@ -366,7 +360,11 @@ function buildSessionTree(sessions: SessionInfo[]): SessionTreeNode[] {
 export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSession, initialSessionId, onInitialRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onOpenFile, explorerRefreshKey, onAtMention }: Props) {
   const { t } = useI18n();
   const appDialog = useAppDialog();
-  const [allSessions, setAllSessions] = useState<SessionInfo[]>([]);
+  /** Active sessions for the selected project only (bounded recent window). */
+  const [projectSessions, setProjectSessions] = useState<SessionInfo[]>([]);
+  /** Lightweight project rows for the cwd picker (no full session payload). */
+  const [projectSummaries, setProjectSummaries] = useState<ProjectSummary[]>([]);
+  const [projectSessionTotal, setProjectSessionTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedCwd, setSelectedCwd] = useState<string | null>(null);
@@ -516,15 +514,74 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     commitExplorerHeight(explorerHeightRef.current + delta, true);
   }, [commitExplorerHeight, explorerOpen, isDesktopLayout]);
 
+  /** Active project sessions are always tied to this cwd; ignore stale responses. */
+  const [projectSessionsCwd, setProjectSessionsCwd] = useState<string | null>(null);
+  const selectedCwdRef = useRef<string | null>(null);
+  selectedCwdRef.current = selectedCwd;
+  /** Serializes project-summary + recent-session fetches (refresh and cwd switches). */
+  const browseAbortRef = useRef<AbortController | null>(null);
+
+  const abortBrowseRequests = useCallback(() => {
+    browseAbortRef.current?.abort();
+    const next = new AbortController();
+    browseAbortRef.current = next;
+    return next;
+  }, []);
+
+  const loadProjectSessions = useCallback(async (cwd: string, signal?: AbortSignal) => {
+    const res = await fetch(
+      `/api/sessions?cwd=${encodeURIComponent(cwd)}&limit=${RECENT_SESSIONS_LIMIT}`,
+      { signal }
+    );
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json() as {
+      sessions: SessionInfo[];
+      total?: number;
+      archivedCwds?: string[];
+      archivedCounts?: Record<string, number>;
+    };
+    if (signal?.aborted) return;
+    // Drop stale responses from a previous project after a fast cwd switch.
+    if (selectedCwdRef.current !== cwd) return;
+    setProjectSessions(data.sessions);
+    setProjectSessionsCwd(cwd);
+    setProjectSessionTotal(data.total ?? data.sessions.length);
+    if (data.archivedCwds) setArchivedCwds(data.archivedCwds);
+    if (data.archivedCounts) setArchivedCounts(data.archivedCounts);
+  }, []);
+
+  const loadProjectSummaries = useCallback(async (signal?: AbortSignal) => {
+    const res = await fetch("/api/sessions?view=projects", { signal });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json() as {
+      projects: ProjectSummary[];
+      archivedCwds?: string[];
+      archivedCounts?: Record<string, number>;
+    };
+    if (signal?.aborted) return data;
+    setProjectSummaries(data.projects ?? []);
+    if (data.archivedCwds) setArchivedCwds(data.archivedCwds);
+    if (data.archivedCounts) setArchivedCounts(data.archivedCounts);
+    return data;
+  }, []);
+
+  /** Refresh project summaries and the selected project's recent sessions. */
   const loadSessions = useCallback(async (showLoading = false) => {
+    const controller = abortBrowseRequests();
+    const requestCwd = selectedCwdRef.current;
     try {
       if (showLoading) setLoading(true);
-      const res = await fetch("/api/sessions");
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json() as { sessions: SessionInfo[]; archivedCwds?: string[]; archivedCounts?: Record<string, number> };
-      setAllSessions(data.sessions);
-      if (data.archivedCwds) setArchivedCwds(data.archivedCwds);
-      if (data.archivedCounts) setArchivedCounts(data.archivedCounts);
+      await loadProjectSummaries(controller.signal);
+      if (controller.signal.aborted) return;
+      // Re-read cwd after summaries: user may have switched projects mid-flight.
+      const cwd = selectedCwdRef.current;
+      if (cwd) {
+        // If cwd changed during summaries, the selectedCwd effect owns the session load.
+        if (cwd === requestCwd || requestCwd == null) {
+          await loadProjectSessions(cwd, controller.signal);
+        }
+      }
+      if (controller.signal.aborted) return;
       setError(null);
       if (!showLoading) {
         setSessionRefreshDone(true);
@@ -532,11 +589,12 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         sessionRefreshTimerRef.current = setTimeout(() => setSessionRefreshDone(false), 2000);
       }
     } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") return;
       setError(String(e));
     } finally {
       if (showLoading) setLoading(false);
     }
-  }, []);
+  }, [abortBrowseRequests, loadProjectSessions, loadProjectSummaries]);
 
   const loadArchivedSessions = useCallback(async (cwd: string) => {
     try {
@@ -650,8 +708,62 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   useEffect(() => {
     const isFirst = !initialLoadDone.current;
     initialLoadDone.current = true;
-    loadSessions(isFirst);
+    void loadSessions(isFirst);
   }, [loadSessions, refreshKey]);
+
+  // On project change: immediately isolate previous project's sessions, abort in-flight
+  // browse requests, and load only the current cwd's recent window.
+  useEffect(() => {
+    // Clear immediately so project A sessions never render under project B.
+    setProjectSessions([]);
+    setProjectSessionsCwd(null);
+    setProjectSessionTotal(0);
+    setSelectedForArchive(new Set());
+    setArchivedSessions([]);
+    setArchivedExpanded(false);
+    setArchiveAllConfirming(false);
+
+    if (!selectedCwd) return;
+
+    const controller = abortBrowseRequests();
+    void loadProjectSessions(selectedCwd, controller.signal).catch((e) => {
+      if (e instanceof DOMException && e.name === "AbortError") return;
+      if (selectedCwdRef.current === selectedCwd) setError(String(e));
+    });
+    return () => controller.abort();
+  }, [selectedCwd, abortBrowseRequests, loadProjectSessions]);
+
+  // Keep a directly-opened session visible even when it falls outside the recent-10 window.
+  useEffect(() => {
+    if (!selectedSessionId || !selectedCwd) return;
+    // Only consider sessions that belong to the current cwd.
+    if (projectSessionsCwd === selectedCwd && projectSessions.some((s) => s.id === selectedSessionId)) return;
+    if (archivedSessions.some((s) => s.id === selectedSessionId)) return;
+
+    const controller = new AbortController();
+    const requestCwd = selectedCwd;
+    void (async () => {
+      try {
+        const res = await fetch(`/api/sessions/${encodeURIComponent(selectedSessionId)}`, {
+          signal: controller.signal,
+        });
+        if (!res.ok) return;
+        const data = await res.json() as { info?: SessionInfo | null };
+        const info = data.info;
+        if (!info || info.cwd !== requestCwd || info.archived) return;
+        if (selectedCwdRef.current !== requestCwd) return;
+        setProjectSessions((prev) => {
+          if (selectedCwdRef.current !== requestCwd) return prev;
+          if (prev.some((s) => s.id === info.id)) return prev;
+          return [info, ...prev];
+        });
+        setProjectSessionsCwd(requestCwd);
+      } catch {
+        // ignore abort / not-found
+      }
+    })();
+    return () => controller.abort();
+  }, [selectedSessionId, selectedCwd, projectSessions, projectSessionsCwd, archivedSessions]);
 
   useEffect(() => {
     if (!archivedExpanded || !selectedCwd || (archivedCounts[selectedCwd] ?? 0) === 0) return;
@@ -693,27 +805,53 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     return () => controller.abort();
   }, [selectedCwd]);
 
-  // Auto-select cwd and restore session from URL on first load
+  // Auto-select cwd and restore session from URL on first load.
+  // URL restore uses the session detail API so old ids outside the recent-10 window still open.
   useEffect(() => {
-    if (allSessions.length === 0) return;
+    if (selectedCwd !== null) return;
+    if (loading) return;
 
-    if (selectedCwd === null) {
-      // If restoring a session, set cwd to match that session
-      if (initialSessionId && !restoredRef.current) {
-        restoredRef.current = true;
-        const target = allSessions.find((s) => s.id === initialSessionId);
-        if (target) {
-          setSelectedCwd(target.cwd);
-          onSelectSession(target, true);
-          return;
+    if (initialSessionId && !restoredRef.current) {
+      restoredRef.current = true;
+      let cancelled = false;
+      void (async () => {
+        try {
+          const res = await fetch(`/api/sessions/${encodeURIComponent(initialSessionId)}`);
+          if (!res.ok) {
+            onInitialRestoreDone?.();
+            const cwds = getOrderedCwds(projectSummaries);
+            if (cwds.length > 0) setSelectedCwd(cwds[0]);
+            return;
+          }
+          const data = await res.json() as { info?: SessionInfo | null };
+          if (cancelled) return;
+          if (data.info?.cwd) {
+            setSelectedCwd(data.info.cwd);
+            onSelectSession(data.info, true);
+            return;
+          }
+          onInitialRestoreDone?.();
+        } catch {
+          if (!cancelled) onInitialRestoreDone?.();
         }
-        // Session not found — notify parent so it can show the placeholder
-        onInitialRestoreDone?.();
-      }
-      const cwds = getOrderedCwds(allSessions);
-      if (cwds.length > 0) setSelectedCwd(cwds[0]);
+        if (!cancelled) {
+          const cwds = getOrderedCwds(projectSummaries);
+          if (cwds.length > 0) setSelectedCwd(cwds[0]);
+        }
+      })();
+      return () => { cancelled = true; };
     }
-  }, [allSessions, selectedCwd, initialSessionId, onSelectSession, onInitialRestoreDone]);
+
+    const cwds = getOrderedCwds(projectSummaries);
+    if (cwds.length > 0) setSelectedCwd(cwds[0]);
+  }, [
+    loading,
+    projectSummaries,
+    selectedCwd,
+    initialSessionId,
+    onSelectSession,
+    onInitialRestoreDone,
+  ]);
 
   const commitCustomPath = useCallback(async () => {
     const path = customPathValue.trim();
@@ -875,8 +1013,19 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     }
   }, [applyWorktreeFallback, onSessionDeleted, worktreeAction]);
 
-  const visibleSessions = allSessions.filter((session) => !removedWorktreeCwds.includes(session.cwd));
+  const visibleProjects = projectSummaries.filter((project) => !removedWorktreeCwds.includes(project.cwd));
+  // Render only the session set owned by the current selected cwd (drop stale project A rows).
+  const visibleSessions = projectSessions.filter((session) =>
+    projectSessionsCwd === selectedCwd
+    && session.cwd === selectedCwd
+    && !removedWorktreeCwds.includes(session.cwd)
+  );
   const worktreeByCwd = new Map<string, WorktreeInfo>();
+  for (const project of visibleProjects) {
+    if (project.cwd && project.worktree && !worktreeByCwd.has(project.cwd)) {
+      worktreeByCwd.set(project.cwd, project.worktree);
+    }
+  }
   for (const session of visibleSessions) {
     if (session.cwd && session.worktree && !worktreeByCwd.has(session.cwd)) {
       worktreeByCwd.set(session.cwd, session.worktree);
@@ -896,13 +1045,18 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   // Add archived-only cwds (no active sessions) so projects remain visible
   for (const acwd of archivedCwds) {
     if (!acwd || extraCwds.includes(acwd)) continue;
-    if (!visibleSessions.some((s) => s.cwd === acwd)) {
+    if (!visibleProjects.some((p) => p.cwd === acwd)) {
       extraCwds.push(acwd);
     }
   }
-  const orderedCwds = getOrderedCwds(visibleSessions, extraCwds);
+  const orderedCwds = getOrderedCwds(visibleProjects, extraCwds);
   const selectedWorktree = selectedCwd ? worktreeByCwd.get(selectedCwd) : undefined;
-  const sessionGit = selectedCwd ? visibleSessions.find((s) => s.cwd === selectedCwd)?.git : undefined;
+  const selectedProject = selectedCwd
+    ? visibleProjects.find((p) => p.cwd === selectedCwd)
+    : undefined;
+  const sessionGit = selectedCwd
+    ? (selectedProject?.git ?? visibleSessions.find((s) => s.cwd === selectedCwd)?.git)
+    : undefined;
   const currentGit: GitInfo | undefined = sessionGit ?? selectedCwdGit ?? (selectedWorktree ? {
     isWorktree: true,
     branch: selectedWorktree.branch,
@@ -913,15 +1067,16 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const workspaceTitle = formatWorkspaceHeaderTitle(selectedCwd, currentGit);
   const workspaceTitleDetail = formatWorkspaceTitle(selectedCwd, currentGit);
   const workspaceSubtitle = formatWorkspaceSubtitle(selectedCwd, currentGit);
-  const archivedOnlyCwds = new Set(archivedCwds.filter((acwd) => !visibleSessions.some((s) => s.cwd === acwd)));
+  const archivedOnlyCwds = new Set(archivedCwds.filter((acwd) => !visibleProjects.some((p) => p.cwd === acwd)));
   const cwdGroups = groupCwdPickerRows(buildCwdPickerRows(orderedCwds, worktreeByCwd));
   const filteredCwdGroups = allProjectsOpen ? filterCwdPickerGroups(cwdGroups, cwdSearch) : cwdGroups.slice(0, 5);
   const displayedCwdRows = filteredCwdGroups.flat();
-  const filteredSessions = selectedCwd
-    ? visibleSessions.filter((s) => s.cwd === selectedCwd)
-    : visibleSessions;
+  // Sidebar only holds the bounded recent window for the selected project.
+  const filteredSessions = visibleSessions;
+  const activeSessionCountForCwd = selectedProject?.sessionCount
+    ?? (projectSessionTotal > 0 ? projectSessionTotal : filteredSessions.length);
 
-  // Build parent-child tree within the filtered set
+  // Build parent-child tree within the recent window; missing parents stay roots.
   const sessionTree = buildSessionTree(filteredSessions);
 
   const explorerCwd = selectedCwdProp || selectedCwd;
@@ -1683,7 +1838,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
               {t("sidebar.archiveAllTitle")}
             </div>
             <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5, marginBottom: 16 }}>
-              {t("sidebar.archiveAllBodyBefore")} <strong>{(archivedCounts[selectedCwd] ?? 0) + filteredSessions.length}</strong> {t("sidebar.archiveAllBodyAfter")}
+              {t("sidebar.archiveAllBodyBefore")} <strong>{(archivedCounts[selectedCwd] ?? 0) + activeSessionCountForCwd}</strong> {t("sidebar.archiveAllBodyAfter")}
               {t("sidebar.archiveAllHint")}
             </div>
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>

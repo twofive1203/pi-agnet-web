@@ -1,7 +1,15 @@
 import { SessionManager, buildSessionContext as piBuildSessionContext, getAgentDir } from "@earendil-works/pi-coding-agent";
-import { existsSync, readFileSync, readdirSync, rmdirSync, statSync, writeFileSync } from "fs";
-import { dirname, join } from "path";
-import type { SessionEntry, SessionInfo, SessionContext, SessionTreeNode, AssistantMessage } from "./types";
+import { closeSync, existsSync, openSync, readFileSync, readSync, readdirSync, rmdirSync, statSync, writeFileSync } from "fs";
+import { basename, dirname, join, resolve as resolvePath } from "path";
+import type {
+  SessionEntry,
+  SessionInfo,
+  SessionContext,
+  SessionTreeNode,
+  AssistantMessage,
+  ProjectSummary,
+  SessionHeader,
+} from "./types";
 import type { SessionEntry as PiSessionEntry, SessionInfo as PiSessionInfo } from "@earendil-works/pi-coding-agent";
 import { normalizeToolCalls } from "./normalize";
 import { getGitMetadataForCwd } from "./git-worktree";
@@ -144,6 +152,462 @@ export async function listAllSessions(): Promise<SessionInfo[]> {
       git: cwd ? gitByCwd.get(cwd) : undefined,
     };
   });
+}
+
+// ============================================================================
+// Browser-oriented project / recent-session readers (bounded, no full scan)
+// ============================================================================
+
+export { RECENT_SESSIONS_LIMIT } from "./session-reader-constants";
+import { RECENT_SESSIONS_LIMIT } from "./session-reader-constants";
+
+interface SessionFileCandidate {
+  path: string;
+  fileName: string;
+  /** File mtime ISO — primary sort key for "recent" browsing (not message activity). */
+  mtimeIso: string;
+  mtimeMs: number;
+  /** Filename timestamp prefix when present (create/fork time); secondary sort key. */
+  fileNameStamp: string;
+}
+
+/**
+ * Encode a cwd the same way pi stores sessions under ~/.pi/agent/sessions/.
+ * Directory names are lossy and must not be reverse-parsed into a real cwd.
+ */
+export function encodeSessionDirName(cwd: string): string {
+  const resolved = resolvePath(expandCwd(cwd));
+  return `--${resolved.replace(/^[/\\]/, "").replace(/[/\\:]/g, "-")}--`;
+}
+
+export function getSessionDirForCwd(cwd: string): string {
+  return join(getSessionsDir(), encodeSessionDirName(cwd));
+}
+
+/** Extract session id from a pi session file path or basename. */
+export function sessionIdFromFilePath(filePath: string): string | undefined {
+  const base = basename(filePath);
+  const match =
+    base.match(/_([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/i) ??
+    base.match(/_(.+)\.jsonl$/i);
+  return match?.[1];
+}
+
+function fileNameTimestamp(fileName: string): string {
+  const stamp = fileName.split("_")[0] ?? "";
+  return stamp;
+}
+
+/**
+ * Read only the first JSONL header line of a session file (bounded prefix read).
+ * Returns null for missing/unreadable/malformed files or non-session headers.
+ * Exported so detail routes can fail closed without opening full JSONL.
+ */
+export function readSessionHeaderLine(filePath: string): SessionHeader | null {
+  try {
+    // Read a small prefix so project discovery does not load entire multi-MB JSONL files.
+    const fd = openSync(filePath, "r");
+    try {
+      const buf = Buffer.alloc(8 * 1024);
+      const bytes = readSync(fd, buf, 0, buf.length, 0);
+      const text = buf.toString("utf8", 0, bytes);
+      const nl = text.search(/\r?\n/);
+      const firstLine = (nl >= 0 ? text.slice(0, nl) : text).trim();
+      if (!firstLine) return null;
+      const header = JSON.parse(firstLine) as SessionHeader;
+      if (header?.type !== "session" || !header.id) return null;
+      return header;
+    } finally {
+      closeSync(fd);
+    }
+  } catch {
+    return null;
+  }
+}
+
+function listJsonlCandidates(dirPath: string): SessionFileCandidate[] {
+  if (!existsSync(dirPath)) return [];
+  try {
+    const files = readdirSync(dirPath).filter((f) => f.endsWith(".jsonl"));
+    const candidates: SessionFileCandidate[] = [];
+    for (const fileName of files) {
+      const filePath = join(dirPath, fileName);
+      try {
+        const st = statSync(filePath);
+        if (!st.isFile()) continue;
+        candidates.push({
+          path: filePath,
+          fileName,
+          mtimeIso: st.mtime.toISOString(),
+          mtimeMs: st.mtimeMs,
+          fileNameStamp: fileNameTimestamp(fileName),
+        });
+      } catch {
+        // skip unreadable files
+      }
+    }
+    return candidates;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Sort candidates for "recent" browsing without reading JSONL content.
+ * Primary: filesystem mtime (closer to last write than create time).
+ * Secondary: filename timestamp prefix (create/fork time).
+ * Tertiary: path for stability.
+ *
+ * Note: historical `SessionInfo.modified` from SessionManager.listAll uses last
+ * message activity time. Browse ordering intentionally uses mtime so the sidebar
+ * does not parse every JSONL.
+ */
+function sortCandidatesRecentFirst(candidates: SessionFileCandidate[]): SessionFileCandidate[] {
+  return [...candidates].sort((a, b) => {
+    if (b.mtimeMs !== a.mtimeMs) return b.mtimeMs - a.mtimeMs;
+    const stampCmp = b.fileNameStamp.localeCompare(a.fileNameStamp);
+    if (stampCmp !== 0) return stampCmp;
+    return b.path.localeCompare(a.path);
+  });
+}
+
+function firstMessageFromEntries(entries: ReturnType<SessionManager["getEntries"]>): {
+  messageCount: number;
+  firstMessage: string;
+  name?: string;
+} {
+  let messageCount = 0;
+  let firstMessage = "(no messages)";
+  let name: string | undefined;
+  for (const entry of entries) {
+    if (entry.type === "session_info") {
+      const info = entry as { name?: string };
+      name = info.name?.trim() || undefined;
+    }
+    if (entry.type !== "message") continue;
+    messageCount++;
+    if (messageCount === 1) {
+      const msg = entry as unknown as { message?: { content?: unknown } };
+      const content = msg.message?.content;
+      if (typeof content === "string") {
+        firstMessage = content.slice(0, 100);
+      } else if (Array.isArray(content)) {
+        const textBlock = content.find((b: { type: string }) => b.type === "text");
+        if (textBlock) firstMessage = (textBlock as { text: string }).text.slice(0, 100);
+      }
+    }
+  }
+  return { messageCount, firstMessage: firstMessage || "(no messages)", name };
+}
+
+function buildSessionInfoFromFile(
+  filePath: string,
+  options?: { expectedCwdTargets?: Set<string>; includeGit?: boolean }
+): SessionInfo | null {
+  try {
+    const sm = SessionManager.open(filePath);
+    const header = sm.getHeader();
+    if (!header?.id) return null;
+    if (options?.expectedCwdTargets && !cwdMatchesAny(header.cwd, options.expectedCwdTargets)) {
+      return null;
+    }
+
+    const sessionCwd = header.cwd ? canonicalizeCwd(header.cwd) : "";
+    const entries = sm.getEntries();
+    const { messageCount, firstMessage, name } = firstMessageFromEntries(entries);
+
+    let modified = header.timestamp ?? new Date().toISOString();
+    try {
+      modified = statSync(filePath).mtime.toISOString();
+    } catch {
+      // use header timestamp
+    }
+
+    const cache = getPathCache();
+    cache.set(header.id, filePath);
+
+    return {
+      path: filePath,
+      id: header.id,
+      cwd: sessionCwd,
+      name: name ?? sm.getSessionName(),
+      created: header.timestamp ?? modified,
+      modified,
+      messageCount,
+      firstMessage,
+      parentSessionId: header.parentSession
+        ? sessionIdFromFilePath(header.parentSession)
+        : undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function loadGitMapsForCwds(cwds: string[]): Promise<{
+  gitByCwd: Map<string, SessionInfo["git"]>;
+  worktreeByCwd: Map<string, SessionInfo["worktree"]>;
+}> {
+  const gitByCwd = new Map<string, SessionInfo["git"]>();
+  const worktreeByCwd = new Map<string, SessionInfo["worktree"]>();
+  await Promise.all([...new Set(cwds.filter(Boolean))].map(async (cwd) => {
+    try {
+      const metadata = await getGitMetadataForCwd(cwd);
+      if (metadata) {
+        gitByCwd.set(cwd, metadata);
+        if (metadata.isWorktree) {
+          worktreeByCwd.set(cwd, {
+            isWorktree: true,
+            branch: metadata.branch,
+            repoRoot: metadata.repoRoot,
+            mainWorktreePath: metadata.mainWorktreePath,
+            mainWorktreeBranch: metadata.mainWorktreeBranch,
+          });
+        }
+      }
+    } catch {
+      // best-effort
+    }
+  }));
+  return { gitByCwd, worktreeByCwd };
+}
+
+/**
+ * Discover projects by scanning first-level session directories without parsing every JSONL.
+ *
+ * Pi directory encoding is lossy on Windows (`/`, `\\`, and `:` all become `-`), so one
+ * encoded directory may contain sessions from multiple real cwds. Always group by the
+ * session header cwd, never treat the directory name as a single project.
+ */
+export async function listProjectSummaries(): Promise<ProjectSummary[]> {
+  const sessionsDir = getSessionsDir();
+  if (!existsSync(sessionsDir)) return [];
+
+  let dirEntries: Array<{ name: string; isDirectory: () => boolean }>;
+  try {
+    dirEntries = readdirSync(sessionsDir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+
+  type CwdBucket = {
+    cwd: string;
+    candidates: SessionFileCandidate[];
+  };
+
+  // Aggregate by real header cwd across all encoded directories.
+  const byCwd = new Map<string, CwdBucket>();
+
+  for (const entry of dirEntries) {
+    if (!entry.isDirectory()) continue;
+    const dirPath = join(sessionsDir, String(entry.name));
+    const candidates = listJsonlCandidates(dirPath);
+    if (candidates.length === 0) continue;
+
+    // Group files inside this directory by actual header cwd (handles encoding collisions).
+    const byHeaderCwd = new Map<
+      string,
+      Array<{ candidate: SessionFileCandidate; header: SessionHeader }>
+    >();
+
+    for (const candidate of candidates) {
+      const header = readSessionHeaderLine(candidate.path);
+      if (!header?.cwd) continue;
+      const cwd = canonicalizeCwd(header.cwd);
+      const group = byHeaderCwd.get(cwd) ?? [];
+      group.push({ candidate, header });
+      byHeaderCwd.set(cwd, group);
+    }
+
+    for (const [cwd, group] of byHeaderCwd) {
+      // Prune only sessions proven to belong to a deleted WorkTree cwd.
+      if (isDeletedWorktreeCwd(cwd)) {
+        for (const { candidate, header } of group) {
+          const id = sessionIdFromFilePath(candidate.path) ?? header.id;
+          deleteSessionFile({ id, path: candidate.path, cwd });
+        }
+        continue;
+      }
+
+      const bucket = byCwd.get(cwd) ?? { cwd, candidates: [] };
+      for (const { candidate } of group) {
+        bucket.candidates.push(candidate);
+      }
+      byCwd.set(cwd, bucket);
+    }
+  }
+
+  const { gitByCwd, worktreeByCwd } = await loadGitMapsForCwds([...byCwd.keys()]);
+
+  const summaries: ProjectSummary[] = [];
+  for (const bucket of byCwd.values()) {
+    const ordered = sortCandidatesRecentFirst(bucket.candidates);
+    const targets = cwdKeys(bucket.cwd);
+
+    // Newest *valid readable* candidate wins for latestSession / latestModified.
+    // A newer malformed file must not blank out an older valid session.
+    let latestSession: ProjectSummary["latestSession"];
+    let latestModified = ordered[0]?.mtimeIso ?? new Date(0).toISOString();
+    for (const candidate of ordered) {
+      const info = buildSessionInfoFromFile(candidate.path, { expectedCwdTargets: targets });
+      if (!info) continue;
+      latestSession = {
+        id: info.id,
+        name: info.name,
+        firstMessage: info.firstMessage,
+        modified: info.modified,
+        created: info.created,
+        messageCount: info.messageCount,
+      };
+      latestModified = candidate.mtimeIso || info.modified;
+      break;
+    }
+
+    summaries.push({
+      cwd: bucket.cwd,
+      sessionCount: bucket.candidates.length,
+      latestModified,
+      latestSession,
+      git: gitByCwd.get(bucket.cwd),
+      worktree: worktreeByCwd.get(bucket.cwd),
+    });
+  }
+
+  summaries.sort((a, b) => b.latestModified.localeCompare(a.latestModified));
+  return summaries;
+}
+
+function findSessionDirsForCwd(cwd: string): string[] {
+  const targets = cwdKeys(cwd);
+  const dirs = new Set<string>();
+
+  for (const key of targets) {
+    const encoded = getSessionDirForCwd(key);
+    if (existsSync(encoded)) dirs.add(encoded);
+  }
+
+  // Always header-scan first-level dirs: encoding is lossy on Windows, so sessions for
+  // this cwd may live in a colliding encoded folder that is not encode(cwd). Only reading
+  // a few newest files is insufficient when foreign-cwd sessions dominate mtime order.
+  const sessionsDir = getSessionsDir();
+  if (existsSync(sessionsDir)) {
+    try {
+      for (const entry of readdirSync(sessionsDir, { withFileTypes: true })) {
+        if (!entry.isDirectory()) continue;
+        const dirPath = join(sessionsDir, entry.name);
+        if (dirs.has(dirPath)) continue;
+        const candidates = listJsonlCandidates(dirPath);
+        if (candidates.length === 0) continue;
+        for (const candidate of candidates) {
+          const header = readSessionHeaderLine(candidate.path);
+          if (header && cwdMatchesAny(header.cwd, targets)) {
+            dirs.add(dirPath);
+            break;
+          }
+        }
+      }
+    } catch {
+      // ignore unreadable session roots
+    }
+  }
+
+  return [...dirs];
+}
+
+/**
+ * List the most recent active sessions for one project cwd.
+ * Only fully parses up to `limit` matching JSONL files (default 10).
+ *
+ * Because encoded directories can collide on Windows, candidates are filtered by header cwd
+ * with header-only reads first. Full JSONL open/parse is applied only to the first
+ * `limit` header-matching candidates (never limit+N retries after malformed bodies).
+ */
+export async function listRecentSessionsForCwd(
+  cwd: string,
+  limit: number = RECENT_SESSIONS_LIMIT
+): Promise<{ sessions: SessionInfo[]; total: number }> {
+  const safeLimit = Math.max(0, Math.min(100, Math.floor(limit)));
+  const targets = cwdKeys(cwd);
+  if (targets.size === 0) return { sessions: [], total: 0 };
+
+  const dirs = findSessionDirsForCwd(cwd);
+  const allCandidates: SessionFileCandidate[] = [];
+  for (const dir of dirs) {
+    allCandidates.push(...listJsonlCandidates(dir));
+  }
+
+  const ordered = sortCandidatesRecentFirst(allCandidates);
+
+  // Header-only filter: foreign-cwd and malformed headers never open full JSONL.
+  const matching: SessionFileCandidate[] = [];
+  for (const candidate of ordered) {
+    const header = readSessionHeaderLine(candidate.path);
+    if (header && cwdMatchesAny(header.cwd, targets)) matching.push(candidate);
+  }
+  const total = matching.length;
+
+  // Bound full parses strictly to `limit` pre-filtered candidates (no backfill).
+  const sessions: SessionInfo[] = [];
+  for (const candidate of matching.slice(0, safeLimit)) {
+    const info = buildSessionInfoFromFile(candidate.path, { expectedCwdTargets: targets });
+    if (!info) continue;
+    // Skip deleted worktree leftovers if any remain (only files proven for this cwd).
+    if (isDeletedWorktreeCwd(info.cwd)) {
+      deleteSessionFile({ id: info.id, path: info.path, cwd: info.cwd });
+      continue;
+    }
+    sessions.push(info);
+  }
+
+  const { gitByCwd, worktreeByCwd } = await loadGitMapsForCwds(
+    [...new Set(sessions.map((s) => s.cwd).filter(Boolean))]
+  );
+
+  for (const session of sessions) {
+    session.git = gitByCwd.get(session.cwd);
+    session.worktree = worktreeByCwd.get(session.cwd);
+  }
+
+  // Keep response ordered by browse recency (mtime), already selected that way.
+  sessions.sort((a, b) => b.modified.localeCompare(a.modified));
+  return { sessions, total };
+}
+
+/**
+ * Locate a session file by id via directory/filename scan without parsing every JSONL.
+ * Filename format: `<timestamp>_<session-id>.jsonl`.
+ * Matches the extracted session id exactly (not a substring of another id).
+ */
+export function findSessionFileById(sessionId: string, rootDir?: string): string | null {
+  if (!sessionId) return null;
+  const roots = rootDir
+    ? [rootDir]
+    : [getSessionsDir(), getSessionsArchiveDir()].filter((dir) => existsSync(dir));
+
+  for (const root of roots) {
+    if (!existsSync(root)) continue;
+    let entries: Array<{ name: string; isDirectory: () => boolean }>;
+    try {
+      entries = readdirSync(root, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const dirPath = join(root, String(entry.name));
+      try {
+        const files = readdirSync(dirPath).filter((f) => f.endsWith(".jsonl"));
+        for (const file of files) {
+          if (sessionIdFromFilePath(file) === sessionId) {
+            return join(dirPath, file);
+          }
+        }
+      } catch {
+        // skip unreadable dirs
+      }
+    }
+  }
+  return null;
 }
 
 // ============================================================================
@@ -301,6 +765,11 @@ export function getSessionsArchiveDir(): string {
   return `${getAgentDir()}/sessions-archive`;
 }
 
+/** Separator-safe archived path check for Windows (`\\`) and POSIX (`/`). */
+export function isArchivedSessionPath(filePath: string): boolean {
+  return /(?:^|[/\\])sessions-archive(?:[/\\]|$)/.test(filePath);
+}
+
 /**
  * Move a session file from sessions/ to sessions-archive/.
  * Returns the new archive path.
@@ -354,34 +823,42 @@ function updateParentSessionRefs(dirPath: string, oldPath: string, newPath: stri
 
 /**
  * Scan the archive directory and return which cwds have archived sessions.
- * Reads the first session file's header to extract the actual cwd path.
+ *
+ * Windows session directory encoding is lossy, so one archive folder may hold
+ * multiple real cwds. Group every archive JSONL by its canonical header cwd
+ * (same strategy as active project summaries). Malformed files are isolated and
+ * do not contribute counts; colliding cwds are never merged by directory name.
  */
 export function scanArchivedCwds(): { cwds: string[]; counts: Record<string, number> } {
   const archiveDir = getSessionsArchiveDir();
-  const cwds: string[] = [];
   const counts: Record<string, number> = {};
-  if (!existsSync(archiveDir)) return { cwds, counts };
+  if (!existsSync(archiveDir)) return { cwds: [], counts };
 
-  const entries = readdirSync(archiveDir, { withFileTypes: true });
+  let entries: Array<{ name: string; isDirectory: () => boolean }>;
+  try {
+    entries = readdirSync(archiveDir, { withFileTypes: true });
+  } catch {
+    return { cwds: [], counts };
+  }
+
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
     const dirPath = join(archiveDir, entry.name);
-    const jsonlFiles = readdirSync(dirPath).filter((f) => f.endsWith(".jsonl"));
-    if (jsonlFiles.length === 0) continue;
-    // Read first session file to extract cwd from header
+    let jsonlFiles: string[];
     try {
-      const firstLine = readFileSync(join(dirPath, jsonlFiles[0]), "utf8").split("\n")[0];
-      const header = JSON.parse(firstLine) as { type?: string; cwd?: string };
-      if (header.type === "session" && header.cwd) {
-        const cwd = canonicalizeCwd(header.cwd);
-        if (!cwds.includes(cwd)) cwds.push(cwd);
-        counts[cwd] = (counts[cwd] ?? 0) + jsonlFiles.length;
-      }
+      jsonlFiles = readdirSync(dirPath).filter((f) => f.endsWith(".jsonl"));
     } catch {
-      // skip malformed files
+      continue;
+    }
+    for (const file of jsonlFiles) {
+      const header = readSessionHeaderLine(join(dirPath, file));
+      if (!header?.cwd) continue; // isolate malformed / header-less files
+      const cwd = canonicalizeCwd(header.cwd);
+      counts[cwd] = (counts[cwd] ?? 0) + 1;
     }
   }
-  return { cwds, counts };
+
+  return { cwds: Object.keys(counts), counts };
 }
 
 /**
@@ -482,16 +959,16 @@ export function resolveArchivedSessionPath(sessionId: string): string | null {
   const cache = getPathCache();
   // Check cache first
   const cached = cache.get(sessionId);
-  if (cached && cached.includes("sessions-archive")) return cached;
+  if (cached && isArchivedSessionPath(cached)) return cached;
 
-  // Scan archive dirs for the session file
+  // Scan archive dirs for the session file (exact id match from filename).
   const entries = readdirSync(archiveDir, { withFileTypes: true });
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
     const dirPath = join(archiveDir, entry.name);
     const files = readdirSync(dirPath).filter((f) => f.endsWith(".jsonl"));
     for (const file of files) {
-      if (file.includes(sessionId)) {
+      if (sessionIdFromFilePath(file) === sessionId) {
         const fullPath = join(dirPath, file);
         cache.set(sessionId, fullPath);
         return fullPath;
@@ -506,15 +983,41 @@ export function resolveArchivedSessionPath(sessionId: string): string | null {
 // ---------------------------------------------------------------------------
 export async function resolveSessionPath(sessionId: string): Promise<string | null> {
   const cached = getPathCache().get(sessionId);
-  if (cached) return cached;
+  if (cached) {
+    // Drop stale cache entries that no longer have a valid matching session header.
+    const header = readSessionHeaderLine(cached);
+    if (header?.id === sessionId) return cached;
+    invalidateSessionPathCache(sessionId);
+  }
 
-  // Cache miss: scan all active sessions to populate cache, then retry
+  // Lightweight filename scan (no full JSONL parse / listAllSessions).
+  // Exact filename id match is required; malformed/mismatched headers fail closed.
+  const found = findSessionFileById(sessionId);
+  if (found) {
+    const header = readSessionHeaderLine(found);
+    if (header?.id === sessionId) {
+      getPathCache().set(sessionId, found);
+      return found;
+    }
+    // Exact id path exists but content is invalid — do not fall through to weaker matches.
+    return null;
+  }
+
+  // Legacy fallback: full active scan may populate cache for unusual layouts.
   await listAllSessions();
   const cachedAfter = getPathCache().get(sessionId);
-  if (cachedAfter) return cachedAfter;
+  if (cachedAfter) {
+    const header = readSessionHeaderLine(cachedAfter);
+    if (header?.id === sessionId) return cachedAfter;
+    invalidateSessionPathCache(sessionId);
+  }
 
-  // Not found in active sessions — check archive
-  return resolveArchivedSessionPath(sessionId);
+  const archived = resolveArchivedSessionPath(sessionId);
+  if (!archived) return null;
+  const header = readSessionHeaderLine(archived);
+  if (header?.id === sessionId) return archived;
+  invalidateSessionPathCache(sessionId);
+  return null;
 }
 
 
