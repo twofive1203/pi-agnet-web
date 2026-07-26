@@ -4,7 +4,7 @@ API routes live under `app/api/`. When adding, removing, or changing routes, upd
 
 | Route | Methods | Purpose |
 | --- | --- | --- |
-| `sessions/` | GET | Session browser/list API. Modes: `?view=projects` returns lightweight project summaries for the sidebar; `?cwd=<path>&limit=10` returns at most 10 recent active sessions for one project (mtime-ordered, bounded JSONL parse); default (no view/cwd) remains the full active session list for Usage/compat callers. Always includes `archivedCwds` / `archivedCounts`. |
+| `sessions/` | GET | Session browser/list API. Modes: `?view=projects` returns lightweight project summaries for the sidebar; `?cwd=<path>&limit=10&before=&beforePath=` returns one mtime-ordered page of active sessions for a project (bounded JSONL parse + parent-closure ancestors) with `total` / `hasMore` / `nextBefore` / `nextBeforePath`; default (no view/cwd) remains the full active session list for Usage/compat callers. Always includes `archivedCwds` / `archivedCounts`. |
 | `sessions/[id]/` | GET/PATCH/DELETE | Read session detail, rename, delete. Returns `archived: true` for archived sessions. |
 | `sessions/[id]/context/` | GET | Get context for a specific `leafId`. |
 | `sessions/[id]/changes/` | GET | List files changed by tracked agent file tools in this session from non-Git sidecar data. |
@@ -40,7 +40,7 @@ API routes live under `app/api/`. When adding, removing, or changing routes, upd
 | `sessions/archive/` | POST | Archive one or more sessions (moves to `sessions-archive/`). |
 | `sessions/unarchive/` | POST | Unarchive one or more sessions (moves back to `sessions/`). |
 | `sessions/archive-all/` | POST | Archive all sessions for a cwd. |
-| `sessions/archived/` | GET | List archived sessions for a cwd. |
+| `sessions/archived/` | GET | List archived sessions for a cwd. Optional pagination: `limit` (default 20), `before`, `beforePath` → paged response with `total` / `hasMore` / `nextBefore` / `nextBeforePath`. Without pagination params, returns the full archived list for the cwd (compat). |
 | `git/worktrees/archive/` | POST | Squash, push, merge, and remove a Git worktree after user risk confirmation; archive also deletes sessions for that worktree cwd. |
 | `git/info/` | GET | Return best-effort Git branch/worktree metadata for a cwd. |
 | `git/status/` | GET | Return detailed Git status (branch, commits, staged/unstaged changes, untracked files, stash) for a cwd. |

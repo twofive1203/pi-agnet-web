@@ -2,8 +2,9 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import type { GitInfo, ProjectSummary, SessionInfo, WorktreeInfo } from "@/lib/types";
-import { RECENT_SESSIONS_LIMIT } from "@/lib/session-reader-constants";
+import { buildSessionTree, type SidebarSessionTreeNode } from "@/lib/sidebar-session-tree";
 import { formatWorkspaceHeaderTitle, formatWorkspaceSubtitle, formatWorkspaceTitle } from "@/lib/workspace-title";
+import { useSessionBrowser } from "@/hooks/useSessionBrowser";
 import { FileExplorer } from "./FileExplorer";
 import { useI18n } from "@/components/I18nProvider";
 import { useAppDialog } from "@/components/AppDialogProvider";
@@ -245,10 +246,7 @@ function filterCwdPickerGroups(groups: CwdPickerRow[][], query: string): CwdPick
   });
 }
 
-interface SessionTreeNode {
-  session: SessionInfo;
-  children: SessionTreeNode[];
-}
+type SessionTreeNode = SidebarSessionTreeNode;
 
 function WorkspaceHeaderLine({
   text,
@@ -313,60 +311,9 @@ function WorkspaceHeaderLine({
   );
 }
 
-function buildSessionTree(sessions: SessionInfo[]): SessionTreeNode[] {
-  const byId = new Map<string, SessionTreeNode>();
-  for (const s of sessions) {
-    byId.set(s.id, { session: s, children: [] });
-  }
-
-  // Build a map of parentSessionId chains so we can resolve missing ancestors
-  const parentOf = new Map<string, string>();
-  for (const s of sessions) {
-    if (s.parentSessionId) parentOf.set(s.id, s.parentSessionId);
-  }
-
-  // Walk up the parentSessionId chain to find the nearest ancestor that exists in byId
-  function resolveAncestor(id: string): string | null {
-    let cur = parentOf.get(id);
-    const visited = new Set<string>();
-    while (cur) {
-      if (visited.has(cur)) return null; // cycle guard
-      visited.add(cur);
-      if (byId.has(cur)) return cur;
-      cur = parentOf.get(cur);
-    }
-    return null;
-  }
-
-  const roots: SessionTreeNode[] = [];
-  for (const node of byId.values()) {
-    const ancestor = resolveAncestor(node.session.id);
-    if (ancestor) {
-      byId.get(ancestor)!.children.push(node);
-    } else {
-      roots.push(node);
-    }
-  }
-
-  // Sort each level by modified desc
-  const sort = (nodes: SessionTreeNode[]) => {
-    nodes.sort((a, b) => b.session.modified.localeCompare(a.session.modified));
-    nodes.forEach((n) => sort(n.children));
-  };
-  sort(roots);
-  return roots;
-}
-
 export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSession, initialSessionId, onInitialRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onOpenFile, explorerRefreshKey, onAtMention }: Props) {
   const { t } = useI18n();
   const appDialog = useAppDialog();
-  /** Active sessions for the selected project only (bounded recent window). */
-  const [projectSessions, setProjectSessions] = useState<SessionInfo[]>([]);
-  /** Lightweight project rows for the cwd picker (no full session payload). */
-  const [projectSummaries, setProjectSummaries] = useState<ProjectSummary[]>([]);
-  const [projectSessionTotal, setProjectSessionTotal] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [selectedCwd, setSelectedCwd] = useState<string | null>(null);
   const [homeDir, setHomeDir] = useState<string>("");
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -389,7 +336,6 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const [explorerHeight, setExplorerHeight] = useState(DEFAULT_EXPLORER_HEIGHT);
   const [explorerResizing, setExplorerResizing] = useState(false);
   const [isDesktopLayout, setIsDesktopLayout] = useState(false);
-  const [sessionRefreshDone, setSessionRefreshDone] = useState(false);
   const [explorerRefreshDone, setExplorerRefreshDone] = useState(false);
   const [creatingWorktree, setCreatingWorktree] = useState(false);
   const [worktreeError, setWorktreeError] = useState<string | null>(null);
@@ -399,12 +345,34 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const [worktreeAction, setWorktreeAction] = useState<WorktreeActionState | null>(null);
   const [removedWorktreeCwds, setRemovedWorktreeCwds] = useState<string[]>([]);
   const [selectedCwdGit, setSelectedCwdGit] = useState<GitInfo | undefined>(undefined);
-  const [archivedCounts, setArchivedCounts] = useState<Record<string, number>>({});
-  const [archivedCwds, setArchivedCwds] = useState<string[]>([]);
-  const [archivedSessions, setArchivedSessions] = useState<SessionInfo[]>([]);
   const [archivedExpanded, setArchivedExpanded] = useState(false);
-  const sessionRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const explorerRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const {
+    projectSummaries,
+    projectSessions,
+    projectSessionsCwd,
+    projectSessionTotal,
+    hasMoreSessions,
+    loading,
+    loadingMore,
+    error,
+    archivedCwds,
+    archivedCounts,
+    archivedSessions,
+    archivedHasMore,
+    loadingMoreArchived,
+    sessionRefreshDone,
+    loadSessions,
+    loadMoreSessions,
+    loadArchivedSessions,
+    loadMoreArchivedSessions,
+    setArchivedSessions,
+  } = useSessionBrowser({
+    selectedCwd,
+    selectedSessionId,
+    refreshKey,
+  });
   const sidebarRootRef = useRef<HTMLDivElement>(null);
   const explorerHeightRef = useRef(explorerHeight);
 
@@ -514,98 +482,12 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     commitExplorerHeight(explorerHeightRef.current + delta, true);
   }, [commitExplorerHeight, explorerOpen, isDesktopLayout]);
 
-  /** Active project sessions are always tied to this cwd; ignore stale responses. */
-  const [projectSessionsCwd, setProjectSessionsCwd] = useState<string | null>(null);
-  const selectedCwdRef = useRef<string | null>(null);
-  selectedCwdRef.current = selectedCwd;
-  /** Serializes project-summary + recent-session fetches (refresh and cwd switches). */
-  const browseAbortRef = useRef<AbortController | null>(null);
-
-  const abortBrowseRequests = useCallback(() => {
-    browseAbortRef.current?.abort();
-    const next = new AbortController();
-    browseAbortRef.current = next;
-    return next;
-  }, []);
-
-  const loadProjectSessions = useCallback(async (cwd: string, signal?: AbortSignal) => {
-    const res = await fetch(
-      `/api/sessions?cwd=${encodeURIComponent(cwd)}&limit=${RECENT_SESSIONS_LIMIT}`,
-      { signal }
-    );
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json() as {
-      sessions: SessionInfo[];
-      total?: number;
-      archivedCwds?: string[];
-      archivedCounts?: Record<string, number>;
-    };
-    if (signal?.aborted) return;
-    // Drop stale responses from a previous project after a fast cwd switch.
-    if (selectedCwdRef.current !== cwd) return;
-    setProjectSessions(data.sessions);
-    setProjectSessionsCwd(cwd);
-    setProjectSessionTotal(data.total ?? data.sessions.length);
-    if (data.archivedCwds) setArchivedCwds(data.archivedCwds);
-    if (data.archivedCounts) setArchivedCounts(data.archivedCounts);
-  }, []);
-
-  const loadProjectSummaries = useCallback(async (signal?: AbortSignal) => {
-    const res = await fetch("/api/sessions?view=projects", { signal });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json() as {
-      projects: ProjectSummary[];
-      archivedCwds?: string[];
-      archivedCounts?: Record<string, number>;
-    };
-    if (signal?.aborted) return data;
-    setProjectSummaries(data.projects ?? []);
-    if (data.archivedCwds) setArchivedCwds(data.archivedCwds);
-    if (data.archivedCounts) setArchivedCounts(data.archivedCounts);
-    return data;
-  }, []);
-
-  /** Refresh project summaries and the selected project's recent sessions. */
-  const loadSessions = useCallback(async (showLoading = false) => {
-    const controller = abortBrowseRequests();
-    const requestCwd = selectedCwdRef.current;
-    try {
-      if (showLoading) setLoading(true);
-      await loadProjectSummaries(controller.signal);
-      if (controller.signal.aborted) return;
-      // Re-read cwd after summaries: user may have switched projects mid-flight.
-      const cwd = selectedCwdRef.current;
-      if (cwd) {
-        // If cwd changed during summaries, the selectedCwd effect owns the session load.
-        if (cwd === requestCwd || requestCwd == null) {
-          await loadProjectSessions(cwd, controller.signal);
-        }
-      }
-      if (controller.signal.aborted) return;
-      setError(null);
-      if (!showLoading) {
-        setSessionRefreshDone(true);
-        if (sessionRefreshTimerRef.current) clearTimeout(sessionRefreshTimerRef.current);
-        sessionRefreshTimerRef.current = setTimeout(() => setSessionRefreshDone(false), 2000);
-      }
-    } catch (e) {
-      if (e instanceof DOMException && e.name === "AbortError") return;
-      setError(String(e));
-    } finally {
-      if (showLoading) setLoading(false);
-    }
-  }, [abortBrowseRequests, loadProjectSessions, loadProjectSummaries]);
-
-  const loadArchivedSessions = useCallback(async (cwd: string) => {
-    try {
-      const res = await fetch(`/api/sessions/archived?cwd=${encodeURIComponent(cwd)}`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json() as { sessions: SessionInfo[] };
-      setArchivedSessions(data.sessions);
-    } catch {
-      // ignore
-    }
-  }, []);
+  // Reset sidebar-only selection UI when the project changes (data reset lives in the hook).
+  useEffect(() => {
+    setSelectedForArchive(new Set());
+    setArchivedExpanded(false);
+    setArchiveAllConfirming(false);
+  }, [selectedCwd]);
 
   const handleArchiveSession = useCallback(async (sessionId: string) => {
     try {
@@ -627,7 +509,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     } catch {
       // ignore
     }
-  }, [loadSessions]);
+  }, [loadSessions, setArchivedSessions]);
 
   const handleUnarchiveSession = useCallback(async (sessionId: string) => {
     try {
@@ -643,7 +525,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     } catch {
       // ignore
     }
-  }, [loadSessions]);
+  }, [loadSessions, setArchivedSessions]);
 
   const handleBatchArchive = useCallback(async () => {
     const ids = [...selectedForArchive];
@@ -702,72 +584,11 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     } catch {
       // ignore
     }
-  }, [loadSessions, onSessionDeleted, t, appDialog]);
-
-  const initialLoadDone = useRef(false);
-  useEffect(() => {
-    const isFirst = !initialLoadDone.current;
-    initialLoadDone.current = true;
-    void loadSessions(isFirst);
-  }, [loadSessions, refreshKey]);
-
-  // On project change: immediately isolate previous project's sessions, abort in-flight
-  // browse requests, and load only the current cwd's recent window.
-  useEffect(() => {
-    // Clear immediately so project A sessions never render under project B.
-    setProjectSessions([]);
-    setProjectSessionsCwd(null);
-    setProjectSessionTotal(0);
-    setSelectedForArchive(new Set());
-    setArchivedSessions([]);
-    setArchivedExpanded(false);
-    setArchiveAllConfirming(false);
-
-    if (!selectedCwd) return;
-
-    const controller = abortBrowseRequests();
-    void loadProjectSessions(selectedCwd, controller.signal).catch((e) => {
-      if (e instanceof DOMException && e.name === "AbortError") return;
-      if (selectedCwdRef.current === selectedCwd) setError(String(e));
-    });
-    return () => controller.abort();
-  }, [selectedCwd, abortBrowseRequests, loadProjectSessions]);
-
-  // Keep a directly-opened session visible even when it falls outside the recent-10 window.
-  useEffect(() => {
-    if (!selectedSessionId || !selectedCwd) return;
-    // Only consider sessions that belong to the current cwd.
-    if (projectSessionsCwd === selectedCwd && projectSessions.some((s) => s.id === selectedSessionId)) return;
-    if (archivedSessions.some((s) => s.id === selectedSessionId)) return;
-
-    const controller = new AbortController();
-    const requestCwd = selectedCwd;
-    void (async () => {
-      try {
-        const res = await fetch(`/api/sessions/${encodeURIComponent(selectedSessionId)}`, {
-          signal: controller.signal,
-        });
-        if (!res.ok) return;
-        const data = await res.json() as { info?: SessionInfo | null };
-        const info = data.info;
-        if (!info || info.cwd !== requestCwd || info.archived) return;
-        if (selectedCwdRef.current !== requestCwd) return;
-        setProjectSessions((prev) => {
-          if (selectedCwdRef.current !== requestCwd) return prev;
-          if (prev.some((s) => s.id === info.id)) return prev;
-          return [info, ...prev];
-        });
-        setProjectSessionsCwd(requestCwd);
-      } catch {
-        // ignore abort / not-found
-      }
-    })();
-    return () => controller.abort();
-  }, [selectedSessionId, selectedCwd, projectSessions, projectSessionsCwd, archivedSessions]);
+  }, [loadSessions, onSessionDeleted, t, appDialog, setArchivedSessions]);
 
   useEffect(() => {
     if (!archivedExpanded || !selectedCwd || (archivedCounts[selectedCwd] ?? 0) === 0) return;
-    void loadArchivedSessions(selectedCwd);
+    void loadArchivedSessions(selectedCwd, true);
   }, [archivedExpanded, selectedCwd, archivedCounts, loadArchivedSessions]);
 
   useEffect(() => {
@@ -1865,7 +1686,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       <div style={{ flex: sessionListFlex, overflowY: "auto", padding: "0", minHeight: MIN_SESSION_LIST_HEIGHT }}>
         {loading && (
           <div style={{ padding: "16px 14px", color: "var(--text-muted)", fontSize: 12 }}>
-            Loading...
+            {t("sidebar.loading")}
           </div>
         )}
         {error && (
@@ -1875,7 +1696,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         )}
         {!loading && !error && filteredSessions.length === 0 && (
           <div style={{ padding: "16px 14px", color: "var(--text-muted)", fontSize: 12 }}>
-            No sessions found
+            {t("sidebar.noSessions")}
           </div>
         )}
         {sessionTree.map((node) => (
@@ -1903,6 +1724,38 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
             }}
           />
         ))}
+
+        {!loading && !error && filteredSessions.length > 0 && projectSessionTotal > 0 && (
+          <div style={{ padding: "8px 14px 12px", display: "flex", flexDirection: "column", gap: 6 }}>
+            <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
+              {t("sidebar.shownOfTotal", {
+                loaded: filteredSessions.length,
+                total: projectSessionTotal,
+              })}
+            </div>
+            {hasMoreSessions && (
+              <button
+                type="button"
+                onClick={() => void loadMoreSessions()}
+                disabled={loadingMore}
+                style={{
+                  alignSelf: "flex-start",
+                  padding: "6px 10px",
+                  borderRadius: 7,
+                  border: "1px solid var(--border)",
+                  background: "var(--bg)",
+                  color: "var(--text-muted)",
+                  cursor: loadingMore ? "not-allowed" : "pointer",
+                  fontSize: 11,
+                  fontWeight: 600,
+                  opacity: loadingMore ? 0.7 : 1,
+                }}
+              >
+                {loadingMore ? t("sidebar.loadingMore") : t("sidebar.loadOlder")}
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Archived sessions section */}
         {/* Batch archive action bar — appears as soon as any sessions are checked */}
@@ -1998,6 +1851,37 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                     onDelete={(id) => onSessionDeleted?.(id)}
                   />
                 ))}
+                {(archivedHasMore || archivedSessions.length > 0) && (
+                  <div style={{ padding: "6px 14px 12px", display: "flex", flexDirection: "column", gap: 6 }}>
+                    <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
+                      {t("sidebar.shownOfTotal", {
+                        loaded: archivedSessions.length,
+                        total: archivedCounts[selectedCwd!] ?? archivedSessions.length,
+                      })}
+                    </div>
+                    {archivedHasMore && (
+                      <button
+                        type="button"
+                        onClick={() => void loadMoreArchivedSessions()}
+                        disabled={loadingMoreArchived}
+                        style={{
+                          alignSelf: "flex-start",
+                          padding: "6px 10px",
+                          borderRadius: 7,
+                          border: "1px solid var(--border)",
+                          background: "var(--bg)",
+                          color: "var(--text-muted)",
+                          cursor: loadingMoreArchived ? "not-allowed" : "pointer",
+                          fontSize: 11,
+                          fontWeight: 600,
+                          opacity: loadingMoreArchived ? 0.7 : 1,
+                        }}
+                      >
+                        {loadingMoreArchived ? t("sidebar.loadingMore") : t("sidebar.loadOlder")}
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>

@@ -158,8 +158,39 @@ export async function listAllSessions(): Promise<SessionInfo[]> {
 // Browser-oriented project / recent-session readers (bounded, no full scan)
 // ============================================================================
 
-export { RECENT_SESSIONS_LIMIT } from "./session-reader-constants";
-import { RECENT_SESSIONS_LIMIT } from "./session-reader-constants";
+export {
+  RECENT_SESSIONS_LIMIT,
+  ARCHIVED_SESSIONS_LIMIT,
+  PARENT_CLOSURE_LIMIT,
+} from "./session-reader-constants";
+import {
+  RECENT_SESSIONS_LIMIT,
+  ARCHIVED_SESSIONS_LIMIT,
+  PARENT_CLOSURE_LIMIT,
+} from "./session-reader-constants";
+
+/** Cursor for mtime-ordered session pages (strictly older than this boundary). */
+export interface SessionPageCursor {
+  /** ISO mtime of the boundary candidate. */
+  before?: string;
+  /** Absolute path tie-break when multiple files share the same mtime. */
+  beforePath?: string;
+}
+
+export interface SessionPageOptions extends SessionPageCursor {
+  limit?: number;
+  /** Auto-include missing fork parents in the same cwd (default true for active lists). */
+  includeParentClosure?: boolean;
+}
+
+export interface SessionPageResult {
+  sessions: SessionInfo[];
+  total: number;
+  limit: number;
+  hasMore: boolean;
+  nextBefore: string | null;
+  nextBeforePath: string | null;
+}
 
 interface SessionFileCandidate {
   path: string;
@@ -514,21 +545,38 @@ function findSessionDirsForCwd(cwd: string): string[] {
   return [...dirs];
 }
 
-/**
- * List the most recent active sessions for one project cwd.
- * Only fully parses up to `limit` matching JSONL files (default 10).
- *
- * Because encoded directories can collide on Windows, candidates are filtered by header cwd
- * with header-only reads first. Full JSONL open/parse is applied only to the first
- * `limit` header-matching candidates (never limit+N retries after malformed bodies).
- */
-export async function listRecentSessionsForCwd(
-  cwd: string,
-  limit: number = RECENT_SESSIONS_LIMIT
-): Promise<{ sessions: SessionInfo[]; total: number }> {
-  const safeLimit = Math.max(0, Math.min(100, Math.floor(limit)));
+function parseBeforeMs(before?: string): number | null {
+  if (!before) return null;
+  const ms = Date.parse(before);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+/** True when candidate is strictly older than the (beforeMs, beforePath) cursor. */
+function isStrictlyBeforeCursor(
+  candidate: SessionFileCandidate,
+  beforeMs: number | null,
+  beforePath?: string
+): boolean {
+  if (beforeMs == null) return true;
+  if (candidate.mtimeMs < beforeMs) return true;
+  if (candidate.mtimeMs > beforeMs) return false;
+  // Same mtime: path descending order means "older" pages continue after the boundary path.
+  if (!beforePath) return false;
+  return candidate.path.localeCompare(beforePath) < 0;
+}
+
+function clampPageLimit(limit: number | undefined, fallback: number): number {
+  const raw = limit == null ? fallback : limit;
+  if (!Number.isFinite(raw)) return fallback;
+  return Math.max(0, Math.min(100, Math.floor(raw)));
+}
+
+function collectMatchingCandidatesForCwd(cwd: string): {
+  matching: SessionFileCandidate[];
+  targets: Set<string>;
+} {
   const targets = cwdKeys(cwd);
-  if (targets.size === 0) return { sessions: [], total: 0 };
+  if (targets.size === 0) return { matching: [], targets };
 
   const dirs = findSessionDirsForCwd(cwd);
   const allCandidates: SessionFileCandidate[] = [];
@@ -537,18 +585,150 @@ export async function listRecentSessionsForCwd(
   }
 
   const ordered = sortCandidatesRecentFirst(allCandidates);
-
-  // Header-only filter: foreign-cwd and malformed headers never open full JSONL.
   const matching: SessionFileCandidate[] = [];
   for (const candidate of ordered) {
     const header = readSessionHeaderLine(candidate.path);
     if (header && cwdMatchesAny(header.cwd, targets)) matching.push(candidate);
   }
-  const total = matching.length;
+  return { matching, targets };
+}
 
-  // Bound full parses strictly to `limit` pre-filtered candidates (no backfill).
+function pageSliceFromMatching(
+  matching: SessionFileCandidate[],
+  safeLimit: number,
+  before?: string,
+  beforePath?: string
+): {
+  pageCandidates: SessionFileCandidate[];
+  total: number;
+  hasMore: boolean;
+  nextBefore: string | null;
+  nextBeforePath: string | null;
+} {
+  const beforeMs = parseBeforeMs(before);
+  const window = beforeMs == null && !beforePath
+    ? matching
+    : matching.filter((c) => isStrictlyBeforeCursor(c, beforeMs, beforePath));
+
+  const pageCandidates = window.slice(0, safeLimit);
+  const last = pageCandidates[pageCandidates.length - 1];
+  const hasMore = window.length > pageCandidates.length;
+
+  return {
+    pageCandidates,
+    total: matching.length,
+    hasMore,
+    nextBefore: hasMore && last ? last.mtimeIso : null,
+    nextBeforePath: hasMore && last ? last.path : null,
+  };
+}
+
+/**
+ * When a page includes fork children whose parents live outside the page window,
+ * pull in up to PARENT_CLOSURE_LIMIT missing ancestors from the same cwd so the
+ * sidebar tree does not flatten them into false roots.
+ */
+function closeParentSessions(
+  pageSessions: SessionInfo[],
+  matching: SessionFileCandidate[],
+  targets: Set<string>,
+  options?: { archived?: boolean }
+): SessionInfo[] {
+  if (pageSessions.length === 0) return pageSessions;
+
+  const byId = new Map(pageSessions.map((s) => [s.id, s]));
+  const pathById = new Map<string, string>();
+  for (const candidate of matching) {
+    const id = sessionIdFromFilePath(candidate.path);
+    if (id) pathById.set(id, candidate.path);
+  }
+
+  const missing: string[] = [];
+  const seenMissing = new Set<string>();
+  for (const session of pageSessions) {
+    const parentId = session.parentSessionId;
+    const visited = new Set<string>();
+    while (parentId && !byId.has(parentId) && !visited.has(parentId)) {
+      visited.add(parentId);
+      if (!seenMissing.has(parentId)) {
+        seenMissing.add(parentId);
+        missing.push(parentId);
+      }
+      // Only walk one hop via known page edges unless we load the parent;
+      // deeper chains are resolved after each loaded parent below.
+      break;
+    }
+  }
+
+  let added = 0;
+  for (let i = 0; i < missing.length && added < PARENT_CLOSURE_LIMIT; i++) {
+    const parentId = missing[i];
+    if (byId.has(parentId)) continue;
+    const filePath = pathById.get(parentId) ?? findSessionFileById(parentId);
+    if (!filePath) continue;
+    if (options?.archived && !isArchivedSessionPath(filePath)) continue;
+    if (!options?.archived && isArchivedSessionPath(filePath)) continue;
+
+    const info = buildSessionInfoFromFile(filePath, { expectedCwdTargets: targets });
+    if (!info) continue;
+    if (options?.archived) info.archived = true;
+    byId.set(info.id, info);
+    added += 1;
+
+    // Queue next missing ancestor if still outside the loaded set.
+    if (
+      info.parentSessionId &&
+      !byId.has(info.parentSessionId) &&
+      !seenMissing.has(info.parentSessionId) &&
+      added < PARENT_CLOSURE_LIMIT
+    ) {
+      seenMissing.add(info.parentSessionId);
+      missing.push(info.parentSessionId);
+    }
+  }
+
+  return [...byId.values()];
+}
+
+/**
+ * List recent active sessions for one project cwd with optional mtime cursor pagination.
+ *
+ * Only fully parses up to `limit` matching JSONL files for the page (default 10),
+ * plus a bounded parent-closure set for fork tree stability.
+ *
+ * Because encoded directories can collide on Windows, candidates are filtered by header cwd
+ * with header-only reads first. Full JSONL open/parse is applied only to the page's
+ * header-matching candidates (never limit+N retries after malformed bodies).
+ *
+ * `total` is the header-matched candidate count (not necessarily successfully parsed).
+ * Browse order is file mtime, then filename stamp, then path.
+ */
+export async function listRecentSessionsForCwd(
+  cwd: string,
+  limitOrOptions: number | SessionPageOptions = RECENT_SESSIONS_LIMIT
+): Promise<SessionPageResult> {
+  const options: SessionPageOptions =
+    typeof limitOrOptions === "number" ? { limit: limitOrOptions } : limitOrOptions ?? {};
+  const safeLimit = clampPageLimit(options.limit, RECENT_SESSIONS_LIMIT);
+  const includeParentClosure = options.includeParentClosure !== false;
+
+  const empty: SessionPageResult = {
+    sessions: [],
+    total: 0,
+    limit: safeLimit,
+    hasMore: false,
+    nextBefore: null,
+    nextBeforePath: null,
+  };
+
+  const { matching, targets } = collectMatchingCandidatesForCwd(cwd);
+  if (targets.size === 0) return empty;
+
+  const page = pageSliceFromMatching(matching, safeLimit, options.before, options.beforePath);
+
+  // Bound full parses strictly to the page's pre-filtered candidates (no backfill).
   const sessions: SessionInfo[] = [];
-  for (const candidate of matching.slice(0, safeLimit)) {
+  for (const candidate of page.pageCandidates) {
     const info = buildSessionInfoFromFile(candidate.path, { expectedCwdTargets: targets });
     if (!info) continue;
     // Skip deleted worktree leftovers if any remain (only files proven for this cwd).
@@ -559,18 +739,34 @@ export async function listRecentSessionsForCwd(
     sessions.push(info);
   }
 
+  const withParents = includeParentClosure
+    ? closeParentSessions(sessions, matching, targets)
+    : sessions;
+
   const { gitByCwd, worktreeByCwd } = await loadGitMapsForCwds(
-    [...new Set(sessions.map((s) => s.cwd).filter(Boolean))]
+    [...new Set(withParents.map((s) => s.cwd).filter(Boolean))]
   );
 
-  for (const session of sessions) {
+  for (const session of withParents) {
     session.git = gitByCwd.get(session.cwd);
     session.worktree = worktreeByCwd.get(session.cwd);
   }
 
   // Keep response ordered by browse recency (mtime), already selected that way.
-  sessions.sort((a, b) => b.modified.localeCompare(a.modified));
-  return { sessions, total };
+  withParents.sort((a, b) => {
+    const cmp = b.modified.localeCompare(a.modified);
+    if (cmp !== 0) return cmp;
+    return b.path.localeCompare(a.path);
+  });
+
+  return {
+    sessions: withParents,
+    total: page.total,
+    limit: safeLimit,
+    hasMore: page.hasMore,
+    nextBefore: page.nextBefore,
+    nextBeforePath: page.nextBeforePath,
+  };
 }
 
 /**
@@ -861,92 +1057,142 @@ export function scanArchivedCwds(): { cwds: string[]; counts: Record<string, num
   return { cwds: Object.keys(counts), counts };
 }
 
-/**
- * List archived sessions for a specific cwd.
- * Parses JSONL files in the archive directory matching the given cwd.
- * Uses SessionManager.open() for efficient metadata extraction.
- */
-async function listArchivedSessions(cwd?: string): Promise<SessionInfo[]> {
+function collectArchivedMatchingCandidates(cwd?: string): {
+  matching: SessionFileCandidate[];
+  targets: Set<string> | null;
+} {
   const archiveDir = getSessionsArchiveDir();
-  if (!existsSync(archiveDir)) return [];
+  if (!existsSync(archiveDir)) return { matching: [], targets: cwd ? cwdKeys(cwd) : null };
 
   const targets = cwd ? cwdKeys(cwd) : null;
-  const cache = getPathCache();
-  const sessions: SessionInfo[] = [];
+  const allCandidates: SessionFileCandidate[] = [];
 
-  const dirs = readdirSync(archiveDir, { withFileTypes: true });
+  let dirs: Array<{ name: string; isDirectory: () => boolean }>;
+  try {
+    dirs = readdirSync(archiveDir, { withFileTypes: true });
+  } catch {
+    return { matching: [], targets };
+  }
+
   for (const dir of dirs) {
     if (!dir.isDirectory()) continue;
     const dirPath = join(archiveDir, dir.name);
-    const jsonlFiles = readdirSync(dirPath).filter((f) => f.endsWith(".jsonl"));
-
-    for (const file of jsonlFiles) {
-      const filePath = join(dirPath, file);
-      try {
-        // Use SessionManager for header + entry parsing. Match by header cwd instead
-        // of archive directory name because historic sessions may use cwd aliases.
-        const sm = SessionManager.open(filePath);
-        const header = sm.getHeader();
-        if (!header?.id) continue;
-        if (targets && !cwdMatchesAny(header.cwd, targets)) continue;
-
-        const sessionCwd = header.cwd ? canonicalizeCwd(header.cwd) : cwd ?? "";
-        // Cache the path so resolveSessionPath can find it
-        cache.set(header.id, filePath);
-
-        const entries = sm.getEntries();
-        let messageCount = 0;
-        let firstMessage = "(no messages)";
-        for (const entry of entries) {
-          if (entry.type === "message") {
-            messageCount++;
-            if (messageCount === 1) {
-              const msg = entry as unknown as { message?: { content?: unknown } };
-              const content = msg.message?.content;
-              if (typeof content === "string") {
-                firstMessage = content.slice(0, 100);
-              } else if (Array.isArray(content)) {
-                const textBlock = content.find((b: { type: string }) => b.type === "text");
-                if (textBlock) firstMessage = (textBlock as { text: string }).text.slice(0, 100);
-              }
-            }
-          }
-        }
-
-        // Get modified time from file system
-        let modified = header.timestamp ?? new Date().toISOString();
-        try {
-          modified = statSync(filePath).mtime.toISOString();
-        } catch {
-          // use header timestamp
-        }
-
-        sessions.push({
-          path: filePath,
-          id: header.id,
-          cwd: sessionCwd,
-          name: sm.getSessionName(),
-          created: header.timestamp ?? modified,
-          modified,
-          messageCount,
-          firstMessage: firstMessage || "(no messages)",
-          archived: true,
-        });
-      } catch {
-        // skip malformed files
-      }
-    }
+    allCandidates.push(...listJsonlCandidates(dirPath));
   }
 
-  return sessions.sort((a, b) => b.modified.localeCompare(a.modified));
+  const ordered = sortCandidatesRecentFirst(allCandidates);
+  if (!targets) {
+    // Full archive list: keep files with any valid session header.
+    const matching: SessionFileCandidate[] = [];
+    for (const candidate of ordered) {
+      const header = readSessionHeaderLine(candidate.path);
+      if (header?.id) matching.push(candidate);
+    }
+    return { matching, targets };
+  }
+
+  const matching: SessionFileCandidate[] = [];
+  for (const candidate of ordered) {
+    const header = readSessionHeaderLine(candidate.path);
+    if (header && cwdMatchesAny(header.cwd, targets)) matching.push(candidate);
+  }
+  return { matching, targets };
+}
+
+function buildArchivedSessionInfo(
+  filePath: string,
+  options?: { expectedCwdTargets?: Set<string> | null }
+): SessionInfo | null {
+  const info = buildSessionInfoFromFile(filePath, {
+    expectedCwdTargets: options?.expectedCwdTargets ?? undefined,
+  });
+  if (!info) return null;
+  info.archived = true;
+  return info;
+}
+
+/**
+ * List archived sessions, optionally filtered to one cwd.
+ * Full parse of every matching archive file — used by Usage and bulk consumers.
+ */
+async function listArchivedSessions(cwd?: string): Promise<SessionInfo[]> {
+  const { matching, targets } = collectArchivedMatchingCandidates(cwd);
+  const sessions: SessionInfo[] = [];
+  for (const candidate of matching) {
+    const info = buildArchivedSessionInfo(candidate.path, { expectedCwdTargets: targets });
+    if (info) sessions.push(info);
+  }
+  return sessions.sort((a, b) => {
+    const cmp = b.modified.localeCompare(a.modified);
+    if (cmp !== 0) return cmp;
+    return b.path.localeCompare(a.path);
+  });
 }
 
 export async function listAllArchivedSessions(): Promise<SessionInfo[]> {
   return listArchivedSessions();
 }
 
-export async function listArchivedSessionsForCwd(cwd: string): Promise<SessionInfo[]> {
-  return listArchivedSessions(cwd);
+/**
+ * List archived sessions for one project cwd with optional mtime cursor pagination.
+ * Without page options (or when called for compatibility), returns the full cwd list.
+ */
+export async function listArchivedSessionsForCwd(cwd: string): Promise<SessionInfo[]>;
+export async function listArchivedSessionsForCwd(
+  cwd: string,
+  limitOrOptions: number | SessionPageOptions
+): Promise<SessionPageResult>;
+export async function listArchivedSessionsForCwd(
+  cwd: string,
+  limitOrOptions?: number | SessionPageOptions
+): Promise<SessionInfo[] | SessionPageResult> {
+  // Backward-compatible: no second arg → full list for this cwd.
+  if (limitOrOptions == null) {
+    return listArchivedSessions(cwd);
+  }
+
+  const options: SessionPageOptions =
+    typeof limitOrOptions === "number" ? { limit: limitOrOptions } : limitOrOptions;
+  const safeLimit = clampPageLimit(options.limit, ARCHIVED_SESSIONS_LIMIT);
+  const includeParentClosure = options.includeParentClosure === true;
+
+  const empty: SessionPageResult = {
+    sessions: [],
+    total: 0,
+    limit: safeLimit,
+    hasMore: false,
+    nextBefore: null,
+    nextBeforePath: null,
+  };
+
+  const { matching, targets } = collectArchivedMatchingCandidates(cwd);
+  if (!targets || targets.size === 0) return empty;
+
+  const page = pageSliceFromMatching(matching, safeLimit, options.before, options.beforePath);
+  const sessions: SessionInfo[] = [];
+  for (const candidate of page.pageCandidates) {
+    const info = buildArchivedSessionInfo(candidate.path, { expectedCwdTargets: targets });
+    if (info) sessions.push(info);
+  }
+
+  const withParents = includeParentClosure
+    ? closeParentSessions(sessions, matching, targets, { archived: true })
+    : sessions;
+
+  withParents.sort((a, b) => {
+    const cmp = b.modified.localeCompare(a.modified);
+    if (cmp !== 0) return cmp;
+    return b.path.localeCompare(a.path);
+  });
+
+  return {
+    sessions: withParents,
+    total: page.total,
+    limit: safeLimit,
+    hasMore: page.hasMore,
+    nextBefore: page.nextBefore,
+    nextBeforePath: page.nextBeforePath,
+  };
 }
 
 /**

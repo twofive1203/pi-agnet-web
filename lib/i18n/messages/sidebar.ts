@@ -58,6 +58,11 @@ export const sidebarZh = {
   openFolder: "打开文件夹",
   multiSelect: "多选",
   exitMultiSelect: "退出多选",
+  loading: "加载中…",
+  loadingMore: "加载中…",
+  noSessions: "暂无会话",
+  loadOlder: "加载更早",
+  shownOfTotal: "已显示 {loaded} / {total}",
 } as const satisfies MessageTree;
 
 export const sidebarEn = {
@@ -118,4 +123,9 @@ export const sidebarEn = {
   openFolder: "Open folder",
   multiSelect: "Multi-select",
   exitMultiSelect: "Exit multi-select",
+  loading: "Loading…",
+  loadingMore: "Loading…",
+  noSessions: "No sessions found",
+  loadOlder: "Load older",
+  shownOfTotal: "Showing {loaded} / {total}",
 } as const satisfies MessageTree;

@@ -5,7 +5,10 @@ Shared logic lives under `lib/`. Prefer adding behavior here when it is used by 
 | File | Purpose |
 | --- | --- |
 | `lib/rpc-manager.ts` | `AgentSessionWrapper`, global registry, `startRpcSession()`, cwd-scoped session cleanup, lifecycle handling. |
-| `lib/session-reader.ts` | Parse `.jsonl` session files, resolve session paths, prune/delete sessions for removed WorkTree cwd paths, read model/default config. Archive helpers move/restore the parent JSONL together with its subagent companion directory through `lib/session-artifacts.ts`. |
+| `lib/pi-session-lifecycle.ts` | Shared AgentSession disposal helper that awaits extension `session_shutdown` cleanup before SDK context invalidation. |
+| `lib/session-reader.ts` | Parse `.jsonl` session files, resolve session paths, prune/delete sessions for removed WorkTree cwd paths, read model/default config. Sidebar browsing uses `listProjectSummaries()` and `listRecentSessionsForCwd(cwd, { limit, before, beforePath })` (mtime/filename candidate selection, bounded page parse, optional parent-closure ancestors, `total`/`hasMore`/`nextBefore` cursors). Archived sidebar pages use `listArchivedSessionsForCwd(cwd, options)` the same way; no-options call remains a full cwd list. `listAllSessions()` / `listAllArchivedSessions()` stay full-scan for Usage and bulk consumers. `resolveSessionPath` prefers filename scan before full list. Archive helpers move/restore the parent JSONL together with its subagent companion directory through `lib/session-artifacts.ts`. |
+| `lib/session-reader-constants.ts` | Client-safe constants shared with session-reader (`RECENT_SESSIONS_LIMIT`, `ARCHIVED_SESSIONS_LIMIT`, `PARENT_CLOSURE_LIMIT`). |
+| `lib/sidebar-session-tree.ts` | Pure sidebar fork-tree builder (`buildSessionTree`) and session-page merge helper used by the session browser. |
 | `lib/types.ts` | Shared TypeScript types for messages, sessions, Git status/graph/commit/diff wire payloads, and API payloads. |
 | `lib/pi-types.ts` | `AgentSessionLike` wrapper interface expected by hooks/components. |
 | `lib/normalize.ts` | Normalize pi tool-call fields to web UI shape. |

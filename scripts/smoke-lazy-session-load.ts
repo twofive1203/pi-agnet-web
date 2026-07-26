@@ -215,21 +215,35 @@ async function main() {
     } finally {
       (SessionManager as unknown as { open: typeof SessionManager.open }).open = originalOpen;
     }
-    assert.ok(recent.sessions.length <= RECENT_SESSIONS_LIMIT, "recent list must be bounded");
-    assert.equal(recent.sessions.length, RECENT_SESSIONS_LIMIT, "expected full recent window");
-    assert.equal(recent.total, 13, "total should count header-matched files only");
+    // Page window is limit; parent-closure may add a small number of ancestors on top.
     assert.ok(
-      openCount <= RECENT_SESSIONS_LIMIT,
-      `must fully parse at most limit files (header-filter first); got ${openCount} opens`
+      recent.sessions.length >= RECENT_SESSIONS_LIMIT,
+      "expected at least a full recent window"
     );
-    // With 4 newer malformed files, a "retry until limit successes" strategy would open 14.
     assert.ok(
-      openCount < RECENT_SESSIONS_LIMIT + 4,
+      recent.sessions.length <= RECENT_SESSIONS_LIMIT + 5,
+      `recent+closure must stay near the page bound; got ${recent.sessions.length}`
+    );
+    assert.equal(recent.total, 13, "total should count header-matched files only");
+    // Page parses ≤ limit; parent closure may open a few more ancestors (not malformed backfill).
+    assert.ok(
+      openCount <= RECENT_SESSIONS_LIMIT + 5,
+      `must fully parse at most limit + parent-closure files; got ${openCount} opens`
+    );
+    // With 4 newer malformed files, a "retry until limit successes" strategy would open 14+.
+    assert.ok(
+      openCount < RECENT_SESSIONS_LIMIT + 4 + 5,
       `malformed newest files must not force limit+N full parses; got ${openCount} opens`
     );
+    // Without parent closure, oldest stays outside the strict page window.
+    const recentNoClosure = await listRecentSessionsForCwd(cwdA, {
+      limit: RECENT_SESSIONS_LIMIT,
+      includeParentClosure: false,
+    });
+    assert.equal(recentNoClosure.sessions.length, RECENT_SESSIONS_LIMIT, "strict page size without closure");
     assert.ok(
-      recent.sessions.every((s) => s.id !== "session-a-0"),
-      "oldest session should fall outside recent window by mtime"
+      recentNoClosure.sessions.every((s) => s.id !== "session-a-0"),
+      "oldest session should fall outside recent window by mtime when closure is off"
     );
     assert.ok(
       recent.sessions.every((s) => !String(s.id).startsWith("session-a-corrupt")),
@@ -238,6 +252,51 @@ async function main() {
     const fork = recent.sessions.find((s) => s.id === "session-a-fork");
     assert.ok(fork, "forked recent session should be present");
     assert.equal(fork!.parentSessionId, "session-a-0", "parentSessionId extracted from path");
+    // Parent outside the mtime window must be auto-included via parent closure.
+    assert.ok(
+      recent.sessions.some((s) => s.id === "session-a-0"),
+      "parent closure should include session-a-0 even outside the recent window"
+    );
+    assert.equal(recent.hasMore, true, "13 header-matched sessions with limit 10 => hasMore");
+    assert.ok(recent.nextBefore, "nextBefore cursor required when hasMore");
+    assert.ok(recent.nextBeforePath, "nextBeforePath tie-break required when hasMore");
+
+    // Second page via before cursor: remaining sessions, no overlap with first-page core ids
+    // (parent-closure extras from page 1 may legitimately reappear and must dedupe on the client).
+    const page2 = await listRecentSessionsForCwd(cwdA, {
+      limit: RECENT_SESSIONS_LIMIT,
+      before: recent.nextBefore!,
+      beforePath: recent.nextBeforePath!,
+      includeParentClosure: false,
+    });
+    assert.equal(page2.hasMore, false, "second page should exhaust remaining sessions");
+    assert.ok(page2.sessions.length >= 1, "second page returns remaining sessions");
+    assert.ok(
+      page2.sessions.some((s) => s.id === "session-a-0"),
+      "oldest session appears on later page when parent closure is off"
+    );
+    const page1CoreIds = new Set(
+      recent.sessions
+        .filter((s) => s.id !== "session-a-0") // closure-only parent may sit outside the strict page window
+        .map((s) => s.id)
+    );
+    for (const s of page2.sessions) {
+      assert.equal(page1CoreIds.has(s.id), false, `page2 id ${s.id} must not overlap page1 core window`);
+    }
+
+    // Exact boundary: 10 matching sessions => no hasMore
+    const exact = await listRecentSessionsForCwd(cwdB, { limit: 10, includeParentClosure: false });
+    // cwdB has session-b-0 + near-id = 2 (+ malformed is header-invalid)
+    assert.equal(exact.hasMore, false, "fewer than limit => hasMore false");
+    assert.equal(exact.nextBefore, null);
+
+    // Empty project
+    const emptyCwd = join(root, "empty-project");
+    mkdirSync(emptyCwd, { recursive: true });
+    const emptyPage = await listRecentSessionsForCwd(emptyCwd, 10);
+    assert.equal(emptyPage.total, 0);
+    assert.equal(emptyPage.sessions.length, 0);
+    assert.equal(emptyPage.hasMore, false);
 
     // Collision recent loading fills limit from matching cwd only.
     const recentX = await listRecentSessionsForCwd(cwdCollideX, RECENT_SESSIONS_LIMIT);
@@ -294,6 +353,44 @@ async function main() {
       3,
       "malformed archive file must not contribute to any cwd count"
     );
+
+    // Archived pagination for a larger archive set.
+    const cwdArchiveBig = join(root, "archive-big");
+    mkdirSync(cwdArchiveBig, { recursive: true });
+    for (let i = 0; i < 25; i++) {
+      writeSession(
+        cwdArchiveBig,
+        `session-ab-${i}`,
+        new Date(base + (3000 + i) * 60_000).toISOString(),
+        `ab-${i}`,
+        {
+          root: "sessions-archive",
+          mtimeMs: base + (3000 + i) * 60_000,
+        }
+      );
+    }
+    const {
+      listArchivedSessionsForCwd,
+      ARCHIVED_SESSIONS_LIMIT,
+    } = await import("../lib/session-reader");
+    const archPage1 = await listArchivedSessionsForCwd(cwdArchiveBig, {
+      limit: ARCHIVED_SESSIONS_LIMIT,
+    });
+    assert.equal(archPage1.total, 25, "archived total counts header-matched files");
+    assert.equal(archPage1.sessions.length, ARCHIVED_SESSIONS_LIMIT, "archived first page bounded");
+    assert.equal(archPage1.hasMore, true, "archived hasMore when total > limit");
+    assert.ok(archPage1.nextBefore && archPage1.nextBeforePath, "archived cursor present");
+    const archPage2 = await listArchivedSessionsForCwd(cwdArchiveBig, {
+      limit: ARCHIVED_SESSIONS_LIMIT,
+      before: archPage1.nextBefore!,
+      beforePath: archPage1.nextBeforePath!,
+    });
+    assert.equal(archPage2.sessions.length, 5, "archived second page returns remainder");
+    assert.equal(archPage2.hasMore, false);
+    const archIds = new Set(archPage1.sessions.map((s) => s.id));
+    for (const s of archPage2.sessions) {
+      assert.equal(archIds.has(s.id), false, "archived pages must not overlap");
+    }
 
     // Exact filename-id match to malformed JSONL fails closed (detail route peeks header → 404).
     const malformedFound = findSessionFileById("session-malformed-detail");

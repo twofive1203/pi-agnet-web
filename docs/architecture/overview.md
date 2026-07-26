@@ -8,7 +8,9 @@ This document holds the architecture details that should not live in `AGENTS.md`
 Browser                Next.js Server              AgentSession (in-process)
   │                        │                               │
   ├─ GET /api/sessions?view=projects ─▶ project dir scan   │
-  ├─ GET /api/sessions?cwd=&limit=10 ─▶ recent sessions    │
+  ├─ GET /api/sessions?cwd=&limit=10 ─▶ recent page        │
+  │   (+ optional before/beforePath cursor)                │
+  ├─ GET /api/sessions/archived?cwd=&limit= ─▶ archive page│
   ├─ GET /api/sessions (default) ─────▶ full active list   │
   ├─ GET /api/sessions/[id] reads .jsonl file directly     │
   │                        │                               │
@@ -21,7 +23,7 @@ Browser                Next.js Server              AgentSession (in-process)
   │◀── data: {...} ────────│                               │
 ```
 
-Sidebar browsing is intentionally split from full-scan consumers: project discovery and per-cwd recent lists use filesystem metadata plus bounded JSONL parsing; Usage and other bulk features keep calling `listAllSessions()` / `listAllArchivedSessions()`.
+Sidebar browsing is intentionally split from full-scan consumers: project discovery and per-cwd recent/archived pages use filesystem metadata plus bounded JSONL parsing with mtime cursors (`before` + `beforePath`) and a small parent-closure so fork children are not flattened when their parent falls outside the current page. Usage and other bulk features keep calling `listAllSessions()` / `listAllArchivedSessions()`.
 
 ## Key Boundaries
 
@@ -64,7 +66,7 @@ Archive/unarchive moves the parent JSONL and its path-derived companion director
 
 The archive directory is scanned separately from `SessionManager.listAll()` (which only scans `sessions/`). Project visibility is preserved by returning `archivedCwds` and `archivedCounts` from `GET /api/sessions` (including `view=projects` and per-cwd recent modes), allowing the CWD picker to include projects that have only archived sessions.
 
-Recent-session browse order uses file mtime (then filename timestamp, then path). That differs from historical `SessionManager.listAll()` `modified`, which prefers last message activity time. Document this when changing ordering semantics.
+Recent-session browse order uses file mtime (then filename timestamp, then path). That differs from historical `SessionManager.listAll()` `modified`, which prefers last message activity time. Page cursors compare `(mtimeMs, path)` so same-second files stay stable. `total` is the header-matched candidate count; `sessions.length` is successfully parsed rows on the page (plus optional parent-closure ancestors). Document this when changing ordering semantics.
 
 ### Usage accounting
 
