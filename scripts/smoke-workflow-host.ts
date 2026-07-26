@@ -65,7 +65,7 @@ async function main() {
       test("Cached host is same instance", cached === host);
 
       console.log("Phase 2b: Host dispose...");
-      rm.disposeWorkflowHost(tmpRoot);
+      await rm.disposeWorkflowHost(tmpRoot);
       hostCreated = false;
       test("Host disposed cleanly", true);
     } catch (error) {
@@ -76,7 +76,7 @@ async function main() {
     if (hostCreated) {
       try {
         const rm = await loadRunManager();
-        rm.disposeWorkflowHost(tmpRoot);
+        await rm.disposeWorkflowHost(tmpRoot);
       } catch {
         // best effort
       }

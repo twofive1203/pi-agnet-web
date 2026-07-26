@@ -7,6 +7,7 @@ import { recordSessionFileChangeEvent } from "./session-file-changes";
 import { canonicalizeCwd } from "./cwd";
 import { preparePiRuntimeEnvironment } from "./pi-runtime-resolver";
 import { ExtensionWebUiBridge } from "./extension-web-ui";
+import { disposeAgentSession } from "./pi-session-lifecycle";
 import type { AgentSessionLike, ToolInfo } from "./pi-types";
 
 // ============================================================================
@@ -539,18 +540,6 @@ export class AgentSessionWrapper {
     this.extensionUiBridge.rejectAll();
 
     this.destroyPromise = (async () => {
-      // The SDK's replacement flow emits session_shutdown before invalidating
-      // extension contexts. WebUI fork/worktree teardown bypasses that flow, so
-      // reproduce the lifecycle signal before calling AgentSession.dispose().
-      try {
-        const runner = this.inner.extensionRunner;
-        if (runner.hasHandlers?.("session_shutdown") && runner.emit) {
-          await runner.emit({ type: "session_shutdown", reason });
-        }
-      } catch {
-        // Extension cleanup must not prevent the underlying session from closing.
-      }
-
       try {
         // Browser tab bindings are temporary and must not survive wrapper teardown/fork.
         const sessionId = this.inner.sessionId;
@@ -564,11 +553,7 @@ export class AgentSessionWrapper {
       } catch {
         // ignore
       }
-      try {
-        this.inner.dispose?.();
-      } catch {
-        // Dispose is best-effort; registry cleanup must still run.
-      }
+      await disposeAgentSession(this.inner, reason);
       this.onDestroyCallback?.();
     })();
 

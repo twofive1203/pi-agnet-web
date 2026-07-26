@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAgentSession, DefaultResourceLoader, getAgentDir, SessionManager, type SlashCommandInfo } from "@earendil-works/pi-coding-agent";
 import { ExtensionWebUiBridge } from "@/lib/extension-web-ui";
+import { disposeAgentSession, type DisposableAgentSession } from "@/lib/pi-session-lifecycle";
 import { annotateExtensionCommandWebSupport, type ExtensionCommandWebSupport } from "@/lib/extension-command-web-support";
 
 export const dynamic = "force-dynamic";
@@ -40,7 +41,7 @@ export async function GET(req: Request) {
   const cwd = searchParams.get("cwd");
   if (!cwd) return NextResponse.json({ error: "cwd required" }, { status: 400 });
 
-  let session: { dispose?: () => void } | undefined;
+  let session: DisposableAgentSession | undefined;
   try {
     const agentDir = getAgentDir();
     const loader = new DefaultResourceLoader({ cwd, agentDir });
@@ -125,6 +126,6 @@ export async function GET(req: Request) {
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 });
   } finally {
-    session?.dispose?.();
+    await disposeAgentSession(session);
   }
 }

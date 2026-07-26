@@ -63,7 +63,7 @@ interface ResourceLoaderLike {
   getSkills(): { skills: SkillLike[] };
 }
 
-interface ExtensionRunnerLike {
+export interface ExtensionRunnerLike {
   getRegisteredCommands(): Array<{
     invocationName: string;
     description?: string;

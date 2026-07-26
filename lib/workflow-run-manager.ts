@@ -9,6 +9,7 @@ import path from "path";
 import { createInterface } from "readline";
 import type { EventBusController } from "@earendil-works/pi-coding-agent";
 import { canonicalizeCwd } from "./cwd";
+import { disposeAgentSession, type DisposableAgentSession } from "./pi-session-lifecycle";
 import { preparePiRuntimeEnvironment } from "./pi-runtime-resolver";
 import {
   agentNameForPhase,
@@ -68,7 +69,7 @@ interface WorkflowHost {
   cwd: string;
   hostSessionId: string;
   eventBus: EventBusController;
-  session: { sessionId: string; dispose: () => void; cwd?: string };
+  session: DisposableAgentSession & { sessionId: string; cwd?: string };
   createdAt: number;
   lastUsedAt: number;
   rpcReady: boolean;
@@ -326,11 +327,7 @@ async function createWorkflowHost(cwd: string): Promise<WorkflowHost> {
     }
     host.rpcReady = true;
   } catch (error) {
-    try {
-      session.dispose();
-    } catch {
-      // ignore
-    }
+    await disposeAgentSession(session);
     try {
       eventBus.clear?.();
     } catch {
@@ -373,16 +370,12 @@ export async function getWorkflowHost(cwd: string): Promise<WorkflowHost> {
   return creating;
 }
 
-export function disposeWorkflowHost(cwd: string): void {
+export async function disposeWorkflowHost(cwd: string): Promise<void> {
   const canonical = canonicalProjectCwd(cwd);
   const host = hosts().get(canonical);
   if (!host) return;
   hosts().delete(canonical);
-  try {
-    host.session.dispose();
-  } catch {
-    // ignore
-  }
+  await disposeAgentSession(host.session);
   try {
     host.eventBus.clear?.();
   } catch {
@@ -394,7 +387,7 @@ function pruneIdleHosts(): void {
   const now = Date.now();
   for (const [cwd, host] of hosts()) {
     if (now - host.lastUsedAt > HOST_IDLE_TTL_MS) {
-      disposeWorkflowHost(cwd);
+      void disposeWorkflowHost(cwd);
     }
   }
 }

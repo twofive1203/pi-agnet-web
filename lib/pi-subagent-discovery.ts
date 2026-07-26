@@ -7,6 +7,7 @@
  */
 
 import { createAgentSession, getAgentDir, SessionManager } from "@earendil-works/pi-coding-agent";
+import { disposeAgentSession } from "./pi-session-lifecycle";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -147,11 +148,7 @@ export async function discoverAgents(cwd: string): Promise<AgentDiscoveryResult>
       diagnostic: `Agent discovery failed: ${error instanceof Error ? error.message : String(error)}`,
     };
   } finally {
-    try {
-      session?.dispose();
-    } catch {
-      // best-effort cleanup
-    }
+    await disposeAgentSession(session);
   }
 }
 
