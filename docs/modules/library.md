@@ -47,11 +47,12 @@ Shared logic lives under `lib/`. Prefer adding behavior here when it is used by 
 | `lib/terminal-manager.ts` | Web Terminal PTY manager: setting-gated session creation, cwd authorization, platform-aware Unix/Windows shell and custom path resolution, env injection, SSE subscription fan-out, input/resize handling, and process cleanup. |
 | `lib/browser-protocol.ts` | Shared browser-bridge protocol constants, envelopes, binding/capability/error contracts, and model-safe binding views (no raw `tabId`/credentials). |
 | `lib/browser-binding-state.ts` | Pure binding state machine: pending/active/debug/suspended/revoked, single-tab ownership, multi-tab session membership, primary selection, navigation policy. |
-| `lib/browser-pairing.ts` | Installation pairing codes, secret verifiers, connect-token challenge handshake, and `~/.pi/agent/browser-bridge.json` persistence. |
+| `lib/browser-pairing.ts` | Installation pairing codes, secret verifiers, connect-token challenge handshake, and atomic `~/.pi/agent/browser-bridge.json` persistence (temp+rename; corrupt files quarantined). |
 | `lib/browser-bridge.ts` | Loopback-only authenticated WebSocket broker (`127.0.0.1`) with heartbeat, deadlines, cancel, duplicate-response cache, and frame limits. Separate from Agent SSE/`extension_ui_request`. |
-| `lib/browser-binding-manager.ts` | Session-scoped binding manager routing commands only to the owning extension client; fork/destroy invalidation; rate limits; audit hooks. |
+| `lib/browser-binding-manager.ts` | Session-scoped binding manager routing commands only to the owning extension client; multi-session pending isolation (`listOpenPendingRequests` / scoped `getOpenPendingRequest`); fork/destroy invalidation; rate limits; audit hooks. |
 | `lib/browser-tools.ts` | Pi custom tools (`browser_*`) that inject `sessionId` from `ctx.sessionManager.getSessionId()` and never accept model-supplied session ids. |
-| `lib/browser-redaction.ts` | URL/header/console/network redaction and sensitive-control detection for tool outputs. |
+| `lib/browser-action-policy.ts` | Deterministic `browser_act` safety policy (source of truth). Extension copies are generated via `scripts/generate-browser-extension-shared.ts`. |
+| `lib/browser-redaction.ts` | URL/header/console/network redaction and sensitive-control detection for tool outputs (source of truth for extension `redaction.js`). |
 | `lib/browser-audit.ts` | Bounded browser-control audit metadata (no page payloads or secrets). |
 | `lib/trellis-manager.ts` | Trellis setup/status/update helper: prerequisite checks, CLI/version inspection, proxy-scoped child-process environment, and fixed Trellis/npm command execution. |
 | `lib/trellis-reader.ts` | Read-only Trellis task discovery, artifact loading, manifest counting, hierarchy, optional `meta.lastCheck` quality-check state, and phase/progress derivation. |

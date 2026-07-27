@@ -4,9 +4,9 @@
  */
 
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import {
   BrowserControlError,
   DEFAULT_BROWSER_BRIDGE_PORT,
@@ -15,6 +15,13 @@ import {
   type PairingOffer,
   isRecord,
 } from "./browser-protocol";
+
+/** Local agent dir resolver (avoids ESM-only pi package import in smoke/CJS loaders). */
+function getAgentDir(): string {
+  const override = process.env.PI_CODING_AGENT_DIR?.trim();
+  if (override) return override;
+  return join(homedir(), ".pi", "agent");
+}
 
 export type BrowserBridgePersistedState = {
   version: 1;
@@ -88,7 +95,10 @@ export function readBrowserBridgeState(agentDir = getAgentDir()): BrowserBridgeP
   if (!existsSync(path)) return emptyState();
   try {
     const raw = JSON.parse(readFileSync(path, "utf8")) as unknown;
-    if (!isRecord(raw) || raw.version !== 1) return emptyState();
+    if (!isRecord(raw) || raw.version !== 1) {
+      quarantineCorruptState(path);
+      return emptyState();
+    }
     const installations = Array.isArray(raw.installations)
       ? raw.installations.filter((item): item is InstallationCredentialRecord => {
         if (!isRecord(item)) return false;
@@ -119,14 +129,40 @@ export function readBrowserBridgeState(agentDir = getAgentDir()): BrowserBridgeP
       pendingPairing: pending,
     };
   } catch {
+    quarantineCorruptState(path);
     return emptyState();
+  }
+}
+
+/** Move unreadable state aside so a crash mid-write does not silently wipe pairings forever. */
+function quarantineCorruptState(path: string): void {
+  try {
+    if (!existsSync(path)) return;
+    const bak = `${path}.corrupt.${Date.now()}.bak`;
+    renameSync(path, bak);
+  } catch {
+    // best-effort
   }
 }
 
 export function writeBrowserBridgeState(state: BrowserBridgePersistedState, agentDir = getAgentDir()): void {
   const path = getStatePath(agentDir);
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+  const tmpPath = `${path}.tmp.${process.pid}.${Date.now()}`;
+  const payload = `${JSON.stringify(state, null, 2)}\n`;
+  writeFileSync(tmpPath, payload, { encoding: "utf8", mode: 0o600 });
+  try {
+    renameSync(tmpPath, path);
+  } catch {
+    // Windows may refuse rename-over-existing; fall back to replace.
+    try {
+      if (existsSync(path)) unlinkSync(path);
+      renameSync(tmpPath, path);
+    } catch (error) {
+      try { unlinkSync(tmpPath); } catch { /* ignore */ }
+      throw error;
+    }
+  }
 }
 
 export function setBrowserBridgeEnabled(enabled: boolean, agentDir = getAgentDir()): BrowserBridgePersistedState {

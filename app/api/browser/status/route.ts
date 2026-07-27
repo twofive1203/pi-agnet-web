@@ -26,12 +26,15 @@ export async function GET(req: Request) {
       }
     }
     const manager = getBrowserBindingManager();
+    const pendings = manager.listOpenPendingRequests();
     return NextResponse.json({
       featureEnabled: state.enabled,
       bridge: getBrowserBridge().getStatus(),
       installations: listInstallations(),
       session: sessionId ? manager.getPublicStatus(sessionId) : null,
-      pendingGlobal: manager.getOpenPendingRequest(),
+      /** @deprecated use pendings — single global pending is ambiguous across sessions */
+      pendingGlobal: pendings.length === 1 ? pendings[0] : null,
+      pendings,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

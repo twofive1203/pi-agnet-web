@@ -60,7 +60,6 @@ import {
   isPasswordOrPaymentField,
   isPermissionTrigger,
 } from "../lib/browser-action-policy";
-import { createBrowserToolDefinitions } from "../lib/browser-tools";
 import { ensureBrowserBridgeStarted, getBrowserBridge, stopBrowserBridge } from "../lib/browser-bridge";
 import { getBrowserBindingManager } from "../lib/browser-binding-manager";
 import { listBrowserAudit, recordBrowserAudit, resetBrowserAuditForTests } from "../lib/browser-audit";
@@ -426,16 +425,29 @@ async function main(): Promise<void> {
     }), "handshake one-time");
   });
 
-  await check("browser tools do not accept sessionId param", () => {
-    const tools = createBrowserToolDefinitions();
-    const names = tools.map((t) => t.name).sort();
-    assert(names.includes("browser_tabs"), "tabs tool");
-    assert(names.includes("browser_snapshot"), "snapshot tool");
-    assert(names.includes("browser_console"), "console tool");
-    for (const tool of tools) {
-      const json = JSON.stringify(tool.parameters);
-      assert(!/"sessionId"\s*:/.test(json), `${tool.name} must not expose sessionId parameter`);
+  await check("browser tools do not accept sessionId param", async () => {
+    // Source-level check avoids loading pi-ai under tsx CJS (ESM-only package exports).
+    const { readFileSync } = await import("node:fs");
+    const { join: pathJoin } = await import("node:path");
+    const source = readFileSync(pathJoin(process.cwd(), "lib", "browser-tools.ts"), "utf8");
+    for (const name of [
+      "browser_tabs",
+      "browser_snapshot",
+      "browser_find",
+      "browser_act",
+      "browser_wait",
+      "browser_screenshot",
+      "browser_console",
+      "browser_network",
+    ]) {
+      assert(source.includes(`name: "${name}"`), `tool ${name} defined`);
     }
+    // sessionId must come from ctx.sessionManager, never from model tool parameters schema.
+    assert(source.includes("sessionIdFromCtx"), "injects session from ctx");
+    assert(source.includes("sessionManager?.getSessionId"), "reads session from manager");
+    // Tool schemas must not declare a model-supplied sessionId field.
+    assert(!/sessionId\s*:\s*Type\./.test(source), "no sessionId Type field in schemas");
+    assert(!/sessionId\s*:\s*Type\.Optional/.test(source), "no optional sessionId param");
   });
 
   await check("bridge auth, origin, stale envelope, authenticated accept", async () => {
@@ -899,6 +911,73 @@ async function main(): Promise<void> {
     owner.close();
     attacker.close();
     await stopBrowserBridge();
+  });
+
+  await check("pending bind requests stay session-scoped across multiple sessions", async () => {
+    const manager = getBrowserBindingManager();
+    manager.resetTemporaryState();
+    const p1 = manager.createPendingBindingRequest({ sessionId: "sess-a", sessionLabel: "A" });
+    const p2 = manager.createPendingBindingRequest({ sessionId: "sess-b", sessionLabel: "B" });
+    const all = manager.listOpenPendingRequests();
+    assert(all.length === 2, "two open pendings");
+    assert(all.some((p) => p.pendingRequestId === p1.pendingRequestId), "has p1");
+    assert(all.some((p) => p.pendingRequestId === p2.pendingRequestId), "has p2");
+    // Unscoped single lookup is ambiguous with multiple sessions.
+    assert(manager.getOpenPendingRequest() === null, "global single pending null when multi");
+    assert(manager.getOpenPendingRequest("sess-a")?.pendingRequestId === p1.pendingRequestId, "scoped A");
+    assert(manager.getOpenPendingRequest("sess-b")?.pendingRequestId === p2.pendingRequestId, "scoped B");
+    // Replacing within one session keeps the other intact.
+    const p1b = manager.createPendingBindingRequest({ sessionId: "sess-a", sessionLabel: "A2" });
+    assert(manager.getOpenPendingRequest("sess-a")?.pendingRequestId === p1b.pendingRequestId, "A replaced");
+    assert(manager.listOpenPendingRequests().length === 2, "still two sessions");
+    assert(manager.getOpenPendingRequest("sess-b")?.pendingRequestId === p2.pendingRequestId, "B intact");
+    manager.resetTemporaryState();
+  });
+
+  await check("browser-bridge.json writes are atomic and survive basic roundtrip", async () => {
+    const { existsSync, readFileSync } = await import("node:fs");
+    const { join: pathJoin } = await import("node:path");
+    const { readBrowserBridgeState, writeBrowserBridgeState, setBrowserBridgeEnabled } = await import("../lib/browser-pairing");
+    setBrowserBridgeEnabled(true, agentDir);
+    const state = readBrowserBridgeState(agentDir);
+    state.enabled = true;
+    state.port = 62667;
+    state.installations = [{
+      clientId: "ext_atomic_test",
+      secretVerifier: "salt:deadbeef",
+      createdAt: Date.now(),
+      label: "atomic",
+    }];
+    writeBrowserBridgeState(state, agentDir);
+    const path = pathJoin(agentDir, "browser-bridge.json");
+    assert(existsSync(path), "state file exists");
+    const raw = readFileSync(path, "utf8");
+    assert(raw.includes("ext_atomic_test"), "installation persisted");
+    const reloaded = readBrowserBridgeState(agentDir);
+    assert(reloaded.installations.some((i) => i.clientId === "ext_atomic_test"), "reload keeps installation");
+    // No leftover temp files from atomic write.
+    const { readdirSync } = await import("node:fs");
+    const leftovers = readdirSync(agentDir).filter((n) => n.includes("browser-bridge.json.tmp"));
+    assert(leftovers.length === 0, "no temp leftovers");
+  });
+
+  await check("generated extension action-policy matches lib source decisions", async () => {
+    const { pathToFileURL: toUrl } = await import("node:url");
+    const { join: pathJoin } = await import("node:path");
+    const extPolicy = await import(toUrl(pathJoin(process.cwd(), "extensions/chrome-tab-debug/action-policy.js")).href + `?t=${Date.now()}`) as {
+      evaluateActionPolicy: typeof evaluateActionPolicy;
+    };
+    const cases = [
+      { action: "click", tagName: "input", type: "file" },
+      { action: "type", tagName: "input", type: "password" },
+      { action: "click", tagName: "a", href: "https://x.test/a.exe", text: "Download" },
+      { action: "click", role: "button", text: "Save draft" },
+    ] as const;
+    for (const input of cases) {
+      const a = evaluateActionPolicy(input);
+      const b = extPolicy.evaluateActionPolicy(input);
+      assert(a.allowed === b.allowed, `policy parity for ${JSON.stringify(input)}`);
+    }
   });
 
   await check("BrowserBindingPanel revoke uses danger i18n confirm and cancel short-circuits", async () => {

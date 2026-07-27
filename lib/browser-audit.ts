@@ -15,13 +15,19 @@ import {
   writeFileSync,
 } from "node:fs";
 import { basename, dirname, join } from "node:path";
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { homedir } from "node:os";
 import {
   MAX_AUDIT_FILE_BYTES,
   MAX_AUDIT_FILE_LINES,
   type BrowserErrorCode,
 } from "./browser-protocol";
 import { summarizeAuditParams } from "./browser-redaction";
+
+function getAgentDir(): string {
+  const override = process.env.PI_CODING_AGENT_DIR?.trim();
+  if (override) return override;
+  return join(homedir(), ".pi", "agent");
+}
 
 export type BrowserAuditEntry = {
   ts: number;

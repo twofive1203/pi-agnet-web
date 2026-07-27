@@ -237,12 +237,27 @@ export class BrowserBindingManager {
     return pending;
   }
 
-  getOpenPendingRequest(): PendingBindingRequest | null {
+  /** All non-expired pending bind requests, newest first. */
+  listOpenPendingRequests(): PendingBindingRequest[] {
     expirePendingRequests(this.store);
     const now = Date.now();
-    // Prefer most recent pending.
-    const all = [...this.store.pendingById.values()].sort((a, b) => b.createdAt - a.createdAt);
-    return all.find((p) => p.expiresAt > now) ?? null;
+    return [...this.store.pendingById.values()]
+      .filter((p) => p.expiresAt > now)
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .map((p) => ({ ...p, requestedCapabilities: [...p.requestedCapabilities] }));
+  }
+
+  /**
+   * Session-scoped pending lookup. Without sessionId, returns null when multiple
+   * sessions have open requests (avoids cross-session bind mistakes).
+   */
+  getOpenPendingRequest(sessionId?: string): PendingBindingRequest | null {
+    const all = this.listOpenPendingRequests();
+    if (sessionId) {
+      return all.find((p) => p.sessionId === sessionId) ?? null;
+    }
+    // Backward-compatible single-pending shortcut only when unambiguous.
+    return all.length === 1 ? all[0]! : null;
   }
 
   /**
@@ -496,12 +511,23 @@ export class BrowserBindingManager {
       }
 
       if (command === "binding.pending") {
-        return { ok: true, result: { pending: this.getOpenPendingRequest() } };
+        const sessionId = typeof params.sessionId === "string" ? params.sessionId : undefined;
+        const pendings = sessionId
+          ? this.listOpenPendingRequests().filter((p) => p.sessionId === sessionId)
+          : this.listOpenPendingRequests();
+        return {
+          ok: true,
+          result: {
+            pendings,
+            // Unambiguous single pending only; multi-session must pick explicitly.
+            pending: pendings.length === 1 ? pendings[0] : (sessionId ? pendings[0] ?? null : null),
+          },
+        };
       }
 
       if (command === "reconcile") {
         const bindings = this.listBindingsForClient(clientId);
-        const pending = this.getOpenPendingRequest();
+        const pendings = this.listOpenPendingRequests();
         return {
           ok: true,
           result: {
@@ -516,7 +542,8 @@ export class BrowserBindingManager {
               capabilities: b.capabilities,
               state: b.state,
             })),
-            pending,
+            pendings,
+            pending: pendings.length === 1 ? pendings[0] : null,
           },
         };
       }
@@ -540,7 +567,7 @@ export class BrowserBindingManager {
     const bridge = getBrowserBridge();
     if (!bridge.isClientConnected(clientId)) return;
     const bindings = this.listBindingsForClient(clientId);
-    const pending = this.getOpenPendingRequest();
+    const pendings = this.listOpenPendingRequests();
     await bridge.sendCommand(
       clientId,
       {
@@ -558,7 +585,8 @@ export class BrowserBindingManager {
             capabilities: b.capabilities,
             state: b.state,
           })),
-          pending,
+          pendings,
+          pending: pendings.length === 1 ? pendings[0] : null,
         },
       },
       { timeoutMs: 5_000 },

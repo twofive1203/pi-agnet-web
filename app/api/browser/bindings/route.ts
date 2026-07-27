@@ -125,7 +125,15 @@ export async function POST(req: Request) {
           { status: 401 },
         );
       }
-      return NextResponse.json({ pending: manager.getOpenPendingRequest() });
+      const sessionId = typeof body.sessionId === "string" ? body.sessionId.trim() : "";
+      const pendings = sessionId
+        ? manager.listOpenPendingRequests().filter((p) => p.sessionId === sessionId)
+        : manager.listOpenPendingRequests();
+      return NextResponse.json({
+        pendings,
+        // Unambiguous single pending only; multi-session clients must choose pendingRequestId.
+        pending: pendings.length === 1 ? pendings[0] : null,
+      });
     }
 
     return NextResponse.json({ error: `Unknown action: ${action}` }, { status: 400 });
