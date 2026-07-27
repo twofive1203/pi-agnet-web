@@ -1,7 +1,7 @@
 /**
  * File-backed CredentialStore for ~/.pi/agent/auth.json.
  *
- * pi-coding-agent 0.80.10 no longer exports AuthStorage. The SDK still uses the
+ * pi-coding-agent no longer exports AuthStorage publicly. The SDK still uses the
  * same auth.json shape via an internal store; this module owns the same file
  * contract for pi-web routes that need direct credential read/write.
  */

@@ -128,7 +128,6 @@ export interface AgentSessionLike {
   /** pi 0.80.10+ canonical model/auth facade. */
   readonly modelRuntime: {
     getModel: (provider: string, modelId: string) => ModelLike | undefined;
-    reloadConfig?: () => Promise<void>;
     refresh?: () => Promise<unknown>;
   };
   readonly sessionManager: SessionManager;

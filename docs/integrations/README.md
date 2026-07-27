@@ -7,7 +7,7 @@ See `package.json` for exact versions.
 | Dependency | Purpose |
 | --- | --- |
 | `next`, `react`, `react-dom` | Web application framework/runtime. |
-| `@earendil-works/pi-coding-agent`, `@earendil-works/pi-ai` | In-process pi AgentSession and AI provider integration. **Pinned to exact `0.80.10`**. Auth/catalog access goes through `ModelRuntime` (`lib/pi-auth.ts`); multi-account helpers use `FileCredentialStore` for `auth.json` because public `AuthStorage` was removed. |
+| `@earendil-works/pi-coding-agent`, `@earendil-works/pi-ai` | In-process pi AgentSession and AI provider integration. **Pinned to exact `0.82.1`**. Auth/catalog access goes through `ModelRuntime` (`lib/pi-auth.ts`); multi-account helpers use `FileCredentialStore` for `auth.json` because public `AuthStorage` was removed. |
 | `react-markdown`, `remark-gfm`, `remark-math`, `rehype-raw`, `rehype-sanitize`, `rehype-katex`, `katex` | Markdown, raw HTML sanitization, and math rendering. |
 | `react-syntax-highlighter` | Code block highlighting. |
 | `mermaid` | Diagram rendering. |
@@ -28,7 +28,7 @@ When changing pi SDK usage, read the installed package documentation first:
 
 ## Auth Providers
 
-Auth-related API routes live under `app/api/auth/`. From pi `0.80.10`, login/logout/catalog/request-auth are owned by `ModelRuntime`:
+Auth-related API routes live under `app/api/auth/`. From pi `0.80.10+`, login/logout/catalog/request-auth are owned by `ModelRuntime`:
 
 - Shared helpers: `lib/pi-auth.ts`
 - Direct `auth.json` read/write for multi-account Codex flows: `lib/file-credential-store.ts`

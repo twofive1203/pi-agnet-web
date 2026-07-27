@@ -595,8 +595,7 @@ export function reloadRpcAuthState(): number {
   for (const wrapper of getRegistry().values()) {
     if (!wrapper.isAlive()) continue;
     try {
-      // 0.80.10+: ModelRuntime owns credential reload + catalog refresh.
-      void wrapper.inner.modelRuntime.reloadConfig?.();
+      // ModelRuntime owns credential reload + catalog refresh.
       void wrapper.inner.modelRuntime.refresh?.();
       count += 1;
     } catch {

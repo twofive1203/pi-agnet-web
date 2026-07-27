@@ -20,7 +20,7 @@ Shared logic lives under `lib/`. Prefer adding behavior here when it is used by 
 | `lib/cwd.ts` | Cwd validation and normalization helpers. |
 | `lib/git-worktree.ts` | Git worktree creation, status, archive, and removal helpers. |
 | `lib/deepseek-balance.ts` | Query DeepSeek account balance. |
-| `lib/pi-auth.ts` | pi 0.80.10+ auth/model facade helpers around `ModelRuntime`/`ModelRegistry`, OAuth provider listing, API-key write/delete, and request-auth mapping. |
+| `lib/pi-auth.ts` | pi 0.80.10+ (pinned `0.82.1`) auth/model facade helpers around `ModelRuntime`/`ModelRegistry`, OAuth provider listing, API-key write/delete, and request-auth mapping. |
 | `lib/file-credential-store.ts` | File-backed `CredentialStore` for `~/.pi/agent/auth.json`; used by multi-account Codex helpers after public `AuthStorage` removal. |
 | `lib/grok-usage.ts` | Resolve Grok subscription OAuth/env token (`GROK_CLI_OAUTH_TOKEN`, then `grok-cli` or Pi built-in `xai` credentials, with registry fallback), fetch xAI monthly/weekly billing, persist last-known successful usage to `~/.pi/agent/grok-cli-usage-cache.json` (success-only writes, no tokens), and return browser-safe structured results. |
 | `lib/quota-display.ts` | Shared ChatGPT/Codex quota display helpers: tier labels, utilization colors, quota/reset-credit countdowns, earliest reset-credit expiration, relative refresh time, and known-tier filtering. |
