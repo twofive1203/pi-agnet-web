@@ -252,6 +252,8 @@ export const ChatWindow = memo(function ChatWindow({ session, newSessionCwd, onA
       onSoundToggle={onSoundToggle}
       autoScrollEnabled={autoScrollEnabled}
       onAutoScrollToggle={onAutoScrollToggle}
+      browserSessionId={session?.id ?? null}
+      browserSessionLabel={session?.name || session?.id?.slice(0, 8)}
     />
   );
 

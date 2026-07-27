@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import type { SlashCommandEntry } from "@/app/api/commands/route";
 import type { AttachedFile, GitStatusInfo } from "@/lib/types";
 import type { ToolPreset } from "@/components/ToolPanel";
+import { BrowserBindingTrigger } from "@/components/BrowserBindingTrigger";
 import { encodeFilePathForApi, getFileName, getRelativeFilePath, joinFilePath } from "@/lib/file-paths";
 import { buildTrellisTaskResumePrompt, type TrellisTaskChatContext } from "@/lib/trellis-chat-context";
 import { buildWorkflowTaskResumePrompt, type WorkflowTaskChatContext } from "@/lib/workflow-chat-context";
@@ -48,6 +49,8 @@ interface Props {
   onSoundToggle?: () => void;
   autoScrollEnabled?: boolean;
   onAutoScrollToggle?: () => void;
+  browserSessionId?: string | null;
+  browserSessionLabel?: string;
 }
 
 type GitBranchDisplay = Pick<GitStatusInfo, "branch" | "isDetached" | "isDirty" | "isWorktree">;
@@ -445,6 +448,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   retryInfo,
   soundEnabled, onSoundToggle,
   autoScrollEnabled, onAutoScrollToggle,
+  browserSessionId, browserSessionLabel,
 }: Props, ref) {
   const { t } = useI18n();
   const [slashCommands, setSlashCommands] = useState<SlashCommandEntry[]>([]);
@@ -1703,6 +1707,10 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 <polyline points="13 2 13 9 20 9" />
               </svg>
             </button>
+            <BrowserBindingTrigger
+              sessionId={browserSessionId ?? null}
+              sessionLabel={browserSessionLabel}
+            />
             {/* Model selector — visible always, disabled during streaming */}
             {modelOptions.length > 0 && currentModelLabel && onModelChange && (
                 <div ref={dropdownRef} style={{ position: "relative" }}>

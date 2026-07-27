@@ -22,7 +22,7 @@ type PendingRequest = {
   expiresAt: number;
 };
 
-type StatusResponse = {
+export type BrowserBindingStatusResponse = {
   featureEnabled?: boolean;
   bridge?: {
     running?: boolean;
@@ -43,17 +43,18 @@ interface Props {
   sessionId: string | null;
   sessionLabel?: string;
   compact?: boolean;
+  popover?: boolean;
 }
 
-export function BrowserBindingPanel({ sessionId, sessionLabel, compact }: Props) {
+export function BrowserBindingPanel({ sessionId, sessionLabel, compact, popover }: Props) {
   const appDialog = useAppDialog();
   const { t } = useI18n();
-  const [status, setStatus] = useState<StatusResponse | null>(null);
+  const [status, setStatus] = useState<BrowserBindingStatusResponse | null>(null);
   const [pairingCode, setPairingCode] = useState<string | null>(null);
   const [pairingExpiresAt, setPairingExpiresAt] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [open, setOpen] = useState(!compact);
+  const [open, setOpen] = useState(!compact || Boolean(popover));
 
   const realSession = Boolean(sessionId && !sessionId.startsWith("new-"));
 
@@ -61,7 +62,7 @@ export function BrowserBindingPanel({ sessionId, sessionLabel, compact }: Props)
     try {
       const qs = realSession ? `?sessionId=${encodeURIComponent(sessionId!)}` : "";
       const res = await fetch(`/api/browser/status${qs}`);
-      const data = await res.json() as StatusResponse;
+      const data = await res.json() as BrowserBindingStatusResponse;
       if (!res.ok) throw new Error(data.error || "Failed to load browser status");
       setStatus(data);
       setError(null);
@@ -199,41 +200,44 @@ export function BrowserBindingPanel({ sessionId, sessionLabel, compact }: Props)
   const enabled = status?.featureEnabled === true;
 
   return (
-    <div className="browser-binding-panel" style={{
+    <div className={popover ? "browser-binding-panel browser-binding-panel-popover" : "browser-binding-panel"} style={{
       border: "1px solid var(--border, #333)",
-      borderRadius: 10,
-      padding: 10,
+      borderRadius: 12,
+      padding: popover ? 12 : 10,
       fontSize: 12,
-      background: "var(--panel-bg, transparent)",
+      background: "var(--bg-panel)",
+      boxShadow: popover ? "0 18px 42px rgba(0,0,0,0.20)" : "none",
     }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-        <strong>Browser</strong>
-        <button type="button" onClick={() => setOpen((v) => !v)} style={{ fontSize: 11 }}>
-          {open ? "Hide" : "Show"}
-        </button>
+        <strong>{t("panels.browser.title")}</strong>
+        {!popover && (
+          <button type="button" onClick={() => setOpen((v) => !v)} style={{ fontSize: 11 }}>
+            {open ? t("common.hide") : t("common.show")}
+          </button>
+        )}
       </div>
       {!open ? (
         <div style={{ color: "var(--text-dim)", marginTop: 4 }}>
-          {enabled ? `${clients} ext · ${bindings.length} tab(s)` : "Disabled"}
+          {enabled ? `${clients} ext · ${bindings.length} tab(s)` : t("panels.browser.disabled")}
         </div>
       ) : (
         <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
           <div style={{ color: "var(--text-dim)" }}>
-            Bridge: {status?.bridge?.running ? `127.0.0.1:${status.bridge.port}` : "stopped"}
+            {t("panels.browser.bridge")}: {status?.bridge?.running ? `127.0.0.1:${status.bridge.port}` : t("panels.browser.stopped")}
             {status?.bridge?.startError ? ` (${status.bridge.startError})` : ""}
             {" · "}
-            Extension: {clients > 0 ? "connected" : "offline"}
+            {t("panels.browser.extension")}: {clients > 0 ? t("panels.browser.connected") : t("panels.browser.offline")}
           </div>
 
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
             <button type="button" disabled={busy} onClick={() => void enableAndPair()}>
-              {pairingCode ? "Refresh pairing code" : "Enable + pair extension"}
+              {pairingCode ? t("panels.browser.refreshPairingCode") : t("panels.browser.enableAndPair")}
             </button>
             <button type="button" disabled={busy || !realSession || !enabled} onClick={() => void requestBind()}>
-              Connect browser tab
+              {t("panels.browser.connectTab")}
             </button>
             <button type="button" disabled={busy || bindings.length === 0} onClick={() => void revoke()}>
-              Revoke all
+              {t("panels.browser.revokeAll")}
             </button>
           </div>
 
@@ -244,23 +248,23 @@ export function BrowserBindingPanel({ sessionId, sessionLabel, compact }: Props)
               borderRadius: 8,
               background: "rgba(56,189,248,0.12)",
             }}>
-              Pairing code: <strong>{pairingCode}</strong>
-              {pairingExpiresAt ? ` · expires ${new Date(pairingExpiresAt).toLocaleTimeString()}` : ""}
+              {t("panels.browser.pairingCode")}: <strong>{pairingCode}</strong>
+              {pairingExpiresAt ? ` · ${t("panels.browser.expires")} ${new Date(pairingExpiresAt).toLocaleTimeString()}` : ""}
               <div style={{ color: "var(--text-dim)", marginTop: 4 }}>
-                Load unpacked extension from <code>extensions/chrome-tab-debug</code>, then enter this code.
+                {t("panels.browser.pairingHint")} <code>extensions/chrome-tab-debug</code>
               </div>
             </div>
           )}
 
           {!realSession && (
             <div style={{ color: "var(--text-dim)" }}>
-              Waiting for a real session id before tab binding is allowed.
+              {t("panels.browser.waitingForSession")}
             </div>
           )}
 
           {pending && (
             <div>
-              Pending request {pending.pendingRequestId.slice(0, 10)}… — switch to the target tab and confirm in the extension popup.
+              {t("panels.browser.pendingRequest", { id: pending.pendingRequestId.slice(0, 10) })}
             </div>
           )}
 
@@ -282,20 +286,20 @@ export function BrowserBindingPanel({ sessionId, sessionLabel, compact }: Props)
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
                     {!binding.primary && (
                       <button type="button" disabled={busy} onClick={() => void setPrimary(binding.bindingId)}>
-                        Set primary
+                        {t("panels.browser.setPrimary")}
                       </button>
                     )}
                     {binding.capabilities.includes("debug_readonly") ? (
                       <button type="button" disabled={busy} onClick={() => void toggleDebug(binding, false)}>
-                        Disable debug
+                        {t("panels.browser.disableDebug")}
                       </button>
                     ) : (
                       <button type="button" disabled={busy || binding.state === "suspended"} onClick={() => void toggleDebug(binding, true)}>
-                        Enable debug
+                        {t("panels.browser.enableDebug")}
                       </button>
                     )}
                     <button type="button" disabled={busy} onClick={() => void revoke(binding.bindingId)}>
-                      Revoke
+                      {t("panels.browser.revoke")}
                     </button>
                   </div>
                 </li>

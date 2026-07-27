@@ -19,7 +19,6 @@ import { TrellisPanel } from "./TrellisPanel";
 import { TrellisSessionWidget } from "./TrellisSessionWidget";
 import { WorkflowPanel } from "./WorkflowPanel";
 import { WorkflowSessionWidget } from "./WorkflowSessionWidget";
-import { BrowserBindingPanel } from "./BrowserBindingPanel";
 import type { WorkflowTaskDetail } from "@/lib/workflow-types";
 import type { WorkflowPhaseLabel } from "@/lib/workflow-guidance";
 import type { WorkflowSessionTaskLinkResult } from "@/lib/workflow-session-link";
@@ -1475,26 +1474,6 @@ export function AppShell() {
                 setRightPanelOpen(true);
               }}
             />
-          )}
-          {/* Desktop-only: Chrome extension tab binding is not usable on mobile and would cover the composer. */}
-          {showChat && isDesktopLayout && (
-            <div
-              className="browser-binding-float"
-              style={{
-                position: "absolute",
-                left: 12,
-                bottom: 12,
-                zIndex: 20,
-                width: 320,
-                maxWidth: "calc(100% - 24px)",
-              }}
-            >
-              <BrowserBindingPanel
-                sessionId={selectedSession?.id ?? null}
-                sessionLabel={selectedSession?.name || selectedSession?.id?.slice(0, 8)}
-                compact
-              />
-            </div>
           )}
           </div>
           {terminalOpen && terminalEnabled && terminalDockCwd && (
