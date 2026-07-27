@@ -846,6 +846,12 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         if (request.method === "setWidget") {
           const key = request.widgetKey;
           if (!key) break;
+          // Defense-in-depth: bridge already drops these TUI HUDs.
+          if (key === "subagent-fleet-status" || key === "subagent-async") {
+            extensionWidgetMapRef.current.delete(key);
+            setExtensionWidgets(Array.from(extensionWidgetMapRef.current.values()));
+            break;
+          }
           if (request.widgetLines === undefined) {
             extensionWidgetMapRef.current.delete(key);
           } else {

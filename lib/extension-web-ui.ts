@@ -38,6 +38,19 @@ function stripAnsi(text: string): string {
 }
 
 /**
+ * pi-subagents TUI HUDs that overlap the top-bar SubagentPanel.
+ * Drop them in WebUI so we skip factory materialization + SSE churn.
+ */
+const SUPPRESSED_EXTENSION_WIDGET_KEYS = new Set([
+  "subagent-fleet-status",
+  "subagent-async",
+]);
+
+export function isSuppressedExtensionWidgetKey(key: string): boolean {
+  return SUPPRESSED_EXTENSION_WIDGET_KEYS.has(key);
+}
+
+/**
  * Convert setWidget content to plain text lines for the Web UI.
  * Supports string arrays and TUI component factories (e.g. manage_todo_list).
  */
@@ -130,6 +143,9 @@ export class ExtensionWebUiBridge {
         this.emitUnsupported("setHiddenThinkingLabel");
       },
       setWidget: (key, content, options) => {
+        // Top-bar SubagentPanel owns subagent observability in WebUI.
+        if (isSuppressedExtensionWidgetKey(key)) return;
+
         if (content === undefined) {
           this.emit({
             type: "extension_ui_request",

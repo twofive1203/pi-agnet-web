@@ -39,6 +39,12 @@ function isPowerbarExtensionItem(item: { key: string }): boolean {
   return key === "powerbar" || key.startsWith("powerbar:");
 }
 
+/** pi-subagents TUI HUDs superseded by the top-bar SubagentPanel. */
+function isSuppressedSubagentWidget(item: { key: string }): boolean {
+  const key = item.key.toLowerCase();
+  return key === "subagent-fleet-status" || key === "subagent-async";
+}
+
 function phaseLabel(phase: AgentPhase): string {
   if (phase?.kind === "running_tools") {
     const names = phase.tools.map((t) => t.name);
@@ -183,7 +189,9 @@ export const ChatWindow = memo(function ChatWindow({ session, newSessionCwd, onA
   const visibleMessages = messages.filter((m) => m.role === "user" || m.role === "assistant");
   const messageRefs = useMessageRefs(visibleMessages.length);
   const visibleExtensionStatuses = extensionStatuses.filter((item) => !isPowerbarExtensionItem(item));
-  const visibleExtensionWidgets = extensionWidgets.filter((item) => !isPowerbarExtensionItem(item));
+  const visibleExtensionWidgets = extensionWidgets.filter(
+    (item) => !isPowerbarExtensionItem(item) && !isSuppressedSubagentWidget(item),
+  );
   const todoWidget = visibleExtensionWidgets.find(isTodoWidget) ?? null;
 
   const isEmptyNew = isNew && messages.length === 0 && !streamState.isStreaming && !agentRunning;
