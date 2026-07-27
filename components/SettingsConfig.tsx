@@ -1,25 +1,19 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { TrellisWorkflowVisualizer } from "./TrellisWorkflowVisualizer";
 import { AgentsConfig } from "./AgentsConfig";
 import { ExtensionsConfig } from "./ExtensionsConfig";
 import type {
   PiWebChatGptConfig,
   PiWebConfig,
   PiWebEditorConfig,
-  PiWebSubagentAgentConfig,
-  PiWebSubagentDifficultyTier,
   PiWebSubagentModelRef,
-  PiWebSubagentModality,
   PiWebSubagentRunPolicy,
   PiWebTerminalConfig,
-  PiWebTrellisConfig,
   PiWebUsageConfig,
   PiWebWorkflowConfig,
   PiWebWorktreeConfig,
 } from "@/lib/pi-web-config";
-import type { TrellisCommandResponse, TrellisSetupStatus } from "@/lib/trellis-setup-types";
 import type { WorkflowSetupCommandResponse, WorkflowSetupStatus } from "@/lib/workflow-setup";
 import { useI18n } from "@/components/I18nProvider";
 import type { Locale } from "@/lib/i18n";
@@ -31,15 +25,6 @@ interface WebConfigResponse {
   exists: boolean;
   parseError?: string;
   error?: string;
-}
-
-interface TrellisStatusResponse {
-  status?: TrellisSetupStatus;
-  error?: string;
-}
-
-interface TrellisActionResponse extends TrellisCommandResponse {
-  config?: PiWebConfig;
 }
 
 interface WorkflowStatusResponse {
@@ -86,23 +71,10 @@ const TEMPLATE_VARIABLES = [
   { token: "{yyyyMMdd-HHmmss}", descriptionKey: "settings.pathVarsTimestamp" },
 ];
 
-type SettingsSection = "language" | "worktree" | "usage" | "terminal" | "chatgpt" | "grok" | "editor" | "agents" | "workflow" | "trellis" | "extensions";
+type SettingsSection = "language" | "worktree" | "usage" | "terminal" | "chatgpt" | "grok" | "editor" | "agents" | "workflow" | "extensions";
 type SubagentThinkingOption = PiWebSubagentRunPolicy["thinking"];
 
-const SUBAGENT_AGENT_NAMES = ["trellis-implement", "trellis-check", "trellis-research"];
 const SUBAGENT_THINKING_OPTIONS: SubagentThinkingOption[] = ["inherit", "off", "minimal", "low", "medium", "high", "xhigh"];
-const SUBAGENT_MODALITIES: PiWebSubagentModality[] = ["text", "multimodal"];
-const SUBAGENT_TIERS: PiWebSubagentDifficultyTier[] = ["simple", "standard", "complex", "critical"];
-const SUBAGENT_MODALITY_LABEL_KEYS: Record<PiWebSubagentModality, string> = {
-  text: "settings.textTask",
-  multimodal: "settings.multimodalTask",
-};
-const SUBAGENT_TIER_LABEL_KEYS: Record<PiWebSubagentDifficultyTier, string> = {
-  simple: "settings.tierSimple",
-  standard: "settings.tierStandard",
-  complex: "settings.tierComplex",
-  critical: "settings.tierCritical",
-};
 
 function formatModelValue(model: PiWebSubagentModelRef): string {
   if (model.mode !== "specific") return model.mode;
@@ -364,14 +336,6 @@ function parseRawEnv(text: string, translate: (key: string, params?: Record<stri
   return { env, errors };
 }
 
-function formatRecommendedAction(status: TrellisSetupStatus, t: (key: string) => string): string {
-  if (status.recommendedAction === "fix-prerequisites") return t("settings.finishPrereqs");
-  if (status.recommendedAction === "initialize") return t("settings.noTrellisYet");
-  if (status.recommendedAction === "update") return t("settings.hasTrellisUpdate");
-  if (status.recommendedAction === "ready") return t("settings.trellisReady");
-  return t("settings.selectWorkspace");
-}
-
 function formatWorkflowRecommendedAction(status: WorkflowSetupStatus, t: (key: string) => string): string {
   if (status.recommendedAction === "initialize") return t("settings.workflowNeedsInit");
   if (status.recommendedAction === "update") return t("settings.workflowNeedsUpdate");
@@ -386,11 +350,6 @@ function worktreeConfigsEqual(a: PiWebWorktreeConfig | null, b: PiWebWorktreeCon
     && a.baseDirTemplate === b.baseDirTemplate
     && a.pathTemplate === b.pathTemplate
     && a.sessionDisplay === b.sessionDisplay;
-}
-
-function trellisConfigsEqual(a: PiWebTrellisConfig | null, b: PiWebTrellisConfig | null): boolean {
-  if (!a || !b) return a === b;
-  return JSON.stringify(a) === JSON.stringify(b);
 }
 
 function workflowConfigsEqual(a: PiWebWorkflowConfig | null, b: PiWebWorkflowConfig | null): boolean {
@@ -428,8 +387,6 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
   const [defaults, setDefaults] = useState<PiWebConfig | null>(null);
   const [worktree, setWorktree] = useState<PiWebWorktreeConfig | null>(null);
   const [savedWorktree, setSavedWorktree] = useState<PiWebWorktreeConfig | null>(null);
-  const [trellis, setTrellis] = useState<PiWebTrellisConfig | null>(null);
-  const [savedTrellis, setSavedTrellis] = useState<PiWebTrellisConfig | null>(null);
   const [workflow, setWorkflow] = useState<PiWebWorkflowConfig | null>(null);
   const [savedWorkflow, setSavedWorkflow] = useState<PiWebWorkflowConfig | null>(null);
   const [usage, setUsage] = useState<PiWebUsageConfig | null>(null);
@@ -446,12 +403,6 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
   const [savedEditor, setSavedEditor] = useState<PiWebEditorConfig | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [trellisStatus, setTrellisStatus] = useState<TrellisSetupStatus | null>(null);
-  const [trellisStatusLoading, setTrellisStatusLoading] = useState(false);
-  const [trellisStatusError, setTrellisStatusError] = useState<string | null>(null);
-  const [trellisAction, setTrellisAction] = useState<"init" | "update" | null>(null);
-  const [trellisOutput, setTrellisOutput] = useState<string | null>(null);
-  const [trellisWorkflowOpen, setTrellisWorkflowOpen] = useState(false);
   const [workflowStatus, setWorkflowStatus] = useState<WorkflowSetupStatus | null>(null);
   const [workflowStatusLoading, setWorkflowStatusLoading] = useState(false);
   const [workflowStatusError, setWorkflowStatusError] = useState<string | null>(null);
@@ -459,12 +410,10 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
   const [workflowOutput, setWorkflowOutput] = useState<string | null>(null);
   const [modelList, setModelList] = useState<ModelListItem[]>([]);
   const [modelsError, setModelsError] = useState<string | null>(null);
-  const [developerName, setDeveloperName] = useState("");
-  const [developerNameTouched, setDeveloperNameTouched] = useState(false);
 
   const dirty = useMemo(
-    () => !worktreeConfigsEqual(worktree, savedWorktree) || !trellisConfigsEqual(trellis, savedTrellis) || !workflowConfigsEqual(workflow, savedWorkflow) || !usageConfigsEqual(usage, savedUsage) || !terminalConfigsEqual(terminal, savedTerminal) || !chatGptConfigsEqual(chatgpt, savedChatgpt) || JSON.stringify(grok) !== JSON.stringify(savedGrok) || !editorConfigsEqual(editor, savedEditor),
-    [worktree, savedWorktree, trellis, savedTrellis, workflow, savedWorkflow, usage, savedUsage, terminal, savedTerminal, chatgpt, savedChatgpt, grok, savedGrok, editor, savedEditor],
+    () => !worktreeConfigsEqual(worktree, savedWorktree) || !workflowConfigsEqual(workflow, savedWorkflow) || !usageConfigsEqual(usage, savedUsage) || !terminalConfigsEqual(terminal, savedTerminal) || !chatGptConfigsEqual(chatgpt, savedChatgpt) || JSON.stringify(grok) !== JSON.stringify(savedGrok) || !editorConfigsEqual(editor, savedEditor),
+    [worktree, savedWorktree, workflow, savedWorkflow, usage, savedUsage, terminal, savedTerminal, chatgpt, savedChatgpt, grok, savedGrok, editor, savedEditor],
   );
 
   const loadConfig = useCallback(async (signal?: AbortSignal) => {
@@ -478,8 +427,6 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
       setDefaults(data.defaults);
       setWorktree(data.config.worktree);
       setSavedWorktree(data.config.worktree);
-      setTrellis(data.config.trellis);
-      setSavedTrellis(data.config.trellis);
       setWorkflow(data.config.workflow);
       setSavedWorkflow(data.config.workflow);
       setUsage(data.config.usage);
@@ -519,31 +466,6 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
     }
   }, []);
 
-  const loadTrellisStatus = useCallback(async (signal?: AbortSignal) => {
-    if (!cwd) {
-      setTrellisStatus(null);
-      setTrellisStatusError(null);
-      setTrellisStatusLoading(false);
-      return;
-    }
-    setTrellisStatusLoading(true);
-    setTrellisStatusError(null);
-    try {
-      const res = await fetch(`/api/trellis/setup/status?cwd=${encodeURIComponent(cwd)}`, { signal });
-      const data = await res.json() as TrellisStatusResponse;
-      if (!res.ok || data.error || !data.status) throw new Error(data.error ?? `HTTP ${res.status}`);
-      const status = data.status;
-      setTrellisStatus(status);
-      setDeveloperName((prev) => (!developerNameTouched || !prev.trim()) ? status.suggestedDeveloperName : prev);
-    } catch (err) {
-      if ((err as { name?: string }).name === "AbortError") return;
-      setTrellisStatus(null);
-      setTrellisStatusError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setTrellisStatusLoading(false);
-    }
-  }, [cwd, developerNameTouched]);
-
   const loadWorkflowStatus = useCallback(async (signal?: AbortSignal) => {
     if (!cwd) {
       setWorkflowStatus(null);
@@ -574,28 +496,19 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
   }, [loadConfig]);
 
   useEffect(() => {
-    setDeveloperName("");
-    setDeveloperNameTouched(false);
-    setTrellisOutput(null);
     setWorkflowOutput(null);
   }, [cwd]);
 
   useEffect(() => {
-    if (section !== "trellis" && section !== "terminal" && section !== "workflow") return;
+    if (section !== "terminal" && section !== "workflow") return;
     const controller = new AbortController();
-    if (section === "trellis") void loadTrellisStatus(controller.signal);
     if (section === "workflow") void loadWorkflowStatus(controller.signal);
-    if (section === "trellis" || section === "terminal") void loadModels(controller.signal);
+    if (section === "terminal") void loadModels(controller.signal);
     return () => controller.abort();
-  }, [section, loadModels, loadTrellisStatus, loadWorkflowStatus]);
+  }, [section, loadModels, loadWorkflowStatus]);
 
   const updateWorktree = useCallback((patch: Partial<PiWebWorktreeConfig>) => {
     setWorktree((prev) => prev ? { ...prev, ...patch } : prev);
-    setNotice(null);
-  }, []);
-
-  const updateTrellis = useCallback((patch: Partial<PiWebTrellisConfig>) => {
-    setTrellis((prev) => prev ? { ...prev, ...patch } : prev);
     setNotice(null);
   }, []);
 
@@ -700,93 +613,10 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
     setNotice(null);
   }, []);
 
-  const updateDefaultSubagentPolicy = useCallback((patch: Partial<PiWebSubagentRunPolicy>) => {
-    setTrellis((prev) => prev ? {
-      ...prev,
-      subagents: {
-        ...prev.subagents,
-        defaultPolicy: { ...prev.subagents.defaultPolicy, ...patch },
-      },
-    } : prev);
-    setNotice(null);
-  }, []);
-
-  const updateWorkflowAssistantPolicy = useCallback((patch: Partial<PiWebSubagentRunPolicy>) => {
-    setTrellis((prev) => prev ? {
-      ...prev,
-      workflowAssistant: { ...prev.workflowAssistant, ...patch },
-    } : prev);
-    setNotice(null);
-  }, []);
-
-  const updateWorkflowAssistantFallbackPolicy = useCallback((patch: Partial<PiWebSubagentRunPolicy>) => {
-    setTrellis((prev) => prev ? {
-      ...prev,
-      workflowAssistantFallback: { ...prev.workflowAssistantFallback, ...patch },
-    } : prev);
-    setNotice(null);
-  }, []);
-
-  const updateSubagentConfig = useCallback((patch: Partial<PiWebTrellisConfig["subagents"]>) => {
-    setTrellis((prev) => prev ? {
-      ...prev,
-      subagents: { ...prev.subagents, ...patch },
-    } : prev);
-    setNotice(null);
-  }, []);
-
-  const updateSubagentAgent = useCallback((agent: string, patch: Partial<PiWebSubagentAgentConfig>) => {
-    setTrellis((prev) => {
-      if (!prev) return prev;
-      const current = prev.subagents.agents[agent] ?? { strategy: "default" as const };
-      return {
-        ...prev,
-        subagents: {
-          ...prev.subagents,
-          agents: {
-            ...prev.subagents.agents,
-            [agent]: { ...current, ...patch },
-          },
-        },
-      };
-    });
-    setNotice(null);
-  }, []);
-
-  const updateRouter = useCallback((patch: Partial<PiWebTrellisConfig["subagents"]["router"]>) => {
-    setTrellis((prev) => prev ? {
-      ...prev,
-      subagents: {
-        ...prev.subagents,
-        router: { ...prev.subagents.router, ...patch },
-      },
-    } : prev);
-    setNotice(null);
-  }, []);
-
-  const updateRoutePolicy = useCallback((modality: PiWebSubagentModality, tier: PiWebSubagentDifficultyTier, patch: Partial<PiWebSubagentRunPolicy>) => {
-    setTrellis((prev) => prev ? {
-      ...prev,
-      subagents: {
-        ...prev.subagents,
-        routes: {
-          ...prev.subagents.routes,
-          [modality]: {
-            ...prev.subagents.routes[modality],
-            [tier]: { ...prev.subagents.routes[modality][tier], ...patch },
-          },
-        },
-      },
-    } : prev);
-    setNotice(null);
-  }, []);
-
   const applyLoadedConfig = useCallback((config: PiWebConfig, path: string, configExists: boolean, nextDefaults?: PiWebConfig) => {
     if (nextDefaults) setDefaults(nextDefaults);
     setWorktree(config.worktree);
     setSavedWorktree(config.worktree);
-    setTrellis(config.trellis);
-    setSavedTrellis(config.trellis);
     setWorkflow(config.workflow);
     setSavedWorkflow(config.workflow);
     setUsage(config.usage);
@@ -805,7 +635,7 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
   }, [onConfigChange]);
 
   const saveConfig = useCallback(async (successNotice?: string): Promise<boolean> => {
-    if (!worktree || !trellis || !workflow || !usage || !terminal || !chatgpt || !grok || !editor) return false;
+    if (!worktree || !workflow || !usage || !terminal || !chatgpt || !grok || !editor) return false;
     setSaving(true);
     setError(null);
     setNotice(null);
@@ -813,7 +643,8 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
       const res = await fetch("/api/web-config", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ worktree, trellis, workflow, usage, terminal, chatgpt, grok, editor }),
+        // Intentionally omit legacy trellis so inert pi-web.json.trellis data is preserved.
+        body: JSON.stringify({ worktree, workflow, usage, terminal, chatgpt, grok, editor }),
       });
       const data = await res.json() as WebConfigResponse & { success?: boolean };
       if (!res.ok || data.error) throw new Error(data.error ?? `HTTP ${res.status}`);
@@ -826,7 +657,7 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
     } finally {
       setSaving(false);
     }
-  }, [applyLoadedConfig, worktree, trellis, workflow, usage, terminal, chatgpt, grok, editor]);
+  }, [applyLoadedConfig, worktree, workflow, usage, terminal, chatgpt, grok, editor]);
 
   const handleSave = useCallback(async () => {
     await saveConfig(t("settings.savedToast"));
@@ -835,7 +666,6 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
   const resetToDefaults = useCallback(() => {
     if (!defaults) return;
     setWorktree(defaults.worktree);
-    setTrellis(defaults.trellis);
     setWorkflow(defaults.workflow);
     setUsage(defaults.usage);
     setTerminal(defaults.terminal);
@@ -845,57 +675,9 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
     setNotice(t("settings.restoredDefaults"));
   }, [defaults, t]);
 
-  const runTrellisSetupAction = useCallback(async (action: "init" | "update") => {
-    if (!cwd || !trellis) return;
-    if (dirty) {
-      const saved = await saveConfig();
-      if (!saved) return;
-    }
-    setTrellisAction(action);
-    setError(null);
-    setNotice(null);
-    setTrellisOutput(null);
-    try {
-      const res = await fetch(`/api/trellis/setup/${action}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(action === "init" ? { cwd, developerName: developerName.trim() } : { cwd }),
-      });
-      const data = await res.json() as TrellisActionResponse;
-      if (!res.ok || data.error || !data.status) throw new Error(data.error ?? `HTTP ${res.status}`);
-      setTrellisStatus(data.status);
-      setTrellisOutput(data.output || t("settings.operationDone"));
-      if (data.config) {
-        setWorktree(data.config.worktree);
-        setSavedWorktree(data.config.worktree);
-        setTrellis(data.config.trellis);
-        setSavedTrellis(data.config.trellis);
-        setUsage(data.config.usage);
-        setSavedUsage(data.config.usage);
-        setTerminal(data.config.terminal);
-        setSavedTerminal(data.config.terminal);
-        setChatgpt(data.config.chatgpt);
-        setSavedChatgpt(data.config.chatgpt);
-        setGrok(data.config.grok);
-        setSavedGrok(data.config.grok);
-        setEditor(data.config.editor);
-        setSavedEditor(data.config.editor);
-        onConfigChange?.();
-      }
-      setNotice(action === "init" ? t("settings.trellisInitialized") : t("settings.trellisUpdated"));
-      void loadTrellisStatus();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setTrellisAction(null);
-    }
-  }, [cwd, developerName, dirty, loadTrellisStatus, onConfigChange, saveConfig, trellis, t]);
-
   const applyConfigFromResponse = useCallback((config: PiWebConfig) => {
     setWorktree(config.worktree);
     setSavedWorktree(config.worktree);
-    setTrellis(config.trellis);
-    setSavedTrellis(config.trellis);
     setWorkflow(config.workflow);
     setSavedWorkflow(config.workflow);
     setUsage(config.usage);
@@ -965,17 +747,6 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
       </button>
     );
   };
-
-  const trellisBusy = !!trellisAction || saving;
-  const trellisBlockingReason = !cwd
-    ? t("settings.selectWorkspaceFirst")
-    : trellisStatusError
-      ? trellisStatusError
-      : !developerName.trim()
-        ? t("settings.enterDeveloperName")
-        : trellisStatus?.blockingReasons[0] ?? null;
-  const canInitializeTrellis = !!cwd && !!trellisStatus?.canInitialize && !!developerName.trim() && !trellisBusy && !trellisStatusLoading;
-  const canUpdateTrellis = !!cwd && !!trellisStatus?.canUpdate && !trellisBusy && !trellisStatusLoading;
 
   const workflowBusy = !!workflowAction || saving;
   const workflowBlockingReason = !cwd
@@ -1049,13 +820,12 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
             {renderSectionButton("agents", t("settings.sectionAgents"), t("settings.agentsSection"))}
             {renderSectionButton("workflow", "SnFlow", t("settings.workflowSection"))}
             {renderSectionButton("extensions", "Extensions", t("settings.extensionsSection"))}
-            {renderSectionButton("trellis", "Trellis", t("settings.trellisSection"))}
           </div>
 
           <div style={{ padding: 18, overflow: "auto", flex: 1 }}>
             {loading ? (
               <div style={{ color: "var(--text-muted)", fontSize: 13 }}>{t("settings.loadingSettings")}</div>
-            ) : worktree && trellis && workflow && usage && terminal && chatgpt && editor ? (
+            ) : worktree && workflow && usage && terminal && chatgpt && editor ? (
               <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
                 {error && <div style={{ padding: "8px 10px", borderRadius: 8, background: "rgba(239,68,68,0.12)", color: "#f87171", fontSize: 12, overflowWrap: "anywhere" }}>{error}</div>}
                 {notice && <div style={{ padding: "8px 10px", borderRadius: 8, background: "rgba(37,99,235,0.12)", color: "var(--accent)", fontSize: 12, overflowWrap: "anywhere" }}>{notice}</div>}
@@ -1591,314 +1361,7 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
                       </pre>
                     )}
                   </div>
-                ) : (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                    <div style={{ padding: 12, borderRadius: 10, background: "var(--bg-subtle)", border: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: 8 }}>
-                      <div>
-                        <h3 style={{ margin: 0, color: "var(--text)", fontSize: 15 }}>{t("settings.trellisSection")}</h3>
-                        <p style={{ margin: "5px 0 0", color: "var(--text-muted)", fontSize: 12, lineHeight: 1.5 }}>
-                          {t("settings.trellisDescription")}
-                        </p>
-                      </div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-                        <a href="https://docs.trytrellis.app/" target="_blank" rel="noreferrer" style={{ color: "var(--accent)", fontSize: 12, fontWeight: 700, textDecoration: "none" }}>
-                          {t("settings.openDocs")}
-                        </a>
-                        <button
-                          type="button"
-                          onClick={() => setTrellisWorkflowOpen(true)}
-                          disabled={!cwd}
-                          title={cwd ? t("settings.viewWorkflow") : t("settings.selectWorkspaceShort")}
-                          style={{ background: "none", border: "none", padding: 0, color: cwd ? "var(--accent)" : "var(--text-dim)", fontSize: 12, fontWeight: 700, cursor: cwd ? "pointer" : "not-allowed" }}
-                        >
-                          {t("settings.workflowDesign")}
-                        </button>
-                      </div>
-                      <div style={{ color: "var(--text-dim)", fontSize: 11, overflowWrap: "anywhere" }}>
-                        {t("settings.currentWorkspace")}{cwd ? <code style={{ fontFamily: "var(--font-mono)", color: "var(--text-muted)" }}>{cwd}</code> : t("settings.notSelected")}
-                      </div>
-                    </div>
-
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                      <ToggleField
-                        label={t("settings.enableTrellis")}
-                        description={t("settings.enableTrellisHint")}
-                        checked={trellis.enabled}
-                        onChange={(enabled) => updateTrellis({ enabled })}
-                      />
-                      <ToggleField
-                        label={t("settings.defaultIncludeArchivedTasks")}
-                        description={t("settings.defaultIncludeArchivedTasksHint")}
-                        checked={trellis.includeArchived}
-                        onChange={(includeArchived) => updateTrellis({ includeArchived })}
-                      />
-                    </div>
-
-                    <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: 12, borderRadius: 10, background: "var(--bg-subtle)", border: "1px solid var(--border)" }}>
-                      <ToggleField
-                        label={t("settings.proxyEnable")}
-                        description={t("settings.proxyHint")}
-                        checked={trellis.proxyEnabled}
-                        onChange={(proxyEnabled) => updateTrellis({ proxyEnabled })}
-                      />
-                      <Field label={t("settings.proxyUrl")} description={t("settings.proxyExample")}>
-                        <TextInput value={trellis.proxyUrl} onChange={(proxyUrl) => updateTrellis({ proxyUrl })} placeholder="http://127.0.0.1:7890" disabled={!trellis.proxyEnabled} />
-                      </Field>
-                    </div>
-
-                    <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: 12, borderRadius: 10, background: "var(--bg-subtle)", border: "1px solid var(--border)" }}>
-                      <div>
-                        <div style={{ color: "var(--text)", fontSize: 13, fontWeight: 800 }}>{t("settings.workflowAssistantTitle")}</div>
-                        <div style={{ color: "var(--text-muted)", fontSize: 11, marginTop: 3, lineHeight: 1.45 }}>
-                          {t("settings.workflowAssistantDesc")}
-                        </div>
-                      </div>
-                      <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 12 }}>
-                        <Field label={t("settings.assistModel")} description={t("settings.followMainFallbackHint")}>
-                          <ModelPolicySelect
-                            value={trellis.workflowAssistant.model}
-                            onChange={(model) => updateWorkflowAssistantPolicy({ model })}
-                            models={modelList}
-                          />
-                        </Field>
-                        <Field label={t("settings.thinkingLevel")} description={t("settings.assistModelHint")}>
-                          <ThinkingSelect
-                            value={trellis.workflowAssistant.thinking}
-                            onChange={(thinking) => updateWorkflowAssistantPolicy({ thinking })}
-                          />
-                        </Field>
-                      </div>
-                      <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 12 }}>
-                        <Field label={t("settings.fallbackModel")} description={t("settings.assistFallbackHint")}>
-                          <ModelPolicySelect
-                            value={trellis.workflowAssistantFallback.model}
-                            onChange={(model) => updateWorkflowAssistantFallbackPolicy({ model })}
-                            models={modelList}
-                          />
-                        </Field>
-                        <Field label={t("settings.fallbackThinking")} description={t("settings.keepMinimalLow")}>
-                          <ThinkingSelect
-                            value={trellis.workflowAssistantFallback.thinking}
-                            onChange={(thinking) => updateWorkflowAssistantFallbackPolicy({ thinking })}
-                          />
-                        </Field>
-                      </div>
-                    </div>
-
-                    <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: 12, borderRadius: 10, background: "var(--bg-subtle)", border: "1px solid var(--border)" }}>
-                      <div>
-                        <div style={{ color: "var(--text)", fontSize: 13, fontWeight: 800 }}>{t("settings.subagentRoutingTitle")}</div>
-                        <div style={{ color: "var(--text-muted)", fontSize: 11, marginTop: 3, lineHeight: 1.45 }}>
-                          {t("settings.subagentRoutingDesc")}
-                        </div>
-                      </div>
-                      {modelsError && <div style={{ padding: "7px 9px", borderRadius: 7, background: "rgba(239,68,68,0.12)", color: "#f87171", fontSize: 11 }}>{modelsError}</div>}
-                      <ToggleField
-                        label={t("settings.enableSubagentModels")}
-                        description={t("settings.enableSubagentModelsHint")}
-                        checked={trellis.subagents.enabled}
-                        onChange={(enabled) => updateSubagentConfig({ enabled })}
-                      />
-                      <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 12 }}>
-                        <Field label={t("settings.defaultSubagentModel")} description={t("settings.defaultPolicyHint")}>
-                          <ModelPolicySelect
-                            value={trellis.subagents.defaultPolicy.model}
-                            onChange={(model) => updateDefaultSubagentPolicy({ model })}
-                            models={modelList}
-                            disabled={!trellis.subagents.enabled}
-                          />
-                        </Field>
-                        <Field label={t("settings.defaultThinking")} description={t("settings.thinkingFollowHint")}>
-                          <ThinkingSelect
-                            value={trellis.subagents.defaultPolicy.thinking}
-                            onChange={(thinking) => updateDefaultSubagentPolicy({ thinking })}
-                            disabled={!trellis.subagents.enabled}
-                          />
-                        </Field>
-                      </div>
-                      <div style={{ display: "flex", flexDirection: "column", gap: 10, paddingTop: 4, borderTop: "1px solid var(--border)" }}>
-                        <ToggleField
-                          label={t("settings.enableAutoRoute")}
-                          description={t("settings.enableAutoRouteHint")}
-                          checked={trellis.subagents.router.enabled}
-                          onChange={(enabled) => updateRouter({ enabled })}
-                          disabled={!trellis.subagents.enabled}
-                        />
-                        <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 12 }}>
-                          <Field label={t("settings.routerModel")} description={t("settings.routerModelHint")}>
-                            <ModelPolicySelect
-                              value={trellis.subagents.router.model}
-                              onChange={(model) => updateRouter({ model })}
-                              models={modelList}
-                              disabled={!trellis.subagents.enabled || !trellis.subagents.router.enabled}
-                            />
-                          </Field>
-                          <Field label={t("settings.routerThinking")} description={t("settings.routerThinkingHint")}>
-                            <ThinkingSelect
-                              value={trellis.subagents.router.thinking}
-                              onChange={(thinking) => updateRouter({ thinking })}
-                              disabled={!trellis.subagents.enabled || !trellis.subagents.router.enabled}
-                            />
-                          </Field>
-                        </div>
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                          <Field label={t("settings.routerFallbackType")} description={t("settings.routerFailFallback")}>
-                            <select
-                              value={trellis.subagents.router.fallbackOnError.modality}
-                              onChange={(e) => updateRouter({ fallbackOnError: { ...trellis.subagents.router.fallbackOnError, modality: e.target.value as PiWebSubagentModality } })}
-                              disabled={!trellis.subagents.enabled || !trellis.subagents.router.enabled}
-                              style={inputStyle}
-                            >
-                              <option value="text">{t("settings.textTask")}</option>
-                              <option value="multimodal">{t("settings.multimodalTask")}</option>
-                            </select>
-                          </Field>
-                          <Field label={t("settings.routerFallbackTier")} description={t("settings.routerFallbackHint")}>
-                            <select
-                              value={trellis.subagents.router.fallbackOnError.tier}
-                              onChange={(e) => updateRouter({ fallbackOnError: { ...trellis.subagents.router.fallbackOnError, tier: e.target.value as PiWebSubagentDifficultyTier } })}
-                              disabled={!trellis.subagents.enabled || !trellis.subagents.router.enabled}
-                              style={inputStyle}
-                            >
-                              {SUBAGENT_TIERS.map((tier) => <option key={tier} value={tier}>{t(SUBAGENT_TIER_LABEL_KEYS[tier])}</option>)}
-                            </select>
-                          </Field>
-                        </div>
-                      </div>
-
-                      <div style={{ display: "flex", flexDirection: "column", gap: 8, paddingTop: 4, borderTop: "1px solid var(--border)" }}>
-                        <div style={{ fontSize: 12, color: "var(--text)", fontWeight: 700 }}>{t("settings.routingTableTitle")}</div>
-                        <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.45 }}>{t("settings.routingTableDesc")}</div>
-                        {SUBAGENT_MODALITIES.map((modality) => (
-                          <div key={modality} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                            <div style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 700 }}>{t(SUBAGENT_MODALITY_LABEL_KEYS[modality])}</div>
-                            {SUBAGENT_TIERS.map((tier) => {
-                              const policy = trellis.subagents.routes[modality][tier];
-                              return (
-                                <div key={`${modality}-${tier}`} style={{ display: "grid", gridTemplateColumns: "90px minmax(180px, 1fr) 120px", gap: 8, alignItems: "center" }}>
-                                  <span title={tier} style={{ fontSize: 11, color: "var(--text-dim)" }}>{t(SUBAGENT_TIER_LABEL_KEYS[tier])}</span>
-                                  <ModelPolicySelect
-                                    value={policy.model}
-                                    onChange={(model) => updateRoutePolicy(modality, tier, { model })}
-                                    models={modelList}
-                                    disabled={!trellis.subagents.enabled || !trellis.subagents.router.enabled}
-                                  />
-                                  <ThinkingSelect
-                                    value={policy.thinking}
-                                    onChange={(thinking) => updateRoutePolicy(modality, tier, { thinking })}
-                                    disabled={!trellis.subagents.enabled || !trellis.subagents.router.enabled}
-                                  />
-                                </div>
-                              );
-                            })}
-                          </div>
-                        ))}
-                      </div>
-
-                      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                        <div style={{ fontSize: 12, color: "var(--text)", fontWeight: 700 }}>{t("settings.perAgentOverrideTitle")}</div>
-                        {SUBAGENT_AGENT_NAMES.map((agent) => {
-                          const agentConfig = trellis.subagents.agents[agent] ?? { strategy: "default" as const };
-                          const fixed = agentConfig.fixed ?? trellis.subagents.defaultPolicy;
-                          const fixedDisabled = !trellis.subagents.enabled || agentConfig.strategy !== "fixed";
-                          return (
-                            <div key={agent} style={{ display: "grid", gridTemplateColumns: "150px 120px minmax(180px, 1fr) 120px", gap: 8, alignItems: "center" }}>
-                              <code style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis" }}>{agent}</code>
-                              <select
-                                value={agentConfig.strategy}
-                                onChange={(e) => updateSubagentAgent(agent, { strategy: e.target.value as PiWebSubagentAgentConfig["strategy"] })}
-                                disabled={!trellis.subagents.enabled}
-                                style={{ ...inputStyle, opacity: trellis.subagents.enabled ? 1 : 0.6 }}
-                              >
-                                <option value="default">{t("settings.strategyDefault")}</option>
-                                <option value="route">{t("settings.strategyRoute")}</option>
-                                <option value="fixed">{t("settings.strategyFixed")}</option>
-                                <option value="disabled">{t("settings.disableHere")}</option>
-                              </select>
-                              <ModelPolicySelect
-                                value={fixed.model}
-                                onChange={(model) => updateSubagentAgent(agent, { fixed: { ...fixed, model } })}
-                                models={modelList}
-                                disabled={fixedDisabled}
-                              />
-                              <ThinkingSelect
-                                value={fixed.thinking}
-                                onChange={(thinking) => updateSubagentAgent(agent, { fixed: { ...fixed, thinking } })}
-                                disabled={fixedDisabled}
-                              />
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    <div style={{ padding: 12, borderRadius: 10, background: "var(--bg-subtle)", border: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: 10 }}>
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-                        <div>
-                          <div style={{ color: "var(--text)", fontSize: 13, fontWeight: 800 }}>{t("settings.trellisInspectionTitle")}</div>
-                          <div style={{ color: "var(--text-muted)", fontSize: 11, marginTop: 3 }}>{trellisStatus ? formatRecommendedAction(trellisStatus, t) : (cwd ? t("settings.checking") : t("settings.selectWorkspaceToInit"))}</div>
-                        </div>
-                        <button
-                          onClick={() => void loadTrellisStatus()}
-                          disabled={!cwd || trellisStatusLoading || trellisBusy}
-                          style={{ padding: "6px 10px", borderRadius: 7, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-muted)", cursor: !cwd || trellisStatusLoading || trellisBusy ? "not-allowed" : "pointer", fontSize: 12 }}
-                        >
-                          {trellisStatusLoading ? t("settings.checkingShort") : t("settings.recheck")}
-                        </button>
-                      </div>
-
-                      {trellisStatusError && <div style={{ padding: "8px 10px", borderRadius: 8, background: "rgba(239,68,68,0.12)", color: "#f87171", fontSize: 12, overflowWrap: "anywhere" }}>{trellisStatusError}</div>}
-                      {trellisStatus && (
-                        <div>
-                          <StatusRow label={t("settings.osLabel")} value={`${trellisStatus.platform}${trellisStatus.supportedOs ? "" : t("settings.unsupportedSuffix")}`} ok={trellisStatus.supportedOs} />
-                          <StatusRow label="Node.js" value={trellisStatus.node.version ?? t("settings.notDetected")} ok={trellisStatus.node.ok} detail={trellisStatus.node.required} />
-                          <StatusRow label="Python" value={trellisStatus.python.version ? `${trellisStatus.python.version} (${trellisStatus.python.command ?? "python"})` : (trellisStatus.python.error ?? t("settings.notDetected"))} ok={trellisStatus.python.ok} detail={trellisStatus.python.required} />
-                          <StatusRow label="Trellis CLI" value={trellisStatus.cli.installed ? (trellisStatus.cli.version ?? t("settings.installed")) : t("settings.notInstalled")} ok={trellisStatus.cli.installed} detail={trellisStatus.cli.error} />
-                          <StatusRow label={t("settings.projectTrellis")} value={trellisStatus.project.hasTrellisDir ? (trellisStatus.project.version ? t("settings.projectExistsVersion", { version: trellisStatus.project.version }) : t("settings.projectExists")) : t("settings.notInitialized")} ok={trellisStatus.project.hasTrellisDir} />
-                          <StatusRow label={t("settings.taskDir")} value={trellisStatus.project.hasTasksDir ? t("settings.tasksExist") : t("settings.notCreated")} ok={trellisStatus.project.hasTasksDir} />
-                          <StatusRow label={t("settings.developerIdentity")} value={trellisStatus.project.developerName ?? t("settings.notWrittenDeveloper")} ok={trellisStatus.project.hasDeveloperIdentity} />
-                        </div>
-                      )}
-                    </div>
-
-                    <Field label={t("settings.developerName")} description={t("settings.developerHint")}>
-                      <TextInput
-                        value={developerName}
-                        onChange={(value) => {
-                          setDeveloperNameTouched(true);
-                          setDeveloperName(value);
-                        }}
-                        placeholder="your-name"
-                      />
-                    </Field>
-
-                    <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-                      <button
-                        onClick={() => void runTrellisSetupAction("init")}
-                        disabled={!canInitializeTrellis}
-                        title={canInitializeTrellis ? t("settings.installInit") : trellisBlockingReason ?? t("settings.trellisInstalledUseUpdate")}
-                        style={{ padding: "8px 12px", borderRadius: 8, border: "none", background: canInitializeTrellis ? "var(--accent)" : "var(--border)", color: "white", cursor: canInitializeTrellis ? "pointer" : "not-allowed", fontSize: 12, fontWeight: 700 }}
-                      >
-                        {trellisAction === "init" ? t("settings.initializing") : t("settings.installInit")}
-                      </button>
-                      <button
-                        onClick={() => void runTrellisSetupAction("update")}
-                        disabled={!canUpdateTrellis}
-                        title={canUpdateTrellis ? t("settings.updateTrellis") : trellisBlockingReason ?? t("settings.noTrellisInitFirst")}
-                        style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--bg)", color: canUpdateTrellis ? "var(--text)" : "var(--text-dim)", cursor: canUpdateTrellis ? "pointer" : "not-allowed", fontSize: 12, fontWeight: 700 }}
-                      >
-                        {trellisAction === "update" ? t("settings.updating") : t("settings.updateTrellis")}
-                      </button>
-                      {!canInitializeTrellis && !canUpdateTrellis && trellisBlockingReason && <span style={{ color: "var(--text-dim)", fontSize: 11 }}>{trellisBlockingReason}</span>}
-                    </div>
-
-                    {trellisOutput && (
-                      <pre style={{ margin: 0, maxHeight: 180, overflow: "auto", padding: 10, borderRadius: 8, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-muted)", fontSize: 11, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-                        {trellisOutput}
-                      </pre>
-                    )}
-                  </div>
-                )}
+                ) : null}
               </div>
             ) : (
               <div style={{ color: "#f87171", fontSize: 13 }}>{error ?? t("settings.loadFailed")}</div>
@@ -1936,8 +1399,8 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
                 </button>
                 <button
                   onClick={() => void handleSave()}
-                  disabled={!worktree || !trellis || !usage || !terminal || !chatgpt || !grok || !editor || loading || saving || !dirty}
-                  style={{ padding: "7px 14px", borderRadius: 7, border: "none", background: !worktree || !trellis || !usage || !terminal || !chatgpt || !grok || !editor || loading || saving || !dirty ? "var(--border)" : "var(--accent)", color: "white", cursor: !worktree || !trellis || !usage || !terminal || !chatgpt || !grok || !editor || loading || saving || !dirty ? "not-allowed" : "pointer", fontSize: 12, fontWeight: 600 }}
+                  disabled={!worktree || !workflow || !usage || !terminal || !chatgpt || !grok || !editor || loading || saving || !dirty}
+                  style={{ padding: "7px 14px", borderRadius: 7, border: "none", background: !worktree || !workflow || !usage || !terminal || !chatgpt || !grok || !editor || loading || saving || !dirty ? "var(--border)" : "var(--accent)", color: "white", cursor: !worktree || !workflow || !usage || !terminal || !chatgpt || !grok || !editor || loading || saving || !dirty ? "not-allowed" : "pointer", fontSize: 12, fontWeight: 600 }}
                 >
                   {saving ? t("settings.saving") : t("settings.save")}
                 </button>
@@ -1947,7 +1410,6 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
         </div>
       </div>
     </div>
-    {trellisWorkflowOpen && <TrellisWorkflowVisualizer cwd={cwd} onClose={() => setTrellisWorkflowOpen(false)} />}
     </>
   );
 }

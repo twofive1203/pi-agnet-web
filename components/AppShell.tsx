@@ -15,8 +15,6 @@ import { ChatGptUsagePanel } from "./ChatGptUsagePanel";
 import { GrokUsagePanel } from "./GrokUsagePanel";
 import { SubagentPanel } from "./SubagentPanel";
 import { SettingsConfig } from "./SettingsConfig";
-import { TrellisPanel } from "./TrellisPanel";
-import { TrellisSessionWidget } from "./TrellisSessionWidget";
 import { WorkflowPanel } from "./WorkflowPanel";
 import { WorkflowSessionWidget } from "./WorkflowSessionWidget";
 import type { WorkflowTaskDetail } from "@/lib/workflow-types";
@@ -33,8 +31,6 @@ import { useI18n } from "@/components/I18nProvider";
 import { useAppDialog } from "@/components/AppDialogProvider";
 import type { GitInfo, SessionInfo, SessionTreeNode } from "@/lib/types";
 import type { PiWebConfig } from "@/lib/pi-web-config";
-import type { TrellisSessionTaskLinkResult, TrellisTaskDetail } from "@/lib/trellis-types";
-import { trellisTaskDetailToChatContext, type TrellisTaskChatContext } from "@/lib/trellis-chat-context";
 import type { ChatInputHandle } from "./ChatInput";
 
 const TOP_PANEL_SAFE_SELECTOR = ".app-top-aux-panel, .app-top-aux-tab, .branch-navigator-inline";
@@ -264,11 +260,11 @@ export function AppShell() {
     return () => ro.disconnect();
   }, [activeTopPanel]);
 
-  // Right panel — file tabs and optional Trellis task drawer
+  // Right panel — file tabs and optional SnFlow task drawer
   const [fileTabs, setFileTabs] = useState<Tab[]>([]);
   const [activeFileTabId, setActiveFileTabId] = useState<string | null>(null);
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
-  const [rightPanelMode, setRightPanelMode] = useState<"files" | "trellis" | "workflow">("files");
+  const [rightPanelMode, setRightPanelMode] = useState<"files" | "workflow">("files");
   const [rightPanelWidth, setRightPanelWidth] = useState(MIN_RIGHT_PANEL_WIDTH);
   const [rightPanelResizing, setRightPanelResizing] = useState(false);
   const [isDesktopLayout, setIsDesktopLayout] = useState(false);
@@ -276,10 +272,6 @@ export function AppShell() {
   const rightPanelWidthRef = useRef(rightPanelWidth);
   const rightPanelRef = useRef<HTMLDivElement>(null);
   const rightPanelResizable = isDesktopLayout && rightPanelInline;
-  const [focusedTrellisTaskKey, setFocusedTrellisTaskKey] = useState<string | null>(null);
-  const [trellisSessionTask, setTrellisSessionTask] = useState<TrellisSessionTaskLinkResult | null>(null);
-  const [trellisSessionTaskRefreshKey, setTrellisSessionTaskRefreshKey] = useState(0);
-  const [pendingTrellisTaskContext, setPendingTrellisTaskContext] = useState<TrellisTaskChatContext | null>(null);
   const [pendingWorkflowTaskContext, setPendingWorkflowTaskContext] = useState<WorkflowTaskChatContext | null>(null);
   const [focusedWorkflowTaskId, setFocusedWorkflowTaskId] = useState<string | null>(null);
   const [workflowCurrentTask, setWorkflowCurrentTask] = useState<{
@@ -491,7 +483,6 @@ export function AppShell() {
     setRefreshKey((k) => k + 1);
     setExplorerRefreshKey((k) => k + 1);
     setGitRefreshKey((k) => k + 1);
-    setTrellisSessionTaskRefreshKey((k) => k + 1);
   }, []);
 
   const handleSessionForked = useCallback((newSessionId: string) => {
@@ -586,35 +577,13 @@ export function AppShell() {
   const showPlaceholder = initialSessionRestored && !showChat;
 
   const activeFileTab = fileTabs.find((t) => t.id === activeFileTabId) ?? null;
-  const trellisEnabled = webConfig?.trellis.enabled ?? false;
   const terminalEnabled = webConfig?.terminal.enabled ?? false;
-  const trellisIncludeArchivedDefault = webConfig?.trellis.includeArchived ?? false;
   const workflowIncludeArchivedDefault = webConfig?.workflow.includeArchived ?? false;
-  const trellisCwd = activeCwd ?? selectedSession?.cwd ?? newSessionCwd;
+  const workspaceCwd = activeCwd ?? selectedSession?.cwd ?? newSessionCwd;
   const workflowCwd = selectedSession?.cwd ?? newSessionCwd ?? activeCwd;
   const terminalCwd = activeCwd ?? selectedSession?.cwd ?? newSessionCwd;
   const browserTitleCwd = selectedSession?.cwd ?? newSessionCwd ?? activeCwd;
   const browserTitleGit = selectedSession?.cwd === browserTitleCwd ? selectedSession.git : activeCwdGit;
-
-  const loadTrellisSessionTask = useCallback(async (signal?: AbortSignal) => {
-    if (!trellisEnabled || !selectedSession || selectedSession.archived) {
-      setTrellisSessionTask(null);
-      return;
-    }
-
-    try {
-      const res = await fetch(`/api/sessions/${encodeURIComponent(selectedSession.id)}/trellis-task`, { signal });
-      const data = await res.json() as TrellisSessionTaskLinkResult & { error?: string };
-      if (!res.ok || data.error) throw new Error(data.error ?? `HTTP ${res.status}`);
-      setTrellisSessionTask(data.task ? data : null);
-    } catch (error) {
-      if ((error as { name?: string }).name !== "AbortError") setTrellisSessionTask(null);
-    }
-  }, [selectedSession, trellisEnabled]);
-
-  useEffect(() => {
-    setFocusedTrellisTaskKey(null);
-  }, [selectedSession?.id]);
 
   useEffect(() => {
     setFocusedWorkflowTaskId(null);
@@ -625,67 +594,6 @@ export function AppShell() {
   useEffect(() => {
     setWorkflowCurrentTask(null);
   }, [selectedSession?.id]);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    void loadTrellisSessionTask(controller.signal);
-    return () => controller.abort();
-  }, [loadTrellisSessionTask, trellisSessionTaskRefreshKey]);
-
-  const trellisSessionTaskKey = trellisSessionTask?.task?.key ?? null;
-
-  useEffect(() => {
-    if (!trellisSessionTaskKey) return;
-    const interval = window.setInterval(() => {
-      setTrellisSessionTaskRefreshKey((key) => key + 1);
-    }, 10_000);
-    return () => window.clearInterval(interval);
-  }, [trellisSessionTaskKey]);
-
-  const handleOpenTrellisSessionTask = useCallback(() => {
-    if (!trellisSessionTask?.task) return;
-    setFocusedTrellisTaskKey(trellisSessionTask.task.key);
-    setRightPanelMode("trellis");
-    setRightPanelOpen(true);
-  }, [trellisSessionTask]);
-
-  const handleJoinTrellisTaskChat = useCallback((task: TrellisTaskDetail) => {
-    if (task.isArchived || !trellisCwd) return;
-
-    const context = trellisTaskDetailToChatContext(task);
-    setPendingTrellisTaskContext(context);
-
-    if (!selectedSession || selectedSession.cwd !== trellisCwd || selectedSession.archived) {
-      setSelectedSession(null);
-      setNewSessionCwd(trellisCwd);
-      setSessionKey((key) => key + 1);
-      setBranchTree([]);
-      setBranchActiveLeafId(null);
-      setSystemPrompt(null);
-      setActiveTopPanel(null);
-      router.replace("/", { scroll: false });
-    }
-  }, [router, selectedSession, trellisCwd]);
-
-  useEffect(() => {
-    if (!pendingTrellisTaskContext || !showChat) return;
-
-    let cancelled = false;
-    let attempts = 0;
-    const tryInsert = () => {
-      if (cancelled) return;
-      if (chatInputRef.current) {
-        chatInputRef.current.addTrellisTaskContext(pendingTrellisTaskContext);
-        setPendingTrellisTaskContext(null);
-        return;
-      }
-      attempts += 1;
-      if (attempts < 12) window.requestAnimationFrame(tryInsert);
-    };
-
-    window.requestAnimationFrame(tryInsert);
-    return () => { cancelled = true; };
-  }, [pendingTrellisTaskContext, sessionKey, showChat]);
 
   useEffect(() => {
     if (!pendingWorkflowTaskContext || !showChat) return;
@@ -792,14 +700,7 @@ export function AppShell() {
     }
   }, [workflowCwd, selectedSession?.id, handleWorkflowTaskCreated, appDialog, t]);
 
-  useEffect(() => {
-    if (!trellisEnabled && rightPanelMode === "trellis") {
-      setRightPanelMode("files");
-      if (fileTabs.length === 0) setRightPanelOpen(false);
-    }
-  }, [trellisEnabled, rightPanelMode, fileTabs.length]);
-
-  const rightToggleCount = 1 + (trellisEnabled ? 1 : 0) + 1; /* files + optional trellis + always-on SnFlow */
+  const rightToggleCount = 2; /* files + always-on SnFlow */
   const rightTogglePad = rightPanelOpen ? 12 : 12 + rightToggleCount * 36;
 
   useEffect(() => {
@@ -1413,7 +1314,7 @@ export function AppShell() {
                   background: "var(--bg-panel)",
                   borderBottom: "1px solid var(--border)",
                 }}>
-                  <GitPanel cwd={trellisCwd} refreshKey={gitRefreshKey} onDirtyChange={setGitDirty} />
+                  <GitPanel cwd={workspaceCwd} refreshKey={gitRefreshKey} onDirtyChange={setGitDirty} />
                 </div>
               )}
             </div>
@@ -1461,9 +1362,6 @@ export function AppShell() {
               </div>
             )
           ) : null}
-          {showChat && trellisSessionTask?.task && !(rightPanelOpen && rightPanelMode === "trellis" && focusedTrellisTaskKey === trellisSessionTask.task.key) && (
-            <TrellisSessionWidget task={trellisSessionTask.task} onClick={handleOpenTrellisSessionTask} />
-          )}
           {showChat && workflowCurrentTask?.task && !(rightPanelOpen && rightPanelMode === "workflow" && focusedWorkflowTaskId === workflowCurrentTask.task.id) && (
             <WorkflowSessionWidget
               task={workflowCurrentTask.task}
@@ -1494,7 +1392,7 @@ export function AppShell() {
         </div>
       </div>
 
-      {/* Right panel: file viewer or Trellis — always mounted, width animated via CSS */}
+      {/* Right panel: file viewer or SnFlow — always mounted, width animated via CSS */}
       <div
         ref={rightPanelRef}
         className={`right-panel-container${rightPanelOpen ? " right-panel-open" : " right-panel-closed"}${rightPanelResizing ? " right-panel-resizing" : ""}`}
@@ -1546,7 +1444,7 @@ export function AppShell() {
               )}
             </div>
           </>
-        ) : rightPanelMode === "workflow" ? (
+        ) : (
           <>
             <div style={{ display: "flex", alignItems: "center", flexShrink: 0, background: "var(--bg-panel)", borderBottom: "1px solid var(--border)", height: 36, padding: "0 12px", gap: 8 }}>
               <span style={{ color: "var(--text)", fontSize: 13, fontWeight: 700 }}>{t("workflow.panelTitle")}</span>
@@ -1562,20 +1460,10 @@ export function AppShell() {
               />
             </div>
           </>
-        ) : (
-          <>
-            <div style={{ display: "flex", alignItems: "center", flexShrink: 0, background: "var(--bg-panel)", borderBottom: "1px solid var(--border)", height: 36, padding: "0 12px", gap: 8 }}>
-              <span style={{ color: "var(--text)", fontSize: 13, fontWeight: 700 }}>{t("trellis.panelTitle")}</span>
-              {trellisCwd && <span title={trellisCwd} style={{ color: "var(--text-dim)", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{trellisCwd}</span>}
-            </div>
-            <div style={{ flex: 1, overflow: "hidden" }}>
-              <TrellisPanel cwd={trellisCwd} includeArchivedDefault={trellisIncludeArchivedDefault} focusedTaskKey={focusedTrellisTaskKey} onOpenFile={handleOpenFile} onJoinTaskChat={handleJoinTrellisTaskChat} />
-            </div>
-          </>
         )}
       </div>
     </div>
-    {/* Right panel mode toggles — Preview first, optional Trellis to its right. */}
+    {/* Right panel mode toggles — Preview first, SnFlow to its right. */}
     <div className="right-panel-toggle-strip" style={{ position: "fixed", top: 0, right: 0, zIndex: 300, display: "flex", flexDirection: "row" }}>
       <button
         className={`right-panel-toggle${rightPanelOpen && rightPanelMode === "files" ? " right-panel-toggle-active" : ""}`}
@@ -1606,7 +1494,7 @@ export function AppShell() {
       <button
           className={`right-panel-toggle${rightPanelOpen && rightPanelMode === "workflow" ? " right-panel-toggle-active" : ""}`}
           onClick={(e) => {
-            // Alt/Option+click: create SnFlow task from current chat (Trellis-like, no manual "+").
+            // Alt/Option+click: create SnFlow task from current chat without opening the panel create form.
             if (e.altKey && selectedSession?.id && workflowCwd) {
               void handleStartWorkflowFromChat();
               return;
@@ -1632,34 +1520,8 @@ export function AppShell() {
         >
           SF
         </button>
-      {trellisEnabled && (
-        <button
-          className={`right-panel-toggle${rightPanelOpen && rightPanelMode === "trellis" ? " right-panel-toggle-active" : ""}`}
-          onClick={() => {
-            if (rightPanelOpen && rightPanelMode === "trellis") setRightPanelOpen(false);
-            else {
-              setRightPanelMode("trellis");
-              setRightPanelOpen(true);
-            }
-          }}
-          title={rightPanelOpen && rightPanelMode === "trellis" ? t("app.hideTrellis") : t("app.showTrellis")}
-          aria-label={rightPanelOpen && rightPanelMode === "trellis" ? t("app.hideTrellis") : t("app.showTrellis")}
-          style={{
-            display: "flex", alignItems: "center", justifyContent: "center",
-            width: 36, height: 36, padding: 0,
-            background: "var(--bg-panel)", border: "none", borderLeft: "1px solid var(--border)", borderBottom: "1px solid var(--border)",
-            color: rightPanelOpen && rightPanelMode === "trellis" ? "var(--accent)" : "var(--text-muted)",
-            cursor: "pointer", transition: "color 0.12s",
-            fontSize: 12, fontWeight: 800,
-          }}
-          onMouseEnter={(e) => { e.currentTarget.style.color = "var(--accent)"; }}
-          onMouseLeave={(e) => { e.currentTarget.style.color = rightPanelOpen && rightPanelMode === "trellis" ? "var(--accent)" : "var(--text-muted)"; }}
-        >
-          T
-        </button>
-      )}
     </div>
-    {modelsConfigOpen && <ModelsConfig cwd={trellisCwd ?? null} onClose={() => { setModelsConfigOpen(false); setModelsRefreshKey((k) => k + 1); }} />}
+    {modelsConfigOpen && <ModelsConfig cwd={workspaceCwd ?? null} onClose={() => { setModelsConfigOpen(false); setModelsRefreshKey((k) => k + 1); }} />}
     {skillsConfigOpen && (activeCwd ?? selectedSession?.cwd ?? newSessionCwd) && (
       <SkillsConfig cwd={(activeCwd ?? selectedSession?.cwd ?? newSessionCwd)!} onClose={() => setSkillsConfigOpen(false)} />
     )}
@@ -1668,7 +1530,7 @@ export function AppShell() {
     )}
     {settingsConfigOpen && (
       <SettingsConfig
-        cwd={trellisCwd}
+        cwd={workspaceCwd}
         onConfigChange={() => { void loadWebConfig(); }}
         onClose={() => { setSettingsConfigOpen(false); void loadWebConfig(); }}
       />

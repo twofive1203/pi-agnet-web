@@ -682,19 +682,6 @@ export function AgentsConfig({ cwd }: { cwd: string | null }) {
         </p>
       </div>
 
-      {/* Native vs Trellis banner */}
-      <div style={{
-        padding: "10px 12px",
-        borderRadius: 8,
-        border: "1px solid rgba(37,99,235,0.25)",
-        background: "rgba(37,99,235,0.08)",
-        color: "var(--text)",
-        fontSize: 11,
-        lineHeight: 1.5,
-      }}>
-        {t("settings.agents.vsTrellis")}
-      </div>
-
       {/* Error / Notice */}
       {error && <div style={{ padding: "8px 10px", borderRadius: 8, background: "rgba(239,68,68,0.12)", color: "#f87171", fontSize: 12, overflowWrap: "anywhere" }}>{error}</div>}
       {notice && <div style={{ padding: "8px 10px", borderRadius: 8, background: "rgba(37,99,235,0.12)", color: "var(--accent)", fontSize: 12, overflowWrap: "anywhere" }}>{notice}</div>}

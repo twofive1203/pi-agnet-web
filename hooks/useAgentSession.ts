@@ -13,7 +13,6 @@ import type {
 import { normalizeToolCalls } from "@/lib/normalize";
 import { sendAgentCommand } from "@/lib/agent-client";
 import type { ToolEntry, ToolPreset } from "@/components/ToolPanel";
-import type { TrellisTaskChatContext } from "@/lib/trellis-chat-context";
 import {
   extractSubagentRuns,
   isSubagentResultFailure,
@@ -461,7 +460,6 @@ export interface ChatInputHandle {
   insertIfEmpty: (content: string) => void;
   addImages: (files: File[]) => void;
   addFiles: (files: File[]) => void;
-  addTrellisTaskContext: (context: TrellisTaskChatContext) => void;
 }
 
 export interface AttachedImage {

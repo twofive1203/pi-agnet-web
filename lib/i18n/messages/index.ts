@@ -6,7 +6,6 @@ import { gitEn, gitZh } from "./git";
 import { panelsEn, panelsZh } from "./panels";
 import { settingsEn, settingsZh } from "./settings";
 import { sidebarEn, sidebarZh } from "./sidebar";
-import { trellisEn, trellisZh } from "./trellis";
 import { workflowEn, workflowZh } from "./workflow";
 
 export const zhMessages = {
@@ -16,7 +15,6 @@ export const zhMessages = {
   chat: chatZh,
   git: gitZh,
   panels: panelsZh,
-  trellis: trellisZh,
   workflow: workflowZh,
   settings: settingsZh,
 } as const satisfies MessageTree;
@@ -28,7 +26,6 @@ export const enMessages = {
   chat: chatEn,
   git: gitEn,
   panels: panelsEn,
-  trellis: trellisEn,
   workflow: workflowEn,
   settings: settingsEn,
 } as const satisfies MessageTree;

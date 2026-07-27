@@ -9,7 +9,6 @@ API routes live under `app/api/`. When adding, removing, or changing routes, upd
 | `sessions/[id]/context/` | GET | Get context for a specific `leafId`. |
 | `sessions/[id]/changes/` | GET | List files changed by tracked agent file tools in this session from non-Git sidecar data. |
 | `sessions/[id]/changes/file/` | GET | Return the stored unified diff or metadata-only reason for one tracked session-changed file. |
-| `sessions/[id]/trellis-task/` | GET | Resolve the high-confidence Trellis task associated with one pi session, using session-local transcript evidence or exact per-session Trellis runtime pointers only. |
 | `sessions/[id]/snflow-task/` | GET | Resolve the SnFlow task associated with one pi session. Uses an exact `current.json.sessionId` match or explicit task evidence from that session transcript; cwd-global or unbound pointers alone never surface the floating widget. |
 | `sessions/[id]/export/` | GET | Export session as Markdown. |
 | `sessions/new/` | 410 | Deprecated route kept for compatibility. |
@@ -49,7 +48,7 @@ API routes live under `app/api/`. When adding, removing, or changing routes, upd
 | `git/diff/` | GET | Return a bounded read-only unified diff, or binary/too-large/unavailable fallback metadata, for one changed file in a selected commit. |
 | `git/switch/` | POST | Switch the current workspace to a local branch. Validates cwd, branch existence, and working tree cleanliness before executing `git switch`. Returns `switchedTo` on success or an error message. |
 | `subagents/config/` | GET/PUT | Read/write native `pi-subagents` model configuration in Pi `settings.json` for user-global or selected-project scope. GET returns managed fields, discovered agents, discovery diagnostics, and user-scope projection for project scope. PUT applies a managed-field patch with revision-based conflict detection, validates model ids against the Pi model registry, and returns the refreshed projection. |
-| `web-config/` | GET/PUT | Read/write `~/.pi/agent/pi-web.json` for WorkTree defaults, Usage scan scope, Web Terminal settings, ChatGPT usage panel/warmup schedule settings, Editor implementation/shortcut settings, SnFlow panel preferences such as `includeArchived` (compat key `workflow`; legacy `enabled` ignored), optional Trellis panel settings, setup proxy, and Trellis subagent model policy; also lazily ensures the local ChatGPT warmup scheduler. |
+| `web-config/` | GET/PUT | Read/write `~/.pi/agent/pi-web.json` for WorkTree defaults, Usage scan scope, Web Terminal settings, ChatGPT usage panel/warmup schedule settings, Editor implementation/shortcut settings, and SnFlow panel preferences such as `includeArchived` (compat key `workflow`; legacy `enabled` ignored). Legacy `trellis` config may still be parsed/preserved but is no longer a product surface; also lazily ensures the local ChatGPT warmup scheduler. |
 | `terminal/env/assist/` | POST | Use the configured Terminal env assistant model to parse complex raw env text into normalized key-value env entries. |
 | `terminal/sessions/` | POST | Create a local Web Terminal session for an authorized workspace cwd when the Terminal setting is enabled. |
 | `terminal/sessions/[id]/` | DELETE | Close a Web Terminal session and terminate its process. |
@@ -63,7 +62,7 @@ API routes live under `app/api/`. When adding, removing, or changing routes, upd
 | `workflows/setup/status/` | GET | Inspect SnFlow project initialization, bundled vs project asset version, and managed extension/skill/agent/script presence for an authorized cwd. Not gated on the panel enable switch so Settings can configure SnFlow while the drawer is off. |
 | `workflows/setup/init/` | POST | Create `.pi/snflows/tasks` + `archived`, install managed SnFlow assets (extension/skill/agents/script), and write `.pi/snflows/.version`. Project init alone activates SnFlow for that cwd. |
 | `workflows/setup/update/` | POST | Rewrite managed SnFlow assets and bump `.version` for an already-initialized project without touching task data. |
-| `workflows/current/` | GET | Return the cwd current SnFlow task pointer and detail (Trellis-like active task) for an authorized cwd. |
+| `workflows/current/` | GET | Return the cwd current SnFlow task pointer and detail for an authorized cwd. |
 | `workflows/tasks/` | GET/POST | List or create WebUI-owned SnFlow tasks under `<cwd>/.pi/snflows/tasks/` for an authorized cwd. Uninitialized projects return an empty state. POST may seed from `sessionId` / `seedText`. |
 | `workflows/tasks/[taskId]/` | GET/PUT | Read or revision-checked update one SnFlow task metadata/documents. |
 | `workflows/tasks/[taskId]/runs/` | POST | Validate the selected SnFlow task/revision/phase and return an exact current-chat native `subagent` dispatch instruction. The run starts only when that marked tool call passes the server lifecycle validator. |
@@ -71,13 +70,6 @@ API routes live under `app/api/`. When adding, removing, or changing routes, upd
 | `workflows/runs/[runId]/cancel/` | POST | Stop an active native SnFlow run and reconcile. |
 | `workflows/tasks/[taskId]/complete/` | POST | Record commit metadata and/or mark a SnFlow task completed. |
 | `workflows/tasks/[taskId]/archive/` | POST | Archive a completed/cancelled SnFlow task by moving it to `.pi/snflows/archived/<task-id>/`. |
-| `trellis/tasks/` | GET | List read-only Trellis task summaries for an authorized workspace cwd when the Trellis panel setting is enabled. |
-| `trellis/tasks/[taskKey]/` | GET | Read one Trellis task detail, artifacts, manifest counts, hierarchy, and derived phase/progress. |
-| `trellis/workflow/` | GET | Read and parse the selected workspace `.trellis/workflow.md` into a read-only workflow visualization projection with phases, steps, workflow-state blocks, source line ranges, and parser warnings. |
-| `trellis/workflow/assist/` | POST | Use the configured Trellis workflow assistant model to translate and summarize one selected workflow node's guidance text without mutating `.trellis/workflow.md`. |
-| `trellis/setup/status/` | GET | Inspect Trellis prerequisites, CLI availability, and selected-workspace initialization state without requiring the panel setting to be enabled. |
-| `trellis/setup/init/` | POST | Install/ensure the Trellis CLI, run `trellis init -u <developer> --pi` for an authorized uninitialized workspace, and auto-enable the Trellis drawer setting on success. |
-| `trellis/setup/update/` | POST | Upgrade/install the Trellis CLI and run `trellis update` for an authorized workspace that already has `.trellis`. |
 | `default-cwd/` | POST | Create and return `~/pi-cwd-<YYYYMMDD>`. |
 | `home/` | GET | Return `os.homedir()`. |
 | `usage/` | GET | Aggregate persisted token/cost usage across active-only or active-plus-archived parent sessions and their nested native subagent sessions, including main/subagent splits. |

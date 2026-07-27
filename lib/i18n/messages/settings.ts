@@ -11,7 +11,7 @@ export const settingsZh = {
   loadFailed: "无法加载设置",
   restoredDefaults: "已在表单中恢复默认值，点击保存后会写入 pi-web.json。",
   savedToast:
-    "设置已保存。Usage/ChatGPT/Trellis/Editor 设置会立即生效，WorkTree 设置会用于下一次创建 New WorkTree。",
+    "设置已保存。Usage/ChatGPT/Editor 设置会立即生效，WorkTree 设置会用于下一次创建 New WorkTree。",
   operationDone: "操作完成。",
   languageSection: "界面语言",
   languageHint: "切换蜗牛派 Web UI 的显示语言。偏好保存在本浏览器。",
@@ -24,11 +24,8 @@ export const settingsZh = {
   envInvalidKey: "第 {n} 行变量名无效：{key}",
   envNoKv: "第 {n} 行没有可解析的 KEY=VALUE",
   configParseError: "配置文件无法解析，当前显示默认值；保存后会用合法 JSON 覆盖它。{detail}",
-  agentsNativeHint: "如需配置原生 pi-subagents 模型设置，请使用上方「Agents」面板。",
-  disableHere: "不使用这里的设置",
   projectExists: "已存在",
   projectExistsVersion: "已存在 {version}",
-  unsupportedSuffix: "（不支持）",
   customShellPath: "自定义 Shell 路径",
   worktreeSection: "New WorkTree 默认配置",
   usageSection: "Usage 统计范围",
@@ -38,9 +35,9 @@ export const settingsZh = {
   editorSection: "文件编辑器和快捷键",
   agentsSection: "Pi 原生 subagent 模型设置",
   extensionsSection: "扩展管理",
-  trellisSection: "Trellis 面板开关与工作流路由",
+
   workflowSection: "SnFlow 面板",
-  workflowDescription: "SnFlow 是 Snail Pi Web 自有开发工作流，任务保存在 .pi/snflows/tasks/（归档任务在同级 archived/），通过 native pi-subagents 调度项目级 snflow-implement/snflow-check 执行实现与检查。与 Trellis 完全独立。右侧 SF 面板始终可用；是否走 SnFlow 只取决于当前项目有没有初始化（.pi/snflows/）。初始化会写入项目级 pi 扩展、skill、agent 与版本文件。",
+  workflowDescription: "SnFlow 是 Snail Pi Web 自有开发工作流，任务保存在 .pi/snflows/tasks/（归档任务在同级 archived/），通过 native pi-subagents 调度项目级 snflow-implement/snflow-check 执行实现与检查。右侧 SF 面板始终可用；是否走 SnFlow 只取决于当前项目有没有初始化（.pi/snflows/）。初始化会写入项目级 pi 扩展、skill、agent 与版本文件。",
   enableWorkflow: "启用 SnFlow 面板",
   enableWorkflowHint: "已废弃：SnFlow 不再使用全局开关，只按项目是否初始化决定。",
   workflowIncludeArchived: "默认包含已归档任务",
@@ -48,7 +45,7 @@ export const settingsZh = {
   workflowTrackInGit: "将 SnFlow 文件纳入 Git",
   workflowTrackInGitHint: "默认关闭：初始化/更新时把 SnFlow 生成的扩展、skill、agent、脚本和任务目录写入项目 .gitignore，避免误提交。",
   workflowTrackInGitApplyHint: "该选项在下次「初始化 / 更新 SnFlow」时生效。关闭=写入忽略块；开启=移除 SnFlow 自动维护的忽略块。",
-  workflowNativeModelsHint: "SnFlow 子代理模型仍使用 Settings → Agents 中的 native pi-subagents 配置（settings.json → subagents），不会读取 trellis.subagents。未初始化的项目不会加载 SnFlow 扩展/skill/agent，也不会注入 SnFlow 编排引导。",
+  workflowNativeModelsHint: "SnFlow 子代理模型使用 Settings → Agents 中的 native pi-subagents 配置（settings.json → subagents）。未初始化的项目不会加载 SnFlow 扩展/skill/agent，也不会注入 SnFlow 编排引导。",
   workflowInspectionTitle: "SnFlow 巡检",
   workflowNeedsInit: "当前工作区尚未初始化 SnFlow。",
   workflowNeedsUpdate: "检测到可更新的 SnFlow 资产或缺失组件。",
@@ -132,60 +129,30 @@ export const settingsZh = {
   moveLine: "移动当前行",
   copyLine: "复制当前行",
   triggerSuggest: "触发建议/补全",
-  enableTrellis: "启用 Trellis 右侧抽屉",
-  enableTrellisHint: "开启后，主界面右上角会显示 Trellis 按钮；关闭时 UI 入口和 Trellis 任务 API 都不可用。",
-  defaultIncludeArchivedTasks: "默认包含已归档任务",
-  defaultIncludeArchivedTasksHint:
-    "开启后，Trellis 面板初次打开会同时读取 .trellis/tasks/archive 下的任务；面板内仍可临时切换。",
-  proxyEnable: "安装/更新 Trellis 时使用代理",
-  proxyUrl: "代理地址",
-  proxyHint:
-    "只会应用到安装、初始化、更新 Trellis 的子进程，不会修改蜗牛派服务本身的环境变量。建议使用 HTTP(S) 代理地址。",
-  proxyExample:
-    "示例：https://127.0.0.1:7890。启用代理时会写入 HTTP_PROXY / HTTPS_PROXY / npm_config_proxy 等子进程环境变量。",
-  developerName: "Trellis 开发者名称",
-  developerIdentity: "开发者身份",
-  developerHint: "用于 trellis init -u；默认来自已检测到的 Trellis 身份，否则使用系统用户名。可编辑，不能为空。",
-  enterDeveloperName: "请输入 Trellis 开发者名称。",
+
   selectWorkspace: "请选择工作区。",
   selectWorkspaceFirst: "请先选择工作区。",
   selectWorkspaceShort: "请先选择工作区",
-  selectWorkspaceToInit: "选择工作区后可检查和初始化 Trellis。",
-  installInit: "安装并初始化 Trellis",
-  updateTrellis: "更新 Trellis",
+
   recheck: "重新巡检",
   checking: "正在检查当前工作区…",
   checkingShort: "巡检中…",
   initializing: "正在初始化…",
   updating: "正在更新…",
-  notDetected: "未检测到",
-  notInstalled: "未安装，初始化/更新时会自动安装",
   notInitialized: "未初始化",
-  notWrittenDeveloper: "未写入 .trellis/.developer",
-  tasksExist: ".trellis/tasks 已存在",
+
   installed: "已安装",
   packageLabel: "包",
   osLabel: "操作系统",
   taskDir: "任务目录",
-  projectTrellis: "项目 .trellis",
+
   notSelected: "未选择",
-  notCreated: "尚未创建",
+
   autoCreateOnSave: "（保存时会自动创建）",
   autoCreateOnSaveLong: "（尚未创建，保存时自动创建）",
-  finishPrereqs: "请先完成系统前置要求，然后再安装或更新 Trellis。",
-  noTrellisYet: "当前工作区还没有 Trellis，可安装并初始化 Pi Agent 支持。",
-  hasTrellisUpdate: "当前工作区已有 Trellis，请使用更新操作同步 CLI 和项目模板。",
-  trellisReady: "当前工作区已启用 Trellis，可直接使用面板，也可以执行更新。",
-  noTrellisInitFirst: "当前工作区还没有 Trellis，请先初始化",
-  trellisInstalledUseUpdate: "当前工作区已安装 Trellis，请使用更新",
-  trellisInitialized: "Trellis 已初始化，右侧抽屉已自动启用。",
-  trellisUpdated: "Trellis 已更新。",
-  viewWorkflow: "查看当前工作区的 Trellis 流程",
-  assistModel: "辅助模型",
-  assistModelHint: "建议 minimal/low，辅助阅读不需要高推理预算。",
-  assistFallbackHint: "主辅助模型返回空内容、超时或失败时使用。建议选择不同 provider 或更稳定的模型。",
+
   keepMinimal: "通常保持 minimal 即可。",
-  keepMinimalLow: "通常保持 minimal/low 即可。",
+
   pathVarsRepoAbs: "当前 Git 仓库根目录的绝对路径",
   pathVarsRepoParent: "仓库根目录的父目录",
   pathVarsRepoName: "仓库目录名",
@@ -203,40 +170,20 @@ export const settingsZh = {
   pathTemplateHint: "最终创建 WorkTree 的目标路径。可以引用基础目录、分支名和时间等变量。",
   sessionDisplay: "会话展示方式",
   sessionDisplayHint: "控制 WorkTree 会话在支持的位置如何分组/展示。当前侧边栏会优先按独立工作目录展示。",
-  textTask: "文本任务",
-  multimodalTask: "多模态任务（图片/截图/视觉）",
-  tierSimple: "简单：短问答、轻量查询",
-  tierStandard: "标准：常规检查、普通修复",
-  tierComplex: "复杂：实现、重构、跨文件改动",
-  tierCritical: "关键：架构、安全、迁移、高风险改动",
+
   followMainThinking: "跟随主会话思考强度",
   thinkingOff: "关闭思考",
   thinkingLevel: "思考强度",
-  defaultThinking: "默认思考强度",
+
   fallbackThinking: "回退思考强度",
   fallbackModel: "回退模型",
   defaultModel: "默认模型",
   defaultSubagentModel: "默认子代理模型",
   inheritUnset: "继承/不指定",
-  routerModel: "分流判断模型",
-  routerModelHint: "这个模型只负责判断任务类别，不执行真正的子任务。可用较便宜/较快的模型。",
-  routerThinking: "分流判断思考强度",
-  routerThinkingHint: "建议 minimal/low，避免“判断该用哪个模型”这一步本身太贵。",
-  routerFallbackType: "分流失败时的任务类型",
-  routerFallbackTier: "分流失败时的任务等级",
-  routerFallbackHint: "分流判断不可用时默认按哪个复杂度处理。建议 standard 或 complex。",
-  enableSubagentModels: "启用子代理模型设置",
-  enableSubagentModelsHint:
-    "开启后按下面的规则给子代理选模型；关闭后回到旧行为：只看工具调用参数、agent 文件头配置或 Pi 默认模型。自动分流需要单独打开。",
-  enableAutoRoute: "启用自动分流选模型",
-  enableAutoRouteHint:
-    "开启后先判断任务属于“文本/多模态”和“简单/标准/复杂/关键”哪一类，再按下面的分流表选择子代理模型。默认关闭，避免额外消耗。",
-  defaultPolicyHint: "没有命中特殊规则时，所有子代理都按这个配置走。推荐保持“跟随主会话模型”。",
-  followMainFallbackHint: "选择“跟随主会话模型”时，后台无法获知当前聊天模型会安全回退到 Pi 默认模型。",
+
   piDefaultHint: "默认使用 Pi 默认模型；也可指定某个模型。",
   mainFailFallback: "主模型失败或返回不可解析内容时使用。",
-  routerFailFallback: "分流判断模型失败、超时或输出格式错误时使用。",
-  thinkingFollowHint: "“跟随主会话思考强度”表示使用当前聊天的 thinking 设置。",
+
   suggestMinimalLow: "建议 minimal/low。",
   agents: {
     builtin: "内置",
@@ -271,9 +218,8 @@ export const settingsZh = {
     package: "包",
     loading: "正在加载子代理设置…",
     title: "Pi Subagent 模型设置",
-    titleHint: "配置 pi-subagents 的原生模型设置，独立于 Trellis 路由策略。保存到 Pi settings.json，不修改 pi-web.json。",
-    vsTrellis:
-      "与 Trellis 路由的区别：本页面直接管理 pi-subagents 的原生配置（settings.json → subagents），影响所有使用 pi-subagents 的场景。下方的「Trellis」区域只控制蜗牛派 Web UI 的 Trellis 工作流路由策略（pi-web.json → trellis.subagents）。两者互不干扰，可同时使用。",
+    titleHint: "配置 pi-subagents 的原生模型设置。保存到 Pi settings.json，不修改 pi-web.json。",
+
     parseError: "settings.json 解析错误：{error}。保存操作被禁用，请先手动修复该文件。",
     validationError: "settings.json 内容无效：{error}。保存操作被禁用，请先手动修复。",
     reload: "重新加载",
@@ -384,26 +330,7 @@ export const settingsZh = {
   monacoDisclaimer:
     "这些是 Monaco 自带编辑行为，不写入蜗牛派配置；上面的开关只控制蜗牛派额外接管的快捷键/鼠标手势。",
 
-  // Trellis section
-  trellisDescription:
-    "面板从当前工作区的 .trellis/tasks 读取任务；使用前需要在项目中安装并初始化 Trellis。",
-  openDocs: "打开 Trellis 官方文档 ↗",
-  workflowDesign: "流程设计",
   currentWorkspace: "当前工作区：",
-  workflowAssistantTitle: "流程辅助阅读模型",
-  workflowAssistantDesc:
-    "用于解释 workflow.md 节点引导内容：翻译成中文并总结关键动作。只读辅助，不会修改流程文件。",
-  subagentRoutingTitle: "Trellis 工作流子代理模型路由",
-  subagentRoutingDesc:
-    "这是 Trellis 工作流路由策略（pi-web.json → trellis.subagents），仅影响 Trellis 派出的子代理。如需配置原生 pi-subagents 模型设置，请使用上方「Agents」面板。给 Trellis 派出去的子代理单独选模型。默认跟随当前聊天使用的主模型；如果某次工具调用里手动指定了模型，会优先使用手动指定。",
-  routingTableTitle: "分流模型表",
-  routingTableDesc:
-    "按「任务类型 × 任务等级」给子代理指定模型。比如：简单文本任务用便宜模型，复杂实现任务用更强模型，多模态任务用支持图片的模型。",
-  perAgentOverrideTitle: "按 Agent 单独覆盖",
-  strategyDefault: "使用默认规则",
-  strategyRoute: "总是自动分流",
-  strategyFixed: "固定指定模型",
-  trellisInspectionTitle: "Trellis 巡检",
 
   // Footer
   agentsPanelNote:
@@ -425,7 +352,7 @@ export const settingsEn = {
   loadFailed: "Failed to load settings",
   restoredDefaults: "Defaults restored in the form. Click Save to write pi-web.json.",
   savedToast:
-    "Settings saved. Usage/ChatGPT/Trellis/Editor settings apply immediately; WorkTree settings apply to the next New WorkTree.",
+    "Settings saved. Usage/ChatGPT/Editor settings apply immediately; WorkTree settings apply to the next New WorkTree.",
   operationDone: "Done.",
   languageSection: "Interface language",
   languageHint: "Switch the Snail Pi Web UI language. Preference is stored in this browser.",
@@ -438,11 +365,8 @@ export const settingsEn = {
   envInvalidKey: "Line {n}: invalid variable name: {key}",
   envNoKv: "Line {n}: no parseable KEY=VALUE",
   configParseError: "Config file could not be parsed; showing defaults. Saving will overwrite it with valid JSON. {detail}",
-  agentsNativeHint: "To configure native pi-subagents models, use the Agents panel above.",
-  disableHere: "Do not use settings here",
   projectExists: "Exists",
   projectExistsVersion: "Exists {version}",
-  unsupportedSuffix: "(unsupported)",
   customShellPath: "Custom shell path",
   worktreeSection: "New WorkTree defaults",
   usageSection: "Usage scan scope",
@@ -452,9 +376,9 @@ export const settingsEn = {
   editorSection: "Editor and shortcuts",
   agentsSection: "Native Pi subagent model settings",
   extensionsSection: "Extensions",
-  trellisSection: "Trellis panel and workflow routing",
+
   workflowSection: "SnFlow panel",
-  workflowDescription: "SnFlow is the Snail Pi Web-owned development flow. Tasks live under .pi/snflows/tasks/ (archived tasks in the sibling archived/) and dispatch implement/check through native pi-subagents using the project agents snflow-implement/snflow-check. Fully separate from Trellis. The SF panel is always available; whether chat uses SnFlow depends only on whether the current project is initialized (.pi/snflows/). Initialization also installs a project-level pi extension, skill, agents, and version file.",
+  workflowDescription: "SnFlow is the Snail Pi Web-owned development flow. Tasks live under .pi/snflows/tasks/ (archived tasks in the sibling archived/) and dispatch implement/check through native pi-subagents using the project agents snflow-implement/snflow-check. The SF panel is always available; whether chat uses SnFlow depends only on whether the current project is initialized (.pi/snflows/). Initialization also installs a project-level pi extension, skill, agents, and version file.",
   enableWorkflow: "Enable SnFlow panel",
   enableWorkflowHint: "Deprecated: SnFlow no longer uses a global switch; project initialization alone decides.",
   workflowIncludeArchived: "Include archived tasks by default",
@@ -462,7 +386,7 @@ export const settingsEn = {
   workflowTrackInGit: "Track SnFlow files in Git",
   workflowTrackInGitHint: "Off by default: init/update adds managed SnFlow paths to the project .gitignore so generated assets are not committed by accident.",
   workflowTrackInGitApplyHint: "Applies on the next Initialize / Update SnFlow. Off writes the ignore block; on removes the SnFlow-managed ignore block.",
-  workflowNativeModelsHint: "SnFlow agent models still come from Settings → Agents (settings.json → subagents). SnFlow never reads trellis.subagents. Uninitialized projects do not load SnFlow extension/skill/agents and do not inject SnFlow orchestration guidance.",
+  workflowNativeModelsHint: "SnFlow agent models come from Settings → Agents (settings.json → subagents). Uninitialized projects do not load SnFlow extension/skill/agents and do not inject SnFlow orchestration guidance.",
   workflowInspectionTitle: "SnFlow inspection",
   workflowNeedsInit: "SnFlow is not initialized in this workspace.",
   workflowNeedsUpdate: "SnFlow assets are outdated or components are missing.",
@@ -548,62 +472,32 @@ export const settingsEn = {
   moveLine: "Move line",
   copyLine: "Copy line",
   triggerSuggest: "Trigger suggestions",
-  enableTrellis: "Enable Trellis right drawer",
-  enableTrellisHint: "Shows the Trellis button in the top-right. When off, UI entry and Trellis task APIs are unavailable.",
-  defaultIncludeArchivedTasks: "Include archived tasks by default",
-  defaultIncludeArchivedTasksHint:
-    "When on, the Trellis panel initially also reads .trellis/tasks/archive; you can still toggle inside the panel.",
-  proxyEnable: "Use proxy when installing/updating Trellis",
-  proxyUrl: "Proxy URL",
-  proxyHint:
-    "Applies only to Trellis install/init/update child processes, not the Snail Pi server itself. Prefer an HTTP(S) proxy URL.",
-  proxyExample:
-    "Example: https://127.0.0.1:7890. When enabled, sets HTTP_PROXY / HTTPS_PROXY / npm_config_proxy for child processes.",
-  developerName: "Trellis developer name",
-  developerIdentity: "Developer identity",
-  developerHint:
-    "Used by trellis init -u; defaults to detected Trellis identity or the system username. Editable, required.",
-  enterDeveloperName: "Enter a Trellis developer name.",
+
   selectWorkspace: "Select a workspace.",
   selectWorkspaceFirst: "Select a workspace first.",
   selectWorkspaceShort: "Select a workspace first",
-  selectWorkspaceToInit: "Select a workspace to inspect and initialize Trellis.",
-  installInit: "Install and initialize Trellis",
-  updateTrellis: "Update Trellis",
+
   recheck: "Re-check",
   checking: "Checking current workspace…",
   checkingShort: "Checking…",
   initializing: "Initializing…",
   updating: "Updating…",
-  notDetected: "Not detected",
-  notInstalled: "Not installed; will install during init/update",
   notInitialized: "Not initialized",
-  notWrittenDeveloper: "Not written to .trellis/.developer",
-  tasksExist: ".trellis/tasks already exists",
+
   installed: "Installed",
   packageLabel: "Package",
   osLabel: "OS",
   taskDir: "Tasks directory",
-  projectTrellis: "Project .trellis",
+
   notSelected: "Not selected",
-  notCreated: "Not created yet",
+
   autoCreateOnSave: "(created automatically on save)",
   autoCreateOnSaveLong: "(not created yet; will be created on save)",
-  finishPrereqs: "Finish system prerequisites before installing or updating Trellis.",
-  noTrellisYet: "This workspace has no Trellis yet. You can install and initialize Pi Agent support.",
-  hasTrellisUpdate: "This workspace already has Trellis. Use update to sync the CLI and project templates.",
-  trellisReady: "Trellis is enabled for this workspace. Use the panel or run update.",
-  noTrellisInitFirst: "This workspace has no Trellis yet — initialize first",
-  trellisInstalledUseUpdate: "Trellis is installed — use update",
-  trellisInitialized: "Trellis initialized. The right drawer was enabled automatically.",
-  trellisUpdated: "Trellis updated.",
-  viewWorkflow: "View Trellis workflow for this workspace",
-  assistModel: "Assistant model",
-  assistModelHint: "minimal/low is enough for assisted reading.",
+
   assistFallbackHint:
     "Used when the primary assistant returns empty content, times out, or fails. Prefer a different provider or more stable model.",
   keepMinimal: "Usually keep minimal.",
-  keepMinimalLow: "Usually keep minimal/low.",
+
   pathVarsRepoAbs: "Absolute path of the current Git repo root",
   pathVarsRepoParent: "Parent directory of the repo root",
   pathVarsRepoName: "Repository directory name",
@@ -622,41 +516,22 @@ export const settingsEn = {
   sessionDisplay: "Session display mode",
   sessionDisplayHint:
     "Controls how WorkTree sessions are grouped/shown where supported. The sidebar currently prefers separate working directories.",
-  textTask: "Text tasks",
-  multimodalTask: "Multimodal tasks (images/screenshots/vision)",
-  tierSimple: "Simple: short Q&A, light lookups",
-  tierStandard: "Standard: routine checks and ordinary fixes",
-  tierComplex: "Complex: implementation, refactors, cross-file changes",
-  tierCritical: "Critical: architecture, security, migrations, high-risk changes",
+
   followMainThinking: "Follow main-session thinking level",
   thinkingOff: "Thinking off",
   thinkingLevel: "Thinking level",
-  defaultThinking: "Default thinking level",
+
   fallbackThinking: "Fallback thinking level",
   fallbackModel: "Fallback model",
   defaultModel: "Default model",
   defaultSubagentModel: "Default subagent model",
   inheritUnset: "Inherit / unset",
-  routerModel: "Router model",
-  routerModelHint: "Only classifies the task; does not run the real subtask. Prefer a cheap/fast model.",
-  routerThinking: "Router thinking level",
-  routerThinkingHint: "minimal/low recommended so routing itself stays cheap.",
-  routerFallbackType: "Fallback task type when routing fails",
-  routerFallbackTier: "Fallback difficulty when routing fails",
-  routerFallbackHint: "Default complexity when routing is unavailable. Prefer standard or complex.",
-  enableSubagentModels: "Enable subagent model settings",
-  enableSubagentModelsHint:
-    "When on, subagents pick models by the rules below; when off, fall back to tool args, agent headers, or Pi defaults. Auto-routing is separate.",
-  enableAutoRoute: "Enable automatic model routing",
-  enableAutoRouteHint:
-    "Classifies tasks as text/multimodal and simple/standard/complex/critical, then picks a model from the route table. Off by default to avoid extra cost.",
-  defaultPolicyHint: "Used when no special rule matches. Keeping “follow main session model” is recommended.",
+
   followMainFallbackHint:
     "When following the main session model, background jobs that cannot see the chat model safely fall back to the Pi default.",
   piDefaultHint: "Defaults to the Pi default model; you may pin a specific model.",
   mainFailFallback: "Used when the primary model fails or returns unparseable content.",
-  routerFailFallback: "Used when the router model fails, times out, or returns a bad format.",
-  thinkingFollowHint: "“Follow main-session thinking” uses the current chat thinking setting.",
+
   suggestMinimalLow: "minimal/low recommended.",
   agents: {
     builtin: "Built-in",
@@ -694,9 +569,8 @@ export const settingsEn = {
     loading: "Loading subagent settings…",
     title: "Pi Subagent model settings",
     titleHint:
-      "Configure native pi-subagents model settings, independent of Trellis routing. Saved to Pi settings.json, not pi-web.json.",
-    vsTrellis:
-      "Difference from Trellis routing: this page manages native pi-subagents config (settings.json → subagents) for all pi-subagents usage. The Trellis section below only controls Snail Pi Web UI Trellis workflow routing (pi-web.json → trellis.subagents). They do not interfere and can be used together.",
+      "Configure native pi-subagents model settings. Saved to Pi settings.json, not pi-web.json.",
+
     parseError: "settings.json parse error: {error}. Saving is disabled until you fix the file.",
     validationError: "settings.json content is invalid: {error}. Saving is disabled until you fix it.",
     reload: "Reload",
@@ -810,26 +684,7 @@ export const settingsEn = {
   monacoDisclaimer:
     "These are built-in Monaco behaviors and are not stored in Snail Pi config. The toggles above only control Snail Pi-managed shortcuts/gestures.",
 
-  // Trellis section
-  trellisDescription:
-    "The panel reads tasks from .trellis/tasks in the current workspace. Install and initialize Trellis in the project first.",
-  openDocs: "Open Trellis docs ↗",
-  workflowDesign: "Workflow design",
   currentWorkspace: "Current workspace: ",
-  workflowAssistantTitle: "Workflow assistant model",
-  workflowAssistantDesc:
-    "Explains workflow.md node guides and summarizes key actions. Read-only assistance; does not modify workflow files.",
-  subagentRoutingTitle: "Trellis workflow subagent model routing",
-  subagentRoutingDesc:
-    "This is the Trellis workflow routing policy (pi-web.json → trellis.subagents) and only affects subagents dispatched by Trellis. To configure native pi-subagents model settings, use the Agents panel above. Selects subagent models for Trellis-dispatched agents. Defaults to the current chat model; manual tool-call model specification takes priority.",
-  routingTableTitle: "Routing table",
-  routingTableDesc:
-    "Assign subagent models by task type × difficulty. Example: cheap models for simple text, stronger models for complex implementation, vision models for multimodal work.",
-  perAgentOverrideTitle: "Per-agent overrides",
-  strategyDefault: "Use default rules",
-  strategyRoute: "Always auto-route",
-  strategyFixed: "Fixed model",
-  trellisInspectionTitle: "Trellis inspection",
 
   // Footer
   agentsPanelNote:

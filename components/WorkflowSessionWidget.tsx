@@ -18,7 +18,7 @@ interface WidgetPosition {
 
 const STORAGE_KEY = "pi-web:workflow-session-widget-position";
 const DEFAULT_MARGIN = 18;
-// Default sits below the Trellis widget's top-right slot so both stay visible.
+// Default top-right offset keeps the widget clear of the chat header controls.
 const DEFAULT_TOP = 64;
 const DRAG_THRESHOLD_PX = 4;
 

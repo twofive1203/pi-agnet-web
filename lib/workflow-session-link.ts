@@ -1,6 +1,6 @@
 /**
  * Session-scoped SnFlow task resolution.
- * Analogous to lib/trellis-session-link.ts but for SnFlow tasks.
+ * Session-scoped SnFlow task association resolver for the floating widget.
  *
  * Two evidence modes (high confidence only):
  * 1. Exact pointer.sessionId matches the active session.
