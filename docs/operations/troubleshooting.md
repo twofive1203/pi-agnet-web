@@ -13,6 +13,16 @@
 - Do not run `next build` directly; use `npm run build` only when validating release/publish behavior.
 - If `.next/` appears polluted after an accidental build, clean it before continuing dev-server work.
 
+## Session index smoke scripts
+
+- Scripts that import `lib/session-reader` (and therefore `@earendil-works/pi-coding-agent`) may fail under the current `tsx` CJS loader with `ERR_PACKAGE_PATH_NOT_EXPORTED` for package subpath exports.
+- For focused session-index validation, use the dependency-free `scripts/smoke-session-index.ts` (it exercises the index layer without pulling in the pi SDK).
+
+## SnFlow task revisions
+
+- SnFlow `task.json` `revision` values are 16-hex concurrency tokens, not Git commit objects. Do not `git show` / `git checkout` / otherwise resolve them as commits.
+- Check agents must inspect the current unstaged working tree (and task documents) for the dispatched revision; treat a mismatch against `task.json` as stale dispatch, not a missing commit.
+
 ## Network / Proxy
 
 Use `scripts/start-pi-web-proxy.sh` or `scripts/start-pi-web-proxy.ps1` when provider calls need the local proxy. They set common proxy env vars and `NODE_OPTIONS=--use-env-proxy` for modern Node fetch/undici behavior.

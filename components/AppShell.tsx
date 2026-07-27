@@ -141,6 +141,10 @@ export function AppShell() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const chatInputRef = useRef<ChatInputHandle | null>(null);
   const topBarRef = useRef<HTMLDivElement>(null);
+  /** Latest selected session — deletion callbacks must not capture a stale snapshot. */
+  const selectedSessionRef = useRef<SessionInfo | null>(null);
+  /** Latest workspace cwd — deletion must not overwrite a newer project/WorkTree fallback. */
+  const activeCwdRef = useRef<string | null>(null);
 
   const loadWebConfig = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -380,30 +384,38 @@ export function AppShell() {
   const [activeCwdGit, setActiveCwdGit] = useState<GitInfo | undefined>(undefined);
   // True once the initial ?session= URL param has been resolved (or confirmed absent)
   const [initialSessionRestored, setInitialSessionRestored] = useState<boolean>(() => !searchParams.get("session"));
-  // Suppresses sessionKey bump in handleCwdChange during the initial URL restore
-  const suppressCwdBumpRef = useRef(false);
 
   const handleAddChat = useCallback((filePath: string, selection?: { startLine: number; endLine: number }) => {
     const relativePath = getRelativeFilePath(filePath, activeCwd ?? undefined);
     chatInputRef.current?.addFileReference(relativePath, selection);
   }, [activeCwd]);
 
-  const handleCwdChange = useCallback((cwd: string | null) => {
-    if (cwd !== activeCwd) {
-      setFileTabs([]);
-      setActiveFileTabId(null);
-      if (rightPanelMode === "files") setRightPanelOpen(false);
-    }
+  /** Workspace picker / explicit project change — may clear cross-cwd session state. */
+  const handleActiveCwdChange = useCallback((cwd: string | null) => {
+    if (cwd === activeCwdRef.current) return;
+    setFileTabs([]);
+    setActiveFileTabId(null);
+    if (rightPanelMode === "files") setRightPanelOpen(false);
+    // Eager ref updates so nested WorkTree bulk-delete onSessionDeleted callbacks
+    // observe the fallback cwd / cleared selection before React re-renders.
+    activeCwdRef.current = cwd;
     setActiveCwd(cwd);
     // Keep an already-open terminal pinned to the cwd captured when it was opened;
     // terminal processes are ephemeral and should not be silently killed or retargeted
     // just because the selected chat/workspace changed.
-    // Skip if cwd is null (initial mount) or during the initial URL restore.
-    if (!cwd || suppressCwdBumpRef.current) return;
+    if (!cwd) {
+      selectedSessionRef.current = null;
+      setSelectedSession(null);
+      setNewSessionCwd(null);
+      return;
+    }
     // Close any session that belongs to a different cwd — it no longer
     // matches the selected project directory.
     setSelectedSession((prev) => {
-      if (prev && prev.cwd !== cwd) return null;
+      if (prev && prev.cwd !== cwd) {
+        selectedSessionRef.current = null;
+        return null;
+      }
       return prev;
     });
     setNewSessionCwd((prev) => {
@@ -418,42 +430,60 @@ export function AppShell() {
     setGitRefreshKey((k) => k + 1);
     setGitDirty(false);
     router.replace("/", { scroll: false });
-  }, [activeCwd, rightPanelMode, router]);
+  }, [rightPanelMode, router]);
 
   const handleSelectSession = useCallback((session: SessionInfo, isRestore = false) => {
     setNewSessionCwd(null);
+    selectedSessionRef.current = session;
     setSelectedSession(session);
+    // Sync workspace cwd with the selected session without the workspace-picker wipe path.
+    if (session.cwd && session.cwd !== activeCwdRef.current) {
+      setFileTabs([]);
+      setActiveFileTabId(null);
+      if (rightPanelMode === "files") setRightPanelOpen(false);
+    }
+    if (session.cwd) {
+      activeCwdRef.current = session.cwd;
+      setActiveCwd(session.cwd);
+    }
     setSessionKey((k) => k + 1);
     setSystemPrompt(null);
     setInitialSessionRestored(true);
-    if (isRestore) {
-      // Suppress the redundant sessionKey bump that would come from the
-      // onCwdChange effect firing after setSelectedCwd in the sidebar
-      suppressCwdBumpRef.current = true;
-      setTimeout(() => { suppressCwdBumpRef.current = false; }, 0);
-    }
     // Skip router.replace when restoring from URL — the param is already correct
     // and calling replace in production Next.js triggers a Suspense remount loop
     if (!isRestore) {
       router.replace(`?session=${encodeURIComponent(session.id)}`, { scroll: false });
     }
-  }, [router]);
+  }, [rightPanelMode, router]);
 
   const handleNewSession = useCallback((_sessionId: string, cwd: string) => {
+    selectedSessionRef.current = null;
     setSelectedSession(null);
     setNewSessionCwd(cwd);
+    if (cwd !== activeCwdRef.current) {
+      setFileTabs([]);
+      setActiveFileTabId(null);
+      if (rightPanelMode === "files") setRightPanelOpen(false);
+    }
+    activeCwdRef.current = cwd;
+    setActiveCwd(cwd);
     setSessionKey((k) => k + 1);
     setBranchTree([]);
     setBranchActiveLeafId(null);
     setSystemPrompt(null);
     setActiveTopPanel(null);
     router.replace("/", { scroll: false });
-  }, [router]);
+  }, [rightPanelMode, router]);
 
   // Called by ChatWindow when a new session gets its real id from pi
   const handleSessionCreated = useCallback((session: SessionInfo) => {
     setNewSessionCwd(null);
+    selectedSessionRef.current = session;
     setSelectedSession(session);
+    if (session.cwd) {
+      activeCwdRef.current = session.cwd;
+      setActiveCwd(session.cwd);
+    }
     setRefreshKey((k) => k + 1);
     router.replace(`?session=${encodeURIComponent(session.id)}`, { scroll: false });
   }, [router]);
@@ -469,10 +499,14 @@ export function AppShell() {
     setRefreshKey((k) => k + 1);
     setSessionKey((k) => k + 1);
     setNewSessionCwd(null);
-    setSelectedSession((prev) => ({
-      ...(prev ?? { path: "", cwd: "", created: "", modified: "", messageCount: 0, firstMessage: "" }),
-      id: newSessionId,
-    }));
+    setSelectedSession((prev) => {
+      const next = {
+        ...(prev ?? { path: "", cwd: "", created: "", modified: "", messageCount: 0, firstMessage: "" }),
+        id: newSessionId,
+      };
+      selectedSessionRef.current = next;
+      return next;
+    });
     router.replace(`?session=${encodeURIComponent(newSessionId)}`, { scroll: false });
   }, [router]);
 
@@ -480,20 +514,41 @@ export function AppShell() {
     setInitialSessionRestored(true);
   }, []);
 
+  // Keep refs aligned for async deletion / WorkTree bulk-delete ordering.
+  selectedSessionRef.current = selectedSession;
+  activeCwdRef.current = activeCwd;
+
   const handleSessionDeleted = useCallback((sessionId: string) => {
     setRefreshKey((k) => k + 1);
-    if (selectedSession?.id === sessionId) {
-      const cwd = selectedSession.cwd;
-      setSelectedSession(null);
-      setNewSessionCwd(cwd ?? null);
-      setSessionKey((k) => k + 1);
-      setBranchTree([]);
-      setBranchActiveLeafId(null);
-      setSystemPrompt(null);
-      setActiveTopPanel(null);
-      router.replace("/", { scroll: false });
+    // Read latest refs — never the selectedSession captured when this callback was created.
+    // WorkTree removal applies fallback cwd first (eagerly updating refs), then reports
+    // deleted ids; a stale snapshot would restore the removed WorkTree. Same race when
+    // the user switches projects before an ordinary DELETE completes.
+    const current = selectedSessionRef.current;
+    if (!current || current.id !== sessionId) return;
+
+    const deletedCwd = current.cwd ?? null;
+    const latestActiveCwd = activeCwdRef.current;
+
+    selectedSessionRef.current = null;
+    setSelectedSession(null);
+    setSessionKey((k) => k + 1);
+    setBranchTree([]);
+    setBranchActiveLeafId(null);
+    setSystemPrompt(null);
+    setActiveTopPanel(null);
+    router.replace("/", { scroll: false });
+
+    // Preserve new-session continuity only while workspace still matches the deleted
+    // session. Never clobber a newer activeCwd (project switch or WorkTree fallback).
+    if (deletedCwd && (latestActiveCwd === deletedCwd || latestActiveCwd == null)) {
+      setNewSessionCwd(deletedCwd);
+      if (latestActiveCwd == null) {
+        activeCwdRef.current = deletedCwd;
+        setActiveCwd(deletedCwd);
+      }
     }
-  }, [selectedSession, router]);
+  }, [router]);
 
   const handleOpenFile = useCallback((filePath: string, fileName: string, line?: number) => {
     const tabId = `file:${filePath}`;
@@ -804,8 +859,8 @@ export function AppShell() {
         onInitialRestoreDone={handleInitialRestoreDone}
         refreshKey={refreshKey}
         onSessionDeleted={handleSessionDeleted}
-        selectedCwd={selectedSession?.cwd ?? newSessionCwd ?? null}
-        onCwdChange={handleCwdChange}
+        activeCwd={activeCwd}
+        onActiveCwdChange={handleActiveCwdChange}
         onOpenFile={handleOpenFile}
         explorerRefreshKey={explorerRefreshKey}
         onAtMention={handleAtMention}

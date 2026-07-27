@@ -26,7 +26,7 @@ export async function GET(req: Request) {
     const limitParam = url.searchParams.get("limit");
     const before = url.searchParams.get("before") ?? undefined;
     const beforePath = url.searchParams.get("beforePath") ?? undefined;
-    const { cwds: archivedCwds, counts: archivedCounts } = scanArchivedCwds();
+    const { cwds: archivedCwds, counts: archivedCounts } = await scanArchivedCwds();
 
     if (view === "projects") {
       const projects = await listProjectSummaries();

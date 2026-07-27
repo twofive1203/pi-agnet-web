@@ -340,7 +340,7 @@ async function main() {
     assert.equal(isArchivedSessionPath("C:\\\\Users\\\\x\\\\.pi\\\\agent\\\\sessions\\\\proj\\\\a.jsonl"), false);
 
     // Archive project visibility groups every JSONL by header cwd (not one header per dir).
-    const archived = scanArchivedCwds();
+    const archived = await scanArchivedCwds();
     const norm = (p: string) => p.replace(/\\/g, "/");
     const ax = archived.cwds.find((c) => norm(c) === norm(cwdArchiveX));
     const ay = archived.cwds.find((c) => norm(c) === norm(cwdArchiveY));

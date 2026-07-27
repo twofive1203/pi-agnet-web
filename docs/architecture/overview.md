@@ -25,6 +25,8 @@ Browser                Next.js Server              AgentSession (in-process)
 
 Sidebar browsing is intentionally split from full-scan consumers: project discovery and per-cwd recent/archived pages use filesystem metadata plus bounded JSONL parsing with mtime cursors (`before` + `beforePath`) and a small parent-closure so fork children are not flattened when their parent falls outside the current page. Usage and other bulk features keep calling `listAllSessions()` / `listAllArchivedSessions()`.
 
+Project discovery and per-cwd candidate collection are accelerated by a rebuildable on-disk index (`lib/session-index.ts` -> `pi-web-session-index.json` under the agent data dir). Entries cache header summaries keyed by `path + mtimeMs + size` (and archived flag). Unchanged files skip header re-reads; create/modify/delete/archive/unarchive are discovered on the next refresh from disk stats. Per-file isolation skips unreadable or typed-malformed headers (for example non-string `cwd`) without dropping sibling valid sessions. The index is never the authority: corrupt/missing/version-mismatched files rebuild automatically, write failures are ignored, and Windows encoding collisions still group by real `header.cwd`. AppShell owns `activeCwd` as the single workspace source of truth; `SessionSidebar` is a controlled consumer composed from `components/sidebar/*` (including `WorkspacePicker`). Session deletion uses latest-state refs so WorkTree removal fallbacks and newer project selections are not clobbered by stale async callbacks.
+
 ## Key Boundaries
 
 - Session browsing does not create an AgentSession: API routes read `.jsonl` files through `lib/session-reader.ts`; the only write side effect is pruning stale sessions whose cwd points at a deleted WorkTree.

@@ -1,44 +1,27 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
-import type { GitInfo, ProjectSummary, SessionInfo, WorktreeInfo } from "@/lib/types";
-import { buildSessionTree, type SidebarSessionTreeNode } from "@/lib/sidebar-session-tree";
+import { useEffect, useState, useCallback, useRef, useMemo } from "react";
+import type { GitInfo, SessionInfo, WorktreeInfo } from "@/lib/types";
+import { buildSessionTree } from "@/lib/sidebar-session-tree";
 import { formatWorkspaceHeaderTitle, formatWorkspaceSubtitle, formatWorkspaceTitle } from "@/lib/workspace-title";
 import { useSessionBrowser } from "@/hooks/useSessionBrowser";
-import { FileExplorer } from "./FileExplorer";
 import { useI18n } from "@/components/I18nProvider";
 import { useAppDialog } from "@/components/AppDialogProvider";
-import type { MessageParams } from "@/lib/i18n";
-
-const EXPLORER_HEIGHT_STORAGE_KEY = "pi-web-explorer-height-v1";
-const DEFAULT_EXPLORER_HEIGHT = 240;
-const MIN_EXPLORER_HEIGHT = 120;
-const MIN_SESSION_LIST_HEIGHT = 80;
-const EXPLORER_RESIZE_STEP = 10;
-const EXPLORER_RESIZE_STEP_LARGE = 40;
-
-function clampNumber(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
-}
-
-function readStoredExplorerHeight(): number {
-  try {
-    const raw = window.localStorage.getItem(EXPLORER_HEIGHT_STORAGE_KEY);
-    if (raw == null) return DEFAULT_EXPLORER_HEIGHT;
-    const parsed = Number(raw);
-    return Number.isFinite(parsed) ? parsed : DEFAULT_EXPLORER_HEIGHT;
-  } catch {
-    return DEFAULT_EXPLORER_HEIGHT;
-  }
-}
-
-function writeStoredExplorerHeight(height: number): void {
-  try {
-    window.localStorage.setItem(EXPLORER_HEIGHT_STORAGE_KEY, String(height));
-  } catch {
-    // Ignore quota / private-mode failures.
-  }
-}
+import {
+  buildCwdPickerRows,
+  getOrderedCwds,
+  groupCwdPickerRows,
+  makeTempSessionId,
+  MIN_SESSION_LIST_HEIGHT,
+  type SessionContextMenuState,
+  type WorktreeActionResponse,
+  type WorktreeActionState,
+  type WorktreeCreateResponse,
+} from "./sidebar/sidebar-utils";
+import { WorkspacePicker } from "./sidebar/WorkspacePicker";
+import { SessionList } from "./sidebar/SessionList";
+import { ArchivedSessionSection } from "./sidebar/ArchivedSessionSection";
+import { SidebarExplorerPane } from "./sidebar/SidebarExplorerPane";
 
 interface Props {
   selectedSessionId: string | null;
@@ -48,305 +31,49 @@ interface Props {
   onInitialRestoreDone?: () => void;
   refreshKey?: number;
   onSessionDeleted?: (sessionId: string) => void;
-  selectedCwd?: string | null;
-  onCwdChange?: (cwd: string | null) => void;
+  /** Controlled workspace cwd (AppShell is the source of truth). */
+  activeCwd: string | null;
+  onActiveCwdChange: (cwd: string | null) => void;
   onOpenFile?: (filePath: string, fileName: string) => void;
   explorerRefreshKey?: number;
   onAtMention?: (relativePath: string) => void;
 }
 
-function formatRelativeTime(dateStr: string, t: (key: string, params?: MessageParams) => string): string {
-  const date = new Date(dateStr);
-  const now = new Date();
-  const diff = now.getTime() - date.getTime();
-  const mins = Math.floor(diff / 60000);
-  const hours = Math.floor(diff / 3600000);
-  const days = Math.floor(diff / 86400000);
-  if (mins < 1) return t("sidebar.justNow");
-  if (mins < 60) return t("sidebar.minutesAgo", { n: mins });
-  if (hours < 24) return t("sidebar.hoursAgo", { n: hours });
-  if (days < 7) return t("sidebar.daysAgo", { n: days });
-  return date.toLocaleDateString();
-}
-
-/** Return project cwds ordered by latest activity, keeping pinned entries first. */
-function getOrderedCwds(projects: ProjectSummary[], extraCwds: string[] = []): string[] {
-  const recent = [...projects]
-    .sort((a, b) => b.latestModified.localeCompare(a.latestModified))
-    .map((p) => p.cwd)
-    .filter(Boolean);
-  return [...extraCwds, ...recent.filter((cwd) => !extraCwds.includes(cwd))];
-}
-
-function shortenCwd(cwd: string, homeDir?: string): string {
-  const path = (homeDir && cwd.startsWith(homeDir)) ? "~" + cwd.slice(homeDir.length) : cwd;
-  const sep = path.includes("/") ? "/" : "\\";
-  const parts = path.split(sep).filter(Boolean);
-  if (parts.length <= 2) return path;
-  return "…/" + parts.slice(-2).join(sep);
-}
-
-function makeTempSessionId(): string {
-  return typeof crypto.randomUUID === "function"
-    ? crypto.randomUUID()
-    : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
-}
-
-function WorktreeBadge({ worktree }: { worktree?: WorktreeInfo }) {
-  const { t } = useI18n();
-  if (!worktree) return null;
-  return (
-    <span
-      title={worktree.branch ? t("sidebar.gitWorktreeNamed", { branch: worktree.branch }) : t("sidebar.gitWorktree")}
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 3,
-        maxWidth: 120,
-        padding: "1px 5px",
-        borderRadius: 999,
-        background: "rgba(37,99,235,0.12)",
-        border: "1px solid rgba(37,99,235,0.22)",
-        color: "var(--accent)",
-        fontSize: 10,
-        fontWeight: 700,
-        lineHeight: 1.35,
-        flexShrink: 0,
-      }}
-    >
-      <span>WT</span>
-      {worktree.branch && (
-        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 500 }}>
-          {worktree.branch}
-        </span>
-      )}
-    </span>
-  );
-}
-
-interface WorktreeCreateResponse {
-  cwd?: string;
-  error?: string;
-  worktree?: WorktreeInfo;
-  branchName?: string;
-  mainWorktreePath?: string;
-  mainWorktreeBranch?: string;
-}
-
-interface WorktreeActionResponse {
-  success?: boolean;
-  error?: string;
-  cwd?: string;
-  fallbackCwd?: string;
-  deletedSessionIds?: string[];
-  status?: {
-    dirty?: boolean;
-    dirtySummary?: string[];
-  };
-}
-
-interface WorktreeContextMenuState {
-  x: number;
-  y: number;
-  cwd: string;
-  worktree: WorktreeInfo;
-}
-
-interface SessionContextMenuState {
-  x: number;
-  y: number;
-  session: SessionInfo;
-}
-
-interface WorktreeActionState {
-  kind: "delete" | "archive";
-  cwd: string;
-  worktree: WorktreeInfo;
-  force: boolean;
-  busy: boolean;
-  error: string | null;
-  dirtySummary?: string[];
-}
-
-interface CwdPickerRow {
-  kind: "project" | "worktree";
-  cwd: string;
-  worktree?: WorktreeInfo;
-  syntheticParent?: boolean;
-}
-
-function buildCwdPickerRows(orderedCwds: string[], worktreeByCwd: Map<string, WorktreeInfo>): CwdPickerRow[] {
-  const projectOrder: string[] = [];
-  const syntheticParents = new Set<string>();
-  const worktreesByParent = new Map<string, Array<{ cwd: string; worktree: WorktreeInfo }>>();
-  const seenProjects = new Set<string>();
-  const seenWorktrees = new Set<string>();
-  const orderedCwdSet = new Set(orderedCwds);
-
-  const pushProject = (cwd: string, syntheticParent = false) => {
-    if (seenProjects.has(cwd)) {
-      if (syntheticParent) syntheticParents.add(cwd);
-      return;
-    }
-    seenProjects.add(cwd);
-    projectOrder.push(cwd);
-    if (syntheticParent) syntheticParents.add(cwd);
-  };
-
-  const pushWorktree = (parentCwd: string, cwd: string, worktree: WorktreeInfo) => {
-    if (seenWorktrees.has(cwd)) return;
-    seenWorktrees.add(cwd);
-    const group = worktreesByParent.get(parentCwd) ?? [];
-    group.push({ cwd, worktree });
-    worktreesByParent.set(parentCwd, group);
-  };
-
-  for (const cwd of orderedCwds) {
-    const worktree = worktreeByCwd.get(cwd);
-    const parentCwd = worktree?.mainWorktreePath && worktree.mainWorktreePath !== cwd
-      ? worktree.mainWorktreePath
-      : null;
-
-    if (worktree && parentCwd) {
-      pushProject(parentCwd, !orderedCwdSet.has(parentCwd));
-      pushWorktree(parentCwd, cwd, worktree);
-    } else {
-      pushProject(cwd);
-    }
-  }
-
-  return projectOrder.flatMap((cwd) => [
-    { kind: "project" as const, cwd, syntheticParent: syntheticParents.has(cwd) },
-    ...(worktreesByParent.get(cwd) ?? []).map((entry) => ({ kind: "worktree" as const, ...entry })),
-  ]);
-}
-
-function groupCwdPickerRows(rows: CwdPickerRow[]): CwdPickerRow[][] {
-  const groups: CwdPickerRow[][] = [];
-  for (const row of rows) {
-    if (row.kind === "project") {
-      groups.push([row]);
-    } else {
-      groups[groups.length - 1]?.push(row);
-    }
-  }
-  return groups;
-}
-
-function filterCwdPickerGroups(groups: CwdPickerRow[][], query: string): CwdPickerRow[][] {
-  const normalizedQuery = query.trim().toLowerCase();
-  if (!normalizedQuery) return groups;
-
-  return groups.flatMap((group) => {
-    const [project, ...worktrees] = group;
-    if (!project) return [];
-    if (project.cwd.toLowerCase().includes(normalizedQuery)) return [group];
-    const matchingWorktrees = worktrees.filter((row) => row.cwd.toLowerCase().includes(normalizedQuery));
-    return matchingWorktrees.length > 0 ? [[project, ...matchingWorktrees]] : [];
-  });
-}
-
-type SessionTreeNode = SidebarSessionTreeNode;
-
-function WorkspaceHeaderLine({
-  text,
-  detail,
-  strong = false,
-}: {
-  text: string;
-  detail: string;
-  strong?: boolean;
-}) {
-  const [showTooltip, setShowTooltip] = useState(false);
-  return (
-    <div
-      style={{ position: "relative", minWidth: 0 }}
-      onMouseEnter={() => setShowTooltip(true)}
-      onMouseLeave={() => setShowTooltip(false)}
-    >
-      <div
-        tabIndex={0}
-        onFocus={() => setShowTooltip(true)}
-        onBlur={() => setShowTooltip(false)}
-        title={detail}
-        style={{
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-          color: strong ? "var(--text)" : "var(--text-dim)",
-          fontSize: strong ? 13 : 11,
-          fontWeight: strong ? 800 : 400,
-          lineHeight: 1.25,
-          letterSpacing: strong ? "-0.02em" : undefined,
-          outline: "none",
-        }}
-      >
-        {text}
-      </div>
-      {showTooltip && (
-        <div
-          role="tooltip"
-          style={{
-            position: "absolute",
-            top: "calc(100% + 4px)",
-            left: 0,
-            zIndex: 150,
-            maxWidth: 280,
-            padding: "5px 7px",
-            borderRadius: 6,
-            background: "var(--bg)",
-            border: "1px solid var(--border)",
-            boxShadow: "0 6px 18px rgba(0,0,0,0.14)",
-            color: "var(--text)",
-            fontSize: 11,
-            lineHeight: 1.35,
-            overflowWrap: "anywhere",
-            pointerEvents: "none",
-          }}
-        >
-          {detail}
-        </div>
-      )}
-    </div>
-  );
-}
-
-export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSession, initialSessionId, onInitialRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onOpenFile, explorerRefreshKey, onAtMention }: Props) {
+export function SessionSidebar({
+  selectedSessionId,
+  onSelectSession,
+  onNewSession,
+  initialSessionId,
+  onInitialRestoreDone,
+  refreshKey,
+  onSessionDeleted,
+  activeCwd,
+  onActiveCwdChange,
+  onOpenFile,
+  explorerRefreshKey,
+  onAtMention,
+}: Props) {
   const { t } = useI18n();
   const appDialog = useAppDialog();
-  const [selectedCwd, setSelectedCwd] = useState<string | null>(null);
   const [homeDir, setHomeDir] = useState<string>("");
-  const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [allProjectsOpen, setAllProjectsOpen] = useState(false);
-  const [cwdSearch, setCwdSearch] = useState("");
-  const [customPathOpen, setCustomPathOpen] = useState(false);
-  const [customPathValue, setCustomPathValue] = useState("");
-  const [customPathError, setCustomPathError] = useState<string | null>(null);
-  const [customPathValidating, setCustomPathValidating] = useState(false);
-  const customPathInputRef = useRef<HTMLInputElement>(null);
-  const cwdSearchInputRef = useRef<HTMLInputElement>(null);
-  const dropdownRef = useRef<HTMLDivElement>(null);
-  const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false);
-  const workspaceMenuRef = useRef<HTMLDivElement>(null);
   const [selectedForArchive, setSelectedForArchive] = useState<Set<string>>(new Set());
   const [archiveAllConfirming, setArchiveAllConfirming] = useState(false);
   const [archiveAllBusy, setArchiveAllBusy] = useState(false);
   const [explorerOpen, setExplorerOpen] = useState(false);
   const [explorerKey, setExplorerKey] = useState(0);
-  const [explorerHeight, setExplorerHeight] = useState(DEFAULT_EXPLORER_HEIGHT);
-  const [explorerResizing, setExplorerResizing] = useState(false);
   const [isDesktopLayout, setIsDesktopLayout] = useState(false);
   const [explorerRefreshDone, setExplorerRefreshDone] = useState(false);
   const [creatingWorktree, setCreatingWorktree] = useState(false);
   const [worktreeError, setWorktreeError] = useState<string | null>(null);
   const [ephemeralWorktrees, setEphemeralWorktrees] = useState<Record<string, WorktreeInfo>>({});
-  const [worktreeContextMenu, setWorktreeContextMenu] = useState<WorktreeContextMenuState | null>(null);
   const [sessionContextMenu, setSessionContextMenu] = useState<SessionContextMenuState | null>(null);
   const [worktreeAction, setWorktreeAction] = useState<WorktreeActionState | null>(null);
   const [removedWorktreeCwds, setRemovedWorktreeCwds] = useState<string[]>([]);
-  const [selectedCwdGit, setSelectedCwdGit] = useState<GitInfo | undefined>(undefined);
+  const [activeCwdGit, setActiveCwdGit] = useState<GitInfo | undefined>(undefined);
   const [archivedExpanded, setArchivedExpanded] = useState(false);
   const explorerRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sidebarRootRef = useRef<HTMLDivElement>(null);
+  const restoredRef = useRef(false);
 
   const {
     projectSummaries,
@@ -369,30 +96,10 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     loadMoreArchivedSessions,
     setArchivedSessions,
   } = useSessionBrowser({
-    selectedCwd,
+    selectedCwd: activeCwd,
     selectedSessionId,
     refreshKey,
   });
-  const sidebarRootRef = useRef<HTMLDivElement>(null);
-  const explorerHeightRef = useRef(explorerHeight);
-
-  const resetCwdPickerView = useCallback(() => {
-    setAllProjectsOpen(false);
-    setCwdSearch("");
-  }, []);
-
-  const closeCwdPicker = useCallback(() => {
-    setDropdownOpen(false);
-    resetCwdPickerView();
-  }, [resetCwdPickerView]);
-
-  useEffect(() => {
-    explorerHeightRef.current = explorerHeight;
-  }, [explorerHeight]);
-
-  useEffect(() => {
-    setExplorerHeight(readStoredExplorerHeight());
-  }, []);
 
   useEffect(() => {
     const media = window.matchMedia("(min-width: 641px)");
@@ -402,92 +109,11 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     return () => media.removeEventListener("change", sync);
   }, []);
 
-  const getExplorerHeightBounds = useCallback(() => {
-    const root = sidebarRootRef.current;
-    if (!root) {
-      return { min: MIN_EXPLORER_HEIGHT, max: Math.max(MIN_EXPLORER_HEIGHT, DEFAULT_EXPLORER_HEIGHT) };
-    }
-    const headerEl = root.firstElementChild as HTMLElement | null;
-    const headerHeight = headerEl?.offsetHeight ?? 0;
-    const max = Math.max(
-      MIN_EXPLORER_HEIGHT,
-      root.clientHeight - headerHeight - MIN_SESSION_LIST_HEIGHT,
-    );
-    return { min: MIN_EXPLORER_HEIGHT, max };
-  }, []);
-
-  const clampExplorerHeight = useCallback((value: number) => {
-    const { min, max } = getExplorerHeightBounds();
-    return clampNumber(Math.round(value), min, max);
-  }, [getExplorerHeightBounds]);
-
-  const commitExplorerHeight = useCallback((value: number, persist: boolean) => {
-    const next = clampExplorerHeight(value);
-    explorerHeightRef.current = next;
-    setExplorerHeight(next);
-    if (persist) writeStoredExplorerHeight(next);
-    return next;
-  }, [clampExplorerHeight]);
-
-  useEffect(() => {
-    if (!isDesktopLayout || !explorerOpen) return;
-    const reclamp = () => {
-      setExplorerHeight((current) => clampExplorerHeight(current));
-    };
-    reclamp();
-    window.addEventListener("resize", reclamp);
-    return () => window.removeEventListener("resize", reclamp);
-  }, [clampExplorerHeight, explorerOpen, isDesktopLayout]);
-
-  const handleExplorerResizePointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    if (!isDesktopLayout || !explorerOpen) return;
-    event.preventDefault();
-    event.stopPropagation();
-    const root = sidebarRootRef.current;
-    if (!root) return;
-
-    const bottom = root.getBoundingClientRect().bottom;
-    const previousUserSelect = document.body.style.userSelect;
-    const previousCursor = document.body.style.cursor;
-    document.body.style.userSelect = "none";
-    document.body.style.cursor = "row-resize";
-    setExplorerResizing(true);
-
-    const handlePointerMove = (moveEvent: PointerEvent) => {
-      commitExplorerHeight(bottom - moveEvent.clientY, false);
-    };
-    const handlePointerUp = () => {
-      window.removeEventListener("pointermove", handlePointerMove);
-      window.removeEventListener("pointerup", handlePointerUp);
-      window.removeEventListener("pointercancel", handlePointerUp);
-      document.body.style.userSelect = previousUserSelect;
-      document.body.style.cursor = previousCursor;
-      setExplorerResizing(false);
-      writeStoredExplorerHeight(explorerHeightRef.current);
-    };
-
-    window.addEventListener("pointermove", handlePointerMove);
-    window.addEventListener("pointerup", handlePointerUp);
-    window.addEventListener("pointercancel", handlePointerUp);
-  }, [commitExplorerHeight, explorerOpen, isDesktopLayout]);
-
-  const handleExplorerResizeKeyDown = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
-    if (!isDesktopLayout || !explorerOpen) return;
-    const step = event.shiftKey ? EXPLORER_RESIZE_STEP_LARGE : EXPLORER_RESIZE_STEP;
-    let delta = 0;
-    if (event.key === "ArrowUp") delta = step;
-    else if (event.key === "ArrowDown") delta = -step;
-    else return;
-    event.preventDefault();
-    commitExplorerHeight(explorerHeightRef.current + delta, true);
-  }, [commitExplorerHeight, explorerOpen, isDesktopLayout]);
-
-  // Reset sidebar-only selection UI when the project changes (data reset lives in the hook).
   useEffect(() => {
     setSelectedForArchive(new Set());
     setArchivedExpanded(false);
     setArchiveAllConfirming(false);
-  }, [selectedCwd]);
+  }, [activeCwd]);
 
   const handleArchiveSession = useCallback(async (sessionId: string) => {
     try {
@@ -546,13 +172,13 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   }, [selectedForArchive, loadSessions]);
 
   const handleArchiveAll = useCallback(async () => {
-    if (!selectedCwd) return;
+    if (!activeCwd) return;
     setArchiveAllBusy(true);
     try {
       const res = await fetch("/api/sessions/archive-all", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cwd: selectedCwd }),
+        body: JSON.stringify({ cwd: activeCwd }),
       });
       if (res.ok) {
         setArchiveAllConfirming(false);
@@ -563,7 +189,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     } finally {
       setArchiveAllBusy(false);
     }
-  }, [selectedCwd, loadSessions]);
+  }, [activeCwd, loadSessions]);
 
   const handleDeleteSession = useCallback(async (session: SessionInfo) => {
     const title = session.name || session.firstMessage.slice(0, 50) || session.id.slice(0, 12);
@@ -587,9 +213,9 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   }, [loadSessions, onSessionDeleted, t, appDialog, setArchivedSessions]);
 
   useEffect(() => {
-    if (!archivedExpanded || !selectedCwd || (archivedCounts[selectedCwd] ?? 0) === 0) return;
-    void loadArchivedSessions(selectedCwd, true);
-  }, [archivedExpanded, selectedCwd, archivedCounts, loadArchivedSessions]);
+    if (!archivedExpanded || !activeCwd || (archivedCounts[activeCwd] ?? 0) === 0) return;
+    void loadArchivedSessions(activeCwd, true);
+  }, [archivedExpanded, activeCwd, archivedCounts, loadArchivedSessions]);
 
   useEffect(() => {
     if (explorerRefreshKey !== undefined) setExplorerKey((k) => k + 1);
@@ -601,35 +227,28 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     }).catch(() => {});
   }, []);
 
-  const restoredRef = useRef(false);
-
   useEffect(() => {
-    onCwdChange?.(selectedCwd);
-  }, [selectedCwd, onCwdChange]);
-
-  useEffect(() => {
-    if (!selectedCwd) {
-      setSelectedCwdGit(undefined);
+    if (!activeCwd) {
+      setActiveCwdGit(undefined);
       return;
     }
 
     const controller = new AbortController();
-    fetch(`/api/git/info?cwd=${encodeURIComponent(selectedCwd)}`, { signal: controller.signal })
+    fetch(`/api/git/info?cwd=${encodeURIComponent(activeCwd)}`, { signal: controller.signal })
       .then((res) => res.ok ? res.json() : null)
       .then((data: { git?: GitInfo } | null) => {
-        if (!controller.signal.aborted) setSelectedCwdGit(data?.git);
+        if (!controller.signal.aborted) setActiveCwdGit(data?.git);
       })
       .catch(() => {
-        if (!controller.signal.aborted) setSelectedCwdGit(undefined);
+        if (!controller.signal.aborted) setActiveCwdGit(undefined);
       });
 
     return () => controller.abort();
-  }, [selectedCwd]);
+  }, [activeCwd]);
 
   // Auto-select cwd and restore session from URL on first load.
-  // URL restore uses the session detail API so old ids outside the recent-10 window still open.
   useEffect(() => {
-    if (selectedCwd !== null) return;
+    if (activeCwd !== null) return;
     if (loading) return;
 
     if (initialSessionId && !restoredRef.current) {
@@ -641,13 +260,13 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
           if (!res.ok) {
             onInitialRestoreDone?.();
             const cwds = getOrderedCwds(projectSummaries);
-            if (cwds.length > 0) setSelectedCwd(cwds[0]);
+            if (cwds.length > 0) onActiveCwdChange(cwds[0]);
             return;
           }
           const data = await res.json() as { info?: SessionInfo | null };
           if (cancelled) return;
           if (data.info?.cwd) {
-            setSelectedCwd(data.info.cwd);
+            // Session select path sets activeCwd in AppShell without workspace-change wipe.
             onSelectSession(data.info, true);
             return;
           }
@@ -657,99 +276,46 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         }
         if (!cancelled) {
           const cwds = getOrderedCwds(projectSummaries);
-          if (cwds.length > 0) setSelectedCwd(cwds[0]);
+          if (cwds.length > 0) onActiveCwdChange(cwds[0]);
         }
       })();
       return () => { cancelled = true; };
     }
 
     const cwds = getOrderedCwds(projectSummaries);
-    if (cwds.length > 0) setSelectedCwd(cwds[0]);
+    if (cwds.length > 0) onActiveCwdChange(cwds[0]);
   }, [
     loading,
     projectSummaries,
-    selectedCwd,
+    activeCwd,
     initialSessionId,
     onSelectSession,
     onInitialRestoreDone,
+    onActiveCwdChange,
   ]);
 
-  const commitCustomPath = useCallback(async () => {
-    const path = customPathValue.trim();
-    if (!path || customPathValidating) return;
-
-    setCustomPathValidating(true);
-    setCustomPathError(null);
-    try {
-      const res = await fetch("/api/cwd/validate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cwd: path }),
-      });
-      const data = await res.json().catch(() => ({})) as { cwd?: string; error?: string };
-      if (!res.ok || data.error) {
-        setCustomPathError(data.error ?? `HTTP ${res.status}`);
-        return;
-      }
-      setSelectedCwd(data.cwd ?? path);
-      setCustomPathOpen(false);
-      setCustomPathValue("");
-      closeCwdPicker();
-    } catch (e) {
-      setCustomPathError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setCustomPathValidating(false);
-    }
-  }, [closeCwdPicker, customPathValue, customPathValidating]);
-
-  const handleDefaultCwd = useCallback(async () => {
-    try {
-      const res = await fetch("/api/default-cwd", { method: "POST" });
-      const data = await res.json() as { cwd?: string; error?: string };
-      if (data.cwd) {
-        setSelectedCwd(data.cwd);
-        setCustomPathOpen(false);
-        setCustomPathValue("");
-        setCustomPathError(null);
-        closeCwdPicker();
-      }
-    } catch {
-      // ignore
-    }
-  }, [closeCwdPicker]);
-
-  // Close dropdown/context menu on outside click
   useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      setWorktreeContextMenu(null);
+    const handler = () => {
       setSessionContextMenu(null);
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        closeCwdPicker();
-        setCustomPathOpen(false);
-        setCustomPathValue("");
-        setCustomPathError(null);
-      }
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
-  }, [closeCwdPicker]);
+  }, []);
 
   const handleNewSession = useCallback(() => {
-    if (!selectedCwd) return;
-    // Generate a temporary UUID client-side — no backend call needed.
-    // Pi will be spawned lazily when the user sends the first message.
-    onNewSession?.(makeTempSessionId(), selectedCwd);
-  }, [selectedCwd, onNewSession]);
+    if (!activeCwd) return;
+    onNewSession?.(makeTempSessionId(), activeCwd);
+  }, [activeCwd, onNewSession]);
 
   const handleNewWorktree = useCallback(async () => {
-    if (!selectedCwd || creatingWorktree) return;
+    if (!activeCwd || creatingWorktree) return;
     setCreatingWorktree(true);
     setWorktreeError(null);
     try {
       const res = await fetch("/api/git/worktrees", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cwd: selectedCwd }),
+        body: JSON.stringify({ cwd: activeCwd }),
       });
       const data = await res.json().catch(() => ({})) as WorktreeCreateResponse;
       if (!res.ok || data.error || !data.cwd) {
@@ -765,11 +331,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       };
       setEphemeralWorktrees((prev) => ({ ...prev, [data.cwd!]: worktree }));
       setRemovedWorktreeCwds((prev) => prev.filter((cwd) => cwd !== data.cwd));
-      setSelectedCwd(data.cwd);
-      closeCwdPicker();
-      setCustomPathOpen(false);
-      setCustomPathValue("");
-      setCustomPathError(null);
+      onActiveCwdChange(data.cwd);
       onNewSession?.(makeTempSessionId(), data.cwd);
       setExplorerKey((k) => k + 1);
     } catch (e) {
@@ -777,13 +339,11 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     } finally {
       setCreatingWorktree(false);
     }
-  }, [closeCwdPicker, selectedCwd, creatingWorktree, onNewSession]);
+  }, [activeCwd, creatingWorktree, onNewSession, onActiveCwdChange]);
 
   const openWorktreeAction = useCallback((kind: "delete" | "archive", cwd: string, worktree: WorktreeInfo) => {
-    setWorktreeContextMenu(null);
-    closeCwdPicker();
     setWorktreeAction({ kind, cwd, worktree, force: false, busy: false, error: null });
-  }, [closeCwdPicker]);
+  }, []);
 
   const applyWorktreeFallback = useCallback((removedCwd: string, fallbackCwd?: string) => {
     setEphemeralWorktrees((prev) => {
@@ -792,12 +352,12 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       return next;
     });
     setRemovedWorktreeCwds((prev) => prev.includes(removedCwd) ? prev : [...prev, removedCwd]);
-    if (selectedCwd === removedCwd) {
-      setSelectedCwd(fallbackCwd ?? null);
+    if (activeCwd === removedCwd) {
+      onActiveCwdChange(fallbackCwd ?? null);
     }
     setExplorerKey((k) => k + 1);
     void loadSessions(false);
-  }, [loadSessions, selectedCwd]);
+  }, [loadSessions, activeCwd, onActiveCwdChange]);
 
   const confirmWorktreeAction = useCallback(async () => {
     if (!worktreeAction || worktreeAction.busy) return;
@@ -834,711 +394,176 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     }
   }, [applyWorktreeFallback, onSessionDeleted, worktreeAction]);
 
-  const visibleProjects = projectSummaries.filter((project) => !removedWorktreeCwds.includes(project.cwd));
-  // Render only the session set owned by the current selected cwd (drop stale project A rows).
-  const visibleSessions = projectSessions.filter((session) =>
-    projectSessionsCwd === selectedCwd
-    && session.cwd === selectedCwd
-    && !removedWorktreeCwds.includes(session.cwd)
+  const visibleProjects = useMemo(
+    () => projectSummaries.filter((project) => !removedWorktreeCwds.includes(project.cwd)),
+    [projectSummaries, removedWorktreeCwds],
   );
-  const worktreeByCwd = new Map<string, WorktreeInfo>();
-  for (const project of visibleProjects) {
-    if (project.cwd && project.worktree && !worktreeByCwd.has(project.cwd)) {
-      worktreeByCwd.set(project.cwd, project.worktree);
+
+  const visibleSessions = useMemo(
+    () => projectSessions.filter((session) =>
+      projectSessionsCwd === activeCwd
+      && session.cwd === activeCwd
+      && !removedWorktreeCwds.includes(session.cwd)
+    ),
+    [projectSessions, projectSessionsCwd, activeCwd, removedWorktreeCwds],
+  );
+
+  const worktreeByCwd = useMemo(() => {
+    const map = new Map<string, WorktreeInfo>();
+    for (const project of visibleProjects) {
+      if (project.cwd && project.worktree && !map.has(project.cwd)) {
+        map.set(project.cwd, project.worktree);
+      }
     }
-  }
-  for (const session of visibleSessions) {
-    if (session.cwd && session.worktree && !worktreeByCwd.has(session.cwd)) {
-      worktreeByCwd.set(session.cwd, session.worktree);
+    for (const session of visibleSessions) {
+      if (session.cwd && session.worktree && !map.has(session.cwd)) {
+        map.set(session.cwd, session.worktree);
+      }
     }
-  }
-  for (const [cwd, worktree] of Object.entries(ephemeralWorktrees)) {
-    if (!removedWorktreeCwds.includes(cwd)) worktreeByCwd.set(cwd, worktree);
-  }
-  const extraCwds: string[] = [];
-  const pinCwd = (cwd: string | null | undefined) => {
-    if (!cwd || removedWorktreeCwds.includes(cwd) || extraCwds.includes(cwd)) return;
-    extraCwds.push(cwd);
-  };
-  pinCwd(selectedCwd);
-  for (const worktree of worktreeByCwd.values()) pinCwd(worktree.mainWorktreePath);
-  for (const cwd of Object.keys(ephemeralWorktrees)) pinCwd(cwd);
-  // Add archived-only cwds (no active sessions) so projects remain visible
-  for (const acwd of archivedCwds) {
-    if (!acwd || extraCwds.includes(acwd)) continue;
-    if (!visibleProjects.some((p) => p.cwd === acwd)) {
-      extraCwds.push(acwd);
+    for (const [cwd, worktree] of Object.entries(ephemeralWorktrees)) {
+      if (!removedWorktreeCwds.includes(cwd)) map.set(cwd, worktree);
     }
-  }
-  const orderedCwds = getOrderedCwds(visibleProjects, extraCwds);
-  const selectedWorktree = selectedCwd ? worktreeByCwd.get(selectedCwd) : undefined;
-  const selectedProject = selectedCwd
-    ? visibleProjects.find((p) => p.cwd === selectedCwd)
+    return map;
+  }, [visibleProjects, visibleSessions, ephemeralWorktrees, removedWorktreeCwds]);
+
+  const orderedCwds = useMemo(() => {
+    const extraCwds: string[] = [];
+    const pinCwd = (cwd: string | null | undefined) => {
+      if (!cwd || removedWorktreeCwds.includes(cwd) || extraCwds.includes(cwd)) return;
+      extraCwds.push(cwd);
+    };
+    pinCwd(activeCwd);
+    for (const worktree of worktreeByCwd.values()) pinCwd(worktree.mainWorktreePath);
+    for (const cwd of Object.keys(ephemeralWorktrees)) pinCwd(cwd);
+    for (const acwd of archivedCwds) {
+      if (!acwd || extraCwds.includes(acwd)) continue;
+      if (!visibleProjects.some((p) => p.cwd === acwd)) {
+        extraCwds.push(acwd);
+      }
+    }
+    return getOrderedCwds(visibleProjects, extraCwds);
+  }, [activeCwd, worktreeByCwd, ephemeralWorktrees, archivedCwds, visibleProjects, removedWorktreeCwds]);
+
+  const selectedWorktree = activeCwd ? worktreeByCwd.get(activeCwd) : undefined;
+  const selectedProject = useMemo(
+    () => (activeCwd ? visibleProjects.find((p) => p.cwd === activeCwd) : undefined),
+    [activeCwd, visibleProjects],
+  );
+  const sessionGit = activeCwd
+    ? (selectedProject?.git ?? visibleSessions.find((s) => s.cwd === activeCwd)?.git)
     : undefined;
-  const sessionGit = selectedCwd
-    ? (selectedProject?.git ?? visibleSessions.find((s) => s.cwd === selectedCwd)?.git)
-    : undefined;
-  const currentGit: GitInfo | undefined = sessionGit ?? selectedCwdGit ?? (selectedWorktree ? {
+  const currentGit: GitInfo | undefined = sessionGit ?? activeCwdGit ?? (selectedWorktree ? {
     isWorktree: true,
     branch: selectedWorktree.branch,
     repoRoot: selectedWorktree.repoRoot,
     mainWorktreePath: selectedWorktree.mainWorktreePath,
     mainWorktreeBranch: selectedWorktree.mainWorktreeBranch,
   } : undefined);
-  const workspaceTitle = formatWorkspaceHeaderTitle(selectedCwd, currentGit);
-  const workspaceTitleDetail = formatWorkspaceTitle(selectedCwd, currentGit);
-  const workspaceSubtitle = formatWorkspaceSubtitle(selectedCwd, currentGit);
-  const archivedOnlyCwds = new Set(archivedCwds.filter((acwd) => !visibleProjects.some((p) => p.cwd === acwd)));
-  const cwdGroups = groupCwdPickerRows(buildCwdPickerRows(orderedCwds, worktreeByCwd));
-  const filteredCwdGroups = allProjectsOpen ? filterCwdPickerGroups(cwdGroups, cwdSearch) : cwdGroups.slice(0, 5);
-  const displayedCwdRows = filteredCwdGroups.flat();
-  // Sidebar only holds the bounded recent window for the selected project.
+  const workspaceTitle = formatWorkspaceHeaderTitle(activeCwd, currentGit);
+  const workspaceTitleDetail = formatWorkspaceTitle(activeCwd, currentGit);
+  const workspaceSubtitle = formatWorkspaceSubtitle(activeCwd, currentGit);
+
+  const archivedOnlyCwds = useMemo(
+    () => new Set(archivedCwds.filter((acwd) => !visibleProjects.some((p) => p.cwd === acwd))),
+    [archivedCwds, visibleProjects],
+  );
+
+  const cwdGroups = useMemo(
+    () => groupCwdPickerRows(buildCwdPickerRows(orderedCwds, worktreeByCwd)),
+    [orderedCwds, worktreeByCwd],
+  );
   const filteredSessions = visibleSessions;
   const activeSessionCountForCwd = selectedProject?.sessionCount
     ?? (projectSessionTotal > 0 ? projectSessionTotal : filteredSessions.length);
 
-  // Build parent-child tree within the recent window; missing parents stay roots.
-  const sessionTree = buildSessionTree(filteredSessions);
+  const sessionTree = useMemo(() => buildSessionTree(filteredSessions), [filteredSessions]);
 
-  const explorerCwd = selectedCwdProp || selectedCwd;
-  const explorerHeightBounds = getExplorerHeightBounds();
-  // Desktop uses a persisted pixel height; mobile keeps the prior equal remaining-space split.
-  const sizedExplorerOpen = Boolean(explorerOpen && explorerCwd && isDesktopLayout);
-  const equalShareExplorerOpen = Boolean(explorerOpen && explorerCwd && !isDesktopLayout);
-  const explorerSectionFlex = !explorerOpen
-    ? "0 0 auto"
-    : sizedExplorerOpen
-      ? `0 0 ${explorerHeight}px`
-      : "1 1 0";
+  const equalShareExplorerOpen = Boolean(explorerOpen && activeCwd && !isDesktopLayout);
   const sessionListFlex = equalShareExplorerOpen ? "1 1 0" : "1 1 auto";
+
+  const handleToggleSelect = useCallback((id: string) => {
+    setSelectedForArchive((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const handleSessionContextMenu = useCallback((event: React.MouseEvent, session: SessionInfo) => {
+    setSessionContextMenu({ x: event.clientX, y: event.clientY, session });
+  }, []);
+
+  const handleSessionDeletedFromList = useCallback((id: string) => {
+    onSessionDeleted?.(id);
+    void loadSessions();
+  }, [onSessionDeleted, loadSessions]);
+
+  // Stable identity for memoized ArchivedSessionItem (do not inline at call site).
+  const handleArchivedSessionDeleted = useCallback((id: string) => {
+    onSessionDeleted?.(id);
+  }, [onSessionDeleted]);
+
+  const handleClearArchiveSelection = useCallback(() => {
+    setSelectedForArchive(new Set());
+  }, []);
+
+  const handleExplorerRefresh = useCallback(() => {
+    setExplorerKey((k) => k + 1);
+    setExplorerRefreshDone(true);
+    if (explorerRefreshTimerRef.current) clearTimeout(explorerRefreshTimerRef.current);
+    explorerRefreshTimerRef.current = setTimeout(() => setExplorerRefreshDone(false), 2000);
+  }, []);
+
+  const handleToggleArchived = useCallback(() => {
+    if (!activeCwd) return;
+    if (!archivedExpanded) {
+      setArchivedExpanded(true);
+      void loadArchivedSessions(activeCwd);
+    } else {
+      setArchivedExpanded(false);
+    }
+  }, [activeCwd, archivedExpanded, loadArchivedSessions]);
+
+  const handlePickerNewWorktree = useCallback(() => {
+    void handleNewWorktree();
+  }, [handleNewWorktree]);
+
+  const handlePickerRefresh = useCallback(() => {
+    loadSessions(false);
+  }, [loadSessions]);
+
+  const handleRequestArchiveAll = useCallback(() => {
+    setArchiveAllConfirming(true);
+  }, []);
+
+  const handleClearWorktreeError = useCallback(() => {
+    setWorktreeError(null);
+  }, []);
 
   return (
     <div ref={sidebarRootRef} className="session-sidebar-root" style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
-      {/* Header */}
-      <div
-        style={{
-          padding: "12px 10px 10px",
-          borderBottom: "1px solid var(--border)",
-          flexShrink: 0,
-        }}
-      >
-        <div style={{ marginBottom: 10, minWidth: 0 }}>
-          <WorkspaceHeaderLine text={workspaceTitle} detail={workspaceTitleDetail} strong />
-          <div style={{ marginTop: 2 }}>
-            <WorkspaceHeaderLine text={workspaceSubtitle} detail={workspaceSubtitle} />
-          </div>
-        </div>
-        <div className="session-sidebar-actions" style={{ display: "flex", gap: 6, marginBottom: 10 }}>
-            <button
-              onClick={handleNewSession}
-              disabled={!selectedCwd}
-              style={{
-                display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
-                background: "var(--bg-hover)",
-                border: "1px solid var(--border)",
-                color: selectedCwd ? "var(--text-muted)" : "var(--text-dim)",
-                cursor: selectedCwd ? "pointer" : "not-allowed",
-                height: 32,
-                paddingLeft: 10,
-                paddingRight: 12,
-                borderRadius: 7,
-                fontSize: 12,
-                fontWeight: 500,
-                letterSpacing: "-0.01em",
-                flexShrink: 0,
-                transition: "background 0.12s, color 0.12s, border-color 0.12s",
-              }}
-              title={selectedCwd ? t("sidebar.newSessionIn", { cwd: selectedCwd }) : t("sidebar.selectProjectFirst")}
-              onMouseEnter={(e) => {
-                if (!selectedCwd) return;
-                e.currentTarget.style.background = "var(--bg-selected)";
-                e.currentTarget.style.color = "var(--accent)";
-                e.currentTarget.style.borderColor = "rgba(37,99,235,0.35)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = "var(--bg-hover)";
-                e.currentTarget.style.color = selectedCwd ? "var(--text-muted)" : "var(--text-dim)";
-                e.currentTarget.style.borderColor = "var(--border)";
-              }}
-            >
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
-                <line x1="6" y1="1" x2="6" y2="11" />
-                <line x1="1" y1="6" x2="11" y2="6" />
-              </svg>
-              New
-            </button>
-            <button
-              onClick={() => void handleNewWorktree()}
-              disabled={!selectedCwd || creatingWorktree}
-              style={{
-                display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
-                background: "var(--bg-hover)",
-                border: "1px solid var(--border)",
-                color: selectedCwd && !creatingWorktree ? "var(--text-muted)" : "var(--text-dim)",
-                cursor: selectedCwd && !creatingWorktree ? "pointer" : "not-allowed",
-                height: 32,
-                paddingLeft: 9,
-                paddingRight: 10,
-                borderRadius: 7,
-                fontSize: 12,
-                fontWeight: 500,
-                letterSpacing: "-0.01em",
-                flexShrink: 0,
-                transition: "background 0.12s, color 0.12s, border-color 0.12s",
-              }}
-              title={selectedCwd ? t("sidebar.createWorktreeFrom", { cwd: selectedCwd }) : t("sidebar.selectProjectFirst")}
-              onMouseEnter={(e) => {
-                if (!selectedCwd || creatingWorktree) return;
-                e.currentTarget.style.background = "var(--bg-selected)";
-                e.currentTarget.style.color = "var(--accent)";
-                e.currentTarget.style.borderColor = "rgba(37,99,235,0.35)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = "var(--bg-hover)";
-                e.currentTarget.style.color = selectedCwd && !creatingWorktree ? "var(--text-muted)" : "var(--text-dim)";
-                e.currentTarget.style.borderColor = "var(--border)";
-              }}
-            >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="6" cy="18" r="3" />
-                <circle cx="18" cy="6" r="3" />
-                <path d="M6 15V9a3 3 0 0 1 3-3h6" />
-                <path d="M9 18h6a3 3 0 0 0 3-3V9" />
-              </svg>
-              {creatingWorktree ? t("common.creating") : t("sidebar.workTree")}
-            </button>
-            <button
-              onClick={() => loadSessions(false)}
-              style={{
-                display: "flex", alignItems: "center", justifyContent: "center",
-                background: sessionRefreshDone ? "rgba(74,222,128,0.18)" : "var(--bg-hover)",
-                border: `1px solid ${sessionRefreshDone ? "rgba(74,222,128,0.4)" : "var(--border)"}`,
-                color: sessionRefreshDone ? "#4ade80" : "var(--text-muted)",
-                cursor: "pointer",
-                width: 32, height: 32,
-                borderRadius: 7,
-                padding: 0,
-                flexShrink: 0,
-                transition: "background 0.3s, color 0.3s, border-color 0.3s",
-              }}
-              onMouseEnter={(e) => {
-                if (sessionRefreshDone) return;
-                e.currentTarget.style.background = "var(--bg-selected)";
-                e.currentTarget.style.color = "var(--accent)";
-                e.currentTarget.style.borderColor = "rgba(37,99,235,0.35)";
-              }}
-              onMouseLeave={(e) => {
-                if (sessionRefreshDone) return;
-                e.currentTarget.style.background = "var(--bg-hover)";
-                e.currentTarget.style.color = "var(--text-muted)";
-                e.currentTarget.style.borderColor = "var(--border)";
-              }}
-              title={t("common.refresh")}
-            >
-              {sessionRefreshDone ? (
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="20 6 9 17 4 12" />
-                </svg>
-              ) : (
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-                  <path d="M3 3v5h5" />
-                </svg>
-              )}
-            </button>
-            {/* Workspace actions menu */}
-            {selectedCwd && (
-              <div ref={workspaceMenuRef} style={{ position: "relative" }}>
-                <button
-                  onClick={() => setWorkspaceMenuOpen((v) => !v)}
-                  style={{
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    background: "var(--bg-hover)",
-                    border: "1px solid var(--border)",
-                    color: "var(--text-muted)",
-                    cursor: "pointer",
-                    width: 32, height: 32,
-                    borderRadius: 7,
-                    padding: 0,
-                    flexShrink: 0,
-                  }}
-                  title={t("sidebar.workspaceActions")}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <circle cx="12" cy="5" r="1" />
-                    <circle cx="12" cy="12" r="1" />
-                    <circle cx="12" cy="19" r="1" />
-                  </svg>
-                </button>
-                {workspaceMenuOpen && (
-                  <>
-                    <div
-                      onClick={() => setWorkspaceMenuOpen(false)}
-                      style={{ position: "fixed", inset: 0, zIndex: 999 }}
-                    />
-                    <div className="session-sidebar-floating-menu" style={{
-                      position: "absolute",
-                      right: 0,
-                      top: "100%",
-                      marginTop: 4,
-                      background: "var(--bg)",
-                      border: "1px solid var(--border)",
-                      borderRadius: 8,
-                      boxShadow: "0 4px 12px rgba(0,0,0,0.25)",
-                      zIndex: 1000,
-                      minWidth: 180,
-                      padding: "4px 0",
-                      overflow: "hidden",
-                    }}>
-                      <button
-                        onClick={() => {
-                          setWorkspaceMenuOpen(false);
-                          setArchiveAllConfirming(true);
-                        }}
-                        style={{
-                          display: "flex", alignItems: "center", gap: 8,
-                          width: "100%",
-                          padding: "9px 14px",
-                          background: "none",
-                          border: "none",
-                          color: "var(--text)",
-                          cursor: "pointer",
-                          fontSize: 12,
-                          textAlign: "left",
-                        }}
-                        onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-hover)"; }}
-                        onMouseLeave={(e) => { e.currentTarget.style.background = "none"; }}
-                      >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                          <polyline points="7 10 12 15 17 10" />
-                          <line x1="12" y1="15" x2="12" y2="3" />
-                        </svg>
-                        {t("sidebar.archiveAllSessions")}
-                      </button>
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
-        </div>
-
-        {worktreeError && (
-          <div style={{
-            marginBottom: 8,
-            padding: "6px 8px",
-            borderRadius: 6,
-            background: "rgba(239,68,68,0.08)",
-            border: "1px solid rgba(239,68,68,0.22)",
-            color: "#dc2626",
-            fontSize: 11,
-            lineHeight: 1.35,
-            overflowWrap: "anywhere",
-          }}>
-            {worktreeError}
-          </div>
-        )}
-
-        {/* CWD picker */}
-        <div ref={dropdownRef} style={{ position: "relative" }}>
-          <button
-            onClick={() => {
-              if (dropdownOpen) {
-                closeCwdPicker();
-              } else {
-                resetCwdPickerView();
-                setDropdownOpen(true);
-              }
-            }}
-            aria-label={selectedCwd ? t("sidebar.switchProjectCurrent", { cwd: selectedCwd }) : t("sidebar.switchProject")}
-            aria-expanded={dropdownOpen}
-            onContextMenu={(e) => {
-              const worktree = selectedCwd ? worktreeByCwd.get(selectedCwd) : undefined;
-              if (!selectedCwd || !worktree) return;
-              e.preventDefault();
-              e.stopPropagation();
-              setWorktreeContextMenu({ x: e.clientX, y: e.clientY, cwd: selectedCwd, worktree });
-            }}
-            style={{
-              width: "100%",
-              display: "flex",
-              alignItems: "center",
-              padding: "6px 10px",
-              background: selectedCwd ? "var(--bg-hover)" : "rgba(37,99,235,0.06)",
-              border: selectedCwd ? "1px solid var(--border)" : "1px solid rgba(37,99,235,0.4)",
-              borderRadius: 7,
-              cursor: "pointer",
-              fontSize: 12,
-              color: "var(--text)",
-              textAlign: "left",
-              transition: "border-color 0.15s, background 0.15s",
-            }}
-          >
-            <span
-              style={{
-                flex: 1,
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-                fontFamily: "var(--font-mono)",
-                fontSize: 11,
-                color: selectedCwd ? "var(--text)" : "var(--text-dim)",
-              }}
-              title={selectedWorktree ? `${selectedCwd ?? ""}\n${t("sidebar.worktreeContextHint")}` : selectedCwd ?? ""}
-            >
-              {selectedCwd ? shortenCwd(selectedCwd, homeDir) : (initialSessionId && !restoredRef.current ? "" : t("sidebar.selectProjectPlaceholder"))}
-            </span>
-            <WorktreeBadge worktree={selectedCwd ? worktreeByCwd.get(selectedCwd) : undefined} />
-          </button>
-
-          {dropdownOpen && (
-            <div
-              className="session-sidebar-cwd-menu"
-              style={{
-                position: "absolute",
-                top: "calc(100% + 4px)",
-                left: 0,
-                right: 0,
-                zIndex: 100,
-                background: "var(--bg)",
-                border: "1px solid var(--border)",
-                borderRadius: 8,
-                boxShadow: "0 6px 20px rgba(0,0,0,0.10)",
-                display: "flex",
-                flexDirection: "column",
-                maxHeight: "calc(100dvh - 150px)",
-                overflow: "hidden",
-              }}
-            >
-              {allProjectsOpen && (
-                <div style={{ padding: "8px", borderBottom: "1px solid var(--border)", background: "var(--bg-subtle)", flexShrink: 0 }}>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 7 }}>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setAllProjectsOpen(false);
-                        setCwdSearch("");
-                      }}
-                      style={{
-                        padding: 0,
-                        background: "none",
-                        border: "none",
-                        color: "var(--accent)",
-                        cursor: "pointer",
-                        fontSize: 11,
-                        fontWeight: 600,
-                      }}
-                    >
-                      ← Recent projects
-                    </button>
-                    <span style={{ color: "var(--text-dim)", fontSize: 10 }}>
-                      {cwdGroups.length} projects
-                    </span>
-                  </div>
-                  <input
-                    ref={cwdSearchInputRef}
-                    type="search"
-                    aria-label={t("sidebar.searchProjectsAria")}
-                    placeholder={t("sidebar.searchProjectsPlaceholder")}
-                    value={cwdSearch}
-                    onChange={(e) => setCwdSearch(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Escape") closeCwdPicker();
-                    }}
-                    style={{
-                      width: "100%",
-                      boxSizing: "border-box",
-                      padding: "6px 8px",
-                      border: "1px solid var(--border)",
-                      borderRadius: 5,
-                      outline: "none",
-                      background: "var(--bg)",
-                      color: "var(--text)",
-                      fontFamily: "var(--font-mono)",
-                      fontSize: 11,
-                    }}
-                  />
-                </div>
-              )}
-
-              <div style={{ maxHeight: allProjectsOpen ? 320 : 300, minHeight: 0, overflowY: "auto", flexShrink: 1 }}>
-                {displayedCwdRows.map((row) => {
-                  const selected = row.cwd === selectedCwd;
-                  const isWorktree = row.kind === "worktree";
-                  return (
-                    <button
-                      key={`${row.kind}:${row.cwd}`}
-                      onClick={() => {
-                        setSelectedCwd(row.cwd);
-                        setWorktreeError(null);
-                        setCustomPathOpen(false);
-                        setCustomPathValue("");
-                        setCustomPathError(null);
-                        closeCwdPicker();
-                      }}
-                      onContextMenu={(e) => {
-                        if (!row.worktree) return;
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setWorktreeContextMenu({ x: e.clientX, y: e.clientY, cwd: row.cwd, worktree: row.worktree });
-                      }}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 7,
-                        width: "100%",
-                        padding: isWorktree ? "7px 10px 7px 28px" : "8px 10px",
-                        background: selected ? "var(--bg-selected)" : isWorktree ? "var(--bg-subtle)" : "none",
-                        border: "none",
-                        borderBottom: "1px solid var(--border)",
-                        color: selected ? "var(--text)" : "var(--text-muted)",
-                        cursor: "pointer",
-                        textAlign: "left",
-                        fontSize: 11,
-                        fontFamily: "var(--font-mono)",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                      }}
-                      title={row.worktree ? `${row.cwd}\n${t("sidebar.worktreeContextHint")}` : row.cwd}
-                    >
-                      {selected && (
-                        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-                          <polyline points="1.5 5 4 7.5 8.5 2.5" />
-                        </svg>
-                      )}
-                      {!selected && isWorktree && (
-                        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--text-dim)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-                          <path d="M2 1.5v4A2.5 2.5 0 0 0 4.5 8H8" />
-                        </svg>
-                      )}
-                      {!selected && !isWorktree && <span style={{ width: 10, flexShrink: 0 }} />}
-                      <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {shortenCwd(row.cwd, homeDir)}
-                        {row.syntheticParent && <span style={{ color: "var(--text-dim)", marginLeft: 5 }}>(main)</span>}
-                        {archivedOnlyCwds.has(row.cwd) && <span style={{ color: "var(--text-dim)", fontStyle: "italic", marginLeft: 5 }}>(archived)</span>}
-                      </span>
-                      <WorktreeBadge worktree={row.worktree} />
-                    </button>
-                  );
-                })}
-                {allProjectsOpen && filteredCwdGroups.length === 0 && (
-                  <div
-                    role="status"
-                    style={{ padding: "18px 12px", color: "var(--text-dim)", fontSize: 11, textAlign: "center" }}
-                  >
-                    {cwdSearch.trim() ? t("sidebar.noProjectsMatch") : t("sidebar.noProjects")}
-                  </div>
-                )}
-              </div>
-
-              {!allProjectsOpen && cwdGroups.length > 5 && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setAllProjectsOpen(true);
-                    setCwdSearch("");
-                    setTimeout(() => cwdSearchInputRef.current?.focus(), 0);
-                  }}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    gap: 8,
-                    width: "100%",
-                    padding: "8px 10px",
-                    background: "var(--bg-subtle)",
-                    border: "none",
-                    borderTop: "1px solid var(--border)",
-                    color: "var(--accent)",
-                    cursor: "pointer",
-                    textAlign: "left",
-                    fontSize: 11,
-                    fontWeight: 600,
-                    flexShrink: 0,
-                  }}
-                >
-                  <span>View all projects</span>
-                  <span style={{ color: "var(--text-dim)", fontSize: 10, fontWeight: 500 }}>
-                    {cwdGroups.length} projects
-                  </span>
-                </button>
-              )}
-
-              {/* Default cwd shortcut */}
-              {!customPathOpen && (
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleDefaultCwd(); }}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 7,
-                    width: "100%",
-                    padding: "8px 10px",
-                    background: "none",
-                    border: "none",
-                    borderTop: displayedCwdRows.length > 0 || cwdGroups.length > 5 ? "1px solid var(--border)" : "none",
-                    color: "var(--text-muted)",
-                    cursor: "pointer",
-                    textAlign: "left",
-                    fontSize: 11,
-                    flexShrink: 0,
-                  }}
-                >
-                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-                    <path d="M1 3A1 1 0 0 1 2 2H4L5 3.5H8.5a.5.5 0 0 1 .5.5v4a.5.5 0 0 1-.5.5h-7A.5.5 0 0 1 1 8V3Z" />
-                  </svg>
-                  <span>Use default directory</span>
-                </button>
-              )}
-
-              {/* Custom path entry */}
-              {!customPathOpen ? (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setCustomPathOpen(true);
-                    setCustomPathError(null);
-                    setTimeout(() => customPathInputRef.current?.focus(), 0);
-                  }}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 7,
-                    width: "100%",
-                    padding: "8px 10px",
-                    background: "none",
-                    border: "none",
-                    color: "var(--text-muted)",
-                    cursor: "pointer",
-                    textAlign: "left",
-                    fontSize: 11,
-                    flexShrink: 0,
-                  }}
-                >
-                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" style={{ flexShrink: 0 }}>
-                    <line x1="5" y1="1" x2="5" y2="9" />
-                    <line x1="1" y1="5" x2="9" y2="5" />
-                  </svg>
-                  <span>Custom path…</span>
-                </button>
-              ) : (
-                <div style={{ padding: "6px 8px", borderTop: displayedCwdRows.length > 0 ? "none" : undefined, flexShrink: 0 }}>
-                  <input
-                    ref={customPathInputRef}
-                    value={customPathValue}
-                    onChange={(e) => {
-                      setCustomPathValue(e.target.value);
-                      setCustomPathError(null);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        void commitCustomPath();
-                      }
-                      if (e.key === "Escape") {
-                        setCustomPathOpen(false);
-                        setCustomPathValue("");
-                        setCustomPathError(null);
-                      }
-                    }}
-                    placeholder={t("sidebar.pathPlaceholder")}
-                    style={{
-                      width: "100%",
-                      fontSize: 11,
-                      fontFamily: "var(--font-mono)",
-                      padding: "5px 8px",
-                      border: "1px solid var(--accent)",
-                      borderRadius: 5,
-                      outline: "none",
-                      background: "var(--bg)",
-                      color: "var(--text)",
-                      boxSizing: "border-box",
-                    }}
-                  />
-                  {customPathError && (
-                    <div style={{
-                      marginTop: 5,
-                      color: "#dc2626",
-                      fontSize: 11,
-                      lineHeight: 1.35,
-                      overflowWrap: "anywhere",
-                    }}>
-                      {customPathError}
-                    </div>
-                  )}
-                  <div style={{ display: "flex", gap: 5, marginTop: 5 }}>
-                    <button
-                      onClick={() => void commitCustomPath()}
-                      disabled={customPathValidating || !customPathValue.trim()}
-                      style={{
-                        flex: 1,
-                        padding: "4px 0",
-                        background: "var(--accent)",
-                        border: "none",
-                        borderRadius: 5,
-                        color: "#fff",
-                        fontSize: 11,
-                        fontWeight: 600,
-                        cursor: customPathValidating || !customPathValue.trim() ? "not-allowed" : "pointer",
-                        opacity: customPathValidating || !customPathValue.trim() ? 0.65 : 1,
-                      }}
-                    >
-                      {customPathValidating ? "Checking…" : "Open"}
-                    </button>
-                    <button
-                      onClick={() => { setCustomPathOpen(false); setCustomPathValue(""); setCustomPathError(null); }}
-                      style={{
-                        flex: 1,
-                        padding: "4px 0",
-                        background: "var(--bg-hover)",
-                        border: "1px solid var(--border)",
-                        borderRadius: 5,
-                        color: "var(--text-muted)",
-                        fontSize: 11,
-                        cursor: "pointer",
-                      }}
-                    >
-                      {t("common.cancel")}
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {worktreeContextMenu && (
-        <div
-          onMouseDown={(e) => e.stopPropagation()}
-          style={{
-            position: "fixed",
-            left: worktreeContextMenu.x,
-            top: worktreeContextMenu.y,
-            zIndex: 1000,
-            minWidth: 190,
-            padding: 4,
-            borderRadius: 8,
-            background: "var(--bg)",
-            border: "1px solid var(--border)",
-            boxShadow: "0 10px 28px rgba(0,0,0,0.18)",
-          }}
-        >
-          <button
-            onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); openWorktreeAction("archive", worktreeContextMenu.cwd, worktreeContextMenu.worktree); }}
-            style={{ width: "100%", padding: "8px 10px", background: "none", border: "none", color: "var(--text)", textAlign: "left", cursor: "pointer", fontSize: 12, borderRadius: 6 }}
-          >
-            {t("sidebar.archiveWorktreeMenu")}
-          </button>
-          <button
-            onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); openWorktreeAction("delete", worktreeContextMenu.cwd, worktreeContextMenu.worktree); }}
-            style={{ width: "100%", padding: "8px 10px", background: "none", border: "none", color: "#dc2626", textAlign: "left", cursor: "pointer", fontSize: 12, borderRadius: 6 }}
-          >
-            {t("sidebar.deleteWorktreeMenu")}
-          </button>
-        </div>
-      )}
+      <WorkspacePicker
+        activeCwd={activeCwd}
+        homeDir={homeDir}
+        workspaceTitle={workspaceTitle}
+        workspaceTitleDetail={workspaceTitleDetail}
+        workspaceSubtitle={workspaceSubtitle}
+        worktreeByCwd={worktreeByCwd}
+        cwdGroups={cwdGroups}
+        archivedOnlyCwds={archivedOnlyCwds}
+        creatingWorktree={creatingWorktree}
+        worktreeError={worktreeError}
+        sessionRefreshDone={sessionRefreshDone}
+        suppressEmptyPlaceholder={Boolean(initialSessionId && !restoredRef.current)}
+        onActiveCwdChange={onActiveCwdChange}
+        onNewSession={handleNewSession}
+        onNewWorktree={handlePickerNewWorktree}
+        onRefresh={handlePickerRefresh}
+        onRequestArchiveAll={handleRequestArchiveAll}
+        onWorktreeAction={openWorktreeAction}
+        onClearWorktreeError={handleClearWorktreeError}
+      />
 
       {sessionContextMenu && (
         <div
@@ -1648,8 +673,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         </div>
       )}
 
-      {/* Archive-all confirmation */}
-      {archiveAllConfirming && selectedCwd && (
+      {archiveAllConfirming && activeCwd && (
         <div
           onMouseDown={(e) => e.stopPropagation()}
           style={{ position: "fixed", inset: 0, zIndex: 1100, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.28)", padding: 16 }}
@@ -1659,7 +683,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
               {t("sidebar.archiveAllTitle")}
             </div>
             <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5, marginBottom: 16 }}>
-              {t("sidebar.archiveAllBodyBefore")} <strong>{(archivedCounts[selectedCwd] ?? 0) + activeSessionCountForCwd}</strong> {t("sidebar.archiveAllBodyAfter")}
+              {t("sidebar.archiveAllBodyBefore")} <strong>{(archivedCounts[activeCwd] ?? 0) + activeSessionCountForCwd}</strong> {t("sidebar.archiveAllBodyAfter")}
               {t("sidebar.archiveAllHint")}
             </div>
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
@@ -1682,940 +706,57 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         </div>
       )}
 
-      {/* Session list */}
       <div style={{ flex: sessionListFlex, overflowY: "auto", padding: "0", minHeight: MIN_SESSION_LIST_HEIGHT }}>
-        {loading && (
-          <div style={{ padding: "16px 14px", color: "var(--text-muted)", fontSize: 12 }}>
-            {t("sidebar.loading")}
-          </div>
-        )}
-        {error && (
-          <div style={{ padding: "12px 14px", color: "#f87171", fontSize: 12 }}>
-            {error}
-          </div>
-        )}
-        {!loading && !error && filteredSessions.length === 0 && (
-          <div style={{ padding: "16px 14px", color: "var(--text-muted)", fontSize: 12 }}>
-            {t("sidebar.noSessions")}
-          </div>
-        )}
-        {sessionTree.map((node) => (
-          <SessionTreeItem
-            key={node.session.id}
-            node={node}
-            selectedSessionId={selectedSessionId}
-            onSelectSession={onSelectSession}
-            onRenamed={loadSessions}
-            onSessionDeleted={(id) => {
-              onSessionDeleted?.(id);
-              loadSessions();
-            }}
-            onArchive={handleArchiveSession}
-            onContextMenu={(event, session) => setSessionContextMenu({ x: event.clientX, y: event.clientY, session })}
-            depth={0}
-            selectedForArchive={selectedForArchive}
-            onToggleSelect={(id) => {
-              setSelectedForArchive((prev) => {
-                const next = new Set(prev);
-                if (next.has(id)) next.delete(id);
-                else next.add(id);
-                return next;
-              });
-            }}
+        <SessionList
+          loading={loading}
+          error={error}
+          sessionTree={sessionTree}
+          filteredSessions={filteredSessions}
+          selectedSessionId={selectedSessionId}
+          projectSessionTotal={projectSessionTotal}
+          hasMoreSessions={hasMoreSessions}
+          loadingMore={loadingMore}
+          selectedForArchive={selectedForArchive}
+          onSelectSession={onSelectSession}
+          onRenamed={loadSessions}
+          onSessionDeleted={handleSessionDeletedFromList}
+          onArchive={handleArchiveSession}
+          onContextMenu={handleSessionContextMenu}
+          onToggleSelect={handleToggleSelect}
+          onLoadMore={loadMoreSessions}
+          onClearSelection={handleClearArchiveSelection}
+          onBatchArchive={handleBatchArchive}
+        />
+
+        {activeCwd && !loading && !error && (
+          <ArchivedSessionSection
+            archivedCount={archivedCounts[activeCwd] ?? 0}
+            archivedExpanded={archivedExpanded}
+            archivedSessions={archivedSessions}
+            archivedHasMore={archivedHasMore}
+            loadingMoreArchived={loadingMoreArchived}
+            onToggleExpanded={handleToggleArchived}
+            onSelect={onSelectSession}
+            onUnarchive={handleUnarchiveSession}
+            onDelete={handleArchivedSessionDeleted}
+            onLoadMore={loadMoreArchivedSessions}
           />
-        ))}
-
-        {!loading && !error && filteredSessions.length > 0 && projectSessionTotal > 0 && (
-          <div style={{ padding: "8px 14px 12px", display: "flex", flexDirection: "column", gap: 6 }}>
-            <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
-              {t("sidebar.shownOfTotal", {
-                loaded: filteredSessions.length,
-                total: projectSessionTotal,
-              })}
-            </div>
-            {hasMoreSessions && (
-              <button
-                type="button"
-                onClick={() => void loadMoreSessions()}
-                disabled={loadingMore}
-                style={{
-                  alignSelf: "flex-start",
-                  padding: "6px 10px",
-                  borderRadius: 7,
-                  border: "1px solid var(--border)",
-                  background: "var(--bg)",
-                  color: "var(--text-muted)",
-                  cursor: loadingMore ? "not-allowed" : "pointer",
-                  fontSize: 11,
-                  fontWeight: 600,
-                  opacity: loadingMore ? 0.7 : 1,
-                }}
-              >
-                {loadingMore ? t("sidebar.loadingMore") : t("sidebar.loadOlder")}
-              </button>
-            )}
-          </div>
-        )}
-
-        {/* Archived sessions section */}
-        {/* Batch archive action bar — appears as soon as any sessions are checked */}
-        {selectedForArchive.size > 0 && (
-          <div style={{
-            borderTop: "1px solid var(--border)",
-            padding: "8px 14px",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: 8,
-            flexShrink: 0,
-          }}>
-            <span style={{ fontSize: 11, color: "var(--text-dim)" }}>
-              {t("sidebar.selectedSessions", { count: selectedForArchive.size })}
-            </span>
-            <div style={{ display: "flex", gap: 6 }}>
-              <button
-                onClick={() => {
-                  setSelectedForArchive(new Set());
-                }}
-                style={{ padding: "6px 12px", borderRadius: 7, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-muted)", cursor: "pointer", fontSize: 11, fontWeight: 500 }}
-              >
-                {t("common.cancel")}
-              </button>
-              <button
-                onClick={() => void handleBatchArchive()}
-                disabled={selectedForArchive.size === 0}
-                style={{
-                  padding: "6px 12px", borderRadius: 7, border: "none",
-                  background: selectedForArchive.size === 0 ? "var(--border)" : "var(--accent)",
-                  color: selectedForArchive.size === 0 ? "var(--text-dim)" : "#fff",
-                  cursor: selectedForArchive.size === 0 ? "not-allowed" : "pointer",
-                  fontSize: 11, fontWeight: 600,
-                }}
-              >
-                {selectedForArchive.size > 0 ? t("sidebar.archiveWithCount", { count: selectedForArchive.size }) : t("common.archive")}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {selectedCwd && !loading && !error && (archivedCounts[selectedCwd] ?? 0) > 0 && (
-          <div style={{ borderTop: "1px solid var(--border)", marginTop: 4 }}>
-            <button
-              onClick={() => {
-                if (!archivedExpanded) {
-                  setArchivedExpanded(true);
-                  loadArchivedSessions(selectedCwd);
-                } else {
-                  setArchivedExpanded(false);
-                }
-              }}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                width: "100%",
-                padding: "10px 14px",
-                background: "none",
-                border: "none",
-                color: "var(--text-dim)",
-                cursor: "pointer",
-                fontSize: 11,
-                fontWeight: 600,
-                letterSpacing: "0.04em",
-                textTransform: "uppercase",
-              }}
-            >
-              <svg
-                width="10"
-                height="10"
-                viewBox="0 0 10 10"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                style={{ transform: archivedExpanded ? "none" : "rotate(-90deg)", transition: "transform 0.15s" }}
-              >
-                <polyline points="2 3.5 5 6.5 8 3.5" />
-              </svg>
-              <span>{t("sidebar.archivedSection", { count: archivedCounts[selectedCwd] })}</span>
-            </button>
-            {archivedExpanded && archivedSessions.length > 0 && (
-              <div>
-                {archivedSessions.map((archivedSession) => (
-                  <ArchivedSessionItem
-                    key={archivedSession.id}
-                    session={archivedSession}
-                    onSelect={() => onSelectSession(archivedSession)}
-                    onUnarchive={handleUnarchiveSession}
-                    onDelete={(id) => onSessionDeleted?.(id)}
-                  />
-                ))}
-                {(archivedHasMore || archivedSessions.length > 0) && (
-                  <div style={{ padding: "6px 14px 12px", display: "flex", flexDirection: "column", gap: 6 }}>
-                    <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
-                      {t("sidebar.shownOfTotal", {
-                        loaded: archivedSessions.length,
-                        total: archivedCounts[selectedCwd!] ?? archivedSessions.length,
-                      })}
-                    </div>
-                    {archivedHasMore && (
-                      <button
-                        type="button"
-                        onClick={() => void loadMoreArchivedSessions()}
-                        disabled={loadingMoreArchived}
-                        style={{
-                          alignSelf: "flex-start",
-                          padding: "6px 10px",
-                          borderRadius: 7,
-                          border: "1px solid var(--border)",
-                          background: "var(--bg)",
-                          color: "var(--text-muted)",
-                          cursor: loadingMoreArchived ? "not-allowed" : "pointer",
-                          fontSize: 11,
-                          fontWeight: 600,
-                          opacity: loadingMoreArchived ? 0.7 : 1,
-                        }}
-                      >
-                        {loadingMoreArchived ? t("sidebar.loadingMore") : t("sidebar.loadOlder")}
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
         )}
       </div>
 
-      {/* File Explorer section */}
-      {explorerCwd && (
-        <>
-          {explorerOpen && isDesktopLayout && (
-            <div
-              className={`panel-resize-handle panel-resize-handle-horizontal${explorerResizing ? " is-active" : ""}`}
-              role="separator"
-              aria-orientation="horizontal"
-              aria-valuemin={explorerHeightBounds.min}
-              aria-valuemax={explorerHeightBounds.max}
-              aria-valuenow={clampExplorerHeight(explorerHeight)}
-              aria-label={t("sidebar.resizeExplorer")}
-              title={t("sidebar.resizeExplorer")}
-              tabIndex={0}
-              onPointerDown={handleExplorerResizePointerDown}
-              onKeyDown={handleExplorerResizeKeyDown}
-            />
-          )}
-          <div
-            className="session-sidebar-explorer"
-            style={{
-              borderTop: "1px solid var(--border)",
-              display: "flex",
-              flexDirection: "column",
-              flex: explorerSectionFlex,
-              height: sizedExplorerOpen ? explorerHeight : undefined,
-              minHeight: 0,
-              overflow: "hidden",
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", flexShrink: 0 }}>
-              <button
-                onClick={() => setExplorerOpen((v) => !v)}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  flex: 1,
-                  padding: "6px 10px",
-                  background: "none",
-                  border: "none",
-                  color: "var(--text-muted)",
-                  cursor: "pointer",
-                  fontSize: 11,
-                  fontWeight: 600,
-                  letterSpacing: "0.05em",
-                  textTransform: "uppercase",
-                  textAlign: "left",
-                }}
-              >
-                <svg
-                  width="9" height="9" viewBox="0 0 10 10" fill="none"
-                  stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"
-                  style={{ transform: explorerOpen ? "rotate(90deg)" : "none", transition: "transform 0.15s", flexShrink: 0 }}
-                >
-                  <polyline points="3 2 7 5 3 8" />
-                </svg>
-                Explorer
-              </button>
-              <button
-                onClick={() => {
-                  setExplorerKey((k) => k + 1);
-                  setExplorerRefreshDone(true);
-                  if (explorerRefreshTimerRef.current) clearTimeout(explorerRefreshTimerRef.current);
-                  explorerRefreshTimerRef.current = setTimeout(() => setExplorerRefreshDone(false), 2000);
-                }}
-                title={t("sidebar.refreshExplorer")}
-                style={{
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  width: 26, height: 26, padding: 0, marginRight: 6,
-                  background: explorerRefreshDone ? "rgba(74,222,128,0.18)" : "none",
-                  border: "none",
-                  color: explorerRefreshDone ? "#4ade80" : "var(--text-dim)",
-                  cursor: "pointer",
-                  borderRadius: 5,
-                  flexShrink: 0,
-                  transition: "color 0.3s, background 0.3s",
-                }}
-                onMouseEnter={(e) => { if (explorerRefreshDone) return; e.currentTarget.style.color = "var(--text-muted)"; e.currentTarget.style.background = "var(--bg-hover)"; }}
-                onMouseLeave={(e) => { if (explorerRefreshDone) return; e.currentTarget.style.color = "var(--text-dim)"; e.currentTarget.style.background = "none"; }}
-              >
-                {explorerRefreshDone ? (
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="20 6 9 17 4 12" />
-                  </svg>
-                ) : (
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-                    <path d="M3 3v5h5" />
-                  </svg>
-                )}
-              </button>
-            </div>
-            {explorerOpen && (
-              <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden", minHeight: 0 }}>
-                <FileExplorer
-                  cwd={selectedCwdProp ?? selectedCwd!}
-                  onOpenFile={onOpenFile ?? (() => {})}
-                  refreshKey={explorerKey}
-                  onAtMention={onAtMention}
-                />
-              </div>
-            )}
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
-function SessionTreeItem({
-  node,
-  selectedSessionId,
-  onSelectSession,
-  onRenamed,
-  onSessionDeleted,
-  onArchive,
-  onContextMenu,
-  depth,
-  selectedForArchive,
-  onToggleSelect,
-}: {
-  node: SessionTreeNode;
-  selectedSessionId: string | null;
-  onSelectSession: (s: SessionInfo) => void;
-  onRenamed?: () => void;
-  onSessionDeleted?: (id: string) => void;
-  onArchive?: (id: string) => void;
-  onContextMenu?: (event: React.MouseEvent, session: SessionInfo) => void;
-  depth: number;
-  selectedForArchive?: Set<string>;
-  onToggleSelect?: (id: string) => void;
-}) {
-  const [collapsed, setCollapsed] = useState(false);
-  const hasChildren = node.children.length > 0;
-
-  return (
-    <div>
-      <div style={{ position: "relative" }}>
-        {/* Indent line for child sessions */}
-        {depth > 0 && (
-          <div style={{
-            position: "absolute",
-            left: depth * 12 + 6,
-            top: 0, bottom: 0,
-            width: 1,
-            background: "var(--border)",
-            pointerEvents: "none",
-          }} />
-        )}
-        <SessionItem
-          session={node.session}
-          isSelected={node.session.id === selectedSessionId}
-          onClick={() => onSelectSession(node.session)}
-          onRenamed={onRenamed}
-          onDeleted={(id) => onSessionDeleted?.(id)}
-          onArchive={onArchive}
-          onContextMenu={onContextMenu}
-          depth={depth}
-          hasChildren={hasChildren}
-          selectedForArchive={selectedForArchive?.has(node.session.id)}
-          onToggleSelect={onToggleSelect}
-          collapsed={collapsed}
-          onToggleCollapse={() => setCollapsed((v) => !v)}
+      {activeCwd && (
+        <SidebarExplorerPane
+          cwd={activeCwd}
+          open={explorerOpen}
+          onOpenChange={setExplorerOpen}
+          refreshKey={explorerKey}
+          onRefresh={handleExplorerRefresh}
+          refreshDone={explorerRefreshDone}
+          isDesktopLayout={isDesktopLayout}
+          sidebarRootRef={sidebarRootRef}
+          onOpenFile={onOpenFile}
+          onAtMention={onAtMention}
         />
-      </div>
-      {hasChildren && !collapsed && (
-        <div>
-          {node.children.map((child) => (
-            <SessionTreeItem
-              key={child.session.id}
-              node={child}
-              selectedSessionId={selectedSessionId}
-              onSelectSession={onSelectSession}
-              onRenamed={onRenamed}
-              onSessionDeleted={onSessionDeleted}
-              onArchive={onArchive}
-              onContextMenu={onContextMenu}
-              depth={depth + 1}
-              selectedForArchive={selectedForArchive}
-              onToggleSelect={onToggleSelect}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function SessionItem({
-  session,
-  isSelected,
-  onClick,
-  onRenamed,
-  onDeleted,
-  onArchive,
-  onContextMenu,
-  depth = 0,
-  hasChildren = false,
-  collapsed = false,
-  onToggleCollapse,
-  selectedForArchive,
-  onToggleSelect,
-}: {
-  session: SessionInfo;
-  isSelected: boolean;
-  onClick: () => void;
-  onRenamed?: () => void;
-  onDeleted?: (id: string) => void;
-  onArchive?: (id: string) => void;
-  onContextMenu?: (event: React.MouseEvent, session: SessionInfo) => void;
-  depth?: number;
-  hasChildren?: boolean;
-  collapsed?: boolean;
-  onToggleCollapse?: () => void;
-  selectedForArchive?: boolean;
-  onToggleSelect?: (id: string) => void;
-}) {
-  const { t } = useI18n();
-  const [hovered, setHovered] = useState(false);
-  const [renaming, setRenaming] = useState(false);
-  const [renameValue, setRenameValue] = useState("");
-  const [confirmDelete, setConfirmDelete] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  const title = session.name || session.firstMessage.slice(0, 50) || session.id.slice(0, 12);
-
-  const startRename = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation();
-    setRenameValue(session.name ?? "");
-    setRenaming(true);
-    setTimeout(() => inputRef.current?.select(), 0);
-  }, [session.name]);
-
-  const commitRename = useCallback(async () => {
-    const name = renameValue.trim();
-    setRenaming(false);
-    if (name === (session.name ?? "")) return;
-    try {
-      await fetch(`/api/sessions/${encodeURIComponent(session.id)}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name }),
-      });
-      onRenamed?.();
-    } catch {
-      // ignore
-    }
-  }, [renameValue, session.id, session.name, onRenamed]);
-
-  const handleDeleteClick = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation();
-    setConfirmDelete(true);
-  }, []);
-
-  const handleDeleteConfirm = useCallback(async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setConfirmDelete(false);
-    setDeleting(true);
-    try {
-      await fetch(`/api/sessions/${encodeURIComponent(session.id)}`, { method: "DELETE" });
-      onDeleted?.(session.id);
-    } catch {
-      setDeleting(false);
-    }
-  }, [session.id, onDeleted]);
-
-  const handleDeleteCancel = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation();
-    setConfirmDelete(false);
-  }, []);
-
-  const handleArchiveClick = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation();
-    onArchive?.(session.id);
-  }, [session.id, onArchive]);
-
-  // Fixed-height outer wrapper — content swaps in place so the list never reflows
-  const ITEM_HEIGHT = 54;
-
-  return (
-    <div
-      onClick={confirmDelete || renaming ? undefined : onClick}
-      onContextMenu={(event) => {
-        if (confirmDelete || renaming) return;
-        event.preventDefault();
-        event.stopPropagation();
-        onContextMenu?.(event, session);
-      }}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => { setHovered(false); }}
-      style={{
-        height: ITEM_HEIGHT,
-        display: "flex",
-        alignItems: "center",
-        paddingLeft: depth > 0 ? depth * 12 + 14 : 14,
-        paddingRight: 8,
-        cursor: confirmDelete || renaming ? "default" : "pointer",
-        background: confirmDelete
-          ? "rgba(239,68,68,0.06)"
-          : isSelected ? "var(--bg-selected)" : hovered ? "var(--bg-hover)" : "transparent",
-        borderLeft: confirmDelete
-          ? "2px solid #ef4444"
-          : isSelected ? "2px solid var(--accent)" : "2px solid transparent",
-        transition: "background 0.1s",
-        opacity: deleting ? 0.5 : 1,
-        gap: 6,
-        overflow: "hidden",
-      }}
-    >
-      {confirmDelete ? (
-        /* ── Delete confirmation: same height, two flat buttons ── */
-        <>
-          <div style={{ flex: 1, minWidth: 0, fontSize: 12, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            Delete <span style={{ fontWeight: 600 }}>&ldquo;{title.slice(0, 22)}{title.length > 22 ? "…" : ""}&rdquo;</span>?
-          </div>
-          <div style={{ display: "flex", gap: 5, flexShrink: 0 }}>
-            <button
-              onClick={handleDeleteConfirm}
-              style={{
-                display: "flex", alignItems: "center", justifyContent: "center", gap: 4,
-                height: 30, padding: "0 11px",
-                background: "#ef4444", border: "none",
-                borderRadius: 6, color: "#fff",
-                cursor: "pointer", fontSize: 12, fontWeight: 600,
-                whiteSpace: "nowrap",
-              }}
-            >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="3 6 5 6 21 6" />
-                <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-                <path d="M10 11v6M14 11v6" />
-                <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
-              </svg>
-              Delete
-            </button>
-            <button
-              onClick={handleDeleteCancel}
-              style={{
-                display: "flex", alignItems: "center", justifyContent: "center",
-                height: 30, padding: "0 11px",
-                background: "var(--bg)", border: "1px solid var(--border)",
-                borderRadius: 6, color: "var(--text-muted)",
-                cursor: "pointer", fontSize: 12, fontWeight: 500,
-                whiteSpace: "nowrap",
-              }}
-            >
-              Cancel
-            </button>
-          </div>
-        </>
-      ) : renaming ? (
-        /* ── Rename: input fills the same row ── */
-        <input
-          ref={inputRef}
-          value={renameValue}
-          onChange={(e) => setRenameValue(e.target.value)}
-          onBlur={commitRename}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") commitRename();
-            if (e.key === "Escape") setRenaming(false);
-          }}
-          autoFocus
-          style={{
-            flex: 1,
-            fontSize: 12,
-            padding: "5px 8px",
-            border: "1px solid var(--accent)",
-            borderRadius: 5,
-            outline: "none",
-            background: "var(--bg)",
-            color: "var(--text)",
-            height: 30,
-          }}
-        />
-      ) : (
-        /* ── Normal view ── */
-        <>
-          {/* Multi-select checkbox */}
-          {onToggleSelect && (
-            <div
-              onClick={(e) => e.stopPropagation()}
-              style={{ display: "flex", alignItems: "center", flexShrink: 0 }}
-            >
-              <input
-                type="checkbox"
-                checked={!!selectedForArchive}
-                onChange={() => onToggleSelect(session.id)}
-                style={{ width: 14, height: 14, cursor: "pointer", accentColor: "var(--accent)" }}
-              />
-            </div>
-          )}
-          {/* Fork indicator for child sessions */}
-          {depth > 0 && (
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-              <line x1="6" y1="3" x2="6" y2="15" />
-              <circle cx="18" cy="6" r="3" />
-              <circle cx="6" cy="18" r="3" />
-              <path d="M18 9a9 9 0 0 1-9 9" />
-            </svg>
-          )}
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0 }}>
-              <div
-                style={{
-                  fontSize: 12,
-                  fontWeight: isSelected ? 500 : 400,
-                  lineHeight: 1.4,
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                  color: "var(--text)",
-                  minWidth: 0,
-                }}
-                title={title}
-              >
-                {title}
-              </div>
-              <WorktreeBadge worktree={session.worktree} />
-            </div>
-            <div style={{ marginTop: 2, display: "flex", gap: 8, color: "var(--text-dim)", fontSize: 11 }}>
-              <span title={session.modified}>{formatRelativeTime(session.modified, t)}</span>
-              <span>{session.messageCount} msgs</span>
-            </div>
-          </div>
-
-          {/* Collapse toggle — always visible when has children */}
-          {hasChildren && (
-            <button
-              onClick={(e) => { e.stopPropagation(); onToggleCollapse?.(); }}
-              title={collapsed ? t("sidebar.expandForks") : t("sidebar.collapseForks")}
-              style={{
-                display: "flex", alignItems: "center", justifyContent: "center",
-                width: 20, height: 20, padding: 0, flexShrink: 0,
-                background: "none", border: "none",
-                color: "var(--text-dim)", cursor: "pointer",
-                transform: collapsed ? "rotate(-90deg)" : "none",
-                transition: "transform 0.15s",
-              }}
-            >
-              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="2 3.5 5 6.5 8 3.5" />
-              </svg>
-            </button>
-          )}
-
-          {/* Action buttons — shown on hover */}
-          {hovered && (
-            <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
-              <button
-                onClick={startRename}
-                title={t("common.rename")}
-                style={{
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  width: 32, height: 32, padding: 0,
-                  background: "var(--bg-hover)", border: "1px solid var(--border)",
-                  borderRadius: 7, color: "var(--text-muted)",
-                  cursor: "pointer", flexShrink: 0,
-                  transition: "background 0.12s, color 0.12s, border-color 0.12s",
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = "var(--bg-selected)";
-                  e.currentTarget.style.color = "var(--accent)";
-                  e.currentTarget.style.borderColor = "rgba(37,99,235,0.35)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = "var(--bg-hover)";
-                  e.currentTarget.style.color = "var(--text-muted)";
-                  e.currentTarget.style.borderColor = "var(--border)";
-                }}
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
-                </svg>
-              </button>
-              {/* Archive button — only for active (non-archived) sessions */}
-              {!session.archived && (
-                <button
-                  onClick={handleArchiveClick}
-                  title={t("common.archive")}
-                  style={{
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    width: 32, height: 32, padding: 0,
-                    background: "var(--bg-hover)", border: "1px solid var(--border)",
-                    borderRadius: 7, color: "var(--text-muted)",
-                    cursor: "pointer", flexShrink: 0,
-                    transition: "background 0.12s, color 0.12s, border-color 0.12s",
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = "var(--bg-selected)";
-                    e.currentTarget.style.color = "var(--accent)";
-                    e.currentTarget.style.borderColor = "rgba(37,99,235,0.35)";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = "var(--bg-hover)";
-                    e.currentTarget.style.color = "var(--text-muted)";
-                    e.currentTarget.style.borderColor = "var(--border)";
-                  }}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                    <polyline points="7 10 12 15 17 10" />
-                    <line x1="12" y1="15" x2="12" y2="3" />
-                  </svg>
-                </button>
-              )}
-              <button
-                onClick={handleDeleteClick}
-                title={t("common.delete")}
-                style={{
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  width: 32, height: 32, padding: 0,
-                  background: "var(--bg-hover)", border: "1px solid var(--border)",
-                  borderRadius: 7, color: "var(--text-muted)",
-                  cursor: "pointer", flexShrink: 0,
-                  transition: "background 0.12s, color 0.12s, border-color 0.12s",
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = "rgba(239,68,68,0.08)";
-                  e.currentTarget.style.color = "#ef4444";
-                  e.currentTarget.style.borderColor = "rgba(239,68,68,0.35)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = "var(--bg-hover)";
-                  e.currentTarget.style.color = "var(--text-muted)";
-                  e.currentTarget.style.borderColor = "var(--border)";
-                }}
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="3 6 5 6 21 6" />
-                  <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-                  <path d="M10 11v6M14 11v6" />
-                  <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
-                </svg>
-              </button>
-            </div>
-          )}
-        </>
-      )}
-    </div>
-  );
-}
-
-/**
- * ArchivedSessionItem — renders a muted archived session row
- * with Unarchive and Delete actions on hover.
- */
-function ArchivedSessionItem({
-  session,
-  onSelect,
-  onUnarchive,
-  onDelete,
-}: {
-  session: SessionInfo;
-  onSelect: () => void;
-  onUnarchive: (id: string) => void;
-  onDelete: (id: string) => void;
-}) {
-  const { t } = useI18n();
-  const [hovered, setHovered] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
-
-  const title = session.name || session.firstMessage.slice(0, 50) || session.id.slice(0, 12);
-
-  const handleUnarchiveClick = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation();
-    onUnarchive(session.id);
-  }, [session.id, onUnarchive]);
-
-  const handleDeleteClick = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation();
-    setConfirmDelete(true);
-  }, []);
-
-  const handleDeleteConfirm = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation();
-    setConfirmDelete(false);
-    setDeleting(true);
-    try {
-      fetch(`/api/sessions/${encodeURIComponent(session.id)}`, { method: "DELETE" })
-        .then(() => onDelete(session.id))
-        .catch(() => setDeleting(false));
-    } catch {
-      setDeleting(false);
-    }
-  }, [session.id, onDelete]);
-
-  const handleDeleteCancel = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation();
-    setConfirmDelete(false);
-  }, []);
-
-  const ITEM_HEIGHT = 54;
-
-  return (
-    <div
-      onClick={confirmDelete ? undefined : onSelect}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      style={{
-        height: ITEM_HEIGHT,
-        display: "flex",
-        alignItems: "center",
-        paddingLeft: 14,
-        paddingRight: 8,
-        cursor: confirmDelete ? "default" : "pointer",
-        background: confirmDelete
-          ? "rgba(239,68,68,0.06)"
-          : hovered ? "var(--bg-hover)" : "transparent",
-        borderLeft: confirmDelete ? "2px solid #ef4444" : "2px solid transparent",
-        opacity: deleting ? 0.5 : 1,
-        gap: 6,
-        overflow: "hidden",
-      }}
-    >
-      {confirmDelete ? (
-        <>
-          <div style={{ flex: 1, minWidth: 0, fontSize: 12, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            Delete <span style={{ fontWeight: 600 }}>&ldquo;{title.slice(0, 22)}{title.length > 22 ? "…" : ""}&rdquo;</span>?
-          </div>
-          <div style={{ display: "flex", gap: 5, flexShrink: 0 }}>
-            <button onClick={handleDeleteConfirm} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 4, height: 30, padding: "0 11px", background: "#ef4444", border: "none", borderRadius: 6, color: "#fff", cursor: "pointer", fontSize: 12, fontWeight: 600, whiteSpace: "nowrap" }}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="3 6 5 6 21 6" />
-                <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-                <path d="M10 11v6M14 11v6" />
-                <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
-              </svg>
-              Delete
-            </button>
-            <button onClick={handleDeleteCancel} style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 30, padding: "0 11px", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text-muted)", cursor: "pointer", fontSize: 12, fontWeight: 500, whiteSpace: "nowrap" }}>
-              Cancel
-            </button>
-          </div>
-        </>
-      ) : (
-        <>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-            <polyline points="7 10 12 15 17 10" />
-            <line x1="12" y1="15" x2="12" y2="3" />
-          </svg>
-          <div style={{ flex: 1, minWidth: 0, fontStyle: "italic" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0 }}>
-              <div
-                style={{
-                  fontSize: 12,
-                  fontWeight: 400,
-                  lineHeight: 1.4,
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                  color: "var(--text-dim)",
-                  minWidth: 0,
-                }}
-                title={title}
-              >
-                {title}
-              </div>
-            </div>
-            <div style={{ marginTop: 2, display: "flex", gap: 8, color: "var(--text-dim)", fontSize: 11 }}>
-              <span title={session.modified}>{formatRelativeTime(session.modified, t)}</span>
-              <span>{session.messageCount} msgs</span>
-            </div>
-          </div>
-          {hovered && (
-            <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
-              <button
-                onClick={handleUnarchiveClick}
-                title={t("common.unarchive")}
-                style={{
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  gap: 4, height: 30, padding: "0 10px",
-                  background: "var(--bg-hover)", border: "1px solid var(--border)",
-                  borderRadius: 7, color: "var(--text-muted)",
-                  cursor: "pointer", fontSize: 11, fontWeight: 600, whiteSpace: "nowrap", flexShrink: 0,
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = "rgba(37,99,235,0.08)";
-                  e.currentTarget.style.color = "var(--accent)";
-                  e.currentTarget.style.borderColor = "rgba(37,99,235,0.35)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = "var(--bg-hover)";
-                  e.currentTarget.style.color = "var(--text-muted)";
-                  e.currentTarget.style.borderColor = "var(--border)";
-                }}
-              >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                  <polyline points="17 8 12 3 7 8" />
-                  <line x1="12" y1="3" x2="12" y2="15" />
-                </svg>
-                {t("common.restore")}
-              </button>
-              <button
-                onClick={handleDeleteClick}
-                title={t("common.delete")}
-                style={{
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  width: 32, height: 32, padding: 0,
-                  background: "var(--bg-hover)", border: "1px solid var(--border)",
-                  borderRadius: 7, color: "var(--text-muted)",
-                  cursor: "pointer", flexShrink: 0,
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = "rgba(239,68,68,0.08)";
-                  e.currentTarget.style.color = "#ef4444";
-                  e.currentTarget.style.borderColor = "rgba(239,68,68,0.35)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = "var(--bg-hover)";
-                  e.currentTarget.style.color = "var(--text-muted)";
-                  e.currentTarget.style.borderColor = "var(--border)";
-                }}
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="3 6 5 6 21 6" />
-                  <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-                  <path d="M10 11v6M14 11v6" />
-                  <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
-                </svg>
-              </button>
-            </div>
-          )}
-        </>
       )}
     </div>
   );

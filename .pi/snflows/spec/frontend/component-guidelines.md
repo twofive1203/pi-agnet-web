@@ -80,3 +80,12 @@ const handleSubmit = useCallback(async () => {
   if (!ok) return;
 }, []);
 ```
+
+## Session Sidebar Structure
+
+- Keep `components/SessionSidebar.tsx` as the public composition entry imported by AppShell.
+- Put pure cwd-picker helpers/types in `components/sidebar/sidebar-utils.ts`.
+- Split stable UI blocks under `components/sidebar/` (`WorkspacePicker`, `SessionList`, `ArchivedSessionSection`, `SidebarExplorerPane`, badges) and memoize leaf rows (`SessionItem`, `SessionTreeItem`, `ArchivedSessionItem`) when props can stay referentially stable.
+- Derive expensive lists/trees (`worktreeByCwd`, ordered cwds, picker groups, session tree) with `useMemo`; stabilize callbacks with `useCallback` before passing them to memo children.
+- AppShell owns `activeCwd`. Sidebar must be controlled via `activeCwd` + `onActiveCwdChange` and must not keep a competing business-level selected cwd.
+- Session select/create/restore paths sync cwd in AppShell without re-entering the workspace-picker branch that clears the just-selected session or double-bumps `sessionKey`.
