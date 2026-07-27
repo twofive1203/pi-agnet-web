@@ -181,6 +181,7 @@ interface ModelEntry {
   contextWindow?: number;
   maxTokens?: number;
   cost?: { input?: number; output?: number; cacheRead?: number; cacheWrite?: number };
+  headers?: Record<string, string>;
   compat?: Record<string, unknown>;
 }
 
@@ -262,7 +263,62 @@ type Selection =
 
 const API_OPTIONS = ["openai-completions", "openai-responses", "anthropic-messages", "google-generative-ai"] as const;
 const DEFAULT_MAX_TOKENS = 128000;
+/** Default UA for openai-responses custom providers (many gateways expect a Codex-like client). */
+const DEFAULT_OPENAI_RESPONSES_USER_AGENT =
+  "codex-tui/0.125.0 (Windows 10.0.26100; x86_64) WindowsTerminal (codex-tui; 0.125.0)";
+/** Default UA for anthropic-messages custom providers (many gateways expect a Claude CLI client). */
+const DEFAULT_ANTHROPIC_MESSAGES_USER_AGENT = "claude-cli/2.1.220 (external, cli)";
+const DEFAULT_API_USER_AGENTS: Record<string, string> = {
+  "openai-responses": DEFAULT_OPENAI_RESPONSES_USER_AGENT,
+  "anthropic-messages": DEFAULT_ANTHROPIC_MESSAGES_USER_AGENT,
+};
 const discoveredModelCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+
+function hasHeaderKey(headers: Record<string, string> | undefined, name: string): boolean {
+  if (!headers) return false;
+  const lower = name.toLowerCase();
+  return Object.keys(headers).some((key) => key.toLowerCase() === lower);
+}
+
+function defaultUserAgentForApi(api: string | undefined): string | undefined {
+  if (!api) return undefined;
+  return DEFAULT_API_USER_AGENTS[api];
+}
+
+function withDefaultApiUserAgent(
+  headers: Record<string, string> | undefined,
+  api: string | undefined,
+): Record<string, string> | undefined {
+  const defaultUa = defaultUserAgentForApi(api);
+  if (!defaultUa) return headers;
+  if (hasHeaderKey(headers, "User-Agent")) return headers ? { ...headers } : undefined;
+  return { ...(headers ?? {}), "User-Agent": defaultUa };
+}
+
+function applyApiChangeHeaders<
+  T extends { api?: string; headers?: Record<string, string> },
+>(entry: T, nextApi: string | undefined): T {
+  const api = nextApi || undefined;
+  const headers = withDefaultApiUserAgent(entry.headers, api);
+  return { ...entry, api, headers };
+}
+
+function ensureDefaultApiUserAgent<
+  T extends { api?: string; headers?: Record<string, string> },
+>(entry: T): T | null {
+  const defaultUa = defaultUserAgentForApi(entry.api);
+  if (!defaultUa || hasHeaderKey(entry.headers, "User-Agent")) return null;
+  return { ...entry, headers: withDefaultApiUserAgent(entry.headers, entry.api) };
+}
+
+function defaultUserAgentHint(api: string | undefined, scope: "provider" | "model"): string | undefined {
+  const defaultUa = defaultUserAgentForApi(api);
+  if (!defaultUa || !api) return undefined;
+  if (scope === "model") {
+    return `Model-level ${api} defaults User-Agent to ${defaultUa} when unset. Overrides provider headers with the same name.`;
+  }
+  return `${api} defaults User-Agent to ${defaultUa} when unset. Edit or remove it as needed.`;
+}
 
 // ── Form field helpers ────────────────────────────────────────────────────────
 
@@ -271,6 +327,150 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
     <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
       <label style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 500 }}>{label}</label>
       {children}
+    </div>
+  );
+}
+
+type HeaderRow = { id: string; key: string; value: string };
+
+let headerRowSeq = 0;
+function nextHeaderRowId(): string {
+  headerRowSeq += 1;
+  return `hdr-${headerRowSeq}`;
+}
+
+function headersToRows(headers: Record<string, string> | undefined): HeaderRow[] {
+  return Object.entries(headers ?? {}).map(([key, value]) => ({
+    id: nextHeaderRowId(),
+    key,
+    value,
+  }));
+}
+
+function rowsToHeaders(rows: HeaderRow[]): Record<string, string> | undefined {
+  const record: Record<string, string> = {};
+  for (const row of rows) {
+    const key = row.key.trim();
+    if (!key) continue;
+    record[key] = row.value;
+  }
+  return Object.keys(record).length > 0 ? record : undefined;
+}
+
+function HeadersEditor({
+  headers,
+  onChange,
+  hint,
+}: {
+  headers?: Record<string, string>;
+  onChange: (headers: Record<string, string> | undefined) => void;
+  hint?: string;
+}) {
+  const headersFingerprint = JSON.stringify(headers ?? {});
+  const [rows, setRows] = useState<HeaderRow[]>(() => headersToRows(headers));
+
+  useEffect(() => {
+    setRows(headersToRows(headers));
+    // Re-sync when parent injects defaults or config reloads; fingerprint avoids loop on same content.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [headersFingerprint]);
+
+  const commit = (nextRows: HeaderRow[]) => {
+    setRows(nextRows);
+    onChange(rowsToHeaders(nextRows));
+  };
+
+  const updateRow = (id: string, patch: Partial<Pick<HeaderRow, "key" | "value">>) => {
+    commit(rows.map((row) => (row.id === id ? { ...row, ...patch } : row)));
+  };
+
+  const removeRow = (id: string) => {
+    commit(rows.filter((row) => row.id !== id));
+  };
+
+  const addRow = () => {
+    commit([...rows, { id: nextHeaderRowId(), key: "", value: "" }]);
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+        <SectionTitle>Custom headers</SectionTitle>
+        <button
+          type="button"
+          onClick={addRow}
+          style={{
+            height: 24,
+            padding: "0 9px",
+            background: "none",
+            border: "1px solid var(--border)",
+            borderRadius: 4,
+            color: "var(--text-muted)",
+            cursor: "pointer",
+            fontSize: 11,
+            fontWeight: 600,
+          }}
+        >
+          + Add header
+        </button>
+      </div>
+      {hint && (
+        <div style={{ fontSize: 10, color: "var(--text-dim)", lineHeight: 1.45 }}>{hint}</div>
+      )}
+      {rows.length === 0 ? (
+        <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.5 }}>
+          No custom headers. Optional request headers such as <code style={{ fontFamily: "var(--font-mono)" }}>User-Agent</code> go here.
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {rows.map((row) => (
+            <div
+              key={row.id}
+              style={{ display: "grid", gridTemplateColumns: "minmax(0, 0.9fr) minmax(0, 1.4fr) 30px", gap: 6, alignItems: "center" }}
+            >
+              <TextInput
+                value={row.key}
+                onChange={(v) => updateRow(row.id, { key: v })}
+                placeholder="Header name"
+                mono
+              />
+              <TextInput
+                value={row.value}
+                onChange={(v) => updateRow(row.id, { value: v })}
+                placeholder="value, $ENV, or !command"
+                mono
+              />
+              <button
+                type="button"
+                onClick={() => removeRow(row.id)}
+                aria-label={`Remove header ${row.key || "row"}`}
+                title="Remove header"
+                style={{
+                  width: 30,
+                  height: 30,
+                  padding: 0,
+                  border: "1px solid var(--border)",
+                  borderRadius: 6,
+                  background: "var(--bg-panel)",
+                  color: "#fb7185",
+                  cursor: "pointer",
+                  fontSize: 16,
+                  fontWeight: 800,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  lineHeight: 1,
+                }}
+              >
+                −
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      <div style={{ fontSize: 10, color: "var(--text-dim)", lineHeight: 1.45 }}>
+        Values support literals, <code style={{ fontFamily: "var(--font-mono)" }}>$ENV_VAR</code>, or shell commands prefixed with <code style={{ fontFamily: "var(--font-mono)" }}>!</code>.
+      </div>
     </div>
   );
 }
@@ -487,7 +687,14 @@ function ProviderDetail({ name, provider, onChange, onRename, onDelete, onAddDis
   const set = <K extends keyof ProviderEntry>(k: K, v: ProviderEntry[K]) => onChange({ ...provider, [k]: v });
 
   useEffect(() => {
-    if (!provider.api) onChange({ ...provider, api: "openai-completions" });
+    if (!provider.api) {
+      onChange({ ...provider, api: "openai-completions" });
+      return;
+    }
+    // Seed default UA once for APIs that need a client identity and User-Agent is absent.
+    // Do not re-run on header edits so users can clear/override the default.
+    const withDefaultUa = ensureDefaultApiUserAgent(provider);
+    if (withDefaultUa) onChange(withDefaultUa);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [provider.api]);
 
@@ -621,8 +828,20 @@ function ProviderDetail({ name, provider, onChange, onRename, onDelete, onAddDis
       </Field>
 
       <Field label="API">
-        <Select value={provider.api ?? "openai-completions"} onChange={(v) => set("api", v)} options={API_OPTIONS} required />
+        <Select
+          value={provider.api ?? "openai-completions"}
+          onChange={(v) => onChange(applyApiChangeHeaders(provider, v))}
+          options={API_OPTIONS}
+          required
+        />
       </Field>
+
+      <HeadersEditor
+        headers={provider.headers}
+        onChange={(headers) => set("headers", headers)}
+        hint={defaultUserAgentHint(provider.api, "provider")
+          ?? "Merged into every request for this provider. Useful for User-Agent, proxy auth, or gateway-required headers."}
+      />
 
       <div style={{ border: "1px solid var(--border)", borderRadius: 6, background: "var(--bg-panel)", padding: 12, display: "flex", flexDirection: "column", gap: 10 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
@@ -962,6 +1181,14 @@ function ModelDetail({
   const pricingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pricingLookupSequenceRef = useRef(0);
 
+  useEffect(() => {
+    // Seed default UA when model API override needs a client identity and User-Agent is absent.
+    // Intentionally ignores header edits so the default can be removed.
+    const withDefaultUa = ensureDefaultApiUserAgent(model);
+    if (withDefaultUa) onChange(withDefaultUa);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [model.api]);
+
   const applyPricing = useCallback((entry: CachedPricingEntry, source: string) => {
     const currentModel = latestModelRef.current;
     const fields = getMissingPricingFields(currentModel, entry);
@@ -1165,8 +1392,19 @@ function ModelDetail({
       </div>
 
       <Field label="API override">
-        <Select value={model.api ?? ""} onChange={(v) => set("api", v || undefined)} options={API_OPTIONS} />
+        <Select
+          value={model.api ?? ""}
+          onChange={(v) => onChange(applyApiChangeHeaders(model, v || undefined))}
+          options={API_OPTIONS}
+        />
       </Field>
+
+      <HeadersEditor
+        headers={model.headers}
+        onChange={(headers) => set("headers", headers)}
+        hint={defaultUserAgentHint(model.api, "model")
+          ?? "Optional per-model headers. Override provider headers with the same name."}
+      />
 
       <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
         <Check label="Reasoning / thinking" checked={model.reasoning ?? false} onChange={(v) => set("reasoning", v || undefined)} />
