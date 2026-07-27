@@ -1421,8 +1421,10 @@ export function AppShell() {
               }}
             />
           )}
-          {showChat && (
+          {/* Desktop-only: Chrome extension tab binding is not usable on mobile and would cover the composer. */}
+          {showChat && isDesktopLayout && (
             <div
+              className="browser-binding-float"
               style={{
                 position: "absolute",
                 left: 12,

@@ -918,6 +918,11 @@ span.linenumber {
     --chat-input-right-padding: 10px;
   }
 
+  /* Chrome tab-debug binding is desktop-only; never cover the mobile composer. */
+  .browser-binding-float {
+    display: none !important;
+  }
+
   .chat-stats-center,
   .app-top-stats,
   .chat-minimap-wrap {
