@@ -51,8 +51,8 @@
 | `components/SideBySideDiffView.tsx` | Theme-aware side-by-side unified diff parser/renderer with old/new line numbers, aligned modification rows, and metadata/hunk rows. |
 | `components/UnifiedDiffView.tsx` | Theme-aware unified diff renderer for added, removed, hunk, header, and context lines. |
 | `components/TerminalPanel.tsx` | Bottom-dock Web Terminal workspace using xterm; manages ephemeral multi-tab terminal sessions, per-pane tab strips, tab renaming, nested drag-to-split panes, pane and dock resizing, minimize/restore, app-local fullscreen, and destructive close confirmation while reusing existing terminal session APIs per tab. |
-| `components/BrowserBindingTrigger.tsx` | Composer-row Browser button next to image/file attachments. Polls `/api/browser/status`, shows a red/green/orange status dot for disconnected/connected/warning states, and opens a body-portaled binding popover. |
-| `components/BrowserBindingPanel.tsx` | Session-level browser control UI inside the composer popover: enable/pair extension, create pending tab bind requests, list primary/additional bindings, toggle read-only debug, and revoke. Uses `/api/browser/*` only (not chat SSE), replacing the older bottom-left floating panel so browser controls no longer cover chat content. |
+| `components/BrowserBindingTrigger.tsx` | Composer-row Browser button next to image/file attachments. Owns `useBrowserBridgeStatus` polling (15s idle / 4s while open), shows a red/green/orange status dot, and opens a body-portaled binding popover. |
+| `components/BrowserBindingPanel.tsx` | Session-level browser control UI inside the composer popover: enable/pair extension, create pending tab bind requests, list primary/additional bindings, toggle read-only debug, and revoke. When opened from the trigger it reuses shared status props (no second poller); standalone use enables its own poller only while expanded. Uses `/api/browser/*` only (not chat SSE). |
 | `components/ModelPricingCatalog.tsx` | Searchable, provider-filterable read-only view of the locally cached pi.dev model pricing catalog, including context-window and token-price columns. |
 | `components/UsageStatsModal.tsx` | Token/cost usage statistics modal with active/archive scan counts, parent-attributed native subagent costs, main/subagent splits, and rounded M-token conversions. |
 | `components/FileExplorer.tsx` | On-demand file tree inside the sidebar; root loads are abortable and workspace changes clear old roots before applying the new response. |
@@ -72,6 +72,7 @@
 | `hooks/useDragDrop.ts` | Drag-and-drop image attachment handler. |
 | `hooks/useAudio.ts` | Sound toggle and completion chime playback. |
 | `hooks/useAutoScroll.ts` | Persisted chat auto-stick-to-bottom preference used by the message list and input toggle. |
+| `hooks/useBrowserBridgeStatus.ts` | Shared browser-bridge status poller for the composer Browser control. Dedupes in-flight fetches, slows idle polling to 15s, and speeds up to 4s while the popover is active so Trigger + Panel do not double-hit `/api/browser/status`. |
 
 ## Styles
 

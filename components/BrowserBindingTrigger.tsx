@@ -1,16 +1,19 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { BrowserBindingPanel, type BrowserBindingStatusResponse } from "@/components/BrowserBindingPanel";
+import { BrowserBindingPanel } from "@/components/BrowserBindingPanel";
 import { useI18n } from "@/components/I18nProvider";
+import {
+  browserToneColor,
+  browserToneLabel,
+  useBrowserBridgeStatus,
+} from "@/hooks/useBrowserBridgeStatus";
 
 interface Props {
   sessionId: string | null;
   sessionLabel?: string;
 }
-
-type BrowserTone = "connected" | "disconnected" | "warning";
 
 interface PopoverRect {
   bottom: number;
@@ -18,34 +21,6 @@ interface PopoverRect {
 }
 
 const POPOVER_WIDTH = 360;
-
-function isRealSession(sessionId: string | null): boolean {
-  return Boolean(sessionId && !sessionId.startsWith("new-"));
-}
-
-function getStatusTone(status: BrowserBindingStatusResponse | null, error: string | null, realSession: boolean): BrowserTone {
-  if (error || status?.error || status?.bridge?.startError) return "warning";
-
-  const enabled = status?.featureEnabled === true;
-  const bridgeRunning = status?.bridge?.running === true;
-  const clients = status?.bridge?.connectedClients?.length ?? 0;
-  const bindings = status?.session?.bindings?.length ?? 0;
-
-  if (enabled && bridgeRunning && clients > 0 && (!realSession || bindings > 0)) return "connected";
-  return "disconnected";
-}
-
-function getToneColor(tone: BrowserTone): string {
-  if (tone === "connected") return "#22c55e";
-  if (tone === "warning") return "#f59e0b";
-  return "#ef4444";
-}
-
-function getToneLabel(tone: BrowserTone, t: (key: string) => string): string {
-  if (tone === "connected") return t("panels.browser.statusConnected");
-  if (tone === "warning") return t("panels.browser.statusWarning");
-  return t("panels.browser.statusDisconnected");
-}
 
 function getPopoverRect(button: HTMLElement): PopoverRect {
   const rect = button.getBoundingClientRect();
@@ -60,32 +35,15 @@ function getPopoverRect(button: HTMLElement): PopoverRect {
 
 export function BrowserBindingTrigger({ sessionId, sessionLabel }: Props) {
   const { t } = useI18n();
-  const [status, setStatus] = useState<BrowserBindingStatusResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [popoverRect, setPopoverRect] = useState<PopoverRect | null>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
-  const realSession = isRealSession(sessionId);
 
-  const refresh = useCallback(async () => {
-    try {
-      const qs = realSession && sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : "";
-      const res = await fetch(`/api/browser/status${qs}`);
-      const data = await res.json() as BrowserBindingStatusResponse;
-      if (!res.ok) throw new Error(data.error || "Failed to load browser status");
-      setStatus(data);
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    }
-  }, [realSession, sessionId]);
-
-  useEffect(() => {
-    void refresh();
-    const timer = setInterval(() => { void refresh(); }, 4000);
-    return () => clearInterval(timer);
-  }, [refresh]);
+  const { status, error, tone, refresh } = useBrowserBridgeStatus({
+    sessionId,
+    active: open,
+  });
 
   useEffect(() => {
     if (!open) return;
@@ -112,8 +70,7 @@ export function BrowserBindingTrigger({ sessionId, sessionLabel }: Props) {
     };
   }, [open]);
 
-  const tone = useMemo(() => getStatusTone(status, error, realSession), [error, realSession, status]);
-  const toneLabel = getToneLabel(tone, t);
+  const toneLabel = browserToneLabel(tone, t);
 
   return (
     <>
@@ -126,12 +83,14 @@ export function BrowserBindingTrigger({ sessionId, sessionLabel }: Props) {
           event.preventDefault();
           setPopoverRect(getPopoverRect(event.currentTarget));
           setOpen((value) => !value);
+          void refresh();
         }}
         onKeyDown={(event) => {
           if (event.key !== "Enter" && event.key !== " ") return;
           event.preventDefault();
           if (buttonRef.current) setPopoverRect(getPopoverRect(buttonRef.current));
           setOpen((value) => !value);
+          void refresh();
         }}
         style={{
           flexShrink: 0,
@@ -164,8 +123,8 @@ export function BrowserBindingTrigger({ sessionId, sessionLabel }: Props) {
             width: 7,
             height: 7,
             borderRadius: 999,
-            background: getToneColor(tone),
-            boxShadow: `0 0 0 2px color-mix(in srgb, ${getToneColor(tone)} 18%, transparent)`,
+            background: browserToneColor(tone),
+            boxShadow: `0 0 0 2px color-mix(in srgb, ${browserToneColor(tone)} 18%, transparent)`,
             flexShrink: 0,
           }}
         />
@@ -194,6 +153,9 @@ export function BrowserBindingTrigger({ sessionId, sessionLabel }: Props) {
             sessionId={sessionId}
             sessionLabel={sessionLabel}
             popover
+            sharedStatus={status}
+            sharedError={error}
+            onSharedRefresh={refresh}
           />
         </div>
       ), document.body)}

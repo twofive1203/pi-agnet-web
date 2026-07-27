@@ -1,85 +1,68 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { useAppDialog } from "@/components/AppDialogProvider";
 import { useI18n } from "@/components/I18nProvider";
+import {
+  useBrowserBridgeStatus,
+  type BrowserBindingStatusResponse,
+  type BrowserBindingView,
+} from "@/hooks/useBrowserBridgeStatus";
 
-type BindingView = {
-  bindingId: string;
-  title: string;
-  origin: string;
-  url: string;
-  state: string;
-  capabilities: string[];
-  primary: boolean;
-  lastActiveAt: number;
-};
-
-type PendingRequest = {
-  pendingRequestId: string;
-  sessionId: string;
-  sessionLabel: string;
-  expiresAt: number;
-};
-
-export type BrowserBindingStatusResponse = {
-  featureEnabled?: boolean;
-  bridge?: {
-    running?: boolean;
-    port?: number;
-    connectedClients?: Array<{ clientId: string }>;
-    startError?: string;
-  };
-  installations?: Array<{ clientId: string; createdAt: number }>;
-  session?: {
-    pendingRequest?: PendingRequest | null;
-    bindings?: BindingView[];
-    primaryBindingId?: string | null;
-  } | null;
-  error?: string;
-};
+export type { BrowserBindingStatusResponse };
 
 interface Props {
   sessionId: string | null;
   sessionLabel?: string;
   compact?: boolean;
   popover?: boolean;
+  /** When provided by BrowserBindingTrigger, avoid a second poller. */
+  sharedStatus?: BrowserBindingStatusResponse | null;
+  sharedError?: string | null;
+  onSharedRefresh?: () => Promise<void>;
 }
 
-export function BrowserBindingPanel({ sessionId, sessionLabel, compact, popover }: Props) {
+export function BrowserBindingPanel({
+  sessionId,
+  sessionLabel,
+  compact,
+  popover,
+  sharedStatus,
+  sharedError,
+  onSharedRefresh,
+}: Props) {
   const appDialog = useAppDialog();
   const { t } = useI18n();
-  const [status, setStatus] = useState<BrowserBindingStatusResponse | null>(null);
   const [pairingCode, setPairingCode] = useState<string | null>(null);
   const [pairingExpiresAt, setPairingExpiresAt] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [localError, setLocalError] = useState<string | null>(null);
   const [open, setOpen] = useState(!compact || Boolean(popover));
 
+  const ownsPoller = !onSharedRefresh;
+  const polled = useBrowserBridgeStatus({
+    sessionId,
+    // Standalone panel only polls while expanded; shared mode disables this poller.
+    active: ownsPoller && open,
+    enabled: ownsPoller,
+  });
+
+  const status = onSharedRefresh ? (sharedStatus ?? null) : polled.status;
+  const error = localError || (onSharedRefresh ? (sharedError ?? null) : polled.error);
   const realSession = Boolean(sessionId && !sessionId.startsWith("new-"));
 
+  const polledRefresh = polled.refresh;
   const refresh = useCallback(async () => {
-    try {
-      const qs = realSession ? `?sessionId=${encodeURIComponent(sessionId!)}` : "";
-      const res = await fetch(`/api/browser/status${qs}`);
-      const data = await res.json() as BrowserBindingStatusResponse;
-      if (!res.ok) throw new Error(data.error || "Failed to load browser status");
-      setStatus(data);
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+    if (onSharedRefresh) {
+      await onSharedRefresh();
+      return;
     }
-  }, [realSession, sessionId]);
-
-  useEffect(() => {
-    void refresh();
-    const timer = setInterval(() => { void refresh(); }, 4000);
-    return () => clearInterval(timer);
-  }, [refresh]);
+    await polledRefresh();
+  }, [onSharedRefresh, polledRefresh]);
 
   async function enableAndPair() {
     setBusy(true);
-    setError(null);
+    setLocalError(null);
     try {
       await fetch("/api/browser/pair", {
         method: "POST",
@@ -97,7 +80,7 @@ export function BrowserBindingPanel({ sessionId, sessionLabel, compact, popover 
       setPairingExpiresAt(data.expiresAt || null);
       await refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setLocalError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
     }
@@ -106,7 +89,7 @@ export function BrowserBindingPanel({ sessionId, sessionLabel, compact, popover 
   async function requestBind() {
     if (!realSession || !sessionId) return;
     setBusy(true);
-    setError(null);
+    setLocalError(null);
     try {
       const res = await fetch("/api/browser/bindings", {
         method: "POST",
@@ -121,7 +104,7 @@ export function BrowserBindingPanel({ sessionId, sessionLabel, compact, popover 
       if (!res.ok) throw new Error(data.error || "Failed to create bind request");
       await refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setLocalError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
     }
@@ -146,7 +129,7 @@ export function BrowserBindingPanel({ sessionId, sessionLabel, compact, popover 
       if (!res.ok) throw new Error(data.error || "Revoke failed");
       await refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setLocalError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
     }
@@ -165,13 +148,13 @@ export function BrowserBindingPanel({ sessionId, sessionLabel, compact, popover 
       if (!res.ok) throw new Error(data.error || "set_primary failed");
       await refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setLocalError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
     }
   }
 
-  async function toggleDebug(binding: BindingView, enable: boolean) {
+  async function toggleDebug(binding: BrowserBindingView, enable: boolean) {
     if (!realSession || !sessionId) return;
     setBusy(true);
     try {
@@ -188,7 +171,7 @@ export function BrowserBindingPanel({ sessionId, sessionLabel, compact, popover 
       if (!res.ok) throw new Error(data.error || "debug toggle failed");
       await refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setLocalError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
     }
