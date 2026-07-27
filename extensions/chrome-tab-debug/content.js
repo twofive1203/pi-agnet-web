@@ -1,11 +1,28 @@
 /**
  * Content script injected only after explicit activeTab confirmation.
  * Holds document-scoped element refs; invalidated when document identity changes.
- * Action policy mirrored from action-policy.js / lib/browser-action-policy.ts.
+ *
+ * Action policy comes from action-policy.inject.js (generated from
+ * lib/browser-action-policy.ts) — injected before this file by background.js.
  */
 (() => {
   if (globalThis.__snailPiContentLoaded) return;
   globalThis.__snailPiContentLoaded = true;
+
+  const policy = globalThis.__snailPiActionPolicy;
+  if (!policy || typeof policy.evaluateActionPolicy !== "function") {
+    console.error("Snail Pi: action policy missing; inject action-policy.inject.js before content.js");
+  }
+  const evaluateActionPolicy = (input) => (
+    policy?.evaluateActionPolicy
+      ? policy.evaluateActionPolicy(input)
+      : { allowed: false, reason: "Action policy unavailable" }
+  );
+  const elementActionMeta = (el, action) => (
+    policy?.elementActionMeta
+      ? policy.elementActionMeta(el, action)
+      : { action }
+  );
 
   const MAX_NODES = 400;
   const MAX_DEPTH = 12;
@@ -14,88 +31,6 @@
   let refSeq = 0;
   const cancelled = new Set();
   const documentId = `${location.href}::${document.documentElement?.outerHTML?.length || 0}::${Date.now()}::${Math.random().toString(36).slice(2)}`;
-
-  const PASSWORD_LIKE_RE =
-    /password|passwd|pwd|passcode|pin|cvv|cvc|card.?number|cc-?num|credit.?card|ssn|secret|one.?time.?code|otp/i;
-  const PAYMENT_RE = /payment|pay\b|checkout|billing|credit.?card|cardholder|iban|routing.?number/i;
-  const DESTRUCTIVE_TEXT_RE =
-    /\b(delete|remove|destroy|drop\b|reset|wipe|deactivate|disable account|close account|terminate|purge|factory reset)\b/i;
-  const PERMISSION_RE =
-    /\b(allow (camera|microphone|location|notifications|midi|clipboard)|request permission|getusermedia|enable notifications|share location)\b/i;
-  const DOWNLOAD_HREF_RE = /^(blob:|data:)/i;
-  const DOWNLOAD_EXT_RE =
-    /\.(zip|rar|7z|tar|gz|tgz|exe|dmg|pkg|msi|apk|iso|bin|csv|xlsx?|docx?|pptx?|pdf|mp4|mp3|mov|wav)(\?|#|$)/i;
-
-  function joinMeta(input) {
-    return [input.name, input.id, input.autocomplete, input.ariaLabel, input.role, input.text]
-      .filter(Boolean)
-      .join(" ");
-  }
-
-  function elementActionMeta(el, action) {
-    const tagName = el.tagName || "";
-    const href = typeof el.href === "string" ? el.href : el.getAttribute?.("href") || "";
-    return {
-      action,
-      tagName,
-      type: el.getAttribute?.("type") || el.type || "",
-      name: el.getAttribute?.("name") || "",
-      id: el.id || "",
-      href,
-      role: el.getAttribute?.("role") || "",
-      autocomplete: el.getAttribute?.("autocomplete") || "",
-      ariaLabel: el.getAttribute?.("aria-label") || "",
-      text: (el.innerText || el.textContent || "").trim().slice(0, 200),
-      download: el.hasAttribute?.("download") ? (el.getAttribute("download") ?? true) : false,
-      target: el.getAttribute?.("target") || "",
-      rel: el.getAttribute?.("rel") || "",
-      inputMode: el.getAttribute?.("inputmode") || "",
-      isContentEditable: Boolean(el.isContentEditable),
-    };
-  }
-
-  function evaluateActionPolicy(input) {
-    const action = (input.action || "").toLowerCase();
-    if (!action) return { allowed: false, reason: "Missing action" };
-    if (action === "reload" || action === "highlight" || action === "scroll_into_view") {
-      return { allowed: true };
-    }
-    if (action !== "click" && action !== "type" && action !== "select") {
-      return { allowed: false, reason: `Unknown action ${action}` };
-    }
-    const type = (input.type || "").toLowerCase();
-    const tag = (input.tagName || "").toLowerCase();
-    if (tag === "input" && type === "file") {
-      return { allowed: false, reason: "File inputs are blocked" };
-    }
-    const meta = joinMeta(input);
-    const passwordLike = type === "password" || PASSWORD_LIKE_RE.test(meta) || PAYMENT_RE.test(meta);
-    if (passwordLike && (action === "type" || action === "click" || action === "select")) {
-      return { allowed: false, reason: "Password/payment-like controls are blocked" };
-    }
-    if (action === "click" || action === "type") {
-      const href = input.href || "";
-      const downloadLike = input.download === true
-        || (typeof input.download === "string" && tag === "a")
-        || DOWNLOAD_HREF_RE.test(href)
-        || DOWNLOAD_EXT_RE.test(href)
-        || /[?&]download=/i.test(href);
-      if (downloadLike) return { allowed: false, reason: "Download links/controls are blocked" };
-      if (PERMISSION_RE.test(meta) || ((input.role || "").toLowerCase() === "button" && /\b(camera|microphone|location|notification)s?\b/i.test(meta))) {
-        return { allowed: false, reason: "Permission-triggering controls are blocked" };
-      }
-      if (DESTRUCTIVE_TEXT_RE.test(meta)) {
-        return { allowed: false, reason: "Destructive controls are blocked" };
-      }
-    }
-    if (action === "select") {
-      const role = (input.role || "").toLowerCase();
-      if (tag !== "select" && role !== "listbox" && role !== "combobox") {
-        return { allowed: false, reason: "Target is not a select" };
-      }
-    }
-    return { allowed: true };
-  }
 
   function isSensitive(el) {
     if (!(el instanceof HTMLElement)) return true;
@@ -252,6 +187,33 @@
     return { documentId, results, count: results.length };
   }
 
+  /**
+   * Set input/textarea value in a way React/Vue controlled components observe.
+   * Uses the native value setter + InputEvent when available.
+   */
+  function setNativeEditableValue(el, nextValue) {
+    const proto = el instanceof HTMLTextAreaElement
+      ? HTMLTextAreaElement.prototype
+      : HTMLInputElement.prototype;
+    const descriptor = Object.getOwnPropertyDescriptor(proto, "value");
+    if (descriptor?.set) {
+      descriptor.set.call(el, nextValue);
+    } else {
+      el.value = nextValue;
+    }
+    try {
+      el.dispatchEvent(new InputEvent("input", {
+        bubbles: true,
+        cancelable: true,
+        inputType: "insertText",
+        data: nextValue,
+      }));
+    } catch {
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+
   function handleAct(params) {
     const action = params.action;
     if (action === "reload") {
@@ -290,13 +252,21 @@
       }
       el.focus();
       const text = String(params.text ?? "");
-      if (params.clearFirst && "value" in el) el.value = "";
-      if ("value" in el) {
-        el.value = params.clearFirst ? text : `${el.value}${text}`;
-        el.dispatchEvent(new Event("input", { bubbles: true }));
-        el.dispatchEvent(new Event("change", { bubbles: true }));
+      if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+        const next = params.clearFirst ? text : `${el.value}${text}`;
+        setNativeEditableValue(el, next);
       } else {
         el.textContent = params.clearFirst ? text : `${el.textContent || ""}${text}`;
+        try {
+          el.dispatchEvent(new InputEvent("input", {
+            bubbles: true,
+            cancelable: true,
+            inputType: "insertText",
+            data: text,
+          }));
+        } catch {
+          el.dispatchEvent(new Event("input", { bubbles: true }));
+        }
       }
       return { ok: true };
     }

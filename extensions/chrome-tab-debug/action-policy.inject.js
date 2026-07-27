@@ -4,6 +4,8 @@
  * Regenerate: npx tsx scripts/generate-browser-extension-shared.ts
  */
 
+(function (global) {
+"use strict";
 /**
  * Deterministic action safety policy for browser_act.
  * Mirrored in extensions/chrome-tab-debug/action-policy.js — keep in sync.
@@ -26,7 +28,7 @@ function joinMeta(input) {
         .filter(Boolean)
         .join(" ");
 }
-export function isPasswordOrPaymentField(input) {
+function isPasswordOrPaymentField(input) {
     const type = (input.type ?? "").toLowerCase();
     if (type === "password")
         return true;
@@ -39,12 +41,12 @@ export function isPasswordOrPaymentField(input) {
         return true;
     return false;
 }
-export function isFileInput(input) {
+function isFileInput(input) {
     const type = (input.type ?? "").toLowerCase();
     const tag = (input.tagName ?? "").toLowerCase();
     return tag === "input" && type === "file";
 }
-export function isDownloadLike(input) {
+function isDownloadLike(input) {
     if (input.download === true)
         return true;
     if (typeof input.download === "string" && input.download.length >= 0 && input.tagName?.toLowerCase() === "a") {
@@ -62,7 +64,7 @@ export function isDownloadLike(input) {
         return true;
     return false;
 }
-export function isPermissionTrigger(input) {
+function isPermissionTrigger(input) {
     const meta = joinMeta(input);
     if (PERMISSION_RE.test(meta))
         return true;
@@ -71,7 +73,7 @@ export function isPermissionTrigger(input) {
         return true;
     return false;
 }
-export function isDestructiveControl(input) {
+function isDestructiveControl(input) {
     const meta = joinMeta(input);
     if (DESTRUCTIVE_TEXT_RE.test(meta))
         return true;
@@ -84,7 +86,7 @@ export function isDestructiveControl(input) {
  * Decide whether a DOM action is allowed against the given control metadata.
  * Policy is intentionally conservative and deterministic.
  */
-export function evaluateActionPolicy(input) {
+function evaluateActionPolicy(input) {
     const action = (input.action || "").toLowerCase();
     if (!action)
         return { allowed: false, reason: "Missing action" };
@@ -132,7 +134,7 @@ export function evaluateActionPolicy(input) {
     return { allowed: true };
 }
 /** Build policy input from a live DOM element (extension content script). */
-export function elementActionMeta(el, action) {
+function elementActionMeta(el, action) {
     const tagName = el.tagName || "";
     const href = typeof el.href === "string"
         ? el.href
@@ -155,3 +157,14 @@ export function elementActionMeta(el, action) {
         isContentEditable: Boolean(el.isContentEditable),
     };
 }
+
+global.__snailPiActionPolicy = Object.freeze({
+  isPasswordOrPaymentField,
+  isFileInput,
+  isDownloadLike,
+  isPermissionTrigger,
+  isDestructiveControl,
+  evaluateActionPolicy,
+  elementActionMeta,
+});
+})(typeof globalThis !== "undefined" ? globalThis : self);

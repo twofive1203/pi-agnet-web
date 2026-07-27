@@ -20,6 +20,12 @@ async function send(type, payload = {}) {
   }
 }
 
+function normalizePendings(status) {
+  if (Array.isArray(status?.pendings) && status.pendings.length) return status.pendings;
+  if (status?.pending?.pendingRequestId) return [status.pending];
+  return [];
+}
+
 async function refresh() {
   showError("");
   const status = await send("status");
@@ -42,10 +48,12 @@ async function refresh() {
   $("unpair-btn").classList.toggle("hidden", !install);
   $("reconnect-btn").classList.toggle("hidden", !install);
 
-  const pending = status.pending;
-  $("pending-section").classList.toggle("hidden", !pending || !install);
-  if (pending) {
-    $("pending-detail").textContent = `Session ${pending.sessionLabel || pending.sessionId} requests tab access (expires soon).`;
+  const pendings = normalizePendings(status);
+  $("pending-section").classList.toggle("hidden", pendings.length === 0 || !install);
+
+  const pendingList = $("pending-list");
+  pendingList.innerHTML = "";
+  if (pendings.length > 0) {
     try {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       $("page-detail").textContent = tab
@@ -54,7 +62,41 @@ async function refresh() {
     } catch {
       $("page-detail").textContent = "";
     }
+
+    if (pendings.length > 1) {
+      $("pending-detail").textContent = `${pendings.length} sessions requested tab access — choose which to bind:`;
+    } else {
+      const pending = pendings[0];
+      $("pending-detail").textContent = `Session ${pending.sessionLabel || pending.sessionId} requests tab access (expires soon).`;
+    }
+
+    for (const pending of pendings) {
+      const li = document.createElement("li");
+      const label = document.createElement("div");
+      label.textContent = `${pending.sessionLabel || pending.sessionId}`;
+      li.appendChild(label);
+      const meta = document.createElement("div");
+      meta.className = "muted";
+      meta.style.fontSize = "11px";
+      meta.textContent = pending.sessionId;
+      li.appendChild(meta);
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "primary";
+      btn.textContent = pendings.length > 1 ? "Bind this tab to session" : "Bind this tab";
+      btn.addEventListener("click", async () => {
+        showError("");
+        const result = await send("accept", { pendingRequestId: pending.pendingRequestId });
+        if (result?.error) showError(result.error);
+        await refresh();
+      });
+      li.appendChild(btn);
+      pendingList.appendChild(li);
+    }
   }
+
+  // Legacy single accept button stays hidden when list renders per-pending actions.
+  $("accept-btn")?.classList.add("hidden");
 
   const bindings = status.bindings || [];
   const debugConsent = status.debugConsent || {};
@@ -110,7 +152,7 @@ $("pair-btn").addEventListener("click", async () => {
   await refresh();
 });
 
-$("accept-btn").addEventListener("click", async () => {
+$("accept-btn")?.addEventListener("click", async () => {
   showError("");
   const result = await send("accept");
   if (result?.error) showError(result.error);

@@ -1,5 +1,19 @@
 /** Shared constants/helpers for the Snail Pi Chrome extension. */
 
+// Redaction helpers are generated from lib/browser-redaction.ts — single source of truth.
+export {
+  isSensitiveHeaderName,
+  redactHeaders,
+  redactUrl,
+  isSensitiveFieldName,
+  isSensitiveControl,
+  truncateText,
+  sanitizeConsoleText,
+  sanitizeConsoleValue,
+  summarizeAuditParams,
+  networkSummarySafe,
+} from "./redaction.js";
+
 export const PROTOCOL_VERSION = 1;
 export const DEFAULT_PORT = 62667;
 export const PAIR_API = (port) => `http://127.0.0.1:${port}/api/browser/pair`;
@@ -46,106 +60,6 @@ export function originOf(url) {
 
 export function isEnvelopeFresh(timestamp, now = Date.now()) {
   return typeof timestamp === "number" && Number.isFinite(timestamp) && Math.abs(now - timestamp) <= MAX_ENVELOPE_AGE_MS;
-}
-
-const SECRET_INLINE_RES = [
-  /\bBearer\s+[A-Za-z0-9._\-+/=]+/gi,
-  /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9._\-+/=]+/g,
-  /\b(?:sk|rk|pk)[-_][A-Za-z0-9]{16,}/g,
-  /\b(?:xox[baprs]-)[A-Za-z0-9-]{10,}/gi,
-  /\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}/g,
-  /\bAIza[0-9A-Za-z\-_]{20,}/g,
-];
-
-const QUERY_CREDENTIAL_RE =
-  /([?&](?:token|access_token|refresh_token|id_token|auth|authorization|api_key|apikey|key|secret|password|passwd|session|sid|code|client_secret|signature|sig)=)[^&\s"'<>]*/gi;
-const PLAIN_TOKEN_ASSIGN_RE =
-  /\b((?:access[_-]?token|refresh[_-]?token|id[_-]?token|api[_-]?key|apikey|client[_-]?secret|session[_-]?token|auth[_-]?token|token|secret|password|passwd)\s*[=:]\s*)("?[^\s"'&,;<>]+"?)/gi;
-
-function redactQueryCredentialsInText(text) {
-  return String(text ?? "")
-    .replace(QUERY_CREDENTIAL_RE, "$1[redacted]")
-    .replace(PLAIN_TOKEN_ASSIGN_RE, "$1[redacted]");
-}
-
-export function sanitizeConsoleText(text, maxChars = 2000) {
-  let redacted = String(text ?? "");
-  // Redact credential-bearing URLs embedded in stacks/messages first.
-  redacted = redacted.replace(
-    /https?:\/\/[^\s"'<>]+/gi,
-    (match) => redactUrl(match),
-  );
-  redacted = redactQueryCredentialsInText(redacted);
-  redacted = redacted
-    .replace(/\bBearer\s+[A-Za-z0-9._\-+/=]+/gi, "Bearer [redacted]")
-    .replace(/(authorization\s*[:=]\s*)("?)[^\s"']+/gi, "$1$2[redacted]")
-    .replace(/(cookie\s*[:=]\s*)("?)[^\s"']+/gi, "$1$2[redacted]")
-    .replace(/(set-cookie\s*[:=]\s*)("?)[^\s"']+/gi, "$1$2[redacted]")
-    .replace(/(api[_-]?key\s*[:=]\s*)("?)[^\s"']+/gi, "$1$2[redacted]")
-    .replace(/(x-api-key\s*[:=]\s*)("?)[^\s"']+/gi, "$1$2[redacted]")
-    .replace(/(access[_-]?token\s*[:=]\s*)("?)[^\s"']+/gi, "$1$2[redacted]")
-    .replace(/(refresh[_-]?token\s*[:=]\s*)("?)[^\s"']+/gi, "$1$2[redacted]")
-    .replace(/(session[_-]?token\s*[:=]\s*)("?)[^\s"']+/gi, "$1$2[redacted]")
-    .replace(/(secret\s*[:=]\s*)("?)[^\s"']+/gi, "$1$2[redacted]")
-    .replace(/(password\s*[:=]\s*)("?)[^\s"']+/gi, "$1$2[redacted]");
-  for (const re of SECRET_INLINE_RES) {
-    redacted = redacted.replace(re, "[redacted]");
-  }
-  if (redacted.length > maxChars) {
-    return `${redacted.slice(0, Math.max(0, maxChars - 1))}…`;
-  }
-  return redacted;
-}
-
-export function sanitizeConsoleValue(value, maxChars = 2000, depth = 0) {
-  if (value == null) return value;
-  if (typeof value === "string") return sanitizeConsoleText(value, maxChars);
-  if (typeof value === "number" || typeof value === "boolean") return value;
-  if (depth >= 3) return "[truncated]";
-  if (Array.isArray(value)) {
-    return value.slice(0, 20).map((item) => sanitizeConsoleValue(item, Math.min(400, maxChars), depth + 1));
-  }
-  if (typeof value === "object") {
-    const out = {};
-    let count = 0;
-    for (const [key, nested] of Object.entries(value)) {
-      if (count >= 30) {
-        out["…"] = "truncated";
-        break;
-      }
-      const lower = String(key).toLowerCase();
-      if (
-        lower.includes("authorization")
-        || lower.includes("cookie")
-        || lower.includes("password")
-        || lower.includes("secret")
-        || lower.includes("token")
-        || lower.includes("api_key")
-        || lower.includes("apikey")
-      ) {
-        out[key] = "[redacted]";
-      } else {
-        out[key] = sanitizeConsoleValue(nested, Math.min(400, maxChars), depth + 1);
-      }
-      count += 1;
-    }
-    return out;
-  }
-  return sanitizeConsoleText(String(value), maxChars);
-}
-
-export function redactUrl(raw) {
-  try {
-    const u = new URL(raw);
-    for (const key of [...u.searchParams.keys()]) {
-      if (/token|secret|password|auth|key|session|code|sig/i.test(key)) u.searchParams.set(key, "[redacted]");
-    }
-    u.username = "";
-    u.password = "";
-    return u.toString();
-  } catch {
-    return redactQueryCredentialsInText(String(raw || "")).slice(0, 500);
-  }
 }
 
 /**
@@ -259,21 +173,35 @@ export async function clearLocalInstall() {
 }
 
 export async function getSessionBindings() {
-  const data = await chrome.storage.session.get(["bindings", "primaryBySession", "debugConsent", "pendingRequest"]);
+  const data = await chrome.storage.session.get([
+    "bindings",
+    "primaryBySession",
+    "debugConsent",
+    "pendingRequest",
+    "pendingRequests",
+  ]);
+  const pendingRequests = Array.isArray(data.pendingRequests)
+    ? data.pendingRequests
+    : (data.pendingRequest ? [data.pendingRequest] : []);
   return {
     bindings: data.bindings || {},
     primaryBySession: data.primaryBySession || {},
     debugConsent: data.debugConsent || {},
-    pendingRequest: data.pendingRequest || null,
+    pendingRequest: data.pendingRequest || (pendingRequests.length === 1 ? pendingRequests[0] : null),
+    pendingRequests,
   };
 }
 
 export async function setSessionBindings(state) {
+  const pendingRequests = Array.isArray(state.pendingRequests)
+    ? state.pendingRequests
+    : (state.pendingRequest ? [state.pendingRequest] : []);
   await chrome.storage.session.set({
     bindings: state.bindings || {},
     primaryBySession: state.primaryBySession || {},
     debugConsent: state.debugConsent || {},
-    pendingRequest: state.pendingRequest ?? null,
+    pendingRequests,
+    pendingRequest: pendingRequests.length === 1 ? pendingRequests[0] : null,
   });
 }
 
@@ -283,5 +211,6 @@ export async function resetTemporaryState() {
     primaryBySession: {},
     debugConsent: {},
     pendingRequest: null,
+    pendingRequests: [],
   });
 }

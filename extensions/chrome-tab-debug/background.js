@@ -34,8 +34,10 @@ let heartbeatTimer = null;
 const debugBuffers = new Map(); // bindingId -> { console: [], network: [], tabId }
 const recentMutations = new Map(); // requestId -> result
 const recentInbound = new Map(); // requestId -> ts
-const abortByRequest = new Map(); // requestId -> { aborted: boolean }
-let cachedPending = null;
+/** @type {Map<string, { aborted: boolean, tabId?: number }>} */
+const abortByRequest = new Map(); // requestId -> { aborted, tabId }
+/** @type {Array<object>} */
+let cachedPendings = [];
 
 async function setBadge(text, color = "#f59e0b") {
   try {
@@ -51,10 +53,42 @@ function wsUrl(port) {
 }
 
 async function ensureContentScript(tabId) {
+  // Policy IIFE must load before content.js so evaluateActionPolicy is available.
   await chrome.scripting.executeScript({
     target: { tabId, allFrames: false },
-    files: ["content.js"],
+    files: ["action-policy.inject.js", "content.js"],
   });
+}
+
+function normalizePendings(resultOrParams) {
+  if (!resultOrParams) return [];
+  if (Array.isArray(resultOrParams.pendings)) {
+    return resultOrParams.pendings.filter((p) => p && p.pendingRequestId);
+  }
+  if (resultOrParams.pending?.pendingRequestId) return [resultOrParams.pending];
+  return [];
+}
+
+function pickPending(pendings, pendingRequestId) {
+  if (!Array.isArray(pendings) || pendings.length === 0) return null;
+  if (pendingRequestId) {
+    return pendings.find((p) => p.pendingRequestId === pendingRequestId) || null;
+  }
+  // Only auto-select when a single pending exists — prevents cross-session mistakes.
+  return pendings.length === 1 ? pendings[0] : null;
+}
+
+async function deliverCancelToTab(tabId, requestId) {
+  if (typeof tabId !== "number" || !requestId) return;
+  try {
+    await chrome.tabs.sendMessage(tabId, {
+      channel: "snail-pi-content-broadcast",
+      type: "cancel",
+      requestId,
+    });
+  } catch {
+    // Tab may not have content script yet.
+  }
 }
 
 async function sendToContent(tabId, type, params, requestId) {
@@ -243,9 +277,13 @@ async function applyReconcileSnapshot(params = {}) {
     if (!next.bindings[id]) delete next.debugConsent[id];
   }
 
-  cachedPending = next.pendingRequest;
+  const pendings = normalizePendings(params);
+  cachedPendings = pendings;
+  next.pendingRequest = pendings.length === 1 ? pendings[0] : null;
+  next.pendingRequests = pendings;
   await setSessionBindings(next);
-  if (Object.keys(next.bindings).length === 0) await setBadge("");
+  if (Object.keys(next.bindings).length === 0 && pendings.length === 0) await setBadge("");
+  else if (pendings.length > 0) await setBadge("!", "#f59e0b");
 }
 
 async function onSocketMessage(text) {
@@ -272,7 +310,7 @@ async function onSocketMessage(text) {
       // If reconcile fails (e.g. empty server after restart), clear temporary bindings.
       await resetTemporaryState();
       debugBuffers.clear();
-      cachedPending = null;
+      cachedPendings = [];
     }
     return;
   }
@@ -309,21 +347,40 @@ async function onSocketMessage(text) {
   if (msg.kind === "cancel") {
     const handle = abortByRequest.get(msg.requestId);
     if (handle) handle.aborted = true;
-    // Best-effort cancel content waits.
-    void chrome.runtime.sendMessage({
-      channel: "snail-pi-content-broadcast",
-      type: "cancel",
-      requestId: msg.requestId,
-    }).catch(() => undefined);
+    // MV3: content scripts only receive tabs.sendMessage, not runtime.sendMessage.
+    if (handle?.tabId != null) {
+      void deliverCancelToTab(handle.tabId, msg.requestId);
+    } else {
+      // Fallback: notify every bound tab (still better than runtime broadcast).
+      try {
+        const state = await getSessionBindings();
+        const tabIds = new Set(
+          Object.values(state.bindings || {})
+            .map((b) => b?.tabId)
+            .filter((id) => typeof id === "number"),
+        );
+        for (const tabId of tabIds) {
+          void deliverCancelToTab(tabId, msg.requestId);
+        }
+      } catch {
+        // ignore
+      }
+    }
     return;
   }
 
   if (msg.kind === "event") {
     const payload = msg.payload || {};
     if (payload.event === "binding.pending") {
-      cachedPending = payload.data || null;
+      const data = payload.data || null;
+      if (data?.pendingRequestId) {
+        // Upsert by pendingRequestId; keep multi-session pendings distinct.
+        const rest = cachedPendings.filter((p) => p.pendingRequestId !== data.pendingRequestId);
+        cachedPendings = [data, ...rest];
+      }
       const state = await getSessionBindings();
-      state.pendingRequest = cachedPending;
+      state.pendingRequests = cachedPendings;
+      state.pendingRequest = cachedPendings.length === 1 ? cachedPendings[0] : null;
       await setSessionBindings(state);
       await setBadge("!", "#f59e0b");
     }
@@ -398,7 +455,7 @@ async function handleCommand(requestId, payload) {
 
   const command = payload.command;
   const params = payload.params || {};
-  const cancelHandle = { aborted: false };
+  const cancelHandle = { aborted: false, tabId: undefined };
   abortByRequest.set(requestId, cancelHandle);
 
   try {
@@ -410,7 +467,17 @@ async function handleCommand(requestId, payload) {
     if (command === "reconcile") {
       await applyReconcileSnapshot(params);
       const state = await getSessionBindings();
-      return { ok: true, result: { bindings: Object.values(state.bindings), pending: state.pendingRequest } };
+      const pendings = Array.isArray(state.pendingRequests)
+        ? state.pendingRequests
+        : normalizePendings({ pending: state.pendingRequest });
+      return {
+        ok: true,
+        result: {
+          bindings: Object.values(state.bindings),
+          pendings,
+          pending: pendings.length === 1 ? pendings[0] : null,
+        },
+      };
     }
 
     if (command === "binding.revoke") {
@@ -469,6 +536,8 @@ async function handleCommand(requestId, payload) {
     const binding = auth.binding;
     const tabId = binding.tabId;
     if (typeof tabId !== "number") return errorResult("NO_BOUND_TAB", "No tab for command");
+    // Track tab so bridge cancel can reach the content script via tabs.sendMessage.
+    cancelHandle.tabId = tabId;
 
     if (command === "page.console" || command === "page.network") {
       if (!bindingHasCapability(binding, "debug_readonly")) {
@@ -845,7 +914,7 @@ async function revokeLocalBinding(bindingId) {
   await setSessionBindings(state);
 }
 
-async function acceptPendingForActiveTab() {
+async function acceptPendingForActiveTab(pendingRequestId) {
   const install = await getLocalInstall();
   if (!install) throw new Error("Extension is not paired");
   if (!socket || socket.readyState !== WebSocket.OPEN) {
@@ -861,17 +930,18 @@ async function acceptPendingForActiveTab() {
   if (!tab?.id || !tab.url) throw new Error("No active tab");
   if (isRestrictedUrl(tab.url)) throw new Error("This page cannot be bound (restricted URL)");
 
-  // Prefer WS pending; fall back to authenticated HTTP pending.
-  let pending = cachedPending;
-  if (!pending?.pendingRequestId) {
+  // Prefer WS pendings; fall back to authenticated HTTP pending list.
+  let pendings = cachedPendings.slice();
+  if (pendings.length === 0) {
     try {
       const pull = await sendClientRequest("binding.pending", {});
-      pending = pull?.result?.pending || null;
+      pendings = normalizePendings(pull?.result);
+      cachedPendings = pendings;
     } catch {
-      pending = null;
+      pendings = [];
     }
   }
-  if (!pending?.pendingRequestId) {
+  if (pendings.length === 0) {
     const pendingRes = await fetch(BINDINGS_API(install.webPort), {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -883,9 +953,16 @@ async function acceptPendingForActiveTab() {
     });
     const pendingData = await pendingRes.json();
     if (!pendingRes.ok) throw new Error(pendingData.error || "Pending fetch failed");
-    pending = pendingData.pending;
+    pendings = normalizePendings(pendingData);
+    cachedPendings = pendings;
   }
-  if (!pending?.pendingRequestId) throw new Error("No pending bind request from Snail Pi");
+  const pending = pickPending(pendings, pendingRequestId);
+  if (!pending?.pendingRequestId) {
+    if (pendings.length > 1) {
+      throw new Error("Multiple sessions requested a tab — pick one session in the popup");
+    }
+    throw new Error("No pending bind request from Snail Pi");
+  }
 
   await ensureContentScript(tab.id);
   const meta = await sendToContent(tab.id, "meta", {});
@@ -923,8 +1000,9 @@ async function acceptPendingForActiveTab() {
   if (!state.primaryBySession[state.bindings[bindingId].sessionId]) {
     state.primaryBySession[state.bindings[bindingId].sessionId] = bindingId;
   }
-  state.pendingRequest = null;
-  cachedPending = null;
+  cachedPendings = cachedPendings.filter((p) => p.pendingRequestId !== pending.pendingRequestId);
+  state.pendingRequests = cachedPendings;
+  state.pendingRequest = cachedPendings.length === 1 ? cachedPendings[0] : null;
   await setSessionBindings(state);
   await setBadge("ON", "#22c55e");
   return { binding: bindingView, pending };
@@ -1058,11 +1136,17 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message.type === "status") {
       const install = await getLocalInstall();
       const bindings = await getSessionBindings();
-      let pending = bindings.pendingRequest || cachedPending;
+      let pendings = Array.isArray(bindings.pendingRequests) && bindings.pendingRequests.length
+        ? bindings.pendingRequests
+        : (cachedPendings.length ? cachedPendings : normalizePendings({ pending: bindings.pendingRequest }));
       if (install && socket && socket.readyState === WebSocket.OPEN && socketAuthenticated) {
         try {
           const pull = await sendClientRequest("binding.pending", {});
-          pending = pull?.result?.pending || pending;
+          const pulled = normalizePendings(pull?.result);
+          if (pulled.length) {
+            pendings = pulled;
+            cachedPendings = pulled;
+          }
         } catch {
           // keep cached
         }
@@ -1072,7 +1156,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         install: install ? { clientId: install.clientId, webPort: install.webPort, bridgePort: install.bridgePort, pairedAt: install.pairedAt } : null,
         connected: Boolean(socket && socket.readyState === WebSocket.OPEN && socketAuthenticated),
         bindings: Object.values(bindings.bindings),
-        pending,
+        pendings,
+        pending: pendings.length === 1 ? pendings[0] : null,
         debugConsent: bindings.debugConsent || {},
         debuggerPermission,
       };
@@ -1100,12 +1185,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       await clearLocalInstall();
       await resetTemporaryState();
       debugBuffers.clear();
-      cachedPending = null;
+      cachedPendings = [];
       await setBadge("");
       return { ok: true };
     }
     if (message.type === "accept") {
-      return await acceptPendingForActiveTab();
+      return await acceptPendingForActiveTab(message.pendingRequestId);
     }
     if (message.type === "resume") {
       return await resumeSuspendedBinding(message.bindingId);

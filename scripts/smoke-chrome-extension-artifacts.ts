@@ -564,8 +564,16 @@ async function checkManifestAndAssets(): Promise<void> {
     referenced.add(rel);
   }
 
-  // JS imports from background/popup
-  for (const entry of ["background.js", "popup.js", "content.js", "shared.js", "action-policy.js"]) {
+  // JS imports from background/popup + generated shared sources
+  for (const entry of [
+    "background.js",
+    "popup.js",
+    "content.js",
+    "shared.js",
+    "action-policy.js",
+    "action-policy.inject.js",
+    "redaction.js",
+  ]) {
     referenced.add(entry);
   }
 
@@ -574,8 +582,22 @@ async function checkManifestAndAssets(): Promise<void> {
     assert(existsSync(abs), `referenced file missing: ${rel}`);
   }
 
+  // Generated files must declare their source marker.
+  for (const file of ["action-policy.js", "action-policy.inject.js", "redaction.js"]) {
+    const text = readFileSync(join(EXT_DIR, file), "utf8");
+    assert(text.includes("GENERATED FILE"), `${file} missing generated marker`);
+  }
+
   // Syntax-load service worker / content / popup / shared scripts via node --check
-  for (const file of ["background.js", "content.js", "popup.js", "shared.js", "action-policy.js"]) {
+  for (const file of [
+    "background.js",
+    "content.js",
+    "popup.js",
+    "shared.js",
+    "action-policy.js",
+    "action-policy.inject.js",
+    "redaction.js",
+  ]) {
     const result = spawnSync(process.execPath, ["--check", join(EXT_DIR, file)], { encoding: "utf8" });
     assert(result.status === 0, `${file} syntax check failed: ${result.stderr || result.stdout}`);
   }
@@ -624,12 +646,28 @@ async function checkContentScriptProductionPaths(): Promise<void> {
     },
   };
 
+  class InputEventMock {
+    type: string;
+    bubbles: boolean;
+    cancelable: boolean;
+    inputType?: string;
+    data?: string;
+    constructor(type: string, init?: { bubbles?: boolean; cancelable?: boolean; inputType?: string; data?: string }) {
+      this.type = type;
+      this.bubbles = Boolean(init?.bubbles);
+      this.cancelable = Boolean(init?.cancelable);
+      this.inputType = init?.inputType;
+      this.data = init?.data;
+    }
+  }
+
   const sandbox: Record<string, unknown> = {
     chrome,
     window: fixture.window,
     document: fixture.document,
     location: fixture.location,
     globalThis: null as unknown,
+    self: null as unknown,
     HTMLElement: MockHTMLElement,
     Element: MockElement,
     HTMLInputElement: MockHTMLInputElement,
@@ -643,6 +681,7 @@ async function checkContentScriptProductionPaths(): Promise<void> {
         this.bubbles = Boolean(init?.bubbles);
       }
     },
+    InputEvent: InputEventMock,
     setTimeout,
     clearTimeout,
     console,
@@ -659,8 +698,17 @@ async function checkContentScriptProductionPaths(): Promise<void> {
     Error,
   };
   sandbox.globalThis = sandbox;
+  sandbox.self = sandbox;
   // content script assigns globalThis.__snailPiContentLoaded
   (sandbox as { __snailPiContentLoaded?: boolean }).__snailPiContentLoaded = false;
+
+  // Mirror production inject order: policy IIFE then content.js
+  const policyInject = readFileSync(join(EXT_DIR, "action-policy.inject.js"), "utf8");
+  vm.runInNewContext(policyInject, sandbox, { filename: join(EXT_DIR, "action-policy.inject.js") });
+  assert(
+    typeof (sandbox as { __snailPiActionPolicy?: { evaluateActionPolicy?: unknown } }).__snailPiActionPolicy?.evaluateActionPolicy === "function",
+    "action-policy.inject.js must install __snailPiActionPolicy",
+  );
 
   const code = readFileSync(join(EXT_DIR, "content.js"), "utf8");
   vm.runInNewContext(code, sandbox, { filename: join(EXT_DIR, "content.js") });
@@ -1286,10 +1334,10 @@ async function checkBackgroundProductionPaths(): Promise<void> {
     chrome.tabs.get = originalTabsGet;
   }
 
-  // Cancel envelope aborts in-flight wait (background sets abort + content cancel broadcast)
+  // Cancel envelope aborts in-flight wait via tabs.sendMessage (not runtime.sendMessage).
   activeContentHandler = async (message) => {
     if (message.type === "wait") {
-      // Simulate content wait that ends when background cancel broadcast is observed.
+      // Simulate content wait that ends when background cancel is delivered to the tab.
       const requestId = String(message.requestId || "");
       return await new Promise((resolve) => {
         const started = Date.now();
@@ -1311,12 +1359,13 @@ async function checkBackgroundProductionPaths(): Promise<void> {
   };
 
   (chrome as { __cancelIds?: Set<string> }).__cancelIds = new Set();
-  const realSendMessage = chrome.runtime.sendMessage.bind(chrome.runtime);
-  chrome.runtime.sendMessage = (message: Record<string, unknown>) => {
+  const realTabsSendMessage = chrome.tabs.sendMessage.bind(chrome.tabs);
+  chrome.tabs.sendMessage = async (tabId: number, message: Record<string, unknown>) => {
     if (message?.channel === "snail-pi-content-broadcast" && message.type === "cancel" && message.requestId) {
       (chrome as { __cancelIds?: Set<string> }).__cancelIds!.add(String(message.requestId));
+      return undefined;
     }
-    return realSendMessage(message);
+    return await realTabsSendMessage(tabId, message);
   };
 
   const waitRequestId = "cancel-wait-req";

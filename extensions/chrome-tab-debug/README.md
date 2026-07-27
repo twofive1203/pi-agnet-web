@@ -44,6 +44,21 @@ No `<all_urls>`, no always-on content scripts, no remote code, incognito not all
 - Web UI / REST: default `62666`
 - Browser WebSocket bridge: default `62667` on `127.0.0.1` only
 
+## Shared policy / redaction sources
+
+Do **not** hand-edit these generated files:
+
+- `action-policy.js` / `action-policy.inject.js` ← `lib/browser-action-policy.ts`
+- `redaction.js` ← `lib/browser-redaction.ts`
+
+Regenerate after changing the TypeScript sources:
+
+```bash
+npm run generate:browser-extension
+```
+
+`background.js` injects `action-policy.inject.js` before `content.js` so DOM actions use the same policy as the server. Wait cancels are delivered with `tabs.sendMessage` (MV3 content scripts do not receive `runtime.sendMessage` broadcasts). Multi-session pending bind requests are listed separately in the popup so the user picks the target session.
+
 ## Automated checks
 
-`npm run test:browser` includes `scripts/smoke-chrome-extension-artifacts.ts`, which parses this package's `manifest.json`, syntax-checks extension scripts, and executes production `background.js` / `content.js` / `action-policy.js` paths under mocked Chrome APIs. Headed Chrome E2E (real activeTab, service-worker restart, DevTools contention, live CDP) remains manual — see `docs/operations/troubleshooting.md`.
+`npm run test:browser` regenerates shared sources, then runs `scripts/smoke-browser-binding.ts` and `scripts/smoke-chrome-extension-artifacts.ts` (manifest, generated markers, production background/content/policy paths under mocked Chrome APIs). Headed Chrome E2E (real activeTab, service-worker restart, DevTools contention, live CDP) remains manual — see `docs/operations/troubleshooting.md`.

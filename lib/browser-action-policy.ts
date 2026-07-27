@@ -154,3 +154,42 @@ export function evaluateActionPolicy(input: ActionPolicyInput): ActionPolicyDeci
 
   return { allowed: true };
 }
+
+/** Build policy input from a live DOM element (extension content script). */
+export function elementActionMeta(
+  el: {
+    tagName?: string;
+    type?: string;
+    id?: string;
+    href?: string;
+    value?: string;
+    innerText?: string;
+    textContent?: string | null;
+    isContentEditable?: boolean;
+    getAttribute?: (name: string) => string | null;
+    hasAttribute?: (name: string) => boolean;
+  },
+  action: string,
+): ActionPolicyInput {
+  const tagName = el.tagName || "";
+  const href = typeof el.href === "string"
+    ? el.href
+    : el.getAttribute?.("href") || "";
+  return {
+    action,
+    tagName,
+    type: el.getAttribute?.("type") || el.type || "",
+    name: el.getAttribute?.("name") || "",
+    id: el.id || "",
+    href,
+    role: el.getAttribute?.("role") || "",
+    autocomplete: el.getAttribute?.("autocomplete") || "",
+    ariaLabel: el.getAttribute?.("aria-label") || "",
+    text: (el.innerText || el.textContent || "").trim().slice(0, 200),
+    download: el.hasAttribute?.("download") ? (el.getAttribute?.("download") ?? true) : false,
+    target: el.getAttribute?.("target") || "",
+    rel: el.getAttribute?.("rel") || "",
+    inputMode: el.getAttribute?.("inputmode") || "",
+    isContentEditable: Boolean(el.isContentEditable),
+  };
+}
