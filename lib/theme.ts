@@ -6,6 +6,10 @@ export const THEME_PREFERENCES = [
   "graphite",
   "ocean",
   "forest",
+  "twilight",
+  "night",
+  "daisy-dark",
+  "dracula",
 ] as const;
 
 export type ThemePreference = (typeof THEME_PREFERENCES)[number];
@@ -19,6 +23,10 @@ export const THEME_META: Record<ThemePreference, { mode: ResolvedTheme }> = {
   graphite: { mode: "dark" },
   ocean: { mode: "light" },
   forest: { mode: "dark" },
+  twilight: { mode: "dark" },
+  night: { mode: "dark" },
+  "daisy-dark": { mode: "dark" },
+  dracula: { mode: "dark" },
 };
 
 export function isThemePreference(value: string | null | undefined): value is ThemePreference {

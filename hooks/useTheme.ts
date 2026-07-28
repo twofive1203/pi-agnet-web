@@ -60,7 +60,7 @@ function applyThemeToDocument(preference: ThemePreference): void {
   const root = document.documentElement;
   const resolved = resolveThemePreference(preference, getSystemIsDark());
   root.dataset.themePreference = preference;
-  if (preference === "paper" || preference === "graphite" || preference === "ocean" || preference === "forest") {
+  if (preference !== "system" && preference !== "light" && preference !== "dark") {
     root.dataset.themeSkin = preference;
   } else {
     delete root.dataset.themeSkin;

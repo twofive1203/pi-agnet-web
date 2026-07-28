@@ -122,6 +122,215 @@ html[data-theme-skin="forest"] {
   --bg-subtle: rgba(197, 224, 202, 0.045);
 }
 
+/* MetaCubeXD-inspired skins preserve the source themes' color relationships. */
+html[data-theme-skin="twilight"] {
+  --bg: #17212b;
+  --bg-panel: #202c38;
+  --bg-hover: #2a3947;
+  --bg-selected: #3b3d45;
+  --border: #3a4957;
+  --text: #e8edf1;
+  --text-muted: #aeb9c3;
+  --text-dim: #748391;
+  --accent: #f08a67;
+  --accent-hover: #f6a084;
+  --user-bg: #382d2d;
+  --assistant-bg: #17212b;
+  --tool-bg: #1d2934;
+  --bg-subtle: rgba(240, 138, 103, 0.055);
+}
+
+html[data-theme-skin="night"] {
+  --daisy-base-100: oklch(20.768% 0.039 265.754);
+  --daisy-base-200: oklch(19.314% 0.037 265.754);
+  --daisy-base-300: oklch(17.86% 0.034 265.754);
+  --daisy-base-content: oklch(84.153% 0.007 265.754);
+  --daisy-primary: oklch(75.351% 0.138 232.661);
+}
+
+html[data-theme-skin="daisy-dark"] {
+  --daisy-base-100: oklch(25.33% 0.016 252.42);
+  --daisy-base-200: oklch(23.26% 0.014 253.1);
+  --daisy-base-300: oklch(21.15% 0.012 254.09);
+  --daisy-base-content: oklch(97.807% 0.029 256.847);
+  --daisy-primary: oklch(58% 0.233 277.117);
+}
+
+html[data-theme-skin="dracula"] {
+  --daisy-base-100: oklch(28.822% 0.022 277.508);
+  --daisy-base-200: oklch(26.805% 0.02 277.508);
+  --daisy-base-300: oklch(24.787% 0.019 277.508);
+  --daisy-base-content: oklch(97.747% 0.007 106.545);
+  --daisy-primary: oklch(75.461% 0.183 346.812);
+}
+
+html:is(
+  [data-theme-skin="night"],
+  [data-theme-skin="daisy-dark"],
+  [data-theme-skin="dracula"]
+) {
+  --bg: var(--daisy-base-100);
+  --bg-panel: var(--daisy-base-200);
+  --bg-hover: color-mix(in oklab, var(--daisy-base-content) 7%, var(--daisy-base-200));
+  --bg-selected: color-mix(in oklab, var(--daisy-primary) 16%, var(--daisy-base-200));
+  --border: color-mix(in oklab, var(--daisy-base-content) 13%, var(--daisy-base-300));
+  --text: var(--daisy-base-content);
+  --text-muted: color-mix(in oklab, var(--daisy-base-content) 72%, var(--daisy-base-100));
+  --text-dim: color-mix(in oklab, var(--daisy-base-content) 48%, var(--daisy-base-100));
+  --accent: var(--daisy-primary);
+  --accent-hover: color-mix(in oklab, var(--daisy-primary) 82%, white);
+  --user-bg: color-mix(in oklab, var(--daisy-primary) 13%, var(--daisy-base-100));
+  --assistant-bg: var(--daisy-base-100);
+  --tool-bg: var(--daisy-base-200);
+  --bg-subtle: color-mix(in oklab, var(--daisy-base-content) 4%, transparent);
+}
+
+html:is(
+  [data-theme-skin="twilight"],
+  [data-theme-skin="night"],
+  [data-theme-skin="daisy-dark"],
+  [data-theme-skin="dracula"]
+) {
+  --meta-surface: color-mix(in oklab, var(--bg-panel) 92%, transparent);
+  --meta-shadow: 0 12px 34px color-mix(in oklab, #070b0f 42%, transparent);
+  --meta-ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+html:is(
+  [data-theme-skin="twilight"],
+  [data-theme-skin="night"],
+  [data-theme-skin="daisy-dark"],
+  [data-theme-skin="dracula"]
+) .app-shell-root {
+  background: var(--bg) !important;
+}
+
+html:is(
+  [data-theme-skin="twilight"],
+  [data-theme-skin="night"],
+  [data-theme-skin="daisy-dark"],
+  [data-theme-skin="dracula"]
+) .sidebar-container {
+  background: color-mix(in oklab, var(--bg-panel) 96%, var(--bg)) !important;
+  box-shadow: 8px 0 28px color-mix(in oklab, #070b0f 18%, transparent);
+}
+
+html:is(
+  [data-theme-skin="twilight"],
+  [data-theme-skin="night"],
+  [data-theme-skin="daisy-dark"],
+  [data-theme-skin="dracula"]
+) .app-top-bar {
+  background: var(--meta-surface) !important;
+  box-shadow: 0 6px 22px color-mix(in oklab, #070b0f 18%, transparent);
+  backdrop-filter: blur(12px);
+}
+
+html:is(
+  [data-theme-skin="twilight"],
+  [data-theme-skin="night"],
+  [data-theme-skin="daisy-dark"],
+  [data-theme-skin="dracula"]
+) :is(.app-top-pill, .right-panel-toggle) {
+  border-radius: 8px;
+  box-shadow: inset 0 1px 0 color-mix(in oklab, var(--text) 7%, transparent);
+  transition-duration: 160ms !important;
+  transition-timing-function: var(--meta-ease) !important;
+}
+
+html:is(
+  [data-theme-skin="twilight"],
+  [data-theme-skin="night"],
+  [data-theme-skin="daisy-dark"],
+  [data-theme-skin="dracula"]
+) :is(.app-top-pill-active, .right-panel-toggle-active, .theme-picker-option-selected) {
+  border-color: color-mix(in oklab, var(--accent) 42%, var(--border)) !important;
+  background: color-mix(in oklab, var(--accent) 14%, var(--bg-panel)) !important;
+  color: var(--accent) !important;
+}
+
+html:is(
+  [data-theme-skin="twilight"],
+  [data-theme-skin="night"],
+  [data-theme-skin="daisy-dark"],
+  [data-theme-skin="dracula"]
+) :is(
+  .app-top-icon-button:active,
+  .app-top-pill:active:not(:disabled),
+  .right-panel-toggle:active,
+  .theme-picker-option:active
+) {
+  transform: scale(0.95);
+}
+
+html:is(
+  [data-theme-skin="twilight"],
+  [data-theme-skin="night"],
+  [data-theme-skin="daisy-dark"],
+  [data-theme-skin="dracula"]
+) :is(.theme-picker-popover, .chat-input-dropdown-panel) {
+  background: color-mix(in oklab, var(--bg-panel) 96%, transparent) !important;
+  border-color: color-mix(in oklab, var(--text) 12%, transparent) !important;
+  box-shadow: var(--meta-shadow) !important;
+  backdrop-filter: blur(14px);
+}
+
+html:is(
+  [data-theme-skin="twilight"],
+  [data-theme-skin="night"],
+  [data-theme-skin="daisy-dark"],
+  [data-theme-skin="dracula"]
+) .theme-picker-popover {
+  animation: meta-theme-pop-in 220ms var(--meta-ease) both;
+}
+
+html:is(
+  [data-theme-skin="twilight"],
+  [data-theme-skin="night"],
+  [data-theme-skin="daisy-dark"],
+  [data-theme-skin="dracula"]
+) .chat-input-main-row {
+  background: color-mix(in oklab, var(--bg-panel) 62%, var(--bg)) !important;
+  border-color: color-mix(in oklab, var(--text) 12%, transparent) !important;
+  border-radius: 12px !important;
+  box-shadow: 0 10px 30px color-mix(in oklab, #070b0f 25%, transparent), inset 0 1px 0 color-mix(in oklab, var(--text) 6%, transparent) !important;
+}
+
+html:is(
+  [data-theme-skin="twilight"],
+  [data-theme-skin="night"],
+  [data-theme-skin="daisy-dark"],
+  [data-theme-skin="dracula"]
+) .chat-input-main-row:focus-within {
+  border-color: color-mix(in oklab, var(--accent) 62%, var(--border)) !important;
+  box-shadow: 0 10px 30px color-mix(in oklab, #070b0f 25%, transparent), 0 0 0 2px color-mix(in oklab, var(--accent) 18%, transparent) !important;
+}
+
+html:is(
+  [data-theme-skin="twilight"],
+  [data-theme-skin="night"],
+  [data-theme-skin="daisy-dark"],
+  [data-theme-skin="dracula"]
+) :is(.right-panel-container, .app-top-aux-panel) {
+  background: color-mix(in oklab, var(--bg) 96%, var(--bg-panel)) !important;
+}
+
+@keyframes meta-theme-pop-in {
+  from { opacity: 0; transform: translateY(-5px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html:is(
+    [data-theme-skin="twilight"],
+    [data-theme-skin="night"],
+    [data-theme-skin="daisy-dark"],
+    [data-theme-skin="dracula"]
+  ) .theme-picker-popover {
+    animation: none;
+  }
+}
+
 /* Theme toggle: circular wipe via View Transitions API.
    Disable the UA cross-fade; the actual clip-path animation is driven by
    Element.animate() in hooks/useTheme.ts after transition.ready resolves. */
@@ -289,6 +498,9 @@ html[data-theme-skin="forest"] {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
+  max-height: min(360px, calc(100dvh - 100px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .theme-picker-option {
@@ -939,6 +1151,14 @@ span.linenumber {
     overflow-y: hidden;
     scrollbar-width: none;
     -webkit-overflow-scrolling: touch;
+  }
+  html:is(
+    [data-theme-skin="twilight"],
+    [data-theme-skin="night"],
+    [data-theme-skin="daisy-dark"],
+    [data-theme-skin="dracula"]
+  ) .app-top-bar {
+    width: calc(100% - 68px);
   }
   .app-top-bar::-webkit-scrollbar {
     display: none;

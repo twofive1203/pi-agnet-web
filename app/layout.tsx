@@ -21,7 +21,10 @@ export const metadata: Metadata = {
 const THEME_MODES = Object.fromEntries(
   THEME_PREFERENCES.map((preference) => [preference, THEME_META[preference].mode]),
 );
-const BOOT_SCRIPT = `(function(){try{var r=document.documentElement,m=${JSON.stringify(THEME_MODES)},t=localStorage.getItem("pi-theme");if(!Object.prototype.hasOwnProperty.call(m,t))t="system";var d=t==="system"?window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches:m[t]==="dark";r.dataset.themePreference=t;if(t==="paper"||t==="graphite"||t==="ocean"||t==="forest")r.dataset.themeSkin=t;r.classList.toggle("dark",!!d);r.style.colorScheme=d?"dark":"light";var l=localStorage.getItem("pi-locale");if(l!=="zh"&&l!=="en"){var n=(navigator.language||"").toLowerCase();l=n.indexOf("zh")===0?"zh":"en";}r.lang=l==="zh"?"zh-CN":"en";r.dataset.locale=l;}catch(e){}})();`;
+const THEME_SKINS = THEME_PREFERENCES.filter(
+  (preference) => preference !== "system" && preference !== "light" && preference !== "dark",
+);
+const BOOT_SCRIPT = `(function(){try{var r=document.documentElement,m=${JSON.stringify(THEME_MODES)},s=${JSON.stringify(THEME_SKINS)},t=localStorage.getItem("pi-theme");if(!Object.prototype.hasOwnProperty.call(m,t))t="system";var d=t==="system"?window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches:m[t]==="dark";r.dataset.themePreference=t;if(s.indexOf(t)>-1)r.dataset.themeSkin=t;r.classList.toggle("dark",!!d);r.style.colorScheme=d?"dark":"light";var l=localStorage.getItem("pi-locale");if(l!=="zh"&&l!=="en"){var n=(navigator.language||"").toLowerCase();l=n.indexOf("zh")===0?"zh":"en";}r.lang=l==="zh"?"zh-CN":"en";r.dataset.locale=l;}catch(e){}})();`;
 
 export default function RootLayout({
   children,
