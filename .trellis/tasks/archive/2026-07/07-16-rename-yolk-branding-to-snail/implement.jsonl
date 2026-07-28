@@ -1,5 +1,0 @@
-{"file":".trellis/spec/frontend/index.md","reason":"Frontend spec entrypoint required before changing browser metadata and landing UI."}
-{"file":"docs/standards/code-style.md","reason":"Project editing, validation, and preservation conventions."}
-{"file":"docs/modules/frontend.md","reason":"Current component ownership map for the landing and settings UI surfaces."}
-{"file":"docs/modules/library.md","reason":"Current ownership map for the workspace-title and OAuth helper changes."}
-{"file":"docs/deployment/README.md","reason":"Current npm, CLI, PM2, proxy, and publishing contract that must migrate consistently."}

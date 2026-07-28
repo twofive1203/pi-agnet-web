@@ -1,3 +1,0 @@
-{"file":".trellis/spec/frontend/index.md","reason":"Check that branding UI edits remain within the frontend conventions."}
-{"file":"docs/standards/code-style.md","reason":"Validate required lint, type-check, diff, and preservation checks."}
-{"file":"docs/deployment/README.md","reason":"Check package, CLI, proxy, PM2, and npm publication instructions for migration consistency."}

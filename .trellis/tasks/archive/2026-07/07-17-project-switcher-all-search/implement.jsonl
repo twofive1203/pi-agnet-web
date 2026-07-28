@@ -1,2 +1,0 @@
-{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "Follow local component, styling, event, and accessibility patterns"}
-{"file": ".trellis/spec/frontend/state-management.md", "reason": "Keep picker mode and search as local UI state with derived filtering"}

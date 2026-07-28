@@ -1,4 +1,0 @@
-{"file":".trellis/spec/index.md","reason":"Check runtime boundaries, type safety, and required validation."}
-{"file":".trellis/spec/frontend/index.md","reason":"Check applicable frontend spec and quality checklist."}
-{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Verify cross-layer API authorization, malformed-input handling, and UI data projections."}
-{"file":".trellis/tasks/07-16-subagent-model-management/research/pi-subagent-model-configuration.md","reason":"Verify native settings semantics and precedence against the installed extension."}
