@@ -97,6 +97,7 @@ export const panelsZh = {
   },
   fileExplorer: {
     insertPath: "将路径插入聊天",
+    openStandalone: "在独立页面打开",
     empty: "空目录",
     loading: "加载中…",
   },
@@ -106,6 +107,11 @@ export const panelsZh = {
     saveFile: "保存文件 (⌘S)",
     unsaved: "未保存",
     discardChanges: "放弃未保存的修改并重新从磁盘加载文件？",
+    standaloneTitle: "独立文件查看",
+    backWorkspace: "返回工作台",
+    copyPath: "复制路径",
+    copied: "已复制",
+    line: "第 {line} 行",
   },
   sessionChanges: {
     title: "会话变更文件",
@@ -256,6 +262,7 @@ export const panelsEn = {
   },
   fileExplorer: {
     insertPath: "Insert path into chat",
+    openStandalone: "Open in a separate page",
     empty: "Empty folder",
     loading: "Loading…",
   },
@@ -265,6 +272,11 @@ export const panelsEn = {
     saveFile: "Save file (⌘S)",
     unsaved: "Unsaved",
     discardChanges: "Discard unsaved edits and reload the file from disk?",
+    standaloneTitle: "Standalone file viewer",
+    backWorkspace: "Back to workspace",
+    copyPath: "Copy path",
+    copied: "Copied",
+    line: "Line {line}",
   },
   sessionChanges: {
     title: "Session file changes",

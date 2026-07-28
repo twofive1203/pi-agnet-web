@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import { MarkdownBody } from "./MarkdownBody";
 import { useT } from "./I18nProvider";
 import { sendAgentCommand } from "@/lib/agent-client";
+import { joinFilePath } from "@/lib/file-paths";
+import { buildStandaloneFileUrl } from "@/lib/file-viewer-url";
 import type {
   WorkflowPriority,
   WorkflowRunRecord,
@@ -959,6 +961,35 @@ export function WorkflowPanel({
                   <button type="button" onClick={() => setViewMode("preview")} style={{ ...btnStyle, color: viewMode === "preview" ? "var(--accent)" : "var(--text-muted)" }}>
                     {t("workflow.preview")}
                   </button>
+                  <a
+                    href={buildStandaloneFileUrl(
+                      joinFilePath(joinFilePath(cwd, detail.pathLabel), `${docTab}.md`),
+                      { cwd },
+                    )}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-disabled={dirty}
+                    title={dirty ? t("workflow.saveBeforeStandalone") : t("workflow.openStandalone")}
+                    onClick={(event) => {
+                      if (dirty) event.preventDefault();
+                    }}
+                    style={{
+                      ...btnStyle,
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 4,
+                      color: dirty ? "var(--text-dim)" : "var(--text-muted)",
+                      cursor: dirty ? "not-allowed" : "pointer",
+                      textDecoration: "none",
+                    }}
+                  >
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M14 3h7v7" />
+                      <path d="M10 14 21 3" />
+                      <path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5" />
+                    </svg>
+                    {t("workflow.openStandalone")}
+                  </a>
                 </div>
               )}
             </div>

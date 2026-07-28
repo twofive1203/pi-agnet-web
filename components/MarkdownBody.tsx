@@ -7,6 +7,7 @@ import { vs } from "react-syntax-highlighter/dist/cjs/styles/prism";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/cjs/styles/prism";
 import { useTheme } from "@/hooks/useTheme";
 import { markdownRehypePlugins, markdownRemarkPlugins } from "@/lib/markdown";
+import { buildStandaloneFileUrl, parseLocalFileHref } from "@/lib/file-viewer-url";
 
 interface MarkdownBodyProps {
   children: string;
@@ -70,6 +71,23 @@ export function MarkdownBody({ children, className, isStreaming }: MarkdownBodyP
                 <table>{children}</table>
               </div>
             );
+          },
+          a({ href, children, ...props }) {
+            const fileLocation = parseLocalFileHref(href);
+            if (fileLocation) {
+              return (
+                <a
+                  {...props}
+                  href={buildStandaloneFileUrl(fileLocation.filePath, fileLocation)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title={fileLocation.filePath}
+                >
+                  {children}
+                </a>
+              );
+            }
+            return <a {...props} href={href}>{children}</a>;
           },
         }}
       >

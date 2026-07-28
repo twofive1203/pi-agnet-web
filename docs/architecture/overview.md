@@ -32,7 +32,7 @@ Project discovery and per-cwd candidate collection are accelerated by a rebuilda
 - Session browsing does not create an AgentSession: API routes read `.jsonl` files through `lib/session-reader.ts`; the only write side effect is pruning stale sessions whose cwd points at a deleted WorkTree.
 - Sending commands creates or reuses an in-process AgentSession through `lib/rpc-manager.ts`.
 - Client state and SSE streaming behavior are centralized in `hooks/useAgentSession.ts`.
-- File viewing and workspace metadata use explicit API routes under `app/api/files/`, `app/api/cwd/`, and `app/api/git/`.
+- File viewing and workspace metadata use explicit API routes under `app/api/files/`, `app/api/cwd/`, and `app/api/git/`. The standalone `/file?path=...&line=...` page reuses the same `FileViewer` and API authorization; it never reads arbitrary paths directly. Historical root-level Windows links (`/D:/.../File.java:11`) are compatibility redirects only.
 
 ## Project Invariants
 

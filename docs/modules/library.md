@@ -19,6 +19,7 @@ Shared logic lives under `lib/`. Prefer adding behavior here when it is used by 
 | `lib/unified-diff.ts` | Wrapper around the `diff` package for bounded unified diff generation and addition/deletion counting. |
 | `lib/agent-client.ts` | Client-side helper for `POST /api/agent/[id]`. |
 | `lib/file-paths.ts` | Path normalization utilities for file viewer APIs. |
+| `lib/file-viewer-url.ts` | Parse historical/local agent file links (including trailing line/column), reject ordinary web links, and build canonical standalone `/file` URLs shared by chat, Explorer, SnFlow, and compatibility routing. |
 | `lib/cwd.ts` | Cwd validation and normalization helpers. |
 | `lib/git-worktree.ts` | Git worktree creation, status, archive, and removal helpers. |
 | `lib/deepseek-balance.ts` | Query DeepSeek account balance. |
