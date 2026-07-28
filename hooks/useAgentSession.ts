@@ -16,6 +16,7 @@ import type { ToolEntry, ToolPreset } from "@/components/ToolPanel";
 import {
   extractSubagentRuns,
   isSubagentResultFailure,
+  isSubagentToolName,
   mergePersistedSubagentRuns,
   parsePersistedSubagentRuns,
   resultIndexForRun,
@@ -926,7 +927,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       case "tool_execution_start": {
         const id = event.toolCallId as string;
         const name = event.toolName as string;
-        const isSubagent = name === "subagent" || name === "trellis_subagent";
+        const isSubagent = isSubagentToolName(name);
         if (isSubagent) {
           const args = event.args as Record<string, unknown> | undefined;
           // Skip management actions (list, get, doctor, etc.) — only track execution calls

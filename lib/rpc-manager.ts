@@ -9,6 +9,7 @@ import { preparePiRuntimeEnvironment } from "./pi-runtime-resolver";
 import { ExtensionWebUiBridge } from "./extension-web-ui";
 import { disposeAgentSession } from "./pi-session-lifecycle";
 import type { AgentSessionLike, ToolInfo } from "./pi-types";
+import { isSubagentToolName } from "./subagent-runs";
 
 // ============================================================================
 // Types
@@ -29,7 +30,6 @@ interface ToolSelection {
 }
 
 const READ_ONLY_TOOL_NAMES = new Set(["read", "grep", "find", "ls"]);
-const SUBAGENT_TOOL_NAMES = new Set(["subagent", "trellis_subagent"]);
 const MAX_LIVE_SUBAGENT_OUTPUT_CHARS = 32_000;
 const SNFLOW_CHAT_LIFECYCLE_EXTENSION_PATH = "<inline:snflow-chat-lifecycle>";
 
@@ -218,7 +218,7 @@ export class AgentSessionWrapper {
       const isSubagentEvent = toolCallId ? this.activeSubagentToolCallIds.has(toolCallId) : false;
       if (event.type === "tool_execution_start" && toolCallId) {
         this.activeToolCallIds.add(toolCallId);
-        if (typeof event.toolName === "string" && SUBAGENT_TOOL_NAMES.has(event.toolName)) {
+        if (isSubagentToolName(event.toolName)) {
           this.activeSubagentToolCallIds.add(toolCallId);
         }
       } else if (event.type === "tool_execution_end" && toolCallId) {

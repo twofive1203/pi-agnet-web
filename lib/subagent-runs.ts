@@ -1,5 +1,17 @@
 import type { AgentMessage } from "./types";
 
+/**
+ * Native pi-subagents tool name plus the legacy serialized Trellis tool name.
+ * Keep both so live SSE and persisted JSONL still project into the Subagent panel.
+ * This is compatibility only — not active Trellis product support.
+ */
+export const SUBAGENT_TOOL_NAMES = new Set(["subagent", "trellis_subagent"]);
+
+/** True for current `subagent` and legacy `trellis_subagent` tool names. */
+export function isSubagentToolName(name: unknown): boolean {
+  return typeof name === "string" && SUBAGENT_TOOL_NAMES.has(name);
+}
+
 export type SubagentProgressStatus = "pending" | "running" | "completed" | "failed" | "detached";
 export type SubagentActivityState = "active_long_running" | "needs_attention";
 
@@ -235,7 +247,7 @@ export function parsePersistedSubagentRuns(messages: AgentMessage[]): SubagentRu
       for (const block of message.content) {
         if (!isRecord(block) || block.type !== "toolCall") continue;
         const toolName = typeof block.toolName === "string" ? block.toolName : "";
-        if (toolName !== "subagent" && toolName !== "trellis_subagent") continue;
+        if (!isSubagentToolName(toolName)) continue;
         const input = isRecord(block.input) ? block.input : {};
         if ("action" in input) continue;
         const toolCallId = typeof block.toolCallId === "string" ? block.toolCallId : "";
@@ -251,7 +263,7 @@ export function parsePersistedSubagentRuns(messages: AgentMessage[]): SubagentRu
     if (message.role !== "toolResult") continue;
     const matched = pending.get(message.toolCallId);
     if (!matched) continue;
-    if (message.toolName && message.toolName !== "subagent" && message.toolName !== "trellis_subagent") continue;
+    if (message.toolName && !isSubagentToolName(message.toolName)) continue;
     pending.delete(message.toolCallId);
 
     const rawMessage = message as unknown as Record<string, unknown>;
