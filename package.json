@@ -1,16 +1,16 @@
 {
   "name": "@twofive/snail-pi-web",
-  "version": "0.9.3",
+  "version": "0.9.4",
   "description": "Snail Pi Web (蜗牛派) workspace for the pi coding agent",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/602362837/pi-agnet-web.git"
+    "url": "git+https://github.com/twofive1203/pi-agnet-web.git"
   },
   "bugs": {
-    "url": "https://github.com/602362837/pi-agnet-web/issues"
+    "url": "https://github.com/twofive1203/pi-agnet-web/issues"
   },
-  "homepage": "https://github.com/602362837/pi-agnet-web#readme",
+  "homepage": "https://github.com/twofive1203/pi-agnet-web#readme",
   "keywords": [
     "pi",
     "coding-agent",

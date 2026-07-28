@@ -1,10 +1,12 @@
 # 蜗牛派（Snail Pi Web）
 
-蜗牛派（Snail Pi Web）是面向 `pi` 编程智能体的本地 WebChat 工作台。它把本地会话、实时对话、分支切换、模型配置、文件浏览、Git/WorkTree 辅助和可选 Web 终端集中到浏览器里，适合在桌面或服务器环境中长期运行。
+蜗牛派（Snail Pi Web）是面向 `pi` 编程智能体的本地 Web 工作台。它把会话管理、实时对话、模型与扩展配置、项目文件、Git/WorkTree、浏览器调试和可选 Web 终端集中到一个界面中，适合在桌面或服务器环境中长期运行。
 
-npm 包名：`@twofive/snail-pi-web`
+- npm 包：[`@twofive/snail-pi-web`](https://www.npmjs.com/package/@twofive/snail-pi-web)
+- GitHub：[`twofive1203/pi-agnet-web`](https://github.com/twofive1203/pi-agnet-web)
+- 命令行入口：`spi`
 
-命令行入口：`spi`
+更完整的中文说明见 [`README.zh-CN.md`](README.zh-CN.md)。
 
 ## 运行环境
 
@@ -71,7 +73,7 @@ PI_CODING_AGENT_DIR=/path/to/pi-agent-data spi
 | `sessions/` | 会话 JSONL 文件，按工作目录归档。 |
 | `models.json` | 模型提供商和模型列表配置。 |
 | `settings.json` | pi agent 设置，包括默认模型。 |
-| `pi-web.json` | Web UI 设置，例如 WorkTree、Usage、Web Terminal、ChatGPT 面板和 SnFlow 面板偏好。 |
+| `pi-web.json` | Web UI 设置，例如 WorkTree、Usage、Web Terminal、ChatGPT/Grok 面板、编辑器和 SnFlow 偏好。 |
 
 会话文件路径格式：
 
@@ -81,17 +83,18 @@ PI_CODING_AGENT_DIR=/path/to/pi-agent-data spi
 
 ## 核心能力
 
-- **会话浏览器**：按工作目录分组展示本地 `pi` 会话，快速回到历史上下文。
-- **实时智能体对话**：通过 SSE 流式展示智能体输出，支持运行中引导和完成后追加消息。
-- **会话分叉与分支导航**：从任意用户消息创建新会话，或在同一会话内回退节点继续探索。
-- **模型与工具配置**：在对话中切换模型、调整 thinking level、配置工具预设和可用模型。
-- **文件、Git 与终端辅助**：浏览当前工作区文件，查看 Git 状态，创建 WorkTree，并可按设置开启 Web Terminal。
-- **长会话管理**：支持压缩会话摘要，降低长上下文继续工作的成本。
+- **会话与分支**：按工作目录浏览、搜索和归档本地会话；支持 Fork、会话内分支导航、上下文压缩和流式对话。
+- **模型与 Pi 资源**：切换模型和 thinking level，管理模型认证、工具预设、Skills、Extensions、Pi 原生子智能体及模型定价目录。
+- **项目文件与编辑器**：浏览和编辑源码，预览 Markdown、图片、音频、PDF、DOCX，查看当前会话产生的文件改动与 Diff。
+- **Git 与 WorkTree**：查看状态、提交图和提交 Diff，切换分支、管理 stash，并创建独立 WorkTree。
+- **终端与浏览器调试**：可选多标签/分屏 Web Terminal；配合随附的 Chrome 扩展，把浏览器标签页临时绑定给智能体进行受限调试。
+- **用量与工作流**：查看会话成本及可选的 ChatGPT/Codex、Grok 用量；通过 SnFlow 面板管理显式启用的结构化任务。
+- **界面体验**：支持中英文界面、多套主题、桌面/移动端布局和可调整大小的工作区面板。
 
 ## 从源码运行
 
 ```bash
-git clone https://github.com/602362837/pi-agnet-web.git
+git clone https://github.com/twofive1203/pi-agnet-web.git
 cd pi-agnet-web
 npm install
 npm run dev
@@ -125,6 +128,7 @@ lib/          # 会话解析、RPC 生命周期、路径/配置/提供商等共�
 scripts/      # 构建和运维脚本
 bin/          # spi CLI 入口
 public/       # 静态资源
+extensions/   # 随项目提供的扩展（如 Chrome 标签页调试）
 docs/         # 架构、模块、部署和运维文档
 ```
 
