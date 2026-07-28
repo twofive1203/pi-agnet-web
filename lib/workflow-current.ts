@@ -1,5 +1,5 @@
 /**
- * Per-cwd "current SnFlow task" pointer, analogous to Trellis active-task.
+ * Per-cwd "current SnFlow task" pointer.
  * Stored at <cwd>/.pi/snflows/current.json — never under .trellis/.
  */
 

@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
     let seedText = typeof body.seedText === "string" ? body.seedText : undefined;
     const sessionId = typeof body.sessionId === "string" ? body.sessionId.trim() : undefined;
 
-    // Trellis-like: create from chat session without making the user type a title.
+    // Create from chat session without making the user type a title.
     if (sessionId && (!title || !seedText)) {
       const seed = await extractWorkflowSeedFromSession(sessionId);
       if (!seed) {

@@ -19,9 +19,9 @@ export function workflowTaskToChatContext(
 }
 
 /**
- * Injected into chat so the main agent behaves like Trellis after task create:
- * bind to the task, read docs, continue planning - do not wait for the user to
- * open the panel and click "+".
+ * Injected into chat after SnFlow task create so the main agent binds to the
+ * task, reads docs, and continues planning without waiting for the user to open
+ * the panel and click "+".
  */
 export function buildWorkflowTaskResumePrompt(context: WorkflowTaskChatContext): string {
   const base = `.pi/snflows/tasks/${context.taskId}`;

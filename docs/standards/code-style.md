@@ -38,6 +38,6 @@ npm run test:runtime   # Next server externals + published launcher invariants
 
 For other data-flow changes, use lint + type-check and manually verify the affected browser/API flow. Headed Chrome-only gaps for the tab-debug extension are listed in `docs/operations/troubleshooting.md`.
 
-## Trellis Specs
+## SnFlow Specs
 
-Local Trellis guidance exists under `.trellis/spec/` and is not project documentation. If a coding task uses Trellis, load the relevant spec indexes before editing; user-facing project knowledge still belongs in `docs/`.
+When a coding task uses SnFlow, load the project specification indexes under `.pi/snflows/spec/` (start at `index.md`, then the relevant frontend/backend/guides layer) before editing. Those specs guide implementation and review for the active workspace; durable user-facing project knowledge still belongs in `docs/`. Legacy `.trellis/` data is not the supported coding-spec source.

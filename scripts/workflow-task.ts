@@ -1,6 +1,6 @@
 #!/usr/bin/env npx tsx
 /**
- * Trellis-like SnFlow CLI for chat agents.
+ * SnFlow CLI for chat agents.
  *
  * Lifecycle:
  *   create → (edit docs) → start → direct native subagent → complete → archive
@@ -90,8 +90,8 @@ function positionalAfterCommand(args: string[]): string[] {
   return out;
 }
 
-// pi injects the chat session id into tool subprocess env (same source Trellis
-// uses); binding it into the pointer keeps the session widget session-scoped.
+// pi injects the chat session id into tool subprocess env; binding it into the
+// pointer keeps the session widget session-scoped.
 function sessionIdFromEnv(): string | undefined {
   const raw = process.env.PI_SESSION_ID ?? process.env.PI_SESSIONID;
   const trimmed = raw?.trim();

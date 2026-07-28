@@ -940,7 +940,7 @@ export function createWorkflowTask(cwd: string, input: WorkflowCreateTaskInput):
   const dir = taskDir(ctx, id);
   writeTaskBundle(ctx, dir, task, documents);
   mkdirSync(path.join(dir, "runs"), { recursive: true });
-  // Trellis-like: creating a task auto-targets it as the cwd current task.
+  // Creating a task auto-targets it as the cwd current task.
   setWorkflowCurrentTask(ctx.workspaceRoot, id, {
     source: input.sessionId ? "session" : "create",
     sessionId: input.sessionId,
@@ -1458,7 +1458,7 @@ export function archiveWorkflowTask(
   writeTaskBundle(ctx, located.dir, next);
   renameSync(located.dir, destDir);
   assertPathWithinWorkspace(destDir, ctx.workspaceRoot, "dir");
-  // Trellis-like: archiving the current task releases the cwd pointer.
+  // Archiving the current task releases the cwd pointer.
   if (getWorkflowCurrentTaskId(ctx.workspaceRoot) === taskId) {
     clearWorkflowCurrentTask(ctx.workspaceRoot);
   }

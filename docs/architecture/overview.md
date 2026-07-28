@@ -101,58 +101,58 @@ Recent-session browse order uses file mtime (then filename timestamp, then path)
 - Auth changes call `reloadRpcAuthState()` so live AgentSessions reload auth/model state. The same path also cleans pi-ai session resources because OpenAI Codex keeps reusable WebSockets keyed by session id, and those sockets must reconnect after ChatGPT account activation to pick up new auth headers.
 - ChatGPT usage auto-refresh is backend-owned, not browser-tab-owned. The scheduler state lives on `globalThis.__piChatGptUsageRefreshScheduler` and uses `~/.pi/agent/chatgpt-usage-refresh.lock` to reduce duplicate refresh loops across Node processes. Stale lock detection follows the configured refresh cycle dynamically.
 - Before creating an SDK `AgentSession`, `lib/pi-runtime-resolver.ts` prepares a local `pi` shim under `~/.pi/agent/pi-web-runtime/bin/`, prepends it to `PATH`, and makes the WebUI's pi package resolvable from the agent npm directory. Unix-like runtimes also receive `PI_SUBAGENT_PI_BINARY` when unset; Windows relies on package resolution because shell-less Node spawns cannot execute `.cmd` shims directly.
-- Web sessions bind Pi extensions in RPC mode through `lib/extension-web-ui.ts`. Simple extension UI requests (`notify`, `confirm`, `select`, `input`, `editor`, status/widget/title/editor text updates) are forwarded through the existing SSE stream; browser responses are returned with `extension_ui_response`. The chat UI renders `setStatus` chips and generic `setWidget` stacks around the composer; the standard `todo-list` widget is projected into a floating Trellis-style task panel with progress and parsed task rows. Blocking dialogs use `ExtensionDialogHost`, and non-blocking `notify` uses `ExtensionToastHost` (no `window.alert`/`confirm`/`prompt`). For `setWidget`, string arrays are forwarded directly; TUI component factories (e.g. `manage_todo_list`) are invoked with a passthrough theme and materialized via `render(width)` into plain text lines. pi-subagents TUI HUDs that overlap the top-bar SubagentPanel (`subagent-fleet-status`, `subagent-async`) are intentionally suppressed in the Web bridge (no materialize/SSE) so subagent observability stays on the top-bar panel only. Fully interactive TUI-only APIs (`custom` components, powerbar chrome, etc.) still degrade with `extension_error` diagnostics instead of blocking silently.
+- Web sessions bind Pi extensions in RPC mode through `lib/extension-web-ui.ts`. Simple extension UI requests (`notify`, `confirm`, `select`, `input`, `editor`, status/widget/title/editor text updates) are forwarded through the existing SSE stream; browser responses are returned with `extension_ui_response`. The chat UI renders `setStatus` chips and generic `setWidget` stacks around the composer; the standard `todo-list` widget is projected into a floating task panel with progress and parsed task rows. Blocking dialogs use `ExtensionDialogHost`, and non-blocking `notify` uses `ExtensionToastHost` (no `window.alert`/`confirm`/`prompt`). For `setWidget`, string arrays are forwarded directly; TUI component factories (e.g. `manage_todo_list`) are invoked with a passthrough theme and materialized via `render(width)` into plain text lines. pi-subagents TUI HUDs that overlap the top-bar SubagentPanel (`subagent-fleet-status`, `subagent-async`) are intentionally suppressed in the Web bridge (no materialize/SSE) so subagent observability stays on the top-bar panel only. Fully interactive TUI-only APIs (`custom` components, powerbar chrome, etc.) still degrade with `extension_error` diagnostics instead of blocking silently.
 - Extension slash commands (e.g. `/brainstorm`) complete inside `prompt()` without `agent_start`/`agent_end`. The RPC wrapper buffers SSE events until a browser listener attaches, replays pending extension UI requests, and emits `prompt_settled` when `prompt()` finishes without an active stream so the chat UI does not stick on "Waiting for model...". Active sessions keep an SSE connection open while the chat is mounted.
 - Slash-command discovery annotates known TUI-only extension commands as `webSupport: "cli-only"` (and some as `partial`) so autocomplete can badge them.
 - Top-bar **Intercom** lists local `pi-intercom` broker peers and can send one-shot messages without the TUI overlay.
 - When the agent calls `interactive_shell` with a new command, the Web UI opens the existing Web Terminal dock and optionally seeds the command into that PTY instead of relying on the extension's TUI overlay.
 - The sidebar **Extensions** modal inspects SDK resource discovery (`GET /api/pi/resources`, including configured packages) and edits `settings-extensions.json` through `GET/PUT /api/pi/extension-settings` after discovering registrations emitted on the shared `pi-extension-settings:register` event bus during package load.
-## Configuration Boundary: Native Pi vs Trellis Routing
 
-The Web UI supports two independent subagent configuration systems:
+## Configuration Boundary: Native Pi Subagents and SnFlow
 
-| System | File | Managed By | Purpose |
-|--------|------|------------|---------|
-| Native pi-subagents | `settings.json → subagents` | Settings → Agents | pi-subagents extension native model config (defaultModel, agentOverrides) |
-| Trellis routing | `pi-web.json → trellis.subagents` | Settings → Trellis | Web UI Trellis workflow routing policy only |
+Native pi-subagent model configuration is owned by Settings → Agents and persists
+to `settings.json → subagents` at user scope (`~/.pi/agent/settings.json`) or
+project scope (`<cwd>/.pi/settings.json`). SnFlow implement/check agents read
+models only from that native path. `pi-web.json → workflow` stores SnFlow panel
+preferences such as `includeArchived` and `trackInGit` (legacy `enabled` is
+ignored). Unknown raw `pi-web.json` root keys such as legacy `trellis` are never
+consumed by the public config projection and are left untouched on disk.
 
-Each system is edited through its own Settings section and does not affect the
-other. The native config persists to `~/.pi/agent/settings.json` (user) or
-`<cwd>/.pi/settings.json` (project); the Trellis routing config persists to
-`~/.pi/agent/pi-web.json`.
+Historical session transcripts may still contain the legacy tool name
+`trellis_subagent`. Live SSE and persisted JSONL replay treat that name as an
+alias of native `subagent` for Subagent panel projection only; it is not active
+product support for a separate Trellis workflow surface.
 
-### SnFlow (separate from Trellis)
+### SnFlow
 
-Snail Pi Web also owns a first-class, opt-in development flow named SnFlow. There
-is no global enable switch: project initialization (`.pi/snflows/tasks/` exists)
+Snail Pi Web owns a first-class, opt-in development flow named SnFlow. There is
+no global enable switch: project initialization (`.pi/snflows/tasks/` exists)
 makes SnFlow resources available but does not route ordinary development through
 the workflow. A request enters SnFlow only when the user explicitly asks for it,
 invokes `snflow-dev`, asks to create/run a SnFlow task, or continues an active
 non-terminal task. For clearly cross-module, high-risk, or long-running work the
 agent may ask once whether SnFlow would help; declining keeps the normal direct
 path. The SF drawer is always available so users can inspect or initialize the
-current workspace. Task documents live under
-`<cwd>/.pi/snflows/tasks/` (archived tasks move to the sibling
-`<cwd>/.pi/snflows/archived/`) and never share schema, import, or writeback with
-`.trellis/tasks/`. Implement/check phases run as foreground native
-`pi-subagents` tool calls using the managed project agents `snflow-implement` and
-`snflow-check` in the current chat session. Their agent definitions own stable
-phase responsibilities and safety boundaries, while each marked dispatch carries
-only task-specific context and the structured result contract. Check findings are
-severity-gated: only `error` findings block and project `changes_requested`;
-`warning` and `info` findings remain advisory, pass the check, and are presented
-to the user as optional follow-up work. The task-bound API
-prepares a strict dispatch marker with the selected task id,
-revision, phase, and canonical cwd; `lib/workflow-chat-lifecycle.ts` validates
-that marker before execution and projects native tool progress/end events into
-SnFlow run records. This keeps the existing top-bar Subagent panel authoritative
-for live progress and removes the blocking CLI implement/check/wait path.
-`lib/workflow-run-manager.ts` retains artifact/session reconciliation for restart
-and terminal-projection repair, but is no longer the normal execution host.
-SnFlow agent models come only from native
-`settings.json → subagents`; SnFlow code must not read `trellis.subagents`.
-`pi-web.json → workflow` only keeps panel preferences such as
-`includeArchived` and `trackInGit` (legacy `enabled` is ignored).
+current workspace. Task documents live under `<cwd>/.pi/snflows/tasks/` (archived
+tasks move to the sibling `<cwd>/.pi/snflows/archived/`). SnFlow never shares
+schema, import, or writeback with legacy `.trellis/` workflow data; while that
+directory remains present in a repository, agents must not write it for SnFlow
+work. Implement/check phases run as foreground native `pi-subagents` tool calls
+using the managed project agents `snflow-implement` and `snflow-check` in the
+current chat session. Their agent definitions own stable phase responsibilities
+and safety boundaries, while each marked dispatch carries only task-specific
+context and the structured result contract. Check findings are severity-gated:
+only `error` findings block and project `changes_requested`; `warning` and
+`info` findings remain advisory, pass the check, and are presented to the user
+as optional follow-up work. The task-bound API prepares a strict dispatch marker
+with the selected task id, revision, phase, and canonical cwd;
+`lib/workflow-chat-lifecycle.ts` validates that marker before execution and
+projects native tool progress/end events into SnFlow run records. This keeps the
+existing top-bar Subagent panel authoritative for live progress and removes the
+blocking CLI implement/check/wait path. `lib/workflow-run-manager.ts` retains
+artifact/session reconciliation for restart and terminal-projection repair, but
+is no longer the normal execution host. SnFlow agent models come only from
+native `settings.json → subagents`.
 `trackInGit` defaults to false so init/update writes a managed block into the
 project `.gitignore` covering SnFlow assets and the task store; set it true if
 the team wants those files committed.
@@ -164,7 +164,9 @@ assets from the bundled manifest in `lib/snflow-assets.ts`:
 whitelist and never touches task data. Old projects that only have a tasks
 directory remain initialized and are prompted to update.
 
-Chat experience is intentionally Trellis-like after a request opts into SnFlow.
+After a request opts into SnFlow, chat stays task-bound: the agent reads and
+maintains task docs, uses the current-task pointer, and continues planning or
+implementation without requiring the user to re-create the task from the panel.
 Initialization controls resource availability, not default workflow entry. If a
 project is not initialized, managed project extension/skill/agent files are
 filtered out of the session resource loader so leftover assets cannot expose an
@@ -216,9 +218,8 @@ Clearing a scope-level field removes the key and restores normal inheritance.
 The UI marks inherited values clearly and does not claim selected-scope values
 are the final runtime model.
 
-- Trellis subagent child processes run through the local pi package CLI (`node node_modules/@earendil-works/pi-coding-agent/dist/cli.js`) when available, or an explicit `TRELLIS_PI_CLI_JS`; they do not silently rely on a bare `pi` command that may be missing from the WebUI process `PATH`. The Trellis extension resolves task files and child-process `cwd` from the active SDK session context (`ctx.cwd`), with the server process cwd used only as a compatibility fallback.
-- Trellis subagent child processes resolve model policy from `pi-web.json` `trellis.subagents`: explicit tool input wins, then per-agent fixed policy, then optional route table policy, then default policy, then `.pi/agents/*` frontmatter, then Pi CLI defaults. Automatic routing is opt-in and classifies `text`/`multimodal` plus `simple`/`standard`/`complex`/`critical`; router failures fall back to configured safe route/default behavior. The default policy follows the main session model when the Pi extension context exposes it; otherwise it safely falls back to Pi default. If the selected child model process fails, existing `.pi/agents/*` `fallbackModels` frontmatter entries are retried in order; if those also fail and the main session model is known, the child finally falls back to the main session model.
-- Session-scoped Trellis task association remains high-confidence only (session transcript evidence or exact per-session runtime pointers). When evidence identifies a child task, the web projection promotes it to the nearest available parent task so the floating widget represents the main task context without mutating Trellis metadata.
+- Nested pi-subagent child processes run through the local pi package CLI prepared by `lib/pi-runtime-resolver.ts` (`node node_modules/@earendil-works/pi-coding-agent/dist/cli.js` when available, or an explicit `PI_WEB_PI_CLI_JS` / legacy `TRELLIS_PI_CLI_JS`); they do not silently rely on a bare `pi` command that may be missing from the WebUI process `PATH`. Session-bound extensions and tools resolve workspace paths from the active SDK session context (`ctx.cwd`), with the server process cwd used only as a compatibility fallback.
+- Session-scoped SnFlow task association for the floating chat widget remains high-confidence only (session transcript evidence or an exact per-session current-task pointer). Blank or new sessions do not inherit another session's widget.
 - When all tools are disabled, `lib/rpc-manager.ts` clears the agent system prompt.
 
 ## Session File Format

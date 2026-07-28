@@ -37,7 +37,7 @@ export async function POST(req: Request) {
     const tempKey = `__new__${Date.now()}`;
     const { session, realSessionId } = await startRpcSession(tempKey, "", canonicalCwd, { preset: toolPreset, names: toolNames });
 
-    // Keep allowed workspace roots in sync so brand-new cwd file/Trellis
+    // Keep allowed workspace roots in sync so brand-new cwd file/SnFlow
     // requests do not have to wait for a session-list cache refresh.
     registerAllowedRoot(canonicalCwd);
     // Apply pre-selected model before sending the prompt

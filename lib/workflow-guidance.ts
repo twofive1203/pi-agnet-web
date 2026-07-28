@@ -1,5 +1,5 @@
 /**
- * Trellis-like per-turn SnFlow breadcrumbs for the active WebUI task.
+ * Per-turn SnFlow breadcrumbs for the active WebUI task.
  * Injected into chat host system prompt when SnFlow is enabled.
  */
 

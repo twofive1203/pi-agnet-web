@@ -1,6 +1,6 @@
 /**
  * WebUI-owned development workflow types.
- * Task files live under <cwd>/.pi/snflows/tasks/ and are independent of Trellis.
+ * Task files live under <cwd>/.pi/snflows/tasks/ and never share storage with legacy .trellis/.
  */
 
 export const WORKFLOW_SCHEMA_VERSION = 1 as const;
@@ -195,7 +195,7 @@ export interface WorkflowTasksListResponse {
   statusCounts: Record<string, number>;
   archivedCount: number;
   activeCwdRunId: string | null;
-  /** Per-cwd current task pointer (Trellis-like active task). */
+  /** Per-cwd current SnFlow task pointer. */
   currentTaskId: string | null;
   errors: Array<{ id?: string; pathLabel?: string; message: string }>;
 }

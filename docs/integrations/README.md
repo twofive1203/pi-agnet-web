@@ -62,37 +62,38 @@ Skill search/install/list routes live under `app/api/skills/`; slash-command dis
 
 The WebUI uses the pi SDK in-process, and SDK resource discovery is the source of truth for installed Pi packages/extensions in `PI_CODING_AGENT_DIR` / `getAgentDir()`. Extension tools such as the official `pi-subagents` package may spawn nested Pi runtimes; `lib/pi-runtime-resolver.ts` prepares a local `pi` shim, package-resolution link, and Unix `PI_SUBAGENT_PI_BINARY` before SDK sessions start so those child processes use the project/package Pi CLI instead of relying on the server process `PATH`.
 
-The local Trellis extension must resolve its project root from the active extension context (`ctx.cwd`) for every session-bound event and tool call. It must not use the WebUI server's `process.cwd()` as the authoritative workspace because one server can host sessions for multiple projects. The process cwd is only a fallback when the SDK context does not expose a workspace.
+Session-bound extensions and tools must resolve their project root from the active
+extension context (`ctx.cwd`) for every session-scoped event and tool call. They
+must not use the WebUI server's `process.cwd()` as the authoritative workspace
+because one server can host sessions for multiple projects. The process cwd is
+only a fallback when the SDK context does not expose a workspace.
 
 Web sessions call `AgentSession.bindExtensions()` with a Web/RPC UI adapter so extension commands, lifecycle events, simple dialogs/notifications, and diagnostics are available without shelling out to the local CLI. Use `/api/pi/resources?cwd=...` to inspect loaded extensions, tools, extension commands, skills, prompts, and load diagnostics.
 
 ## Native Pi Subagent Settings
 
 The Web UI supports direct management of native pi-subagents model configuration
-through a dedicated **Agents** section in Settings, independent of Trellis workflow
-routing.
+through a dedicated **Agents** section in Settings. SnFlow implement/check agents
+use that same native model configuration.
 
 ### Configuration Boundary
-
-Two separate subagent configuration systems exist:
 
 | System | File | Scope | Purpose |
 |--------|------|-------|---------|
 | Native pi-subagents | `settings.json → subagents` | User/Project | pi-subagents extension native model config (defaultModel, agentOverrides) |
-| Trellis routing | `pi-web.json → trellis.subagents` | User | Web UI Trellis workflow routing policy only |
+| SnFlow panel preferences | `pi-web.json → workflow` | User | Drawer preferences such as `includeArchived` and `trackInGit` (legacy `enabled` ignored) |
 
-The WebUI-owned SnFlow panel (`pi-web.json → workflow` keeps preferences such as
-`includeArchived`; legacy `enabled` is ignored) prepares a selected-task-bound
-instruction for the current chat, which calls the native `subagent` tool directly
-for implement/check. The SnFlow chat lifecycle validator checks the marker before
-execution and persists the native tool result; the existing Subagent panel owns
-live progress. Models come only from native `settings.json → subagents`. SnFlow
-does not read Trellis routing policy. Project initialization makes the managed
-resources available, while actual workflow entry is soft-gated: ordinary work
-stays direct unless the user explicitly requests SnFlow, invokes `snflow-dev`,
-or continues an active non-terminal task. Check runs treat only `error` findings
-as blockers; warnings and informational findings pass and are reported for user
-choice.
+The WebUI-owned SnFlow panel prepares a selected-task-bound instruction for the
+current chat, which calls the native `subagent` tool directly for implement/check.
+The SnFlow chat lifecycle validator checks the marker before execution and
+persists the native tool result; the existing Subagent panel owns live progress.
+Models come only from native `settings.json → subagents`. Unknown legacy raw
+`pi-web.json` keys such as `trellis` are ignored and preserved on disk. Project
+initialization makes the managed resources available, while actual workflow entry
+is soft-gated: ordinary work stays direct unless the user explicitly requests
+SnFlow, invokes `snflow-dev`, or continues an active non-terminal task. Check
+runs treat only `error` findings as blockers; warnings and informational findings
+pass and are reported for user choice.
 
 SnFlow project initialization installs managed assets from the bundled manifest in
 `lib/snflow-assets.ts` into the selected workspace (extension, skill, agents, CLI
