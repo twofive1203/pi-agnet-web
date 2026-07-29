@@ -2,6 +2,7 @@
 
 date: 2026-07-29  
 branch: `self-run`  
+commit: `dae36b3` (`dae36b30a4cdc615d70032c5450b3a5257f429e9`)  
 task: SnFlow `07-28-agent-automation`（`.pi/snflows/tasks/` 被 gitignore，仅本地）  
 plan source: `SCHEDULED_AGENT_AUTOMATION_PLAN.md`
 
@@ -23,7 +24,7 @@ plan source: `SCHEDULED_AGENT_AUTOMATION_PLAN.md`
 | Latest independent check | **Not completed** — last check failed with `Codex error: The usage limit has been reached`, not a code verdict |
 | Known must-fix before last implement | 3 items; last implement claimed fixed and green validation |
 | SnFlow task status at handoff | was `failed` after aborted check; restart with `npx tsx scripts/snflow-task.ts start 07-28-agent-automation` before check |
-| Commit | see latest `git log -1` on branch `self-run` |
+| Commit | `dae36b3` on `self-run` — `feat(automation): add scheduled Agent Automation control plane` |
 
 ### What last implement claimed fixed
 

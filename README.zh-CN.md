@@ -151,4 +151,6 @@ docs/         # 架构、模块、部署和运维文档
 
 ## 自动化（Automation）
 
-右上角 **A** 抽屉可管理定时 Agent 任务。使用五段 cron 与 IANA 时区；仅在 Snail Pi Web 服务在线时调度；运行记录不进入普通项目会话列表。验证命令：`npm run test:automation`。详见 `docs/architecture/decisions/automation-scheduler.md`。
+右上角 **A** 抽屉可管理定时 Agent 任务。使用五段 cron 与 IANA 时区；仅在 Snail Pi Web 服务在线时调度；运行记录不进入普通项目会话列表。
+
+第一次试用请阅读 [`docs/automation-user-guide.zh-CN.md`](docs/automation-user-guide.zh-CN.md)，其中包含创建、授权、立即运行、结果查看、提升普通会话及故障排查步骤。架构决策见 [`docs/architecture/decisions/automation-scheduler.md`](docs/architecture/decisions/automation-scheduler.md)。验证命令：`npm run test:automation`。

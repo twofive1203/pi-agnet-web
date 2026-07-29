@@ -1531,3 +1531,540 @@ span.linenumber {
   color: var(--text-dim);
   pointer-events: none;
 }
+
+/* -------------------------------------------------------------------------- */
+/* Automation panel (scheduled tasks drawer)                                   */
+/* All rules scoped under .automation-panel; uses shared theme tokens.         */
+/* -------------------------------------------------------------------------- */
+
+.automation-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 0 16px 24px;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* Sticky header */
+.automation-panel-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 -16px;
+  padding: 12px 16px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+}
+.automation-panel-header h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+.automation-panel-header button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 18px;
+  line-height: 1;
+}
+.automation-panel-header button:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+/* Generic helpers (scoped) */
+.automation-panel .muted {
+  color: var(--text-muted);
+}
+.automation-panel .error {
+  color: #dc2626;
+}
+.automation-panel p {
+  margin: 0;
+}
+.automation-panel h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.automation-panel h4 {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.automation-panel ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Scheduler status banner */
+.automation-panel > p.muted {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-subtle);
+  font-size: 12px;
+}
+
+/* Buttons */
+.automation-panel button {
+  padding: 5px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.4;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.automation-panel button:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--text-dim);
+}
+.automation-panel button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.automation-panel button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+/* Primary actions: create / save+activate */
+.automation-list-actions > button:first-child,
+.automation-editor-actions > button:last-child {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.automation-list-actions > button:first-child:hover:not(:disabled),
+.automation-editor-actions > button:last-child:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+/* Status pills */
+.automation-panel .status {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 1px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.6;
+  border: 1px solid transparent;
+}
+.automation-panel .status-active,
+.automation-panel .status-succeeded {
+  color: #15803d;
+  background: color-mix(in srgb, #16a34a 12%, transparent);
+  border-color: color-mix(in srgb, #16a34a 35%, transparent);
+}
+.automation-panel .status-running,
+.automation-panel .status-claimed {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+}
+.automation-panel .status-blocked,
+.automation-panel .status-failed {
+  color: #dc2626;
+  background: color-mix(in srgb, #dc2626 10%, transparent);
+  border-color: color-mix(in srgb, #dc2626 32%, transparent);
+}
+.automation-panel .status-ambiguous,
+.automation-panel .status-missed {
+  color: #b45309;
+  background: color-mix(in srgb, #d97706 12%, transparent);
+  border-color: color-mix(in srgb, #d97706 35%, transparent);
+}
+.automation-panel .status-draft,
+.automation-panel .status-paused,
+.automation-panel .status-queued,
+.automation-panel .status-archived {
+  color: var(--text-muted);
+  background: var(--bg-subtle);
+  border-color: var(--border);
+}
+
+/* List view */
+.automation-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.automation-list-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.automation-empty {
+  padding: 28px 12px;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  text-align: center;
+  color: var(--text-muted);
+}
+.automation-panel .linkish {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  text-align: left;
+}
+.automation-panel .linkish:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--text-dim);
+}
+.automation-panel .linkish strong {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+.automation-panel .linkish .muted {
+  font-size: 12px;
+}
+
+/* Inbox */
+.automation-inbox {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-subtle);
+}
+.automation-inbox li > button {
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  background: transparent;
+  text-align: left;
+  border-radius: 6px;
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+}
+.automation-inbox li > button:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+.automation-inbox li > button.muted {
+  opacity: 0.65;
+}
+
+/* Pagination */
+.automation-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 8px;
+  font-size: 12px;
+}
+
+/* Collapsible diagnostics / authority summary */
+.automation-panel details {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: var(--bg);
+}
+.automation-panel details summary {
+  cursor: pointer;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+.automation-panel details[open] summary {
+  margin-bottom: 6px;
+  color: var(--text);
+}
+.automation-panel details pre {
+  margin: 0;
+  padding: 8px;
+  border-radius: 6px;
+  background: var(--bg-subtle);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* Task detail */
+.automation-task-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.automation-task-detail > button:first-child,
+.automation-run-viewer > button:first-child {
+  align-self: flex-start;
+  padding: 3px 10px;
+  border: none;
+  background: transparent;
+  color: var(--accent);
+}
+.automation-task-detail > button:first-child:hover:not(:disabled),
+.automation-run-viewer > button:first-child:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+.automation-next-preview,
+.automation-budgets {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+.automation-next-preview li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  font-size: 12.5px;
+}
+.automation-next-preview .muted {
+  font-size: 11.5px;
+}
+.automation-budgets strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.automation-actions,
+.automation-run-actions,
+.automation-editor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* Editor form */
+.automation-task-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.automation-task-editor > label,
+.automation-budgets-editor label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+.automation-panel input,
+.automation-panel select,
+.automation-panel textarea {
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+.automation-panel input:focus,
+.automation-panel select:focus,
+.automation-panel textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+.automation-panel textarea {
+  resize: vertical;
+  min-height: 120px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12.5px;
+}
+.automation-budgets-editor,
+.automation-tool-picker {
+  margin: 0;
+  padding: 10px 12px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.automation-budgets-editor {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.automation-budgets-editor legend,
+.automation-tool-picker legend {
+  padding: 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* Tool picker */
+.automation-tool-list {
+  max-height: 240px;
+  overflow-y: auto;
+  gap: 2px;
+}
+.automation-tool-list label {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12.5px;
+}
+.automation-tool-list label:hover {
+  background: var(--bg-hover);
+}
+.automation-tool-list label.is-blocked {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.automation-tool-list input[type="checkbox"] {
+  width: auto;
+  margin-top: 2px;
+  accent-color: var(--accent);
+}
+.automation-risk-badges {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-left: 6px;
+}
+.automation-panel .risk-badge {
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.6;
+  color: #b45309;
+  background: color-mix(in srgb, #d97706 12%, transparent);
+  border: 1px solid color-mix(in srgb, #d97706 30%, transparent);
+}
+.automation-panel .risk-badge.risk-blocked,
+.automation-panel .risk-badge.risk-interactive {
+  color: #dc2626;
+  background: color-mix(in srgb, #dc2626 10%, transparent);
+  border-color: color-mix(in srgb, #dc2626 30%, transparent);
+}
+.automation-panel .risk-badge.risk-credentials,
+.automation-panel .risk-badge.risk-network {
+  color: #7c3aed;
+  background: color-mix(in srgb, #7c3aed 10%, transparent);
+  border-color: color-mix(in srgb, #7c3aed 30%, transparent);
+}
+
+/* Run list */
+.automation-run-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.automation-run-list .error {
+  font-size: 12px;
+}
+
+/* Run viewer */
+.automation-run-viewer {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.automation-run-diagnostics {
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  overflow: hidden;
+}
+.automation-run-diagnostics > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.automation-run-diagnostics > div:last-child {
+  border-bottom: none;
+}
+.automation-run-diagnostics dt {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.automation-run-diagnostics dd {
+  margin: 0;
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+}
+.automation-technical-id {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11.5px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--bg-subtle);
+  overflow-wrap: anywhere;
+}
+.automation-transcript {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
+}
+.automation-transcript-entry {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-subtle);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11.5px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 260px;
+  overflow-y: auto;
+}
+.automation-run-changes ul {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+}
+.automation-run-changes li {
+  padding: 3px 0;
+  overflow-wrap: anywhere;
+}
