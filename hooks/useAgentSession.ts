@@ -454,7 +454,7 @@ export interface UseAgentSessionOptions {
   setToolPreset?: (preset: ToolPreset) => void;
 }
 
-export type ThinkingLevelOption = "auto" | "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+export type ThinkingLevelOption = "auto" | "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 
 export interface ChatInputHandle {
   insertText: (text: string) => void;

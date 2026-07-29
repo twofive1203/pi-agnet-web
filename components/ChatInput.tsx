@@ -39,8 +39,8 @@ interface Props {
   compactError?: string | null;
   toolPreset?: ToolPreset;
   onToolPresetChange?: (preset: ToolPreset) => void;
-  thinkingLevel?: "auto" | "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
-  onThinkingLevelChange?: (level: "auto" | "off" | "minimal" | "low" | "medium" | "high" | "xhigh") => void;
+  thinkingLevel?: "auto" | "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+  onThinkingLevelChange?: (level: "auto" | "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max") => void;
   availableThinkingLevels?: string[] | null;
   thinkingLevelMap?: Record<string, string | null> | null;
   retryInfo?: { attempt: number; maxAttempts: number; errorMessage?: string } | null;
@@ -76,7 +76,7 @@ const TOOL_PRESET_LABEL_KEYS: Record<ToolPreset, string> = {
 };
 const COMPOSITION_END_ENTER_GRACE_MS = 100;
 
-const THINKING_LEVELS = ["auto", "off", "minimal", "low", "medium", "high", "xhigh"] as const;
+const THINKING_LEVELS = ["auto", "off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 
 interface SlashCommandMatch {
   start: number;
@@ -237,6 +237,7 @@ const THINKING_LEVEL_DESC_KEYS: Record<typeof THINKING_LEVELS[number], string> =
   medium: "chat.thinkingMedium",
   high: "chat.thinkingHigh",
   xhigh: "chat.thinkingXhigh",
+  max: "chat.thinkingMax",
 };
 
 function chipInsertAtCursor(container: HTMLElement, relativePath: string, lines?: { startLine: number; endLine: number }): void {
