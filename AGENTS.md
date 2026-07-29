@@ -14,6 +14,7 @@ npm run dev     # http://localhost:62666
 | `npm run dev` | Start the dev server on port 62666. |
 | `npm run lint` | Run ESLint. |
 | `node_modules/.bin/tsc --noEmit` | Type-check without emitting. |
+| `npm run test:snflow` | SnFlow setup/store/session-link/spec-review smoke suite. |
 | `npm run test:automation` | Automation store/schedule/policy/runner/API smoke suite. |
 | `npm run build` | Production/release build through `scripts/build-next.js`. Do not use for routine dev work. |
 | `npm run start` | Start the production server on port 62666. |

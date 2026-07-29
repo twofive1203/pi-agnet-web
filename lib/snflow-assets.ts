@@ -6,7 +6,7 @@
  * Bump SNFLOW_ASSETS_VERSION (SemVer) whenever any managed file content changes.
  */
 
-export const SNFLOW_ASSETS_VERSION = "1.5.0";
+export const SNFLOW_ASSETS_VERSION = "1.6.0";
 
 export interface SnflowAssetFile {
   /** Project-relative path using forward slashes. */
@@ -22,16 +22,32 @@ const EXTENSION_INDEX = `/**
  * Installed/updated by the WebUI SnFlow setup (manifest-managed).
  */
 
-import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 type JsonObject = Record<string, unknown>;
+
+type ExtensionCommandContext = {
+  cwd?: string;
+  isIdle?: () => boolean;
+  ui?: {
+    notify?: (message: string, type?: "info" | "warning" | "error") => void;
+  };
+};
 
 interface PiExtensionAPI {
   on?: (
     event: string,
     handler: (event: Record<string, unknown>, ctx: { cwd?: string }) => unknown,
   ) => void;
+  registerCommand?: (
+    name: string,
+    command: {
+      description?: string;
+      handler: (args: string, ctx: ExtensionCommandContext) => unknown;
+    },
+  ) => void;
+  sendUserMessage?: (content: string) => void;
 }
 
 const ROOT_SEGMENTS = [".pi", "snflows"] as const;
@@ -51,6 +67,22 @@ function isDirectory(target: string): boolean {
 function isFile(target: string): boolean {
   try {
     return existsSync(target) && statSync(target).isFile();
+  } catch {
+    return false;
+  }
+}
+
+function isPhysicalDirectory(target: string): boolean {
+  try {
+    return existsSync(target) && !lstatSync(target).isSymbolicLink() && statSync(target).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+function isPhysicalFile(target: string): boolean {
+  try {
+    return existsSync(target) && !lstatSync(target).isSymbolicLink() && statSync(target).isFile();
   } catch {
     return false;
   }
@@ -106,6 +138,141 @@ function taskStatus(cwd: string, taskId: string): { id: string; title: string; s
     ? record.revision
     : null;
   return { id: record.id, title, status, revision };
+}
+
+type SpecReviewTask = {
+  id: string;
+  title: string;
+  status: string;
+  revision: string;
+};
+
+type SpecReviewResolution =
+  | { ok: true; task: SpecReviewTask }
+  | { ok: false; message: string };
+
+function resolveSpecReviewTask(cwd: string): SpecReviewResolution {
+  const piDir = join(cwd, ".pi");
+  const root = snflowsRoot(cwd);
+  const tasksDir = join(root, "tasks");
+  if (!isPhysicalDirectory(piDir) || !isPhysicalDirectory(root) || !isPhysicalDirectory(tasksDir)) {
+    return { ok: false, message: "SnFlow is not initialized through physical project directories, or its task store is unsafe." };
+  }
+  const currentPath = join(root, "current.json");
+  if (!existsSync(currentPath)) {
+    return { ok: false, message: "No current SnFlow task. Create or select a task before running /snflow-spec-review." };
+  }
+  if (!isPhysicalFile(currentPath)) {
+    return { ok: false, message: "SnFlow current.json must be a physical project file; linked or non-file pointers are rejected." };
+  }
+  const taskId = currentTaskId(cwd);
+  if (!taskId) {
+    return { ok: false, message: "The current SnFlow task pointer is malformed. Select the task again before running /snflow-spec-review." };
+  }
+  if (taskId === "00-bootstrap-spec") {
+    return { ok: false, message: "The specification bootstrap task already owns initial Spec authoring; follow its plan instead of running /snflow-spec-review." };
+  }
+
+  const taskDir = join(snflowsRoot(cwd), "tasks", taskId);
+  if (!isPhysicalDirectory(taskDir)) {
+    return { ok: false, message: \`Current SnFlow task \${taskId} is missing from .pi/snflows/tasks/ or is not a physical directory.\` };
+  }
+  const taskJson = join(taskDir, "task.json");
+  if (!isPhysicalFile(taskJson)) {
+    return { ok: false, message: \`Current SnFlow task \${taskId} has no readable physical task.json.\` };
+  }
+  const record = readJson(taskJson);
+  if (
+    !record ||
+    record.id !== taskId ||
+    record.archived === true ||
+    typeof record.title !== "string" ||
+    !record.title.trim() ||
+    typeof record.status !== "string" ||
+    !record.status.trim() ||
+    typeof record.revision !== "string" ||
+    !record.revision.trim()
+  ) {
+    return { ok: false, message: \`Current SnFlow task \${taskId} has malformed or archived task metadata.\` };
+  }
+  for (const name of ["requirements.md", "design.md", "plan.md"]) {
+    if (!isPhysicalFile(join(taskDir, name))) {
+      return { ok: false, message: \`Current SnFlow task \${taskId} is missing physical \${name}.\` };
+    }
+  }
+  const specDir = join(snflowsRoot(cwd), "spec");
+  if (!isPhysicalDirectory(specDir) || !isPhysicalFile(join(specDir, "index.md"))) {
+    return { ok: false, message: "SnFlow project Spec is missing .pi/snflows/spec/index.md. Initialize or repair the project Spec first." };
+  }
+  return {
+    ok: true,
+    task: {
+      id: taskId,
+      title: record.title.trim(),
+      status: record.status.trim(),
+      revision: record.revision.trim(),
+    },
+  };
+}
+
+function buildSpecReviewPrompt(cwd: string, task: SpecReviewTask): string {
+  const base = \`.pi/snflows/tasks/\${task.id}\`;
+  return [
+    "SNFLOW_SPEC_REVIEW v1",
+    "",
+    \`Review reusable project lessons from the current SnFlow task \${task.id}: \${task.title}\`,
+    \`Project cwd: \${cwd}\`,
+    \`Task status: \${task.status}\`,
+    \`Task revision: \${task.revision}\`,
+    "",
+    "This is a candidate-generation turn in the current main Agent. Do not dispatch subagents.",
+    "This turn is strictly read-only: do not call edit/write, do not run mutating shell commands, and do not modify task state, Spec files, product source, Git state, commits, pushes, or PRs.",
+    "",
+    "Read and compare:",
+    \`- \${base}/task.json\`,
+    \`- \${base}/requirements.md\`,
+    \`- \${base}/design.md\`,
+    \`- \${base}/plan.md\`,
+    \`- \${base}/runs/*.json when present\`,
+    "- .pi/snflows/spec/index.md and all applicable layer indexes/guidelines",
+    "- project-root AGENTS.md",
+    "- the current relevant Git diff and affected callers when available",
+    "",
+    "Identify both corrected mistakes and newly established stable design patterns. Separate reusable project rules from one-off task details. Never invent evidence; if run records or a relevant diff are absent, state the reduced confidence.",
+    "",
+    "For every observation, emit a stable candidate id C1, C2, ... with:",
+    "- disposition: add | revise | remove | do_not_capture",
+    "- background_or_root_cause",
+    "- proposed_rule_text",
+    "- applicability",
+    "- target_spec_path (a normalized repo-relative path under .pi/snflows/spec/, or N/A for do_not_capture)",
+    "- evidence_paths (real repo-relative code paths)",
+    "- relationship_to_existing_spec (new, duplicate, conflict, clarification, or obsolete)",
+    "- confidence and uncertainty",
+    "",
+    "If no observation deserves a durable rule, respond exactly with: 本任务无需更新规范",
+    "Do not manufacture candidates merely to complete the review.",
+    "",
+    "After presenting candidates, stop and ask the user to accept, edit, or reject candidate IDs in a later message. Candidate presentation is not approval and must not write files in this turn.",
+    "",
+    "When the user later confirms candidates, the main Agent must re-read .pi/snflows/current.json, this task's task.json, every selected target file, and affected layer/root indexes. Verify selected targets and parent directories are physical paths inside the canonical workspace; reject symlink/junction escapes. Apply only explicitly accepted candidate IDs, keep all targets below .pi/snflows/spec/, avoid duplicate rules, preserve unrelated content, and synchronize affected indexes. If task or Spec state drifted, report the conflict instead of blindly writing.",
+    "After confirmed writeback, report changed Spec files, added/revised/removed rules, ignored candidates, and residual uncertainty. Do not change workflow status or AGENTS.md as part of this command.",
+  ].join("\\n");
+}
+
+function notify(ctx: ExtensionCommandContext, message: string, type: "info" | "warning" | "error"): void {
+  ctx.ui?.notify?.(message, type);
+}
+
+function buildSpecReviewTurnGuidance(): string {
+  return [
+    "<workflow-state:spec_review_candidates>",
+    "This turn was explicitly started by /snflow-spec-review in the main session.",
+    "Generate evidence-backed candidates only. Do not dispatch subagents and do not edit/write any file or mutate shell, task, Spec, source, or Git state in this turn.",
+    "Candidate output is not approval. Stop after presenting C-numbered candidates, or exactly 本任务无需更新规范, and wait for a later user selection.",
+    "Only a later explicit user acceptance/edit of candidate ids permits accepted-only writes under .pi/snflows/spec/ after revalidation.",
+    "</workflow-state:spec_review_candidates>",
+  ].join("\\n");
 }
 
 function directDispatch(cwd: string, task: { id: string; title: string; revision: string | null }, phase: "implement" | "check"): string {
@@ -307,20 +474,61 @@ function buildGuidance(cwd: string): string | null {
 }
 
 export default function snflowExtension(pi: PiExtensionAPI): void {
+  const isChild = process.env.PI_SUBAGENT_CHILD === "1";
+  const webFlag = process.env.PI_WEB_SNFLOW_ENABLED;
+  const disabled = webFlag === "0" || webFlag === "false";
+
+  if (!isChild && !disabled) {
+    pi.registerCommand?.("snflow-spec-review", {
+      description: "Review the current SnFlow task for reusable project Spec candidates",
+      handler: (args, ctx) => {
+        if (args.trim()) {
+          notify(ctx, "Usage: /snflow-spec-review (v1 only reviews the current task)", "warning");
+          return;
+        }
+        if (ctx.isIdle?.() === false) {
+          notify(ctx, "The Agent is busy. Run /snflow-spec-review after the current turn settles.", "warning");
+          return;
+        }
+        const cwd = resolveCwd(ctx.cwd);
+        if (!cwd) {
+          notify(ctx, "Cannot resolve the current workspace for /snflow-spec-review.", "error");
+          return;
+        }
+        const resolved = resolveSpecReviewTask(cwd);
+        if (!resolved.ok) {
+          notify(ctx, resolved.message, "warning");
+          return;
+        }
+        if (!pi.sendUserMessage) {
+          notify(ctx, "The current Pi runtime cannot start the SnFlow Spec review Agent turn.", "error");
+          return;
+        }
+        pi.sendUserMessage(buildSpecReviewPrompt(cwd, resolved.task));
+      },
+    });
+  }
+
   pi.on?.("before_agent_start", (event, ctx) => {
     try {
       // Never force main-session SnFlow orchestration onto subagent children.
-      if (process.env.PI_SUBAGENT_CHILD === "1") return;
+      if (isChild) return;
       // WebUI host can disable SnFlow for a session without deleting project files.
-      const webFlag = process.env.PI_WEB_SNFLOW_ENABLED;
-      if (webFlag === "0" || webFlag === "false") return;
+      if (disabled) return;
       const cwd = resolveCwd(ctx?.cwd);
       if (!cwd) return;
       // Initialization makes SnFlow resources available; entry remains opt-in.
       if (!isInitialized(cwd)) return;
+      const current = typeof event.systemPrompt === "string" ? event.systemPrompt : "";
+      const prompt = typeof event.prompt === "string" ? event.prompt : "";
+      if (prompt.startsWith("SNFLOW_SPEC_REVIEW v1")) {
+        const reviewGuidance = buildSpecReviewTurnGuidance();
+        return {
+          systemPrompt: current ? \`\${current}\\n\\n\${reviewGuidance}\` : reviewGuidance,
+        };
+      }
       const guidance = buildGuidance(cwd);
       if (!guidance) return;
-      const current = typeof event.systemPrompt === "string" ? event.systemPrompt : "";
       return {
         systemPrompt: current ? \`\${current}\\n\\n\${guidance}\` : guidance,
       };
@@ -456,6 +664,20 @@ Do **not** edit project source in the main session except a trivial fix of rough
 - Return \`changes_requested\` only when at least one \`error\` finding exists. Advisory findings must not fail the check.
 - Do not expand task scope during check or require unrelated files to be changed.
 - After a passing check with advisory findings, report them to the user and let the user choose whether to address them. Do not automatically dispatch another implement loop.
+
+## Optional Spec review command
+
+\`/snflow-spec-review\` is an explicit, current-task-only learning review. It is optional and never runs automatically after implement/check or blocks \`ready_to_commit\`.
+
+- Run it only in the main session; never dispatch implement/check or another subagent for this review.
+- The managed extension validates the canonical cwd, current non-archived physical task, task documents, and \`.pi/snflows/spec/index.md\`, then sends a task-bound review prompt to the current Agent.
+- The candidate-generation turn is read-only. Read task docs, available run records, applicable Spec files, project \`AGENTS.md\`, and the relevant diff/callers. Do not edit files, mutate Git/task state, or run mutating shell commands.
+- Classify corrected mistakes and stable new designs as \`add\`, \`revise\`, \`remove\`, or \`do_not_capture\`. Every candidate uses a stable \`C<number>\` id and includes root cause/context, proposed rule text, applicability, target Spec path, real repo-relative evidence paths, relationship to existing rules, confidence, and uncertainty.
+- If nothing is reusable, return exactly \`本任务无需更新规范\`; never manufacture a rule.
+- Present candidates and stop. Candidate generation is not approval. Wait for the user to accept, edit, or reject candidate ids in a later message.
+- After explicit confirmation, re-read \`.pi/snflows/current.json\`, task metadata, selected targets, and affected indexes. Verify selected targets and parent directories are physical paths inside the canonical workspace; reject symlink/junction escapes. Apply only accepted candidates under \`.pi/snflows/spec/\`, deduplicate, preserve unrelated content, and synchronize affected layer/root indexes.
+- If task or Spec state drifted, report the conflict instead of writing stale conclusions. After writeback, report changed files, applied rules, ignored candidates, and residual uncertainty.
+- V1 accepts no task id argument, does not review archived/history tasks, does not persist pending candidates outside the conversation, and does not update task status or \`AGENTS.md\`.
 
 ## Phase 3 — Finish
 

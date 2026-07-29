@@ -123,6 +123,20 @@ Do **not** edit project source in the main session except a trivial fix of rough
 - Do not expand task scope during check or require unrelated files to be changed.
 - After a passing check with advisory findings, report them to the user and let the user choose whether to address them. Do not automatically dispatch another implement loop.
 
+## Optional Spec review command
+
+`/snflow-spec-review` is an explicit, current-task-only learning review. It is optional and never runs automatically after implement/check or blocks `ready_to_commit`.
+
+- Run it only in the main session; never dispatch implement/check or another subagent for this review.
+- The managed extension validates the canonical cwd, current non-archived physical task, task documents, and `.pi/snflows/spec/index.md`, then sends a task-bound review prompt to the current Agent.
+- The candidate-generation turn is read-only. Read task docs, available run records, applicable Spec files, project `AGENTS.md`, and the relevant diff/callers. Do not edit files, mutate Git/task state, or run mutating shell commands.
+- Classify corrected mistakes and stable new designs as `add`, `revise`, `remove`, or `do_not_capture`. Every candidate uses a stable `C<number>` id and includes root cause/context, proposed rule text, applicability, target Spec path, real repo-relative evidence paths, relationship to existing rules, confidence, and uncertainty.
+- If nothing is reusable, return exactly `本任务无需更新规范`; never manufacture a rule.
+- Present candidates and stop. Candidate generation is not approval. Wait for the user to accept, edit, or reject candidate ids in a later message.
+- After explicit confirmation, re-read `.pi/snflows/current.json`, task metadata, selected targets, and affected indexes. Verify selected targets and parent directories are physical paths inside the canonical workspace; reject symlink/junction escapes. Apply only accepted candidates under `.pi/snflows/spec/`, deduplicate, preserve unrelated content, and synchronize affected layer/root indexes.
+- If task or Spec state drifted, report the conflict instead of writing stale conclusions. After writeback, report changed files, applied rules, ignored candidates, and residual uncertainty.
+- V1 accepts no task id argument, does not review archived/history tasks, does not persist pending candidates outside the conversation, and does not update task status or `AGENTS.md`.
+
 ## Phase 3 — Finish
 
 - Do **not** git commit/push/PR unless user explicitly asks.

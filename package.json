@@ -41,6 +41,7 @@
     "lint": "eslint .",
     "generate:browser-extension": "tsx scripts/generate-browser-extension-shared.ts",
     "test:browser": "npx --yes tsx@4.23.1 scripts/generate-browser-extension-shared.ts && npx --yes tsx@4.23.1 scripts/smoke-browser-binding.ts && npx --yes tsx@4.23.1 scripts/smoke-chrome-extension-artifacts.ts",
+    "test:snflow": "npx --yes tsx@4.23.1 scripts/smoke-snflow-setup.ts && npx --yes tsx@4.23.1 scripts/smoke-workflow-store.ts && npx --yes tsx@4.23.1 scripts/smoke-workflow-session-link.ts && npx --yes tsx@4.23.1 scripts/smoke-snflow-spec-review.ts",
     "test:runtime": "npx --yes tsx@4.23.1 scripts/smoke-runtime-packaging.ts",
     "prepublishOnly": "npm run lint && tsc --noEmit && npm run test:runtime && npm run build",
     "release:patch": "npm version patch && npm publish --access public",

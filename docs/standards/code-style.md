@@ -37,6 +37,7 @@ There is no full app test framework. Targeted smoke scripts cover high-risk flow
 
 ```bash
 npm run test:browser      # browser binding protocol/manager + chrome-tab-debug artifact harness
+npm run test:snflow       # SnFlow setup/store/session-link/spec-review smokes
 npm run test:runtime      # Next server externals + published launcher invariants
 npm run test:automation   # Automation store/schedule/policy/runner/API/security smokes
 ```
@@ -46,3 +47,5 @@ For other data-flow changes, use lint + type-check and manually verify the affec
 ## SnFlow Specs
 
 When a coding task uses SnFlow, load the project specification indexes under `.pi/snflows/spec/` (start at `index.md`, then the relevant frontend/backend/guides layer) before editing. Those specs guide implementation and review for the active workspace; durable user-facing project knowledge still belongs in `docs/`. Legacy `.trellis/` data is not the supported coding-spec source.
+
+Use `/snflow-spec-review` only when the user explicitly requests a learning review of the current non-archived SnFlow task. Its candidate-generation turn is read-only and must stop after evidence-backed candidates (or `本任务无需更新规范`). Modify `.pi/snflows/spec/**` only after a later explicit user selection, then re-read current task/Spec state, apply accepted candidates only, preserve unrelated content, and synchronize affected indexes.

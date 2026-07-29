@@ -88,7 +88,7 @@ PI_CODING_AGENT_DIR=/path/to/pi-agent-data spi
 - **项目文件与编辑器**：浏览和编辑源码，预览 Markdown、图片、音频、PDF、DOCX，查看当前会话产生的文件改动与 Diff。
 - **Git 与 WorkTree**：查看状态、提交图和提交 Diff，切换分支、管理 stash，并创建独立 WorkTree。
 - **终端与浏览器调试**：可选多标签/分屏 Web Terminal；配合随附的 Chrome 扩展，把浏览器标签页临时绑定给智能体进行受限调试。
-- **用量与工作流**：查看会话成本及可选的 ChatGPT/Codex、Grok 用量；通过 SnFlow 面板管理显式启用的结构化任务。
+- **用量与工作流**：查看会话成本及可选的 ChatGPT/Codex、Grok 用量；通过 SnFlow 面板管理显式启用的结构化任务，并用 `/snflow-spec-review` 审核当前任务中可沉淀的项目规范候选。
 - **界面体验**：支持中英文界面、多套主题、桌面/移动端布局和可调整大小的工作区面板。
 
 ## 从源码运行

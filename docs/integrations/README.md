@@ -109,6 +109,19 @@ When `.pi/extensions/snflow/` is present it owns chat guidance via
 `before_agent_start`; otherwise the WebUI keeps the legacy
 `lib/workflow-guidance.ts` injection path.
 
+Managed asset version `1.6.0` also registers the Web-supported
+`/snflow-spec-review` extension command. It validates the current physical,
+non-archived task and required task/Spec documents from command `ctx.cwd`, then
+uses `pi.sendUserMessage()` to start a read-only review in the current main
+Agent. The review produces evidence-backed `add` / `revise` / `remove` /
+`do_not_capture` candidates and stops without writing. Pending candidates live
+only in the conversation; after a later explicit user selection, the main Agent
+revalidates task and Spec state and writes only accepted candidates under
+`.pi/snflows/spec/`, synchronizing affected indexes. The command takes no task
+id in v1, does not inspect archives, does not invoke a subagent or task CLI, and
+does not add a workflow state transition. Existing initialized projects must run
+SnFlow Update to receive the command; update preserves their project-owned Spec.
+
 ### Settings Precedence (Native)
 
 Per `pi-subagents` resolver, effective model order (highest to lowest):

@@ -172,6 +172,21 @@ project is not initialized, managed project extension/skill/agent files are
 filtered out of the session resource loader so leftover assets cannot expose an
 unavailable SnFlow path.
 
+The managed project extension also registers `/snflow-spec-review` as an
+explicit, optional project-learning review for the current physical,
+non-archived task. The command performs deterministic cwd/current-task/document/
+Spec preflight, then sends a task-bound, read-only instruction to the current
+main Agent; it never dispatches a child or changes workflow state. That first
+turn compares task docs, available run results, the relevant diff, and existing
+`.pi/snflows/spec/`, then returns stable candidates or `本任务无需更新规范`.
+Candidates remain conversation-scoped and are not approval. Only a later user
+message accepting or editing candidate ids permits the main Agent to revalidate
+current state and update the selected Spec files and affected indexes. V1 has no
+task-id/history mode, sidecar, panel action, CLI runner, automatic post-check
+trigger, or mandatory `ready_to_commit` gate. Existing initialized projects need
+SnFlow Update to receive a newer managed command asset; update still never
+overwrites project-owned Spec content.
+
 ### Spec Bootstrap and AGENTS.md Managed Section
 
 The bootstrap task `00-bootstrap-spec` fills the specification skeleton under
