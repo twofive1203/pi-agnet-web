@@ -57,6 +57,35 @@ pi install npm:pi-grok-cli
 
 OAuth login, model catalog, streaming, and tools are still owned by `pi-grok-cli`. Usage query is the only path that was migrated from extension command to server-owned implementation.
 
+## MCP adapter configuration (`pi-mcp-adapter`)
+
+`pi-mcp-adapter` is an optional Pi package, not a built-in WebUI transport:
+
+```bash
+pi install npm:pi-mcp-adapter
+```
+
+Settings → **MCP** edits adapter-native files only:
+
+| Target | Path |
+| --- | --- |
+| User shared | `~/.config/mcp/mcp.json` |
+| User Pi override | `<Pi agent dir>/mcp.json` |
+| Project shared | `<cwd>/.mcp.json` |
+| Project Pi override | `<cwd>/.pi/mcp.json` |
+
+Read-only diagnostics also show `~/.agents/mcp.json` and `~/.agents/mcp/mcp.json`. Precedence matches the adapter: shared user → agents globals → Pi user override → project shared → project Pi override.
+
+WebUI responsibilities:
+
+- Browser-safe redacted projections (never return existing `env`/`headers`/`bearerToken`/`oauth.clientSecret` values).
+- Field operations with preserve/replace/clear secret semantics, JSONC comment/unknown-field preservation, revision conflicts, and atomic writes.
+- Package configured detection via Pi `settings.json` package metadata only (no adapter import, no resource loader reload, no connect/OAuth/`!command` execution).
+
+Runtime ownership stays with the adapter loaded by the ordinary Pi `DefaultResourceLoader` path. Successful saves return `reloadRequired: true`; new sessions pick up changes automatically and the current session needs `/reload`. Settings never destroy/recreate `globalThis.__piSessions`.
+
+Scheduled Automation does **not** automatically inherit this interactive MCP configuration or tools. Automation keeps its independent approved-extension allowlist and network policy.
+
 ## Skills, Commands, and Subagents
 
 Skill search/install/list routes live under `app/api/skills/`; slash-command discovery lives under `app/api/commands/`. Use `lib/npx.ts` for cross-platform `npx` execution.

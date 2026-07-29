@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AgentsConfig } from "./AgentsConfig";
 import { ExtensionsConfig } from "./ExtensionsConfig";
+import { McpConfig } from "./McpConfig";
 import type {
   PiWebChatGptConfig,
   PiWebConfig,
@@ -71,7 +72,7 @@ const TEMPLATE_VARIABLES = [
   { token: "{yyyyMMdd-HHmmss}", descriptionKey: "settings.pathVarsTimestamp" },
 ];
 
-type SettingsSection = "language" | "worktree" | "usage" | "terminal" | "chatgpt" | "grok" | "editor" | "agents" | "workflow" | "extensions";
+type SettingsSection = "language" | "worktree" | "usage" | "terminal" | "chatgpt" | "grok" | "editor" | "agents" | "mcp" | "workflow" | "extensions";
 type SubagentThinkingOption = PiWebSubagentRunPolicy["thinking"];
 
 const SUBAGENT_THINKING_OPTIONS: SubagentThinkingOption[] = ["inherit", "off", "minimal", "low", "medium", "high", "xhigh"];
@@ -818,6 +819,7 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
             {renderSectionButton("grok", "Grok", t("settings.grokSection"))}
             {renderSectionButton("editor", t("settings.sectionEditor"), t("settings.editorSection"))}
             {renderSectionButton("agents", t("settings.sectionAgents"), t("settings.agentsSection"))}
+            {renderSectionButton("mcp", t("settings.sectionMcp"), t("settings.mcpSection"))}
             {renderSectionButton("workflow", "SnFlow", t("settings.workflowSection"))}
             {renderSectionButton("extensions", "Extensions", t("settings.extensionsSection"))}
           </div>
@@ -1218,6 +1220,8 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
                   <ExtensionsConfig cwd={cwd} onClose={() => {}} embed />
                 ) : section === "agents" ? (
                   <AgentsConfig cwd={cwd} />
+                ) : section === "mcp" ? (
+                  <McpConfig cwd={cwd} />
                 ) : section === "workflow" ? (
                   <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
                     <div>
@@ -1370,9 +1374,11 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
         </div>
 
         <div style={{ padding: "12px 18px", borderTop: "1px solid var(--border)", display: "flex", justifyContent: "space-between", gap: 10 }}>
-          {section === "agents" ? (
+          {section === "agents" || section === "mcp" ? (
             <>
-              <span style={{ color: "var(--text-dim)", fontSize: 12 }}>{t("settings.agentsPanelNote")}</span>
+              <span style={{ color: "var(--text-dim)", fontSize: 12 }}>
+                {section === "mcp" ? t("settings.mcpPanelNote") : t("settings.agentsPanelNote")}
+              </span>
               <button
                 onClick={onClose}
                 style={{ padding: "7px 12px", borderRadius: 7, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-muted)", cursor: "pointer", fontSize: 12 }}

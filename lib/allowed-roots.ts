@@ -87,3 +87,17 @@ export function isPathAllowed(target: string, allowedRoots: Set<string>): boolea
   }
   return false;
 }
+
+/**
+ * Synchronous check against roots registered via registerAllowedRoot only.
+ * Useful for smoke tests and hot paths that must not import session-reader.
+ */
+export function isRegisteredAllowedRoot(target: string): boolean {
+  const registered = globalThis.__piRegisteredAllowedRoots;
+  if (!registered || registered.size === 0) return false;
+  const roots = new Set<string>();
+  for (const root of registered) {
+    for (const variant of createRootVariants(root)) roots.add(variant);
+  }
+  return isPathAllowed(canonicalizeCwd(target), roots);
+}

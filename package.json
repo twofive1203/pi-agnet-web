@@ -46,7 +46,8 @@
     "prepublishOnly": "npm run lint && tsc --noEmit && npm run test:runtime && npm run build",
     "release:patch": "npm version patch && npm publish --access public",
     "release": "npm run release:patch",
-    "test:automation": "node scripts/run-automation-smokes.cjs"
+    "test:automation": "node scripts/run-automation-smokes.cjs",
+    "test:mcp": "npx --yes tsx@4.23.1 scripts/smoke-mcp-config.ts"
   },
   "dependencies": {
     "@earendil-works/pi-ai": "0.82.1",
@@ -59,6 +60,7 @@
     "@xterm/xterm": "^6.0.0",
     "cron-parser": "^4.9.0",
     "diff": "^8.0.4",
+    "jsonc-parser": "^3.3.1",
     "katex": "^0.16.47",
     "mammoth": "^1.12.0",
     "mermaid": "^11.14.0",

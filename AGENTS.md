@@ -16,6 +16,7 @@ npm run dev     # http://localhost:62666
 | `node_modules/.bin/tsc --noEmit` | Type-check without emitting. |
 | `npm run test:snflow` | SnFlow setup/store/session-link/spec-review smoke suite. |
 | `npm run test:automation` | Automation store/schedule/policy/runner/API smoke suite. |
+| `npm run test:mcp` | MCP configuration domain/API smoke suite (adapter-native files, secrets, revisions). |
 | `npm run build` | Production/release build through `scripts/build-next.js`. Do not use for routine dev work. |
 | `npm run start` | Start the production server on port 62666. |
 
@@ -62,7 +63,7 @@ npm run dev     # http://localhost:62666
 | Chat/session UI state | `hooks/useAgentSession.ts`, `components/ChatWindow.tsx`, `components/ChatInput.tsx` | `docs/modules/frontend.md` |
 | Tool-call normalization | `lib/normalize.ts` | `docs/architecture/overview.md`, `docs/modules/library.md` |
 | Workspace files and Git context | `app/api/files/**`, `app/file/page.tsx`, `components/StandaloneFileViewer.tsx`, `app/api/git/**`, `lib/file-paths.ts`, `lib/file-viewer-url.ts`, `lib/git-worktree.ts`, `lib/workspace-title.ts` | `docs/modules/api.md`, `docs/modules/frontend.md`, `docs/modules/library.md` |
-| Models, model pricing/catalog, native subagents, skills, extensions, intercom, auth, usage | `app/api/models*`, `app/api/model-pricing/`, `app/api/subagents/config/**`, `app/api/skills/**`, `app/api/pi/**`, `app/api/intercom/**`, `app/api/auth/**`, `app/api/usage/route.ts` | `docs/modules/api.md`, `docs/integrations/README.md` |
+| Models, model pricing/catalog, native subagents, MCP config, skills, extensions, intercom, auth, usage | `app/api/models*`, `app/api/model-pricing/`, `app/api/subagents/config/**`, `app/api/mcp/config/**`, `app/api/skills/**`, `app/api/pi/**`, `app/api/intercom/**`, `app/api/auth/**`, `app/api/usage/route.ts` | `docs/modules/api.md`, `docs/integrations/README.md` |
 | WebUI-owned SnFlow tasks/runs | `lib/workflow-store.ts`, `lib/workflow-chat-lifecycle.ts`, `lib/workflow-run-manager.ts`, `app/api/workflows/**`, `components/WorkflowPanel.tsx` | `docs/modules/api.md`, `docs/modules/library.md`, `docs/modules/frontend.md` |
 | Scheduled Agent Automation | `lib/automation-service.ts`, `lib/automation-scheduler.ts`, `lib/automation-runner.ts`, `app/api/automations/**`, `components/AutomationPanel.tsx`, `instrumentation.ts` | `docs/architecture/decisions/automation-scheduler.md`, `docs/modules/api.md`, `docs/modules/library.md`, `docs/modules/frontend.md` |
 | Chrome tab debugging (local bridge + extension) | `lib/browser-*.ts`, `app/api/browser/**`, `components/BrowserBindingPanel.tsx`, `extensions/chrome-tab-debug/` | `docs/modules/api.md`, `docs/modules/library.md`, `docs/modules/frontend.md`, `docs/operations/troubleshooting.md`, `extensions/chrome-tab-debug/README.md` |

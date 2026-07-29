@@ -40,6 +40,7 @@ npm run test:browser      # browser binding protocol/manager + chrome-tab-debug 
 npm run test:snflow       # SnFlow setup/store/session-link/spec-review smokes
 npm run test:runtime      # Next server externals + published launcher invariants
 npm run test:automation   # Automation store/schedule/policy/runner/API/security smokes
+npm run test:mcp          # MCP adapter-native config domain/API smokes (secrets, revisions, JSONC)
 ```
 
 For other data-flow changes, use lint + type-check and manually verify the affected browser/API flow. Headed Chrome-only gaps for the tab-debug extension are listed in `docs/operations/troubleshooting.md`.
