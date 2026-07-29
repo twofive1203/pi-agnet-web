@@ -376,6 +376,11 @@ export function parseTaskRecord(raw: unknown, expectedId?: string): WorkflowTask
   const createdAt = typeof raw.createdAt === "string" && raw.createdAt ? raw.createdAt : now;
   const updatedAt = typeof raw.updatedAt === "string" && raw.updatedAt ? raw.updatedAt : createdAt;
   const archived = typeof raw.archived === "boolean" ? raw.archived : false;
+  const parentTaskId = raw.parentTaskId === undefined
+    ? undefined
+    : typeof raw.parentTaskId === "string" && isValidWorkflowTaskId(raw.parentTaskId)
+      ? raw.parentTaskId
+      : (() => { throw new WorkflowStoreError("Invalid parentTaskId", { status: 409, code: "malformed_task" }); })();
 
   const activeRunIdRaw =
     raw.activeRunId === undefined ? null : parseNullableString(raw.activeRunId, "activeRunId");
@@ -415,6 +420,7 @@ export function parseTaskRecord(raw: unknown, expectedId?: string): WorkflowTask
     latestCheckRunId,
     commit: parseCommit(raw.commit, updatedAt),
     archived,
+    ...(parentTaskId ? { parentTaskId } : {}),
   };
   // Revision is derived content-hash. Agent hand-writes often invent a wrong hash;
   // accept the record and use the computed revision so the task still appears in UI.
@@ -668,6 +674,10 @@ function toSummary(
     latestCheckRunId: task.latestCheckRunId,
     commit: task.commit,
     archived: task.archived,
+    ...(task.parentTaskId ? { parentTaskId: task.parentTaskId } : {}),
+    childCount: 0,
+    completedChildCount: 0,
+    childTaskIds: [],
     pathLabel,
     hasDocuments,
     ...(readError ? { readError } : {}),
@@ -817,6 +827,19 @@ export function listWorkflowTasks(cwd: string, includeArchived = false): Workflo
   }
 
   tasks.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  const byParent = new Map<string, WorkflowTaskSummary[]>();
+  for (const task of tasks) {
+    if (!task.parentTaskId) continue;
+    const children = byParent.get(task.parentTaskId) ?? [];
+    children.push(task);
+    byParent.set(task.parentTaskId, children);
+  }
+  for (const task of tasks) {
+    const children = byParent.get(task.id) ?? [];
+    task.childTaskIds = children.map((child) => child.id);
+    task.childCount = children.length;
+    task.completedChildCount = children.filter((child) => child.status === "completed").length;
+  }
 
   return {
     cwd: ctx.workspaceRoot,
@@ -838,8 +861,18 @@ export function getWorkflowTaskDetail(cwd: string, taskId: string): WorkflowTask
   const docs = readDocuments(located.dir, ctx.workspaceRoot);
   const runs = listRunRecords(located.dir, ctx.workspaceRoot);
   const summary = toSummary(task, relativeLabel(ctx.workspaceRoot, located.dir), docs.has);
+  const allTasks = listWorkflowTasks(ctx.workspaceRoot, true).tasks;
+  const children = allTasks.filter((candidate) => candidate.parentTaskId === task.id);
+  const parent = task.parentTaskId
+    ? allTasks.find((candidate) => candidate.id === task.parentTaskId) ?? null
+    : null;
+  summary.childTaskIds = children.map((child) => child.id);
+  summary.childCount = children.length;
+  summary.completedChildCount = children.filter((child) => child.status === "completed").length;
   return {
     ...summary,
+    parentTask: parent,
+    children,
     documents: {
       requirements: docs.requirements,
       design: docs.design,
@@ -894,6 +927,18 @@ export function createWorkflowTask(cwd: string, input: WorkflowCreateTaskInput):
   if (!isWorkflowPriority(priority)) {
     throw new WorkflowStoreError("Invalid priority", { status: 400, code: "invalid_priority" });
   }
+  const parentTaskId = input.parentTaskId;
+  if (parentTaskId) {
+    if (!isValidWorkflowTaskId(parentTaskId)) {
+      throw new WorkflowStoreError("Invalid parentTaskId", { status: 400, code: "invalid_parent" });
+    }
+    const parent = resolveExistingTaskDir(ctx, parentTaskId);
+    if (parent.archived) throw new WorkflowStoreError("Parent task is archived", { status: 409, code: "parent_archived" });
+    const parentRecord = readTaskJson(parent.dir, parentTaskId, ctx.workspaceRoot);
+    if (parentRecord.parentTaskId) {
+      throw new WorkflowStoreError("Nested child tasks are not supported", { status: 409, code: "nested_parent" });
+    }
+  }
 
   ensureTasksRoot(ctx);
   let id = makeTaskId(title, input.id);
@@ -935,6 +980,7 @@ export function createWorkflowTask(cwd: string, input: WorkflowCreateTaskInput):
     latestCheckRunId: null,
     commit: null,
     archived: false,
+    ...(input.parentTaskId ? { parentTaskId: input.parentTaskId } : {}),
   });
 
   const dir = taskDir(ctx, id);
@@ -1237,6 +1283,7 @@ export function beginWorkflowRun(cwd: string, taskId: string, input: BeginWorkfl
     latestCheckRunId: input.phase === "check" ? runId : current.latestCheckRunId,
     commit: current.commit,
     archived: false,
+    ...(current.parentTaskId ? { parentTaskId: current.parentTaskId } : {}),
   });
   writeTaskBundle(ctx, located.dir, next);
   return {
@@ -1325,6 +1372,16 @@ export function completeWorkflowTask(
       code: "invalid_transition",
     });
   }
+  if (!current.parentTaskId) {
+    const children = listWorkflowTasks(ctx.workspaceRoot, true).tasks.filter((task) => task.parentTaskId === taskId && !task.archived);
+    const incomplete = children.filter((child) => child.status !== "completed");
+    if (incomplete.length > 0) {
+      throw new WorkflowStoreError(`Complete child tasks first (${incomplete.length} remaining)`, {
+        status: 409,
+        code: "children_incomplete",
+      });
+    }
+  }
 
   let commit = current.commit;
   if (input.commitHash?.trim()) {
@@ -1350,6 +1407,7 @@ export function completeWorkflowTask(
     latestCheckRunId: current.latestCheckRunId,
     commit,
     archived: false,
+    ...(current.parentTaskId ? { parentTaskId: current.parentTaskId } : {}),
   });
   writeTaskBundle(ctx, located.dir, next);
   return getWorkflowTaskDetail(ctx.workspaceRoot, taskId);
@@ -1400,6 +1458,7 @@ export function recordWorkflowCommit(
       ...(input.note?.trim() ? { note: input.note.trim() } : {}),
     },
     archived: false,
+    ...(current.parentTaskId ? { parentTaskId: current.parentTaskId } : {}),
   });
   writeTaskBundle(ctx, located.dir, next);
   return getWorkflowTaskDetail(ctx.workspaceRoot, taskId);
@@ -1430,6 +1489,15 @@ export function archiveWorkflowTask(
       code: "invalid_transition",
     });
   }
+  if (!current.parentTaskId) {
+    const children = listWorkflowTasks(ctx.workspaceRoot, true).tasks.filter((task) => task.parentTaskId === taskId && !task.archived);
+    if (children.length > 0) {
+      throw new WorkflowStoreError("Archive child tasks before archiving the parent", {
+        status: 409,
+        code: "children_unarchived",
+      });
+    }
+  }
 
   const destDir = taskDir(ctx, taskId, true);
   if (existsSync(destDir)) {
@@ -1453,6 +1521,7 @@ export function archiveWorkflowTask(
     latestCheckRunId: current.latestCheckRunId,
     commit: current.commit,
     archived: true,
+    ...(current.parentTaskId ? { parentTaskId: current.parentTaskId } : {}),
   });
   // Write archived flag first in place, then move the directory.
   writeTaskBundle(ctx, located.dir, next);

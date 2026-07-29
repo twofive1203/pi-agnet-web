@@ -113,6 +113,7 @@ export function WorkflowPanel({
   const [showCreate, setShowCreate] = useState(false);
   const [createTitle, setCreateTitle] = useState("");
   const [createPriority, setCreatePriority] = useState<WorkflowPriority>("P2");
+  const [createParentTaskId, setCreateParentTaskId] = useState<string | null>(null);
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const detailAbortRef = useRef<AbortController | null>(null);
@@ -412,7 +413,7 @@ export function WorkflowPanel({
 
   const filteredTasks = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return tasks.filter((task) => {
+    const matches = tasks.filter((task) => {
       if (!includeArchived && task.archived) return false;
       if (statusFilter !== "all" && task.status !== statusFilter) return false;
       if (!q) return true;
@@ -421,6 +422,8 @@ export function WorkflowPanel({
         .toLowerCase()
         .includes(q);
     });
+    const parentIds = new Set(matches.map((task) => task.parentTaskId).filter((id): id is string => Boolean(id)));
+    return tasks.filter((task) => (!task.archived || includeArchived) && (matches.includes(task) || parentIds.has(task.id)));
   }, [tasks, query, statusFilter, includeArchived]);
 
   async function runAction(fn: () => Promise<void>) {
@@ -444,6 +447,7 @@ export function WorkflowPanel({
         body: JSON.stringify({
           title: createTitle.trim(),
           priority: createPriority,
+          parentTaskId: createParentTaskId ?? undefined,
           sessionId: sessionId || undefined,
         }),
       });
@@ -451,6 +455,7 @@ export function WorkflowPanel({
       if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
       setShowCreate(false);
       setCreateTitle("");
+      setCreateParentTaskId(null);
       await loadTasks();
       if (body.task) {
         setSelectedId(body.task.id);
@@ -459,6 +464,13 @@ export function WorkflowPanel({
       }
     });
   }
+
+  const handleCreateChild = useCallback(() => {
+    if (!detail) return;
+    setCreateParentTaskId(detail.id);
+    setCreateTitle("");
+    setShowCreate(true);
+  }, [detail]);
 
   async function handleCreateFromSession() {
     if (!cwd || !sessionId) return;
@@ -844,35 +856,16 @@ export function WorkflowPanel({
               )}
             </div>
           )}
-          {filteredTasks.map((task) => {
+          {filteredTasks.filter((task) => !task.parentTaskId).map((task) => {
             const selected = task.id === selectedId;
+            const children = filteredTasks.filter((child) => child.parentTaskId === task.id);
             return (
-              <button
-                key={task.id}
-                type="button"
-                onClick={() => setSelectedId(task.id)}
-                style={{
-                  display: "block",
-                  width: "100%",
-                  textAlign: "left",
-                  border: "none",
-                  borderBottom: "1px solid var(--border)",
-                  background: selected ? "var(--bg-selected)" : "transparent",
-                  padding: "10px 12px",
-                  cursor: "pointer",
-                  color: "var(--text)",
-                }}
-              >
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 4 }}>
-                  <span style={{ fontSize: 12, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {task.title}
-                  </span>
-                  <span style={{ fontSize: 10, color: STATUS_COLORS[task.status] ?? "var(--text-dim)", flexShrink: 0 }}>
-                    {t(`workflow.status.${task.status}`)}
-                  </span>
-                </div>
-                <div style={{ fontSize: 10, color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>{task.id}</div>
-              </button>
+              <div key={task.id}>
+                <TaskListButton task={task} selected={selected} onSelect={() => setSelectedId(task.id)} />
+                {children.map((child) => (
+                  <TaskListButton key={child.id} task={child} selected={child.id === selectedId} onSelect={() => setSelectedId(child.id)} indent />
+                ))}
+              </div>
             );
           })}
         </div>
@@ -909,6 +902,7 @@ export function WorkflowPanel({
                 {t("workflow.cwd")}: {shortPath(cwd, 64)}
               </div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                <ActionButton disabled={busy || detail.archived} onClick={handleCreateChild} label={t("workflow.createChild")} />
                 <ActionButton disabled={busy || !detail.allowedActions.save || !dirty} onClick={() => void handleSave()} label={t("workflow.save")} />
                 <ActionButton disabled={busy || !detail.allowedActions.markReady} title={detail.allowedActions.reasons.markReady} onClick={() => void handleMarkReady()} label={t("workflow.markReady")} />
                 <ActionButton disabled={busy || !sessionId || !detail.allowedActions.runImplement} title={!sessionId ? "Open a chat session to run the native worker" : detail.allowedActions.reasons.runImplement} onClick={() => void handleStartRun("implement")} label={t("workflow.runImplement")} />
@@ -1054,6 +1048,7 @@ export function WorkflowPanel({
             onClick={(e) => e.stopPropagation()}
           >
             <div style={{ fontWeight: 800, color: "var(--text)" }}>{t("workflow.createTask")}</div>
+            {createParentTaskId && <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{t("workflow.createChildOf", { id: createParentTaskId })}</div>}
             <input
               autoFocus
               value={createTitle}
@@ -1076,6 +1071,29 @@ export function WorkflowPanel({
         </div>
       )}
     </div>
+  );
+}
+
+function TaskListButton({
+  task,
+  selected,
+  onSelect,
+  indent = false,
+}: {
+  task: WorkflowTaskSummary;
+  selected: boolean;
+  onSelect: () => void;
+  indent?: boolean;
+}) {
+  const t = useT();
+  return (
+    <button type="button" onClick={onSelect} style={{ display: "block", width: "100%", textAlign: "left", border: "none", borderBottom: "1px solid var(--border)", background: selected ? "var(--bg-selected)" : "transparent", padding: indent ? "8px 12px 8px 26px" : "10px 12px", cursor: "pointer", color: "var(--text)" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 4 }}>
+        <span style={{ fontSize: 12, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{indent ? "↳ " : ""}{task.title}</span>
+        <span style={{ fontSize: 10, color: STATUS_COLORS[task.status] ?? "var(--text-dim)", flexShrink: 0 }}>{t(`workflow.status.${task.status}`)}</span>
+      </div>
+      <div style={{ fontSize: 10, color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>{task.id}{task.childCount > 0 ? ` · ${task.completedChildCount}/${task.childCount}` : ""}</div>
+    </button>
   );
 }
 

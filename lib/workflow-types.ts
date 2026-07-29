@@ -69,6 +69,8 @@ export interface WorkflowTaskRecord {
   latestCheckRunId: string | null;
   commit: WorkflowTaskCommitMeta | null;
   archived: boolean;
+  /** Optional immutable parent task reference; storage remains flat. */
+  parentTaskId?: string;
 }
 
 export interface WorkflowDocuments {
@@ -160,6 +162,10 @@ export interface WorkflowTaskSummary {
   latestCheckRunId: string | null;
   commit: WorkflowTaskCommitMeta | null;
   archived: boolean;
+  parentTaskId?: string;
+  childCount: number;
+  completedChildCount: number;
+  childTaskIds: string[];
   pathLabel: string;
   hasDocuments: {
     requirements: boolean;
@@ -172,6 +178,8 @@ export interface WorkflowTaskSummary {
 export interface WorkflowTaskDetail extends WorkflowTaskSummary {
   documents: WorkflowDocuments;
   runs: WorkflowRunRecord[];
+  parentTask?: WorkflowTaskSummary | null;
+  children: WorkflowTaskSummary[];
   allowedActions: WorkflowAllowedActions;
 }
 
@@ -212,6 +220,8 @@ export interface WorkflowCreateTaskInput {
   markReady?: boolean;
   /** Optional chat session id that seeded this task. */
   sessionId?: string;
+  /** Optional parent task id. Parentage is immutable after creation. */
+  parentTaskId?: string;
   /** Optional freeform user goal used only for seeding docs before create. */
   seedText?: string;
 }

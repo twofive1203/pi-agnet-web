@@ -86,11 +86,27 @@ try {
   assert(created.pathLabel.includes(".pi/snflows/tasks/"), "namespace path");
   assert(listWorkflowTasks(projectA).currentTaskId === created.id, "create sets current task");
 
+  const child = createWorkflowTask(projectA, {
+    title: "Refresh token implementation",
+    parentTaskId: created.id,
+    priority: "P1",
+  });
+  assert(child.parentTaskId === created.id, "child parent persisted");
+  assert(getWorkflowTaskDetail(projectA, created.id).children.some((task) => task.id === child.id), "parent exposes child");
+  assert(listWorkflowTasks(projectA, true).tasks.find((task) => task.id === created.id)?.childCount === 1, "child count");
+  let nestedRejected = false;
+  try {
+    createWorkflowTask(projectA, { title: "Nested task", parentTaskId: child.id });
+  } catch (error) {
+    nestedRejected = error instanceof WorkflowStoreError;
+  }
+  assert(nestedRejected, "nested child rejected");
+
   assert(listWorkflowTasks(projectB).tasks.length === 0, "project isolation");
 
   const prev = process.cwd();
   process.chdir(projectB);
-  assert(listWorkflowTasks(projectA).tasks.length === 1, "explicit cwd ignores process.cwd");
+  assert(listWorkflowTasks(projectA).tasks.length === 2, "explicit cwd ignores process.cwd");
   process.chdir(prev);
 
   const ready = markWorkflowTaskReady(projectA, created.id, created.revision);
@@ -167,6 +183,11 @@ try {
   );
   console.log("OK workflow-store smoke");
 } finally {
-  rmSync(projectA, { recursive: true, force: true });
-  rmSync(projectB, { recursive: true, force: true });
+  for (const project of [projectA, projectB]) {
+    try {
+      rmSync(project, { recursive: true, force: true });
+    } catch {
+      // Windows can briefly retain a temp directory after symlink checks.
+    }
+  }
 }

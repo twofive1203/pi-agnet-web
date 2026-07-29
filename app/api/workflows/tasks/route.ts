@@ -91,6 +91,7 @@ export async function POST(request: NextRequest) {
       plan: typeof body.plan === "string" ? body.plan : undefined,
       seedText,
       sessionId,
+      parentTaskId: typeof body.parentTaskId === "string" ? body.parentTaskId.trim() : undefined,
       markReady: body.markReady === true,
     });
 
