@@ -6,7 +6,7 @@ This guide covers local runtime, npm installation, source builds, production dep
 
 | Dependency | Requirement | Notes |
 | --- | --- | --- |
-| Node.js | Node.js 22+ recommended | Required by the Next.js 16 / React 19 runtime. Lower versions may fail to start. |
+| Node.js | **>=22.19.0** (required; matches pi SDK engines) | Required by Next.js 16 / React 19 and `@earendil-works/pi-coding-agent`. Lower versions may fail to start. |
 | npm | npm 10+ recommended | Used for `npx`, global installs, source installs, and publishing. |
 | pi agent data directory | Defaults to `~/.pi/agent/` | Stores sessions, model config, settings, and pi-web settings. |
 | Git | Optional, recommended | Required for Git status, branch switching, graph, and WorkTree features. |
@@ -193,3 +193,12 @@ After publishing, verify the package:
 npm view @twofive/snail-pi-web version --prefer-online
 npx @twofive/snail-pi-web@latest --port 62666
 ```
+
+## Scheduled Agent Automation
+
+- Scheduler starts from root `instrumentation.ts` on the Node runtime only. Schedules execute while the Snail Pi Web process is alive (no OS daemon in v1).
+- Cross-process leader lease uses `~/.pi/agent/automations/scheduler.lock` with epoch fencing; stale leaders cannot finalize runs after takeover.
+- Automation HTTP APIs require a proven loopback connection (socket remote address captured at request start). Reverse-proxy / non-loopback deployments are rejected in v1.
+- Data roots: `~/.pi/agent/automations/` and default workspace `~/pi-automation-cwd`.
+- Validate with `npm run test:automation`. Release builds must use `npm run build` (never bare `next build`).
+- Node engine in `package.json` is `>=22.19.0`.

@@ -74,3 +74,31 @@ Shared logic lives under `lib/`. Prefer adding behavior here when it is used by 
 - Do not duplicate JSONL parsing or tool-call normalization in UI code.
 - If a route and a component need the same derived value, put it in `lib/` and import it from both sides.
 - Keep wire types in `lib/types.ts` synchronized with route responses and hook consumers.
+
+## Automation libraries
+
+| File | Purpose |
+| --- | --- |
+| `lib/automation-types.ts` | Domain enums, schemas, budgets, error codes. |
+| `lib/automation-paths.ts` | Canonical paths under `getAgentDir()/automations/`. |
+| `lib/automation-lock.ts` | Cross-process store/scheduler locks with epoch fencing. |
+| `lib/automation-store.ts` | tasks/runs/claims/audit/promotion persistence + CAS. |
+| `lib/automation-default-cwd.ts` | Stable `~/pi-automation-cwd` initialization. |
+| `lib/automation-schedule.ts` | Five-field cron, timezone, DST/misfire/overlap decisions. |
+| `lib/automation-resource-catalog.ts` | Tool/extension descriptors and digests. |
+| `lib/automation-tool-policy.ts` | Snapshot ∩ live policy, pre-import allowlists. |
+| `lib/automation-network-policy.ts` | SSRF-safe fetch policy for reviewed web tools. |
+| `lib/automation-secret-policy.ts` | Credential handles + redaction. |
+| `lib/automation-runner.ts` | Headless awaited AgentSession runner. |
+| `lib/automation-scheduler.ts` | Leader lease, claim/dispatch, reconciliation. |
+| `lib/automation-service.ts` | Shared UI/API/tool service. |
+| `lib/automation-tools.ts` | Interactive-only `automation_tasks` multi-action tool. |
+| `lib/automation-approval.ts` | Browser challenges + UI approval context. |
+| `lib/automation-local-access.ts` | Loopback/control-session gates. |
+| `lib/automation-session.ts` | Run-authorized transcript/changes readers. |
+| `lib/automation-promotion.ts` | Idempotent promote to ordinary sessions. |
+| `lib/automation-retention.ts` | 90/365-day retention scanner. |
+| `lib/automation-ui-state.ts` | Pure drawer/inbox state helpers. |
+| `lib/agent-session-services.ts` | Shared target-cwd session service helpers. |
+| `lib/agent-session-observer.ts` | Shared edit/write file-change observer. |
+| `instrumentation.ts` | Node startup registration for Automation scheduler. |

@@ -14,6 +14,7 @@ npm run dev     # http://localhost:62666
 | `npm run dev` | Start the dev server on port 62666. |
 | `npm run lint` | Run ESLint. |
 | `node_modules/.bin/tsc --noEmit` | Type-check without emitting. |
+| `npm run test:automation` | Automation store/schedule/policy/runner/API smoke suite. |
 | `npm run build` | Production/release build through `scripts/build-next.js`. Do not use for routine dev work. |
 | `npm run start` | Start the production server on port 62666. |
 
@@ -29,6 +30,7 @@ npm run dev     # http://localhost:62666
 | Change UI behavior | `docs/modules/frontend.md` | Relevant file in `components/` or `hooks/` |
 | Change shared logic | `docs/modules/library.md` | Relevant file in `lib/` and all callers |
 | Change session lifecycle, branching, JSONL, or SSE | `docs/architecture/overview.md` | `lib/rpc-manager.ts`, `lib/session-reader.ts`, `hooks/useAgentSession.ts` |
+| Change Automation schedules/runs | `docs/architecture/decisions/automation-scheduler.md` | `lib/automation-*.ts`, `app/api/automations/**`, `components/AutomationPanel.tsx` |
 | Change code/comment/test conventions | `docs/standards/code-style.md` | Existing nearby code and `.pi/snflows/spec/` when SnFlow is active |
 | Deploy, publish, or debug runtime | `docs/deployment/README.md` | `docs/operations/troubleshooting.md`, `ecosystem.config.cjs`, proxy scripts |
 | Change dependencies or pi SDK integration | `docs/integrations/README.md` | `package.json`, installed pi docs under `node_modules/@earendil-works/pi-coding-agent/` |
@@ -61,6 +63,7 @@ npm run dev     # http://localhost:62666
 | Workspace files and Git context | `app/api/files/**`, `app/file/page.tsx`, `components/StandaloneFileViewer.tsx`, `app/api/git/**`, `lib/file-paths.ts`, `lib/file-viewer-url.ts`, `lib/git-worktree.ts`, `lib/workspace-title.ts` | `docs/modules/api.md`, `docs/modules/frontend.md`, `docs/modules/library.md` |
 | Models, model pricing/catalog, native subagents, skills, extensions, intercom, auth, usage | `app/api/models*`, `app/api/model-pricing/`, `app/api/subagents/config/**`, `app/api/skills/**`, `app/api/pi/**`, `app/api/intercom/**`, `app/api/auth/**`, `app/api/usage/route.ts` | `docs/modules/api.md`, `docs/integrations/README.md` |
 | WebUI-owned SnFlow tasks/runs | `lib/workflow-store.ts`, `lib/workflow-chat-lifecycle.ts`, `lib/workflow-run-manager.ts`, `app/api/workflows/**`, `components/WorkflowPanel.tsx` | `docs/modules/api.md`, `docs/modules/library.md`, `docs/modules/frontend.md` |
+| Scheduled Agent Automation | `lib/automation-service.ts`, `lib/automation-scheduler.ts`, `lib/automation-runner.ts`, `app/api/automations/**`, `components/AutomationPanel.tsx`, `instrumentation.ts` | `docs/architecture/decisions/automation-scheduler.md`, `docs/modules/api.md`, `docs/modules/library.md`, `docs/modules/frontend.md` |
 | Chrome tab debugging (local bridge + extension) | `lib/browser-*.ts`, `app/api/browser/**`, `components/BrowserBindingPanel.tsx`, `extensions/chrome-tab-debug/` | `docs/modules/api.md`, `docs/modules/library.md`, `docs/modules/frontend.md`, `docs/operations/troubleshooting.md`, `extensions/chrome-tab-debug/README.md` |
 
 ## Project Invariants
@@ -75,6 +78,9 @@ Keep this section short and operational; detailed rationale belongs in `docs/arc
 - Treat session header `parentSession` as display metadata only; content comes from JSONL entries.
 - When changing event kinds, JSONL records, RPC payloads, config fields, or shared constants, search for all consumers first and update docs/tests/validation notes.
 - Do not reset or overwrite unrelated user changes.
+- Automation is independent of SnFlow and ordinary project sessions: data lives under `getAgentDir()/automations/`; Automation JSONL must not appear in default `/api/sessions` lists.
+- Automation effective tools are snapshot ∩ live policy and never fall back to dynamic `all`; unapproved extensions must not be imported by the scheduled loader.
+- `/api/automations/**` is local-only (direct loopback + control session); sensitive mutations require trusted UI confirmation (browser challenge or `ctx.ui.confirm`).
 
 ## Standards and Validation
 
@@ -115,6 +121,7 @@ node_modules/.bin/tsc --noEmit
 | Settings/default model/native subagents | `~/.pi/agent/settings.json`, project override `<cwd>/.pi/settings.json` |
 | Web UI settings (WorkTree, Usage, Web Terminal, ChatGPT panel, Grok panel, Editor, SnFlow panel). Unknown legacy root keys such as `trellis` are ignored and left on disk | `~/.pi/agent/pi-web.json` |
 | WebUI SnFlow tasks | `<cwd>/.pi/snflows/tasks/<task-id>/` (archived: `<cwd>/.pi/snflows/archived/<task-id>/`; version/assets: `.pi/snflows/.version`, `.pi/extensions/snflow/`, `.pi/skills/snflow-dev/`, `.pi/agents/snflow-*.md`) |
+| Automation tasks/runs/sessions | `~/.pi/agent/automations/` (`tasks.json`, locks, claims, runs, promotions, audit, sessions); default cwd `~/pi-automation-cwd` (canonical path persisted once) |
 
 ## Archive Rules
 

@@ -18,6 +18,10 @@ This is the project standards entry point. Prefer existing local patterns over b
 - Keep comments close to the code they explain and update them when behavior changes.
 - Use TODO/FIXME only when there is a clear follow-up condition or owner/context.
 
+## Runtime
+
+- Package `engines.node` is `>=22.19.0` (pi SDK requirement). Do not document a looser minimum.
+
 ## Validation Commands
 
 ```bash
@@ -32,8 +36,9 @@ Do not run `next build` directly during development. Use `npm run build` only fo
 There is no full app test framework. Targeted smoke scripts cover high-risk flows:
 
 ```bash
-npm run test:browser   # browser binding protocol/manager + chrome-tab-debug artifact harness
-npm run test:runtime   # Next server externals + published launcher invariants
+npm run test:browser      # browser binding protocol/manager + chrome-tab-debug artifact harness
+npm run test:runtime      # Next server externals + published launcher invariants
+npm run test:automation   # Automation store/schedule/policy/runner/API/security smokes
 ```
 
 For other data-flow changes, use lint + type-check and manually verify the affected browser/API flow. Headed Chrome-only gaps for the tab-debug extension are listed in `docs/operations/troubleshooting.md`.

@@ -222,6 +222,18 @@ are the final runtime model.
 - Session-scoped SnFlow task association for the floating chat widget remains high-confidence only (session transcript evidence or an exact per-session current-task pointer). Blank or new sessions do not inherit another session's widget.
 - When all tools are disabled, `lib/rpc-manager.ts` clears the agent system prompt.
 
+## Scheduled Agent Automation
+
+Automation is independent of SnFlow and ordinary project sessions:
+
+- Control plane data lives under `getAgentDir()/automations/` (`tasks.json`, store/scheduler locks, claims, runs, promotions, audit, sessions).
+- Default task cwd is the once-persisted canonical `~/pi-automation-cwd` (or an explicit project cwd). Runtime never falls back to the server process cwd.
+- Next Node `instrumentation.ts` starts the scheduler leader lease. Ordinary WebUI remains available if Automation fails closed.
+- `/api/automations/**` is local-only: proven direct loopback via server-derived socket remote address (Host/URL alone are not trusted), same-origin/control-session, and one-time approval challenges bound to action/task/run/revision/policy hash/canonical cwd (and proposed-config hash for sensitive updates). Browser approvals are two-step: create returns the normalized authority summary without a consumable secret; after a real AppDialog confirmation the UI calls `/api/automations/approvals/confirm` to receive the one-time secret, then the mutation consumes it. Body flags such as `confirmed: true` cannot assert approval. This is a loopback UX/control-plane trust boundary, not remote identity authentication.
+- Headless runs use frozen authority snapshots ∩ live policy, reviewed immutable web adapters (`web_search`/`web_fetch`), hard outer deadlines, and seal transcripts only after dispose/drain. After the execution barrier, uncertain stale claims become `ambiguous` and are never auto-redispatched.
+- Automation JSONL is invisible to default `/api/sessions` lists; sealed terminal runs may be promoted into ordinary project sessions after JSONL structure + SHA-256 seal checks.
+- Detailed decision record: `docs/architecture/decisions/automation-scheduler.md`.
+
 ## Session File Format
 
 Default location:

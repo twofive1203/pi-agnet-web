@@ -95,3 +95,28 @@ API routes live under `app/api/`. When adding, removing, or changing routes, upd
 - Session-file routes should use `lib/session-reader.ts` and shared types in `lib/types.ts`.
 - Client-side command calls should use `lib/agent-client.ts`.
 - Normalize streamed/file-loaded tool calls through `lib/normalize.ts`.
+
+## Automation routes
+
+Local-only (`direct loopback` + Automation control session). Sensitive mutations require a one-time approval challenge.
+
+| Route | Methods | Purpose |
+| --- | --- | --- |
+| `automations/session/` | POST | Issue HttpOnly SameSite=Strict control-session cookie. |
+| `automations/approvals/` | POST | Create one-time approval challenge bound to action/revision/policy/cwd. |
+| `automations/tasks/` | GET/POST | List tasks / create draft. |
+| `automations/tasks/[taskId]/` | GET/PUT/DELETE | Get/update/archive task. |
+| `automations/tasks/[taskId]/actions/` | POST | activate/resume/pause/archive. |
+| `automations/tasks/[taskId]/runs/` | GET/POST | List runs / run-now. |
+| `automations/runs/` | GET | List runs (optional `taskId`). |
+| `automations/runs/[runId]/` | GET | Run detail. |
+| `automations/runs/[runId]/session/` | GET | Read-only Automation transcript by run id. |
+| `automations/runs/[runId]/changes/` | GET | Changed-file sidecar projection for a run session. |
+| `automations/runs/[runId]/changes/file/` | GET | Single-file diff for a run session. |
+| `automations/runs/[runId]/cancel/` | POST | Best-effort cancel. |
+| `automations/runs/[runId]/promote/` | POST | Promote sealed transcript to ordinary project session. |
+| `automations/runs/[runId]/export/` | POST | Export JSONL (approval required). |
+| `automations/runs/[runId]/artifacts/` | DELETE | Delete retained artifacts; keep tombstone/audit. |
+| `automations/scheduler/status/` | GET | Leader/heartbeat/disable/repair diagnostics. |
+| `automations/scheduler/repair-lock/` | POST | Repair corrupt/stale scheduler lock. |
+| `automations/catalog/` | GET | Headless tool catalog descriptors. |

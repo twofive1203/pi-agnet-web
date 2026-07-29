@@ -732,11 +732,17 @@ export async function startRpcSession(
     // Browser tools are customTools (not extension_ui_request) and inject session
     // id from ctx.sessionManager at execute time.
     const { createBrowserToolDefinitions } = await import("./browser-tools");
+    const { createAutomationToolDefinitions } = await import("./automation-tools");
+    // Interactive sessions get browser + automation management tools.
+    // Scheduled Automation runners never use this adapter.
     const { session: inner, extensionsResult } = await createAgentSession({
       cwd,
       agentDir,
       sessionManager,
-      customTools: createBrowserToolDefinitions(),
+      customTools: [
+        ...createBrowserToolDefinitions(),
+        ...(createAutomationToolDefinitions() as ReturnType<typeof createBrowserToolDefinitions>),
+      ],
       ...(resourceLoader ? { resourceLoader } : {}),
     });
 

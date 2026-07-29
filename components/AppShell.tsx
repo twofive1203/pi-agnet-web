@@ -16,6 +16,7 @@ import { GrokUsagePanel } from "./GrokUsagePanel";
 import { SubagentPanel } from "./SubagentPanel";
 import { SettingsConfig } from "./SettingsConfig";
 import { WorkflowPanel } from "./WorkflowPanel";
+import { AutomationPanel } from "./AutomationPanel";
 import { WorkflowSessionWidget } from "./WorkflowSessionWidget";
 import type { WorkflowTaskDetail } from "@/lib/workflow-types";
 import type { WorkflowPhaseLabel } from "@/lib/workflow-guidance";
@@ -265,6 +266,8 @@ export function AppShell() {
   const [activeFileTabId, setActiveFileTabId] = useState<string | null>(null);
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
   const [rightPanelMode, setRightPanelMode] = useState<"files" | "workflow">("files");
+  const [automationOpen, setAutomationOpen] = useState(false);
+  const [automationUnread, setAutomationUnread] = useState(0);
   const [rightPanelWidth, setRightPanelWidth] = useState(MIN_RIGHT_PANEL_WIDTH);
   const [rightPanelResizing, setRightPanelResizing] = useState(false);
   const [isDesktopLayout, setIsDesktopLayout] = useState(false);
@@ -1520,6 +1523,73 @@ export function AppShell() {
         >
           SF
         </button>
+      <button
+        className={`right-panel-toggle${automationOpen ? " right-panel-toggle-active" : ""}`}
+        onClick={() => setAutomationOpen((open) => !open)}
+        title={automationOpen ? t("automation.close") : t("automation.open")}
+        aria-label={automationOpen ? t("automation.close") : t("automation.open")}
+        style={{
+          display: "flex", alignItems: "center", justifyContent: "center",
+          width: 36, height: 36, padding: 0, position: "relative",
+          background: "var(--bg-panel)", border: "none", borderLeft: "1px solid var(--border)", borderBottom: "1px solid var(--border)",
+          color: automationOpen ? "var(--accent)" : "var(--text-muted)",
+          cursor: "pointer", transition: "color 0.12s", fontSize: 11, fontWeight: 700,
+        }}
+      >
+        A
+        {automationUnread > 0 ? (
+          <span
+            aria-label={t("automation.badge")}
+            style={{
+              position: "absolute", top: 2, right: 2, minWidth: 14, height: 14, borderRadius: 7,
+              background: "var(--accent)", color: "#fff", fontSize: 9, lineHeight: "14px", textAlign: "center",
+            }}
+          >
+            {automationUnread > 9 ? "9+" : automationUnread}
+          </span>
+        ) : null}
+      </button>
+    </div>
+    {/* Keep mounted so unread badge stays live while drawer is closed. */}
+    <div
+      className="automation-drawer-overlay"
+      hidden={!automationOpen}
+      style={{
+        display: automationOpen ? "block" : "none",
+        position: "fixed",
+        top: 0,
+        right: 0,
+        bottom: 0,
+        width: "min(480px, 100vw)",
+        zIndex: 320,
+        background: "var(--bg-panel)",
+        borderLeft: "1px solid var(--border)",
+        boxShadow: "-8px 0 24px rgba(0,0,0,0.18)",
+        overflow: "auto",
+      }}
+    >
+      <AutomationPanel
+        open={automationOpen}
+        onClose={() => setAutomationOpen(false)}
+        onUnreadChange={setAutomationUnread}
+        onOpenSession={(session) => {
+          // Open/select promoted session using promotion cwd/path (not activeCwdRef synthetic empty path).
+          const now = new Date().toISOString();
+          const cwd = session.cwd || activeCwdRef.current || activeCwd || "";
+          const path = session.path || "";
+          handleSelectSession({
+            id: session.id,
+            path,
+            cwd,
+            name: session.id,
+            created: now,
+            modified: now,
+            messageCount: 0,
+            firstMessage: "",
+          });
+          setAutomationOpen(false);
+        }}
+      />
     </div>
     {modelsConfigOpen && <ModelsConfig cwd={workspaceCwd ?? null} onClose={() => { setModelsConfigOpen(false); setModelsRefreshKey((k) => k + 1); }} />}
     {skillsConfigOpen && (activeCwd ?? selectedSession?.cwd ?? newSessionCwd) && (

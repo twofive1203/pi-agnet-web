@@ -17,7 +17,7 @@ Read this index before development work. These files record project-specific con
 | Layer | Index | Status |
 | --- | --- | --- |
 | Frontend | [frontend/index.md](frontend/index.md) | Filled |
-| Backend | [backend/index.md](backend/index.md) | (To be filled) |
+| Backend | [backend/index.md](backend/index.md) | Partial (Automation) |
 | Guides | [guides/index.md](guides/index.md) | (To be filled) |
 
 ## Maintenance

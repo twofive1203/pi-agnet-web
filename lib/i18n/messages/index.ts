@@ -1,5 +1,6 @@
 import type { Locale, MessageTree } from "../types";
 import { appEn, appZh } from "./app";
+import { automationEn, automationZh } from "./automation";
 import { chatEn, chatZh } from "./chat";
 import { commonEn, commonZh } from "./common";
 import { gitEn, gitZh } from "./git";
@@ -17,6 +18,7 @@ export const zhMessages = {
   panels: panelsZh,
   workflow: workflowZh,
   settings: settingsZh,
+  automation: automationZh,
 } as const satisfies MessageTree;
 
 export const enMessages = {
@@ -28,6 +30,7 @@ export const enMessages = {
   panels: panelsEn,
   workflow: workflowEn,
   settings: settingsEn,
+  automation: automationEn,
 } as const satisfies MessageTree;
 
 export const messagesByLocale: Record<Locale, MessageTree> = {

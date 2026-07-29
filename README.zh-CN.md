@@ -10,7 +10,7 @@
 
 | 依赖 | 要求 | 说明 |
 | --- | --- | --- |
-| Node.js | 建议 Node.js 22+ | Next.js 16 / React 19 运行环境；低版本 Node 可能无法启动。 |
+| Node.js | Node.js >=22.19.0 | Next.js 16 / React 19 运行环境；低版本 Node 可能无法启动。 |
 | npm | 建议 npm 10+ | 用于 `npx`、全局安装和源码安装依赖。 |
 | pi agent 数据目录 | 默认 `~/.pi/agent/` | Web UI 会读取本机会话、模型和设置文件。 |
 | Git | 可选但建议安装 | Git 状态、分支、WorkTree 功能需要。 |
@@ -148,3 +148,7 @@ docs/         # 架构、模块、部署和运维文档
 ```
 
 更多架构、开发、部署和运行说明见 [`docs/`](docs/)；部署与发布细节见 [`docs/deployment/README.md`](docs/deployment/README.md)。
+
+## 自动化（Automation）
+
+右上角 **A** 抽屉可管理定时 Agent 任务。使用五段 cron 与 IANA 时区；仅在 Snail Pi Web 服务在线时调度；运行记录不进入普通项目会话列表。验证命令：`npm run test:automation`。详见 `docs/architecture/decisions/automation-scheduler.md`。

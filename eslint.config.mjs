@@ -3,7 +3,16 @@ import typescript from "eslint-config-next/typescript";
 
 const eslintConfig = [
   {
-    ignores: [".pi/**", ".trellis/**"],
+    ignores: [
+      ".pi/**",
+      ".trellis/**",
+      "scripts/**/*.cjs",
+      // Compiled standalone Automation worker / discovery artifacts (esbuild CJS output).
+      "lib/automation-worker-runtime.cjs",
+      "lib/automation-worker-runtime.meta.json",
+      "lib/automation-extension-discovery-runtime.cjs",
+      "lib/automation-extension-discovery-runtime.meta.json",
+    ],
   },
   ...coreWebVitals,
   ...typescript,

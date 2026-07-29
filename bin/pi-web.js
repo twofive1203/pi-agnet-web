@@ -103,4 +103,23 @@ child.stdout.on("data", (chunk) => {
   }
 });
 
-child.on("exit", (code) => process.exit(code ?? 0));
+function forwardSignal(signal) {
+  if (!child.killed) {
+    try {
+      child.kill(signal);
+    } catch {
+      // ignore
+    }
+  }
+}
+
+process.on("SIGINT", () => forwardSignal("SIGINT"));
+process.on("SIGTERM", () => forwardSignal("SIGTERM"));
+
+child.on("exit", (code, signal) => {
+  if (signal) {
+    process.exit(0);
+    return;
+  }
+  process.exit(code ?? 0);
+});

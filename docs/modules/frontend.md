@@ -95,3 +95,16 @@ Desktop split sizing uses shared `.panel-resize-handle` styles plus `--right-pan
 - **Persistence**: `localStorage["pi-locale"]`; boot script in `app/layout.tsx` sets `document.documentElement.lang` early to reduce flash.
 - **Switcher**: top-bar `EN`/`中` button in `AppShell`, and Settings → Language section.
 - **Coverage status**: shell/chat/sidebar/git/terminal/diff and shared chrome strings are wired. Large settings/models panels still contain mixed hard-coded Chinese/English copy and should continue migrating onto `settings.*` / `panels.*` keys.
+
+## Automation UI
+
+| File | Purpose |
+| --- | --- |
+| `components/AutomationPanel.tsx` | Global Automation drawer: task list/detail/editor, runs, inbox. |
+| `components/AutomationTaskEditor.tsx` | Explicit Save draft / Review & activate editor. |
+| `components/AutomationToolPicker.tsx` | Dimensional risk tool picker. |
+| `components/AutomationRunList.tsx` | Run history list. |
+| `components/AutomationRunViewer.tsx` | Read-only transcript/promote viewer (no RPC wrapper). |
+| `components/AutomationInboxBadge.tsx` | Unread badge helper. |
+| `hooks/useAutomations.ts` | Control session, polling, approval, lifecycle actions. |
+| `lib/i18n/messages/automation.ts` | zh/en Automation copy. |

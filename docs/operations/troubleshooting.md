@@ -43,3 +43,10 @@ Use `scripts/start-pi-web-proxy.sh` or `scripts/start-pi-web-proxy.ps1` when pro
 - If multiple Snail Pi sessions request a tab at once, the extension popup lists each pending session — pick the intended one. A bare “global pending” is only used when exactly one request is open.
 - `npm run test:runtime` protects production packaging invariants. In particular, `ws` must remain in Next's `serverExternalPackages`; bundling it replaces the optional `bufferutil` import with an empty module and crashes masked Chrome-extension frames with `TypeError: b.unmask is not a function`.
 - Still headed-Chrome-only (not covered by the Node artifact harness): real `activeTab` user-gesture injection, live viewport screenshots/focus restore, MV3 service-worker kill/restart against a real browser process, DevTools debugger contention with a real `chrome.debugger` attach, cross-origin navigation suspension on a live tab, and end-to-end CDP event delivery from an actual page.
+
+## Automation
+
+- Scheduler unavailable: check `/api/automations/scheduler/status` after issuing a control session; corrupt `scheduler.lock` needs repair-lock with confirmation.
+- Task blocked reauthorization_required: tool/extension digest or schema drifted — re-approve authority.
+- Runs missing from sidebar: expected; open Automation drawer. Promote sealed runs to continue in a normal session.
+- Non-loopback access denied: v1 is local-only.

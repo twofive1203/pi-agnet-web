@@ -43,6 +43,23 @@ function createBuildEnv(baseEnv, homeDir) {
 
 ensureBuildHome(buildHome);
 
+// Build stable Automation worker + extension-discovery artifacts first so
+// next start / published runtime can fork them deterministically (never Next-bundled).
+const workerScripts = [
+  "build-automation-worker.mjs",
+  "build-automation-discovery-worker.mjs",
+];
+for (const script of workerScripts) {
+  const workerBuild = spawnSync(process.execPath, [join(projectRoot, "scripts", script)], {
+    cwd: projectRoot,
+    stdio: "inherit",
+    env: createBuildEnv(process.env, buildHome),
+  });
+  if ((workerBuild.status ?? 1) !== 0) {
+    process.exit(workerBuild.status ?? 1);
+  }
+}
+
 const result = spawnSync(
   process.execPath,
   [join(projectRoot, "node_modules", "next", "dist", "bin", "next"), "build", "--webpack"],

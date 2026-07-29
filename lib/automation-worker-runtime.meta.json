@@ -1,0 +1,7 @@
+{
+  "builtAt": "2026-07-28T23:26:33.265Z",
+  "entry": "lib/automation-worker-host.ts",
+  "outfile": "lib/automation-worker-runtime.cjs",
+  "size": 86278,
+  "sha256": "381135bb443fa01a3d0aea1ea58e78c644e857e6f1142ae831e38edab649fa9c"
+}

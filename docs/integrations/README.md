@@ -16,6 +16,7 @@ See `package.json` for exact versions.
 | `@xterm/xterm`, `@xterm/addon-fit` | Browser-side Web Terminal rendering and sizing. |
 | `@lydell/node-pty` | Server-side local PTY process for interactive Web Terminal sessions; selected because the original `node-pty` failed under the local Node 26 runtime. |
 | `ws` | Loopback browser-bridge WebSocket server used by the Chrome tab debugging extension. |
+| `cron-parser` | Five-field cron parsing for Scheduled Agent Automation (`lib/automation-schedule.ts`). |
 | `extensions/chrome-tab-debug` | First-party Chrome MV3 extension (unpacked) for temporary tab binding and restricted DOM/debug tools. |
 
 ## pi SDK Documentation
@@ -146,3 +147,10 @@ Agent discovery uses the installed pi-subagents extension's public management
 tool surface (not filesystem scanning). When the extension is unavailable or
 its `list` output cannot be parsed, the API returns a browser-safe diagnostic
 and still shows settings-only override names so stale entries can be cleared.
+
+## Scheduled Agent Automation
+
+- Domain libraries live under `lib/automation-*.ts` and are independent of SnFlow.
+- Headless runs load the pi SDK (`@earendil-works/pi-coding-agent`) with an approved-extension allowlist and Automation-owned reviewed web tool adapters (`lib/automation-reviewed-web-tools.ts` + `lib/automation-network-policy.ts`).
+- Interactive sessions may inject the `automation_tasks` tool; scheduled-origin sessions must never load it.
+- Network egress for Automation uses DNS + connect-IP checks, redirect revalidation, and streaming size/time limits — not unrestricted `fetch`.
