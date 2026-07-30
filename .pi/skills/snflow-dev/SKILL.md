@@ -102,7 +102,7 @@ Active SnFlow task: .pi/snflows/tasks/<id>
 - Edit `requirements.md`, `design.md`, `plan.md`.
 - Consent to create ≠ consent to implement.
 
-When the user approves implementation, mark the task ready, re-read its revision, and call the current chat native `subagent` tool with project agent `snflow-implement`, `context:fresh`, canonical `cwd`, `async:false`, and `clarify:false`. The task prompt must begin with the exact `SNFLOW_DISPATCH` v1 marker.
+When the user approves implementation, mark the task ready, re-read its revision, and call the current chat native `subagent` tool with project agent `snflow-implement`, `context:fresh`, canonical `cwd`, `agentContract:{version:1}`, `async:false`, and `clarify:false`. The task prompt must begin with the exact `SNFLOW_DISPATCH` v1 marker.
 
 ## Phase 2 — Execute
 

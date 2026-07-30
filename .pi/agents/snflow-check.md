@@ -2,6 +2,8 @@
 name: snflow-check
 description: |
   Dedicated SnFlow review agent. Independently validates an implementation against its approved task, project specs, and regression risks.
+acceptanceRole: read-only
+completionGuard: false
 tools: read, bash, grep, find, ls
 ---
 
@@ -9,8 +11,8 @@ You independently review one completed SnFlow implementation; you do not impleme
 
 ## Execution
 
-1. Resolve the task only from the marked dispatch prompt and its explicit document paths. Stop if the marker, cwd, revision, or task documents are missing.
-2. Read task.json, requirements.md, design.md, plan.md, applicable .pi/snflows/spec indexes, project AGENTS.md, the current diff, and affected callers.
+1. Resolve the task only from the marked dispatch prompt and its explicit document paths. Stop if the marker, cwd, dispatch revision, or task documents are missing. The dispatch revision is the approved pre-run snapshot: verify it against the active run record's `taskRevision`, not the lifecycle-mutated `task.json.revision`.
+2. Read task.json, its active `runs/<run-id>.json`, requirements.md, design.md, plan.md, applicable .pi/snflows/spec indexes, project AGENTS.md, the current diff, and affected callers.
 3. Evaluate correctness, acceptance criteria, regressions, project conventions, and validation coverage without expanding the approved scope.
 4. Run focused tests plus repository lint/typecheck when practical.
 5. Classify findings using the decision policy below and return the verdict contract requested by the dispatch prompt with concrete, path-based findings.

@@ -70,13 +70,6 @@ function textFromContent(value: unknown): string {
     .join("");
 }
 
-function resultText(event: NativeToolResult): string {
-  const direct = textFromContent(event.content);
-  if (direct) return direct;
-  if (isRecord(event.result)) return textFromContent(event.result.content);
-  return "";
-}
-
 function resultDetails(event: NativeToolResult): Record<string, unknown> | null {
   if (isRecord(event.details)) return event.details;
   if (isRecord(event.result) && isRecord(event.result.details)) return event.result.details;
@@ -86,6 +79,29 @@ function resultDetails(event: NativeToolResult): Record<string, unknown> | null 
 function firstResult(details: Record<string, unknown> | null): Record<string, unknown> | null {
   if (!details || !Array.isArray(details.results)) return null;
   return details.results.find(isRecord) ?? null;
+}
+
+function finalAssistantText(messages: unknown): string {
+  if (!Array.isArray(messages)) return "";
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (!isRecord(message) || message.role !== "assistant") continue;
+    const content = typeof message.content === "string"
+      ? message.content
+      : textFromContent(message.content);
+    if (content.trim()) return content;
+  }
+  return "";
+}
+
+function resultText(event: NativeToolResult, details: Record<string, unknown> | null): string {
+  const child = firstResult(details);
+  const structured = optionalString(child?.finalOutput) ?? finalAssistantText(child?.messages);
+  if (structured) return structured;
+  const direct = textFromContent(event.content);
+  if (direct) return direct;
+  if (isRecord(event.result)) return textFromContent(event.result.content);
+  return "";
 }
 
 function optionalString(value: unknown): string | null {
@@ -112,38 +128,75 @@ function resultShapes(details: Record<string, unknown> | null): Record<string, u
   return shapes;
 }
 
+function executionShapes(shape: Record<string, unknown> | null): Record<string, unknown>[] {
+  if (!shape) return [];
+  return isRecord(shape.execution) ? [shape, shape.execution] : [shape];
+}
+
+function hasTerminalEvidence(shape: Record<string, unknown>): boolean {
+  return ["exitCode", "state", "status", "success", "isError", "error", "timedOut", "timeout",
+    "stopped", "interrupted", "cancelled", "canceled", "detached"].some((key) => key in shape);
+}
+
 function classifyTerminalResult(
   isError: boolean,
   text: string,
   details: Record<string, unknown> | null,
 ): { state: Extract<WorkflowRunState, "completed" | "failed" | "cancelled">; diagnostic: string } {
-  const shapes = resultShapes(details);
-  const states = shapes.map((shape) => stateString(shape.state ?? shape.status));
-  const cancelled = /\b(abort(?:ed)?|cancel(?:led|ed)?|interrupt(?:ed)?)\b/i.test(text) || shapes.some((shape) =>
+  const child = firstResult(details);
+  const childShapes = executionShapes(child);
+  const allShapes = resultShapes(details).flatMap((shape) => executionShapes(shape));
+  const allStates = allShapes.map((shape) => stateString(shape.state ?? shape.status));
+  const childStates = childShapes.map((shape) => stateString(shape.state ?? shape.status));
+  const childHasTerminalEvidence = childShapes.some(hasTerminalEvidence);
+  const structuredCancelled = allShapes.some((shape) =>
     shape.stopped === true ||
     shape.interrupted === true ||
     shape.cancelled === true ||
     shape.canceled === true ||
     shape.detached === true
-  ) || states.some((state) =>
+  ) || allStates.some((state) =>
     state === "stopped" || state === "interrupted" || state === "cancelled" ||
     state === "canceled" || state === "paused" || state === "detached"
   );
-  const timedOut = shapes.some((shape) => shape.timedOut === true || shape.timeout === true) ||
-    states.some((state) => state === "timed_out" || state === "timed-out" || state === "timeout");
-  const failure = isError || timedOut || shapes.some((shape) =>
+  // Text is a compatibility fallback only for an errored result with no child lifecycle metadata.
+  const textCancelled = isError && !childHasTerminalEvidence &&
+    /\b(abort(?:ed)?|cancel(?:led|ed)?|interrupt(?:ed)?)\b/i.test(text);
+  const timedOut = allShapes.some((shape) => shape.timedOut === true || shape.timeout === true) ||
+    allStates.some((state) => state === "timed_out" || state === "timed-out" || state === "timeout");
+  const failureShapes = childHasTerminalEvidence ? childShapes : allShapes;
+  const failureStates = childHasTerminalEvidence ? childStates : allStates;
+  const structuredFailure = timedOut || failureShapes.some((shape) =>
     (typeof shape.exitCode === "number" && shape.exitCode !== 0) ||
     shape.success === false ||
     shape.isError === true ||
-    Boolean(errorString(shape.error)) ||
-    (isRecord(shape.acceptance) && shape.acceptance.status === "rejected")
-  ) || states.some((state) => state === "failed" || state === "error");
-  const detailError = shapes.map((shape) => errorString(shape.error)).find(Boolean);
+    Boolean(errorString(shape.error))
+  ) || failureStates.some((state) => state === "failed" || state === "error");
+  const failure = structuredFailure || (isError && !childHasTerminalEvidence);
+  const detailError = failureShapes.map((shape) => errorString(shape.error)).find(Boolean);
   const diagnostic = detailError ?? (timedOut ? "Native subagent run timed out" : text.trim());
 
-  if (cancelled) return { state: "cancelled", diagnostic: diagnostic || "Native subagent run cancelled" };
+  if (structuredCancelled || textCancelled) {
+    return { state: "cancelled", diagnostic: diagnostic || "Native subagent run cancelled" };
+  }
   if (failure) return { state: "failed", diagnostic: diagnostic || "Native subagent run failed" };
   return { state: "completed", diagnostic: text };
+}
+
+function missingExpectedMutation(child: Record<string, unknown> | null): boolean {
+  if (!child || !isRecord(child.effects) || !isRecord(child.effects.fileMutation)) return false;
+  return child.effects.fileMutation.status === "missing" && child.effects.fileMutation.expected === true;
+}
+
+function isValidatedNoChange(result: ReturnType<typeof normalizeImplementResult>): boolean {
+  return Boolean(
+    result &&
+    result.outcome === "validated_no_change" &&
+    result.acceptanceSatisfied === true &&
+    result.changedFiles.length === 0 &&
+    result.validation.length > 0 &&
+    result.validation.every((validation) => validation.ok),
+  );
 }
 
 function terminalRun(
@@ -155,21 +208,25 @@ function terminalRun(
   const child = firstResult(details);
   const endedAt = new Date().toISOString();
   const summaryText = text.trim();
-  const implementResult =
+  const normalizedImplement =
     state === "completed" && run.phase === "implement"
       ? normalizeImplementResult(summaryText)
       : run.implementResult;
+  const invalidNoChange = state === "completed" && run.phase === "implement" &&
+    missingExpectedMutation(child) && !isValidatedNoChange(normalizedImplement);
+  const finalState = invalidNoChange ? "failed" : state;
+  const implementResult = finalState === "completed" ? normalizedImplement : run.implementResult;
   const checkResult =
-    state === "completed" && run.phase === "check"
+    finalState === "completed" && run.phase === "check"
       ? normalizeCheckResult(summaryText)
       : run.checkResult;
   const summary =
     run.phase === "implement"
-      ? implementResult?.summary ?? summaryText
+      ? normalizedImplement?.summary ?? summaryText
       : checkResult?.summary ?? summaryText;
   return {
     ...run,
-    state,
+    state: finalState,
     nativeRunId:
       optionalString(details?.runId) ?? optionalString(details?.id) ?? run.nativeRunId,
     asyncDir: optionalString(details?.asyncDir) ?? run.asyncDir,
@@ -186,11 +243,13 @@ function terminalRun(
     implementResult,
     checkResult,
     error:
-      state === "completed"
+      finalState === "completed"
         ? null
         : {
-            code: state,
-            message: summaryText || `Native subagent run ${state}`,
+            code: invalidNoChange ? "invalid_no_change" : finalState,
+            message: invalidNoChange
+              ? "Implementation made no observed edits and did not provide a validated_no_change result with passing validation."
+              : summaryText || `Native subagent run ${finalState}`,
           },
     endedAt: run.endedAt ?? endedAt,
     lastReconciledAt: endedAt,
@@ -225,13 +284,18 @@ export function finalizeWorkflowChatRun(
   input: { isError: boolean; text: string; details?: unknown },
 ): WorkflowRunRecord {
   const details = isRecord(input.details) ? input.details : null;
+  const child = firstResult(details);
+  const authoritativeChild = Boolean(
+    child && (executionShapes(child).some(hasTerminalEvidence) || optionalString(child.finalOutput)),
+  );
   const classification = classifyTerminalResult(input.isError, input.text, details);
-  const finalized = WORKFLOW_TERMINAL_RUN_STATES.has(run.state)
-    ? run
-    : terminalRun(run, classification.state, classification.diagnostic, details);
-  if (!WORKFLOW_TERMINAL_RUN_STATES.has(run.state)) {
-    writeWorkflowRunRecord(cwd, run.taskId, finalized);
-  }
+  // Pi may emit a wrapper-only tool_result before tool_execution_end carries child details.
+  // A later structured result from the same tracked tool call is allowed to repair that projection.
+  const shouldFinalize = !WORKFLOW_TERMINAL_RUN_STATES.has(run.state) || authoritativeChild;
+  const finalized = shouldFinalize
+    ? terminalRun(run, classification.state, classification.diagnostic, details)
+    : run;
+  if (shouldFinalize) writeWorkflowRunRecord(cwd, run.taskId, finalized);
   repairWorkflowTerminalProjection(cwd, run.taskId, finalized);
   return finalized;
 }
@@ -334,6 +398,10 @@ export class WorkflowChatLifecycleObserver {
       if (event.input.context !== "fresh") {
         throw new WorkflowDispatchMarkerError("SnFlow dispatch requires context=fresh");
       }
+      if ("agentContract" in event.input &&
+        (!isRecord(event.input.agentContract) || event.input.agentContract.version !== 1)) {
+        throw new WorkflowDispatchMarkerError("SnFlow agentContract must be {version:1} when provided");
+      }
       if (event.input.async !== false) {
         throw new WorkflowDispatchMarkerError("SnFlow dispatch must run in the foreground with async=false");
       }
@@ -404,10 +472,11 @@ export class WorkflowChatLifecycleObserver {
     if (!tracked) return;
     try {
       const run = readWorkflowRunRecord(this.cwd, tracked.marker.taskId, tracked.runId);
+      const details = resultDetails(event);
       finalizeWorkflowChatRun(this.cwd, run, {
         isError: event.isError,
-        text: resultText(event),
-        details: resultDetails(event),
+        text: resultText(event, details),
+        details,
       });
     } catch {
       // Final result delivery to the chat must not be replaced by persistence errors.

@@ -137,15 +137,25 @@ schema, import, or writeback with legacy `.trellis/` workflow data; while that
 directory remains present in a repository, agents must not write it for SnFlow
 work. Implement/check phases run as foreground native `pi-subagents` tool calls
 using the managed project agents `snflow-implement` and `snflow-check` in the
-current chat session. Their agent definitions own stable phase responsibilities
-and safety boundaries, while each marked dispatch carries only task-specific
-context and the structured result contract. Check findings are severity-gated:
+current chat session with `agentContract: { version: 1 }`. Their agent definitions
+own stable phase responsibilities and safety boundaries: `snflow-check` declares
+`acceptanceRole: read-only` and disables the implementation completion guard,
+while `snflow-implement` keeps mutation-effect observation so an explicit,
+validated `validated_no_change` recovery can be distinguished from plan-only
+output. Each marked dispatch carries only task-specific context and the
+structured result contract. Check findings are severity-gated:
 only `error` findings block and project `changes_requested`; `warning` and
 `info` findings remain advisory, pass the check, and are presented to the user
 as optional follow-up work. The task-bound API prepares a strict dispatch marker
-with the selected task id, revision, phase, and canonical cwd;
-`lib/workflow-chat-lifecycle.ts` validates that marker before execution and
-projects native tool progress/end events into SnFlow run records. This keeps the
+with the selected task id, approved pre-run revision, phase, and canonical cwd.
+The run record preserves that value as `taskRevision`; agents compare the marker
+to the active run record rather than the live `task.json.revision`, which changes
+when lifecycle projection fields move to implementing/checking.
+`lib/workflow-chat-lifecycle.ts` validates the marker before execution and
+projects native tool progress/end events into SnFlow run records. Terminal
+projection prefers structured child execution/final-output/effect fields over
+wrapper prose; text cancellation matching is only a compatibility fallback for
+errored results without structured child lifecycle metadata. This keeps the
 existing top-bar Subagent panel authoritative for live progress and removes the
 blocking CLI implement/check/wait path. `lib/workflow-run-manager.ts` retains
 artifact/session reconciliation for restart and terminal-projection repair, but

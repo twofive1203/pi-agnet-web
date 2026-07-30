@@ -28,7 +28,7 @@ import { reconcileWorkflowRun } from "../lib/workflow-run-manager";
 import {
   getSnflowChatLifecycleLoadDiagnostic,
   isSnflowLifecycleRequired,
-} from "../lib/rpc-manager";
+} from "../lib/workflow-lifecycle-load";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -112,6 +112,7 @@ try {
         agent: "snflow-implement",
         task: "Inspect this code without a SnFlow marker",
         context: "fresh",
+        agentContract: { version: 1 },
         cwd: project,
         async: false,
         clarify: false,
@@ -146,6 +147,7 @@ try {
         agent: "snflow-implement",
         task: staleMarker,
         context: "fresh",
+        agentContract: { version: 1 },
         cwd: project,
         async: false,
         clarify: false,
@@ -169,6 +171,7 @@ try {
           cwd: otherProject,
         }),
         context: "fresh",
+        agentContract: { version: 1 },
         cwd: otherProject,
         async: false,
         clarify: false,
@@ -186,6 +189,7 @@ try {
         agent: "worker",
         task: phasePrompt(project, first, "implement"),
         context: "fresh",
+        agentContract: { version: 1 },
         cwd: project,
         async: false,
         clarify: false,
@@ -204,6 +208,7 @@ try {
         agent: "snflow-implement",
         task: phasePrompt(project, first, "implement"),
         context: "fresh",
+        agentContract: { version: 1 },
         cwd: project,
         async: false,
         clarify: false,
@@ -218,6 +223,8 @@ try {
   const activeRun = active.runs.find((run) => run.id === active.activeRunId);
   assert(activeRun?.parentSessionId === "chat-session", "parent chat session persisted");
   assert(activeRun?.parentToolCallId === "worker-call", "parent tool call persisted");
+  assert(activeRun?.taskRevision === first.revision, "run preserves the approved dispatch revision");
+  assert(active.revision !== first.revision, "live task revision changes when lifecycle state starts");
 
   const second = readyTask(project, "Concurrent worker", "concurrent-worker");
   const concurrent = observer.beforeToolCall(
@@ -228,6 +235,7 @@ try {
         agent: "snflow-implement",
         task: phasePrompt(project, second, "implement"),
         context: "fresh",
+        agentContract: { version: 1 },
         cwd: project,
         async: false,
         clarify: false,
@@ -259,9 +267,17 @@ try {
     {
       toolCallId: "worker-call",
       toolName: "subagent",
-      content: [{ type: "text", text: '```json\n{"summary":"implemented","changedFiles":["src/a.ts"],"validation":[],"residualRisks":[]}\n```' }],
-      details: { results: [{ model: "native/model", thinking: "medium", sessionFile: "/tmp/child.jsonl" }] },
-      isError: false,
+      content: [{ type: "text", text: "Wrapper mentions cancel test, aborted request test, context.Canceled, and interrupt handler" }],
+      details: { results: [{
+        exitCode: 0,
+        execution: { status: "completed", success: true, exitCode: 0 },
+        acceptance: { status: "checked" },
+        finalOutput: '```json\n{"summary":"implemented cancel test, aborted request test, and interrupt handler safely","outcome":"changed","acceptanceSatisfied":true,"changedFiles":["src/a.ts"],"validation":[],"residualRisks":[]}\n```',
+        model: "native/model",
+        thinking: "medium",
+        sessionFile: "/tmp/child.jsonl",
+      }] },
+      isError: true,
     },
     "chat-session",
   );
@@ -281,6 +297,7 @@ try {
         agent: "snflow-check",
         task: phasePrompt(project, implemented, "check"),
         context: "fresh",
+        agentContract: { version: 1 },
         cwd: project,
         async: false,
         clarify: false,
@@ -293,9 +310,14 @@ try {
     {
       toolCallId: "reviewer-call",
       toolName: "subagent",
-      content: [{ type: "text", text: '```json\n{"verdict":"pass","summary":"checked","findings":[],"validation":[]}\n```' }],
-      details: {},
-      isError: false,
+      content: [{ type: "text", text: "Subagent completed without making edits for an implementation task." }],
+      details: { results: [{
+        exitCode: 0,
+        execution: { status: "completed", success: true, exitCode: 0 },
+        effects: { fileMutation: { status: "not-applicable", expected: false, attempted: false } },
+        finalOutput: '```json\n{"verdict":"pass","summary":"checked","findings":[],"validation":[]}\n```',
+      }] },
+      isError: true,
     },
     "chat-session",
   );
@@ -315,6 +337,7 @@ try {
           agent: "snflow-implement",
           task: phasePrompt(cancelProject, cancelTask, "implement"),
           context: "fresh",
+          agentContract: { version: 1 },
           cwd: cancelProject,
           async: false,
           clarify: false,
@@ -339,14 +362,60 @@ try {
     rmSync(cancelProject, { recursive: true, force: true });
   }
 
-  const marker = parseWorkflowDispatchMarker(phasePrompt(project, checked, "check"));
+  const orderedProject = mkdtempSync(path.join(tmpdir(), "snflow-chat-event-order-"));
+  try {
+    const orderedObserver = new WorkflowChatLifecycleObserver(orderedProject);
+    const orderedTask = readyTask(orderedProject, "Event order", "event-order");
+    const accepted = orderedObserver.beforeToolCall({
+      toolCallId: "ordered-call",
+      toolName: "subagent",
+      input: {
+        agent: "snflow-implement",
+        task: phasePrompt(orderedProject, orderedTask, "implement"),
+        context: "fresh",
+        cwd: orderedProject,
+        async: false,
+        clarify: false,
+      },
+    }, "ordered-session");
+    assert(!accepted.block, "legacy marked dispatch without agentContract remains compatible");
+    orderedObserver.onToolResult({
+      toolCallId: "ordered-call",
+      toolName: "subagent",
+      content: [{ type: "text", text: "Operation cancelled by wrapper" }],
+      isError: true,
+    }, "ordered-session");
+    assert(getWorkflowTaskDetail(orderedProject, orderedTask.id).status === "cancelled", "wrapper-only event is provisionally terminal");
+    orderedObserver.onToolResult({
+      toolCallId: "ordered-call",
+      toolName: "subagent",
+      result: {
+        content: [{ type: "text", text: "wrapper" }],
+        details: { results: [{
+          exitCode: 0,
+          execution: { status: "completed", success: true, exitCode: 0 },
+          finalOutput: '```json\n{"summary":"completed after wrapper","outcome":"changed","acceptanceSatisfied":true,"changedFiles":["src/a.ts"],"validation":[],"residualRisks":[]}\n```',
+        }] },
+      },
+      isError: false,
+    }, "ordered-session");
+    assert(getWorkflowTaskDetail(orderedProject, orderedTask.id).status === "review_ready", "later structured child result repairs wrapper projection");
+  } finally {
+    rmSync(orderedProject, { recursive: true, force: true });
+  }
+
+  const checkedPrompt = phasePrompt(project, checked, "check");
+  const marker = parseWorkflowDispatchMarker(checkedPrompt);
   assert(marker?.taskId === checked.id && marker.phase === "check", "phase prompt starts with marker");
+  assert(checkedPrompt.includes("activeRunId -> runs/<run-id>.json taskRevision"), "worker prompt explains active-run revision validation");
 
   const detailCases = [
     { id: "child-failed", details: { results: [{ exitCode: 1, error: "child failed" }] }, state: "failed", status: "failed" },
     { id: "child-stopped", details: { results: [{ exitCode: 0, stopped: true }] }, state: "cancelled", status: "cancelled" },
     { id: "child-timeout", details: { results: [{ exitCode: 1, timedOut: true }] }, state: "failed", status: "failed" },
     { id: "outer-interrupted", details: { interrupted: true, results: [{ exitCode: 0 }] }, state: "cancelled", status: "cancelled" },
+    { id: "invalid-no-change", details: { results: [{ exitCode: 0, effects: { fileMutation: { status: "missing", expected: true, attempted: false } } }] }, state: "failed", status: "failed" },
+    { id: "v1-acceptance-separate", details: { results: [{ exitCode: 0, execution: { status: "completed", success: true, exitCode: 0 }, acceptance: { status: "rejected" } }] }, state: "completed", status: "review_ready" },
   ] as const;
   for (const fixture of detailCases) {
     const fixtureProject = mkdtempSync(path.join(tmpdir(), `snflow-${fixture.id}-`));
@@ -360,6 +429,7 @@ try {
           agent: "snflow-implement",
           task: phasePrompt(fixtureProject, fixtureTask, "implement"),
           context: "fresh",
+          agentContract: { version: 1 },
           cwd: fixtureProject,
           async: false,
           clarify: false,
@@ -402,14 +472,18 @@ try {
     const accepted = repairObserver.beforeToolCall({
       toolCallId: "repair-call",
       toolName: "subagent",
-      input: { agent: "snflow-implement", task: phasePrompt(repairProject, repairTask, "implement"), context: "fresh", cwd: repairProject, async: false, clarify: false },
+      input: { agent: "snflow-implement", task: phasePrompt(repairProject, repairTask, "implement"), context: "fresh", agentContract: { version: 1 }, cwd: repairProject, async: false, clarify: false },
     }, "repair-session");
     assert(!accepted.block, "repair fixture starts");
     repairObserver.onToolResult({
       toolCallId: "repair-call",
       toolName: "subagent",
-      content: [{ type: "text", text: '{"summary":"done","changedFiles":[],"validation":[],"residualRisks":[]}' }],
-      details: { results: [{ exitCode: 0 }] },
+      content: [{ type: "text", text: "completion guard wrapper" }],
+      details: { results: [{
+        exitCode: 0,
+        effects: { fileMutation: { status: "missing", expected: true, attempted: false } },
+        finalOutput: '```json\n{"summary":"already satisfied","outcome":"validated_no_change","acceptanceSatisfied":true,"changedFiles":[],"validation":[{"command":"npm test","ok":true,"summary":"pass"}],"residualRisks":[]}\n```',
+      }] },
       isError: false,
     }, "repair-session");
     const completedRun = getWorkflowTaskDetail(repairProject, repairTask.id).runs.find((run) => run.parentToolCallId === "repair-call");
@@ -469,6 +543,9 @@ try {
   assert(managedGuidance.includes("SNFLOW_DISPATCH"), "managed guidance documents direct marker");
   assert(managedGuidance.includes("snflow-implement"), "managed guidance routes implementation to project agent");
   assert(managedGuidance.includes("snflow-check"), "managed guidance routes review to project agent");
+  assert(managedGuidance.includes("agentContract: { version: 1 }"), "managed guidance requires generic execution projections");
+  assert(managedGuidance.includes("acceptanceRole: read-only"), "managed check agent declares its read-only acceptance role");
+  assert(managedGuidance.includes("completionGuard: false"), "managed check agent disables the implementation completion guard");
   assert(managedGuidance.includes("Default to ordinary direct development"), "managed guidance defaults to direct work");
   assert(managedGuidance.includes("explicitly asks to use SnFlow"), "managed skill requires explicit opt-in");
   assert(managedGuidance.includes("Warnings and informational findings must still produce `pass`"), "managed check agent keeps advisory findings non-blocking");

@@ -6,7 +6,7 @@
  * Bump SNFLOW_ASSETS_VERSION (SemVer) whenever any managed file content changes.
  */
 
-export const SNFLOW_ASSETS_VERSION = "1.6.0";
+export const SNFLOW_ASSETS_VERSION = "1.7.0";
 
 export interface SnflowAssetFile {
   /** Project-relative path using forward slashes. */
@@ -292,6 +292,7 @@ function directDispatch(cwd: string, task: { id: string; title: string; revision
     "- agent: " + agent,
     "- context: fresh",
     "- cwd: " + cwd,
+    "- agentContract: { version: 1 }",
     "- async: false",
     "- clarify: false",
     "- task first line must be exactly:",
@@ -404,7 +405,7 @@ function buildGuidance(cwd: string): string | null {
       \`Edit docs only through the canonical files: \${base}/requirements.md, \${base}/design.md, \${base}/plan.md\`,
       "Do not create or update task.md as the task authority.",
       "When the user approves implementation, mark the task ready, re-read task.json for its resulting revision, then dispatch the project agent snflow-implement.",
-      "Use context:fresh, this canonical cwd, async:false and clarify:false. The task prompt must begin with the SNFLOW_DISPATCH v1 marker containing the resulting revision.",
+      "Use context:fresh, this canonical cwd, agentContract:{version:1}, async:false and clarify:false. The task prompt must begin with the SNFLOW_DISPATCH v1 marker containing the resulting revision.",
       "Approval to implement means dispatch snflow-implement; the main session remains the orchestrator.",
       "The panel Mark Ready action or scripts/snflow-task.ts start may perform the planning-to-ready transition.",
       "Do not start large implementation before the task is ready.",
@@ -644,7 +645,7 @@ Active SnFlow task: .pi/snflows/tasks/<id>
 - Edit \`requirements.md\`, \`design.md\`, \`plan.md\`.
 - Consent to create ≠ consent to implement.
 
-When the user approves implementation, mark the task ready, re-read its revision, and call the current chat native \`subagent\` tool with project agent \`snflow-implement\`, \`context:fresh\`, canonical \`cwd\`, \`async:false\`, and \`clarify:false\`. The task prompt must begin with the exact \`SNFLOW_DISPATCH\` v1 marker.
+When the user approves implementation, mark the task ready, re-read its revision, and call the current chat native \`subagent\` tool with project agent \`snflow-implement\`, \`context:fresh\`, canonical \`cwd\`, \`agentContract:{version:1}\`, \`async:false\`, and \`clarify:false\`. The task prompt must begin with the exact \`SNFLOW_DISPATCH\` v1 marker.
 
 ## Phase 2 — Execute
 
@@ -702,6 +703,7 @@ const AGENT_IMPLEMENT = `---
 name: snflow-implement
 description: |
   Dedicated SnFlow implementation agent. Executes an approved task from its marked dispatch context and returns validated, reviewable changes.
+completionGuard: true
 tools: read, write, edit, bash, grep, find, ls
 ---
 
@@ -709,11 +711,11 @@ You implement one approved SnFlow task directly; you are not the workflow orches
 
 ## Execution
 
-1. Resolve the task only from the marked dispatch prompt and its explicit document paths. Stop if the marker, cwd, revision, or task documents are missing.
-2. Read task.json, requirements.md, design.md, plan.md, applicable .pi/snflows/spec indexes, and project AGENTS.md before editing.
+1. Resolve the task only from the marked dispatch prompt and its explicit document paths. Stop if the marker, cwd, dispatch revision, or task documents are missing. The dispatch revision is the approved pre-run snapshot: verify it against the active run record's \`taskRevision\`, not the lifecycle-mutated \`task.json.revision\`.
+2. Read task.json, its active \`runs/<run-id>.json\`, requirements.md, design.md, plan.md, applicable .pi/snflows/spec indexes, and project AGENTS.md before editing.
 3. Inspect affected code and callers, implement the approved scope using existing patterns, and keep the diff reviewable.
 4. Run focused tests plus repository lint/typecheck when practical.
-5. Return the result contract requested by the dispatch prompt, including changed files, validation, and residual risks.
+5. Return the result contract requested by the dispatch prompt, including outcome, acceptance satisfaction, changed files, validation, and residual risks. Use \`validated_no_change\` only when the existing diff already satisfies every acceptance criterion and focused validation passes; otherwise make the required edits or report a blocker.
 
 ## Boundaries
 
@@ -726,6 +728,8 @@ const AGENT_CHECK = `---
 name: snflow-check
 description: |
   Dedicated SnFlow review agent. Independently validates an implementation against its approved task, project specs, and regression risks.
+acceptanceRole: read-only
+completionGuard: false
 tools: read, bash, grep, find, ls
 ---
 
@@ -733,8 +737,8 @@ You independently review one completed SnFlow implementation; you do not impleme
 
 ## Execution
 
-1. Resolve the task only from the marked dispatch prompt and its explicit document paths. Stop if the marker, cwd, revision, or task documents are missing.
-2. Read task.json, requirements.md, design.md, plan.md, applicable .pi/snflows/spec indexes, project AGENTS.md, the current diff, and affected callers.
+1. Resolve the task only from the marked dispatch prompt and its explicit document paths. Stop if the marker, cwd, dispatch revision, or task documents are missing. The dispatch revision is the approved pre-run snapshot: verify it against the active run record's \`taskRevision\`, not the lifecycle-mutated \`task.json.revision\`.
+2. Read task.json, its active \`runs/<run-id>.json\`, requirements.md, design.md, plan.md, applicable .pi/snflows/spec indexes, project AGENTS.md, the current diff, and affected callers.
 3. Evaluate correctness, acceptance criteria, regressions, project conventions, and validation coverage without expanding the approved scope.
 4. Run focused tests plus repository lint/typecheck when practical.
 5. Classify findings using the decision policy below and return the verdict contract requested by the dispatch prompt with concrete, path-based findings.

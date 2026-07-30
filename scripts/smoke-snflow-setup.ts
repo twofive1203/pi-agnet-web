@@ -220,6 +220,11 @@ try {
     (diagnostic) => diagnostic.category === ts.DiagnosticCategory.Error,
   );
   assert(extensionErrors.length === 0, `extension parse errors: ${extensionErrors.map((item) => item.code).join(", ")}`);
+  const installedCheckAgent = readFileSync(path.join(root, ".pi", "agents", "snflow-check.md"), "utf8");
+  assert(installedCheckAgent.includes("acceptanceRole: read-only"), "check agent must declare read-only acceptance");
+  assert(installedCheckAgent.includes("completionGuard: false"), "check agent must disable implementation completion guard");
+  const installedImplementAgent = readFileSync(path.join(root, ".pi", "agents", "snflow-implement.md"), "utf8");
+  assert(installedImplementAgent.includes("completionGuard: true"), "implement agent must retain mutation-effect observation");
 
   const webuiRoot = resolveWebuiRoot();
   for (const asset of SNFLOW_ASSET_FILES.filter((file) => file.path !== "scripts/snflow-task.ts")) {

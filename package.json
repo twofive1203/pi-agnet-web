@@ -41,7 +41,7 @@
     "lint": "eslint .",
     "generate:browser-extension": "tsx scripts/generate-browser-extension-shared.ts",
     "test:browser": "npx --yes tsx@4.23.1 scripts/generate-browser-extension-shared.ts && npx --yes tsx@4.23.1 scripts/smoke-browser-binding.ts && npx --yes tsx@4.23.1 scripts/smoke-chrome-extension-artifacts.ts",
-    "test:snflow": "npx --yes tsx@4.23.1 scripts/smoke-snflow-setup.ts && npx --yes tsx@4.23.1 scripts/smoke-workflow-store.ts && npx --yes tsx@4.23.1 scripts/smoke-workflow-session-link.ts && npx --yes tsx@4.23.1 scripts/smoke-snflow-spec-review.ts",
+    "test:snflow": "npx --yes tsx@4.23.1 scripts/smoke-snflow-setup.ts && npx --yes tsx@4.23.1 scripts/smoke-workflow-store.ts && npx --yes tsx@4.23.1 scripts/smoke-workflow-session-link.ts && npx --yes tsx@4.23.1 scripts/smoke-workflow-chat-lifecycle.ts && npx --yes tsx@4.23.1 scripts/smoke-snflow-spec-review.ts",
     "test:runtime": "npx --yes tsx@4.23.1 scripts/smoke-runtime-packaging.ts",
     "test:subagent-observability": "npx --yes tsx@4.23.1 scripts/smoke-subagent-observability.ts && node --import tsx scripts/smoke-subagent-progress.mjs && npx --yes tsx@4.23.1 scripts/smoke-subagent-session-runs.ts && npx --yes tsx@4.23.1 scripts/smoke-subagent-detail.ts && npx --yes tsx@4.23.1 scripts/smoke-subagent-detail-route.ts && npx --yes tsx@4.23.1 scripts/smoke-subagent-store.ts",
     "test:api-protection": "node --import tsx scripts/smoke-grok-usage.mjs",

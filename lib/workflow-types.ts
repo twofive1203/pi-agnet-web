@@ -90,6 +90,10 @@ export interface WorkflowImplementResult {
   changedFiles: string[];
   validation: WorkflowValidationResult[];
   residualRisks: string[];
+  /** Explicitly distinguishes a real implementation from a validated recovery no-op. */
+  outcome?: "changed" | "validated_no_change";
+  /** Required for validated_no_change so a plan-only response cannot pass as implementation. */
+  acceptanceSatisfied?: boolean;
 }
 
 export interface WorkflowCheckFinding {

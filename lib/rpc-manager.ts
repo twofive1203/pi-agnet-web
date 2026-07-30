@@ -1,10 +1,13 @@
 import { createAgentSession, SessionManager } from "@earendil-works/pi-coding-agent";
 import { cleanupSessionResources } from "@earendil-works/pi-ai";
-import { statSync } from "fs";
-import path from "path";
 import { cacheSessionPath } from "./session-reader";
 import { recordSessionFileChangeEvent } from "./session-file-changes";
 import { canonicalizeCwd } from "./cwd";
+import {
+  getSnflowChatLifecycleLoadDiagnostic,
+  isSnflowLifecycleRequired,
+} from "./workflow-lifecycle-load";
+export { getSnflowChatLifecycleLoadDiagnostic, isSnflowLifecycleRequired };
 import { preparePiRuntimeEnvironment } from "./pi-runtime-resolver";
 import { ExtensionWebUiBridge } from "./extension-web-ui";
 import { disposeAgentSession } from "./pi-session-lifecycle";
@@ -37,33 +40,6 @@ interface ToolSelection {
 }
 
 const READ_ONLY_TOOL_NAMES = new Set(["read", "grep", "find", "ls"]);
-const SNFLOW_CHAT_LIFECYCLE_EXTENSION_PATH = "<inline:snflow-chat-lifecycle>";
-
-interface ExtensionLoadProjection {
-  extensions: Array<{ path: string }>;
-  errors: Array<{ path: string; error: string }>;
-}
-
-export function isSnflowLifecycleRequired(cwd: string): boolean {
-  try {
-    return statSync(path.join(canonicalizeCwd(cwd), ".pi", "snflows", "tasks")).isDirectory();
-  } catch {
-    return false;
-  }
-}
-
-export function getSnflowChatLifecycleLoadDiagnostic(result: ExtensionLoadProjection): string | null {
-  const matchingErrors = result.errors
-    .filter((error) => error.path === SNFLOW_CHAT_LIFECYCLE_EXTENSION_PATH)
-    .map((error) => error.error);
-  if (matchingErrors.length > 0) {
-    return `${SNFLOW_CHAT_LIFECYCLE_EXTENSION_PATH} failed to load: ${matchingErrors.join("; ")}`;
-  }
-  if (!result.extensions.some((extension) => extension.path === SNFLOW_CHAT_LIFECYCLE_EXTENSION_PATH)) {
-    return `${SNFLOW_CHAT_LIFECYCLE_EXTENSION_PATH} was not loaded`;
-  }
-  return null;
-}
 
 function isToolPresetMode(value: unknown): value is ToolPresetMode {
   return value === "all" || value === "read-only" || value === "none";

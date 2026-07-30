@@ -132,7 +132,8 @@ export function buildImplementPrompt(ctx: WorkflowPromptContext): string {
   return [
     `Implement SnFlow task ${ctx.taskId}: ${ctx.title}`,
     `Project cwd: ${ctx.cwd}`,
-    `Task revision: ${ctx.taskRevision}`,
+    `Dispatch revision: ${ctx.taskRevision}`,
+    "The dispatch revision is the approved pre-run snapshot. After launch, verify it against task.json activeRunId -> runs/<run-id>.json taskRevision; task.json.revision changes with lifecycle state and is not the dispatch token.",
     "",
     "Read:",
     `- ${ctx.pathLabels.taskJson}`,
@@ -150,6 +151,8 @@ export function buildImplementPrompt(ctx: WorkflowPromptContext): string {
     "```json",
     "{",
     '  "summary": "what changed",',
+    '  "outcome": "changed" | "validated_no_change",',
+    '  "acceptanceSatisfied": true,',
     '  "changedFiles": ["path/one.ts"],',
     '  "validation": [{"command": "npm run lint", "ok": true, "summary": "pass"}],',
     '  "residualRisks": ["optional risk"]',
@@ -162,7 +165,8 @@ export function buildCheckPrompt(ctx: WorkflowPromptContext): string {
   return [
     `Review SnFlow task ${ctx.taskId}: ${ctx.title}`,
     `Project cwd: ${ctx.cwd}`,
-    `Task revision: ${ctx.taskRevision}`,
+    `Dispatch revision: ${ctx.taskRevision}`,
+    "The dispatch revision is the approved pre-run snapshot. After launch, verify it against task.json activeRunId -> runs/<run-id>.json taskRevision; task.json.revision changes with lifecycle state and is not the dispatch token.",
     "",
     "Read:",
     `- ${ctx.pathLabels.taskJson}`,
@@ -213,6 +217,7 @@ export function buildDirectSubagentInstruction(ctx: WorkflowPromptContext): stri
     `agent: ${agent}`,
     "context: fresh",
     `cwd: ${ctx.cwd}`,
+    "agentContract: { version: 1 }",
     "async: false (foreground; do not detach)",
     "clarify: false",
     "task must be exactly the following marked prompt:",
@@ -262,11 +267,16 @@ export function normalizeImplementResult(text: string | null | undefined): Workf
       residualRisks: ["Structured implement result JSON was missing; used raw summary text."],
     };
   }
+  const outcome = asString(candidate.outcome)?.toLowerCase();
   return {
     summary: asString(candidate.summary) ?? text.trim().slice(0, 2000),
     changedFiles: asStringArray(candidate.changedFiles ?? candidate.files),
     validation: normalizeValidation(candidate.validation),
     residualRisks: asStringArray(candidate.residualRisks ?? candidate.risks),
+    ...(outcome === "changed" || outcome === "validated_no_change" ? { outcome } : {}),
+    ...(typeof candidate.acceptanceSatisfied === "boolean"
+      ? { acceptanceSatisfied: candidate.acceptanceSatisfied }
+      : {}),
   };
 }
 
