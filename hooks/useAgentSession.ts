@@ -14,6 +14,7 @@ import { normalizeToolCalls } from "@/lib/normalize";
 import { sendAgentCommand } from "@/lib/agent-client";
 import type { ToolEntry, ToolPreset } from "@/components/ToolPanel";
 import {
+  boundSubagentOutput,
   extractSubagentRuns,
   isSubagentResultFailure,
   isSubagentToolName,
@@ -28,6 +29,11 @@ import {
   type SubagentResultMetadata,
   type SubagentRun,
 } from "@/lib/subagent-runs";
+import {
+  nowForSubagentClientMetric,
+  recordSubagentClientDuration,
+  recordSubagentClientMetric,
+} from "@/lib/subagent-observability-client";
 
 export type {
   SubagentActivityState,
@@ -232,6 +238,22 @@ export function matchProgressForRun(
   return uniqueProgressByAgent(progressList, run.agent);
 }
 
+function hasUrgentSubagentUpdate(
+  progressList: SubagentProgressSnapshot[],
+  controlEvents: unknown,
+): boolean {
+  if (progressList.some((item) => item.status === "failed" || item.activityState !== undefined)) {
+    return true;
+  }
+  if (!Array.isArray(controlEvents)) return false;
+  return controlEvents.some((item) => isRecord(item) && (
+    item.to === "needs_attention"
+    || item.to === "active_long_running"
+    || item.status === "failed"
+    || item.status === "timeout"
+  ));
+}
+
 function latestControlActivityForRun(
   run: Pick<SubagentRun, "id" | "agent">,
   toolCallId: string,
@@ -383,7 +405,7 @@ type ExtensionUiRequestEvent = AgentEvent & {
 };
 
 const EXTENSION_TOAST_TTL_MS = 5000;
-const SUBAGENT_UI_FLUSH_MS = 150;
+const SUBAGENT_UI_FLUSH_MS = 300;
 
 function toDialogRequest(event: ExtensionUiRequestEvent): ExtensionDialogRequest | null {
   if (event.method === "confirm") {
@@ -590,7 +612,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const flushSubagentRuns = useCallback(() => {
     subagentFlushTimerRef.current = null;
     const runs = subagentRunsRef.current;
+    const serializeStartedAt = nowForSubagentClientMetric();
     const json = serializeSubagentRunsForFlush(runs);
+    recordSubagentClientDuration("serializeMs", serializeStartedAt);
     if (json === prevRunsJsonRef.current) return;
     prevRunsJsonRef.current = json;
     subagentChangeRef.current?.(runs);
@@ -599,13 +623,24 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     if (subagentFlushTimerRef.current) return;
     subagentFlushTimerRef.current = setTimeout(flushSubagentRuns, SUBAGENT_UI_FLUSH_MS);
   }, [flushSubagentRuns]);
-  const updateSubagentRuns = useCallback((update: (runs: SubagentRun[]) => SubagentRun[]) => {
+  const updateSubagentRuns = useCallback((
+    update: (runs: SubagentRun[]) => SubagentRun[],
+    flushImmediately = false,
+  ) => {
     const current = subagentRunsRef.current;
     const next = update(current);
     if (next === current) return;
     subagentRunsRef.current = next;
-    scheduleSubagentFlush();
-  }, [scheduleSubagentFlush]);
+    if (flushImmediately) {
+      if (subagentFlushTimerRef.current) {
+        clearTimeout(subagentFlushTimerRef.current);
+        subagentFlushTimerRef.current = null;
+      }
+      flushSubagentRuns();
+    } else {
+      scheduleSubagentFlush();
+    }
+  }, [flushSubagentRuns, scheduleSubagentFlush]);
 
   const currentModel = currentModelOverride ?? data?.context.model ?? pendingModel ?? null;
   const displayModel = isNew ? newSessionModel : currentModel;
@@ -720,6 +755,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     es.onmessage = (e) => {
       try {
         const event = JSON.parse(e.data) as AgentEvent;
+        recordSubagentClientMetric("sseEvents");
         handleAgentEventRef.current?.(event);
       } catch {
         // ignore
@@ -782,6 +818,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   }, []);
 
   const handleAgentEvent = useCallback((event: AgentEvent) => {
+    const handlerStartedAt = nowForSubagentClientMetric();
     switch (event.type) {
       case "extension_ui_request": {
         const request = event as ExtensionUiRequestEvent;
@@ -979,6 +1016,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         const progressList = normalizeSubagentProgressList(details?.progress);
         const controlEvents = details?.controlEvents;
         if (!text && !routing && progressList.length === 0 && !Array.isArray(controlEvents)) break;
+        const flushImmediately = hasUrgentSubagentUpdate(progressList, controlEvents);
 
         updateSubagentRuns((prev) => {
           let changed = false;
@@ -987,10 +1025,18 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
             if (!related) return r;
 
             let updated = r;
-            if (text && text !== updated.partialOutput) {
-              // pi-subagents publishes the current full output snapshot, not a text delta.
-              updated = { ...updated, partialOutput: text };
-              changed = true;
+            if (text) {
+              // Compatibility for older servers that still send live output. New servers
+              // omit it from ordinary summary events and details load on expansion.
+              const bounded = boundSubagentOutput(text);
+              if (bounded.text !== updated.partialOutput || bounded.truncated !== updated.outputTruncated) {
+                updated = {
+                  ...updated,
+                  partialOutput: bounded.text ?? "",
+                  outputTruncated: bounded.truncated,
+                };
+                changed = true;
+              }
             }
             const liveResult = liveResultForRun(details?.results, updated, updateId);
             const liveRouting = routingFromResult(liveResult, "liveResult");
@@ -1024,16 +1070,17 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
             return updated;
           });
           return changed ? next : prev;
-        });
+        }, flushImmediately);
         break;
       }
       case "tool_execution_end": {
         const endId = event.toolCallId as string;
         const isError = !!event.isError;
-        const resultText =
+        const resultOutput = boundSubagentOutput(
           (event.result as { content?: { text?: string }[] } | undefined)
             ?.content?.map((c) => c.text ?? "")
-            .join("") ?? undefined;
+            .join("") || undefined,
+        );
         // Extract sessionFile/routing metadata from subagent tool-call details.
         const details = (event.result as { details?: { results?: SubagentResultMetadata[]; routing?: SubagentRun["routing"]; runs?: { routing?: SubagentRun["routing"] }[] } } | undefined)?.details;
         const fallbackRouting = details?.routing ?? details?.runs?.find((run) => run.routing)?.routing;
@@ -1044,10 +1091,19 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
               const result = details?.results?.[resultIndex];
               const sessionFile = result?.sessionFile;
               const routing = routingFromResult(result) ?? fallbackRouting;
-              return { ...r, status: isError || isSubagentResultFailure(result) ? "failed" : "completed", result: resultText, partialOutput: "", sessionFile: sessionFile ?? r.sessionFile, routing: routing ?? r.routing };
+              return {
+                ...r,
+                status: isError || isSubagentResultFailure(result) ? "failed" : "completed",
+                result: resultOutput.text,
+                partialOutput: "",
+                outputTruncated: resultOutput.truncated,
+                sessionFile: sessionFile ?? r.sessionFile,
+                routing: routing ?? r.routing,
+              };
             }
             return r;
           }),
+          true,
         );
         setAgentPhase((prev) => {
           if (prev?.kind !== "running_tools") return prev;
@@ -1083,6 +1139,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         }
         break;
     }
+    recordSubagentClientDuration("eventHandlerMs", handlerStartedAt);
   }, [chatInputRef, dismissExtensionToast, loadSession, onAgentEnd, updateSubagentRuns]);
   handleAgentEventRef.current = handleAgentEvent;
 

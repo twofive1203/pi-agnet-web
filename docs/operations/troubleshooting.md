@@ -23,6 +23,13 @@
 - SnFlow `task.json` `revision` values are 16-hex concurrency tokens, not Git commit objects. Do not `git show` / `git checkout` / otherwise resolve them as commits.
 - Check agents must inspect the current unstaged working tree (and task documents) for the dispatched revision; treat a mismatch against `task.json` as stale dispatch, not a missing commit.
 
+## Subagent observability diagnostics
+
+- Server diagnostics are disabled by default. Start Snail Pi with `PI_WEB_SUBAGENT_OBSERVABILITY=1` to emit one bounded aggregate log every five seconds with raw/coalesced/delivered progress counts, projection/handler timing, SSE payload count/bytes, and event-loop delay. No tool arguments or output text are retained.
+- Browser diagnostics are also disabled by default and are compiled into the client bundle. Set `NEXT_PUBLIC_PI_WEB_SUBAGENT_OBSERVABILITY=1` before starting/building, then inspect `[pi-web:subagent-observability:browser]` records in DevTools for SSE, handler, serialization, AppShell update/render, and open-panel render metrics.
+- Use `npm run test:subagent-observability` for deterministic coalescing, terminal ordering, urgent-state bypass, teardown, bounded metrics/output/detail parsing, and selective external-store notifications. Use `npm run test:api-protection` for concurrent Grok billing behavior.
+- The currently installed `pi-subagents` runtime reads TUI fleet settings only from `~/.pi/agent/extensions/subagent/config.json`; it has no safe WebUI-session override. For a manual attribution experiment, set both `fleetView: false` and `asyncWidget: false` (disabling only `fleetView` enables the legacy async widget by default), then restart/reload Pi. This is a user-global experiment, not an application-managed setting.
+
 ## Network / Proxy
 
 Use `scripts/start-pi-web-proxy.sh` or `scripts/start-pi-web-proxy.ps1` when provider calls need the local proxy. They set common proxy env vars and `NODE_OPTIONS=--use-env-proxy` for modern Node fetch/undici behavior.

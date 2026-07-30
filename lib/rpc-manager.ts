@@ -10,6 +10,13 @@ import { ExtensionWebUiBridge } from "./extension-web-ui";
 import { disposeAgentSession } from "./pi-session-lifecycle";
 import type { AgentSessionLike, ToolInfo } from "./pi-types";
 import { isSubagentToolName } from "./subagent-runs";
+import { SubagentProgressThrottler } from "./subagent-progress-throttler";
+import { projectSubagentEvent } from "./subagent-event-projection";
+import {
+  nowForSubagentMetric,
+  recordSubagentDuration,
+  recordSubagentMetric,
+} from "./subagent-observability";
 
 // ============================================================================
 // Types
@@ -30,7 +37,6 @@ interface ToolSelection {
 }
 
 const READ_ONLY_TOOL_NAMES = new Set(["read", "grep", "find", "ls"]);
-const MAX_LIVE_SUBAGENT_OUTPUT_CHARS = 32_000;
 const SNFLOW_CHAT_LIFECYCLE_EXTENSION_PATH = "<inline:snflow-chat-lifecycle>";
 
 interface ExtensionLoadProjection {
@@ -94,81 +100,6 @@ function applyToolSelection(session: AgentSessionLike, selection?: ToolSelection
   applyActiveTools(session, getToolNamesForPreset(session, "all"));
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function projectSubagentResult(value: unknown): Record<string, unknown> | undefined {
-  if (!isRecord(value)) return undefined;
-  const projected: Record<string, unknown> = {};
-  for (const key of [
-    "agent", "sessionFile", "routing", "model", "thinking", "thinkingLevel",
-    "exitCode", "error", "status", "success", "timedOut", "cancelled",
-  ]) {
-    if (value[key] !== undefined) projected[key] = value[key];
-  }
-  return projected;
-}
-
-function projectSubagentDetails(value: unknown): Record<string, unknown> | undefined {
-  if (!isRecord(value)) return undefined;
-  const projected: Record<string, unknown> = {};
-  for (const key of ["mode", "routing", "progress", "controlEvents", "totalSteps"]) {
-    if (value[key] !== undefined) projected[key] = value[key];
-  }
-  if (Array.isArray(value.results)) {
-    projected.results = value.results.map(projectSubagentResult);
-  }
-  if (Array.isArray(value.runs)) {
-    projected.runs = value.runs.map((run) => isRecord(run) && isRecord(run.routing)
-      ? { routing: run.routing }
-      : {});
-  }
-  return projected;
-}
-
-function projectSubagentContent(value: unknown): unknown {
-  if (!Array.isArray(value)) return value;
-  return value.map((block) => {
-    if (!isRecord(block) || typeof block.text !== "string" || block.text.length <= MAX_LIVE_SUBAGENT_OUTPUT_CHARS) {
-      return block;
-    }
-    return {
-      ...block,
-      text: block.text.slice(-MAX_LIVE_SUBAGENT_OUTPUT_CHARS),
-    };
-  });
-}
-
-/** Keep high-frequency subagent SSE updates browser-sized without changing persisted Pi events. */
-function projectSubagentEvent(event: AgentEvent): AgentEvent {
-  if (event.type === "tool_execution_update") {
-    const partialResult = isRecord(event.partialResult) ? event.partialResult : undefined;
-    if (!partialResult) return event;
-    return {
-      ...event,
-      partialResult: {
-        ...partialResult,
-        content: projectSubagentContent(partialResult.content),
-        details: projectSubagentDetails(partialResult.details),
-      },
-    };
-  }
-  if (event.type === "tool_execution_end") {
-    const result = isRecord(event.result) ? event.result : undefined;
-    if (!result) return event;
-    return {
-      ...event,
-      result: {
-        ...result,
-        content: projectSubagentContent(result.content),
-        details: projectSubagentDetails(result.details),
-      },
-    };
-  }
-  return event;
-}
-
 // ============================================================================
 // AgentSessionWrapper
 // Wraps AgentSession with the same interface the rest of the app expects
@@ -184,6 +115,7 @@ export class AgentSessionWrapper {
   private onDestroyCallback: (() => void) | null = null;
   private destroyPromise: Promise<void> | null = null;
   private extensionUiBridge: ExtensionWebUiBridge;
+  private subagentProgressThrottler: SubagentProgressThrottler<AgentEvent>;
   private activeToolCallIds = new Set<string>();
   private activeSubagentToolCallIds = new Set<string>();
   private _alive = true;
@@ -192,6 +124,13 @@ export class AgentSessionWrapper {
     this.extensionUiBridge = new ExtensionWebUiBridge(
       (event) => this.emitEvent(event),
       () => this.listeners.length > 0,
+    );
+    this.subagentProgressThrottler = new SubagentProgressThrottler(
+      (event) => this.deliverAgentEvent(event),
+      300,
+      Date.now,
+      () => recordSubagentMetric("coalescedProgress"),
+      () => recordSubagentMetric("immediateProgress"),
     );
   }
 
@@ -213,6 +152,7 @@ export class AgentSessionWrapper {
 
   start(): void {
     this.unsubscribe = this.inner.subscribe((event: AgentEvent) => {
+      const handlerStartedAt = nowForSubagentMetric();
       this.resetIdleTimer();
       const toolCallId = typeof event.toolCallId === "string" ? event.toolCallId : undefined;
       const isSubagentEvent = toolCallId ? this.activeSubagentToolCallIds.has(toolCallId) : false;
@@ -224,34 +164,58 @@ export class AgentSessionWrapper {
       } else if (event.type === "tool_execution_end" && toolCallId) {
         this.activeToolCallIds.delete(toolCallId);
       }
-      let fileChangeUpdate: AgentEvent | null = null;
-      try {
-        const result = recordSessionFileChangeEvent({
-          sessionId: this.sessionId,
-          sessionFile: this.sessionFile,
-          cwd: this.cwd,
-          event,
-        });
-        if (result.changed && event.type === "tool_execution_end") {
-          fileChangeUpdate = {
-            type: "session_file_changes_update",
-            sessionId: this.sessionId,
-            fileCount: result.fileCount,
-          };
-        }
-      } catch {
-        // File-change projection must never interrupt normal agent event delivery.
+      if (isSubagentEvent && event.type === "tool_execution_update") {
+        recordSubagentMetric("rawProgress");
       }
-      const browserEvent = isSubagentEvent ? projectSubagentEvent(event) : event;
-      for (const l of this.listeners) l(browserEvent);
+      if (isSubagentEvent && event.type === "tool_execution_end") {
+        recordSubagentMetric("terminalEvents");
+      }
+
+      let fileChangeUpdate: AgentEvent | null = null;
+      if (event.type === "tool_execution_start" || event.type === "tool_execution_end") {
+        const fileProjectionStartedAt = nowForSubagentMetric();
+        try {
+          const result = recordSessionFileChangeEvent({
+            sessionId: this.sessionId,
+            sessionFile: this.sessionFile,
+            cwd: this.cwd,
+            event,
+          });
+          if (result.changed && event.type === "tool_execution_end") {
+            fileChangeUpdate = {
+              type: "session_file_changes_update",
+              sessionId: this.sessionId,
+              fileCount: result.fileCount,
+            };
+          }
+        } catch {
+          // File-change projection must never interrupt normal agent event delivery.
+        }
+        recordSubagentDuration("fileProjectionMs", fileProjectionStartedAt);
+      }
+
+      this.subagentProgressThrottler.handle(event, isSubagentEvent);
       if (event.type === "tool_execution_end" && toolCallId) {
         this.activeSubagentToolCallIds.delete(toolCallId);
       }
       if (fileChangeUpdate) {
-        for (const l of this.listeners) l(fileChangeUpdate);
+        for (const listener of this.listeners) listener(fileChangeUpdate);
       }
+      recordSubagentDuration("handlerMs", handlerStartedAt);
     });
     this.resetIdleTimer();
+  }
+
+  private deliverAgentEvent(event: AgentEvent): void {
+    const toolCallId = typeof event.toolCallId === "string" ? event.toolCallId : undefined;
+    const isSubagentEvent = toolCallId ? this.activeSubagentToolCallIds.has(toolCallId) : false;
+    const projectionStartedAt = nowForSubagentMetric();
+    const browserEvent = isSubagentEvent ? projectSubagentEvent(event) : event;
+    recordSubagentDuration("projectionMs", projectionStartedAt);
+    if (isSubagentEvent && event.type === "tool_execution_update") {
+      recordSubagentMetric("deliveredProgress");
+    }
+    for (const listener of this.listeners) listener(browserEvent);
   }
 
   private resetIdleTimer(): void {
@@ -536,7 +500,9 @@ export class AgentSessionWrapper {
     this._alive = false;
     if (this.idleTimer) clearTimeout(this.idleTimer);
     this.unsubscribe?.();
+    this.subagentProgressThrottler.clear();
     this.activeToolCallIds.clear();
+    this.activeSubagentToolCallIds.clear();
     this.extensionUiBridge.rejectAll();
 
     this.destroyPromise = (async () => {

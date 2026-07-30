@@ -1,6 +1,7 @@
 import { resolveSessionPath } from "@/lib/session-reader";
 import { getRpcSession, startRpcSession } from "@/lib/rpc-manager";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { recordSsePayload } from "@/lib/subagent-observability";
 
 export const dynamic = "force-dynamic";
 
@@ -28,9 +29,12 @@ export async function GET(
 
   const stream = new ReadableStream({
     start(controller) {
+      const encoder = new TextEncoder();
       const encode = (data: unknown) => {
         const text = `data: ${JSON.stringify(data)}\n\n`;
-        controller.enqueue(new TextEncoder().encode(text));
+        const payload = encoder.encode(text);
+        recordSsePayload(payload.byteLength);
+        controller.enqueue(payload);
       };
 
       // Send initial connected event

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {
   extractSubagentRuns,
   isSubagentToolName,
+  MAX_SUBAGENT_OUTPUT_PREVIEW_CHARS,
   mergePersistedSubagentRuns,
   parsePersistedSubagentRuns,
 } from "../lib/subagent-runs";
@@ -155,5 +156,22 @@ assert.deepEqual(
   liveNative.map(({ id, agent, task, status, routing, startedAt }) => ({ id, agent, task, status, routing, startedAt })),
   "live SSE trellis_subagent and subagent projections must match",
 );
+
+const longOutput = "x".repeat(MAX_SUBAGENT_OUTPUT_PREVIEW_CHARS + 100);
+const boundedRuns = parsePersistedSubagentRuns([
+  {
+    role: "assistant",
+    timestamp: 1,
+    content: [{ type: "toolCall", toolCallId: "bounded", toolName: "subagent", input: { agent: "worker" } }],
+  },
+  {
+    role: "toolResult",
+    toolCallId: "bounded",
+    toolName: "subagent",
+    content: [{ type: "text", text: longOutput }],
+  },
+] as unknown as AgentMessage[]);
+assert.equal(boundedRuns[0]?.result?.length, MAX_SUBAGENT_OUTPUT_PREVIEW_CHARS);
+assert.equal(boundedRuns[0]?.outputTruncated, true);
 
 console.log("smoke-subagent-session-runs: OK");

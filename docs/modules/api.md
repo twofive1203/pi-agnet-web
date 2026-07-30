@@ -14,7 +14,8 @@ API routes live under `app/api/`. When adding, removing, or changing routes, upd
 | `sessions/new/` | 410 | Deprecated route kept for compatibility. |
 | `agent/new/` | POST | Create a new session and send the first message. |
 | `agent/[id]/` | GET/POST | Get agent state or send a command. |
-| `agent/[id]/events/` | GET | SSE event stream. High-frequency live subagent updates are projected to browser-safe metadata/progress/results and bounded output text; full child message history remains in persisted session artifacts. |
+| `agent/[id]/events/` | GET | SSE event stream. Ordinary subagent progress is coalesced per tool call to 300 ms and carries bounded summary metadata only (no partial output); terminal/failure/timeout/attention states remain immediate. Terminal result text is capped to an 8k preview; full bounded detail remains in session artifacts. |
+| `agent/subagent-children/` | GET | On-demand direct-child/detail projection for a native `session.jsonl` artifact under the canonical sessions root. Requires depth 1–3, performs bounded async head/tail parsing, caps children/output, returns truncation/fingerprint metadata, supports ETag/304, and never recursively scans descendants. |
 | `files/[...path]/` | GET/PUT | List/read/watch/preview workspace files for the file viewer and safely save existing editable text files. |
 | `files/search/` | GET | Search files in the selected workspace. |
 | `files/definitions/` | GET | Lightweight workspace text/code symbol definition search for editor drill-down actions. |
@@ -35,7 +36,7 @@ API routes live under `app/api/`. When adding, removing, or changing routes, upd
 | `intercom/sessions/` | GET | List local pi-intercom broker sessions (best-effort hub registration). |
 | `intercom/send/` | POST | Send a one-shot intercom message to a peer session id/name via temporary hub registration. |
 | `cwd/validate/` | POST | Validate a candidate workspace path. |
-| `git/worktrees/` | GET/POST/DELETE | Inspect, create, and remove Git worktrees from the selected cwd; removal also deletes sessions for that worktree cwd. |
+| `git/worktrees/` | GET/POST/DELETE | Inspect, create, and remove Git worktrees from the selected cwd; removal also deletes sessions for that worktree cwd. Git subprocesses have a 120-second kill timeout so hooks/locks/filesystems cannot hold the API indefinitely. |
 | `sessions/archive/` | POST | Archive one or more sessions (moves to `sessions-archive/`). |
 | `sessions/unarchive/` | POST | Unarchive one or more sessions (moves back to `sessions/`). |
 | `sessions/archive-all/` | POST | Archive all sessions for a cwd. |
@@ -83,7 +84,7 @@ API routes live under `app/api/`. When adding, removing, or changing routes, upd
 | `auth/api-key/[provider]/` | GET/POST/DELETE | GET returns API-key auth status (never the key); OAuth credentials do not count as configured. POST sets a stored API key. DELETE clears the stored credential. |
 | `auth/balance/[provider]/` | GET | Query DeepSeek account balance. |
 | `auth/quota/[provider]/` | GET/POST | GET queries OpenAI Codex subscription quota and reset-credit availability for the active account, or for a saved account with `?accountId=...`; queries update the saved account's cached quota/reset-credit metadata and refresh expired saved-account OAuth tokens when possible. POST consumes one available Codex reset credit for the active account or JSON `{ accountId }`, then returns freshly queried quota. |
-| `auth/usage/grok-cli/` | GET | Query Grok subscription structured billing usage. `?mode=cache` (default) returns last-known cache from `~/.pi/agent/grok-cli-usage-cache.json` without hitting billing; `?mode=refresh` live-fetches xAI `/billing` (+ optional weekly credits) using OAuth from `grok-cli` or built-in `xai` (plus the explicit env bypass), and overwrites the cache only on success. Returns browser-safe `GrokUsageResult` JSON (`monthly` used/limit/remaining/utilization/billingPeriodEnd, optional `weekly`, `source`, `queriedAt`, `envBypass`) with no tokens/credentials. No cwd required. Manual refresh only. |
+| `auth/usage/grok-cli/` | GET | Query Grok subscription structured billing usage. Cache mode is local-only. Refresh resolves env/stored `grok-cli` or built-in `xai` credentials directly without AgentSession/extension initialization, then starts monthly and optional weekly billing concurrently; monthly has a 15-second deadline, weekly is capped at 2 seconds, and the response never waits for weekly after monthly is ready. Cache overwrites only on monthly success; weekly failure degrades to null. Returns browser-safe structured data with no credentials. |
 | `auth/warmup/openai-codex/` | GET/POST | GET returns recent ChatGPT/Codex warmup history and lazily ensures the local scheduler. POST warms selected saved OAuth accounts by sending a tiny real Codex request without activating them; returns per-account results, records manual run history, and refreshes quota cache when possible. |
 | `chatgpt/usage-refresh/status/` | GET | Ensure and inspect the backend ChatGPT usage auto-refresh scheduler, including lock diagnostics and last-run state. |
 | `chatgpt/usage-refresh/ensure/` | POST | Start or re-arm the backend ChatGPT usage auto-refresh scheduler according to `pi-web.json`. |

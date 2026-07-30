@@ -13,7 +13,7 @@ import { IntercomPanel } from "./IntercomPanel";
 import { UsageStatsModal } from "./UsageStatsModal";
 import { ChatGptUsagePanel } from "./ChatGptUsagePanel";
 import { GrokUsagePanel } from "./GrokUsagePanel";
-import { SubagentPanel } from "./SubagentPanel";
+import { StoredSubagentPanel, SubagentBadgeIndicator } from "./SubagentObservation";
 import { SettingsConfig } from "./SettingsConfig";
 import { WorkflowPanel } from "./WorkflowPanel";
 import { AutomationPanel } from "./AutomationPanel";
@@ -33,6 +33,8 @@ import { useAppDialog } from "@/components/AppDialogProvider";
 import type { GitInfo, SessionInfo, SessionTreeNode } from "@/lib/types";
 import type { PiWebConfig } from "@/lib/pi-web-config";
 import type { ChatInputHandle } from "./ChatInput";
+import { recordSubagentClientMetric } from "@/lib/subagent-observability-client";
+import { SubagentStore } from "@/lib/subagent-store";
 
 const TOP_PANEL_SAFE_SELECTOR = ".app-top-aux-panel, .app-top-aux-tab, .branch-navigator-inline";
 const RIGHT_PANEL_WIDTH_STORAGE_KEY = "pi-web-right-panel-width-v1";
@@ -193,14 +195,18 @@ export function AppShell() {
     setContextUsage(usage);
   }, []);
 
-  // Subagent runs — populated by ChatWindow, displayed in top bar panel
-  const [subagentRuns, setSubagentRuns] = useState<import("@/hooks/useAgentSession").SubagentRun[]>([]);
+  // Subagent progress stays outside AppShell state. The badge subscribes only to
+  // counts; full rows are subscribed only while the top-bar panel is open.
+  const subagentStoreRef = useRef<SubagentStore | null>(null);
+  if (!subagentStoreRef.current) subagentStoreRef.current = new SubagentStore();
+  const subagentStore = subagentStoreRef.current;
   const handleSubagentChange = useCallback((runs: import("@/hooks/useAgentSession").SubagentRun[]) => {
-    setSubagentRuns(runs);
-  }, []);
+    recordSubagentClientMetric("appShellSubagentUpdates");
+    subagentStore.setRuns(runs);
+  }, [subagentStore]);
   useEffect(() => {
-    setSubagentRuns([]);
-  }, [sessionKey]);
+    subagentStore.reset();
+  }, [sessionKey, subagentStore]);
 
   const handleInteractiveShellRequest = useCallback((request: { cwd: string; command?: string; reason?: string }) => {
     // When config is still loading, optimistically open; createTerminalSession enforces enablement.
@@ -1046,28 +1052,7 @@ export function AppShell() {
                   <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
                 </svg>
                 <span className="app-top-label">{t("app.subagents")}</span>
-                {(() => {
-                  const running = subagentRuns.filter((r) => r.status === "running").length;
-                  const completed = subagentRuns.filter((r) => r.status === "completed" || r.status === "failed").length;
-                  if (running > 0) {
-                    return (
-                      <span style={{
-                        position: "absolute", top: 4, right: 4,
-                        width: 7, height: 7, borderRadius: "50%",
-                        background: "#f59e0b",
-                      }} />
-                    );
-                  }
-                  if (completed > 0) {
-                    return (
-                      <span style={{
-                        fontSize: 10, color: "#22c55e",
-                        marginLeft: 2,
-                      }}>✓</span>
-                    );
-                  }
-                  return null;
-                })()}
+                <SubagentBadgeIndicator store={subagentStore} />
               </button>
               <button
                 className={`app-top-aux-tab app-top-pill${activeTopPanel === "intercom" ? " app-top-pill-active" : ""}`}
@@ -1306,7 +1291,7 @@ export function AppShell() {
                   background: "var(--bg-panel)",
                   borderBottom: "1px solid var(--border)",
                 }}>
-                  <SubagentPanel runs={subagentRuns} />
+                  <StoredSubagentPanel store={subagentStore} />
                 </div>
               )}
               {activeTopPanel === "intercom" && (

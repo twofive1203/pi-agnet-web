@@ -1,41 +1,58 @@
 import { NextRequest, NextResponse } from "next/server";
-import { existsSync, realpathSync } from "fs";
-import { resolve, sep } from "path";
+import { stat } from "node:fs/promises";
+import { resolve } from "node:path";
 import { getAgentDir } from "@/lib/session-reader";
-import { parseSubagentChildren } from "@/lib/parse-subagent-children";
+import {
+  createSubagentDetailFingerprint,
+  parseSubagentDetail,
+} from "@/lib/parse-subagent-children";
+import {
+  parseSubagentDetailDepth,
+  resolveSubagentArtifactPath,
+  SubagentDetailRequestError,
+} from "@/lib/subagent-detail-route";
 
-/**
- * GET /api/agent/subagent-children?sessionFile=<path>
- *
- * Reads a subagent's session JSONL file and returns its nested subagent tool calls.
- * Used by the SubagentPanel for recursive "expand → see children" display.
- */
+/** GET bounded, direct child details for one native-subagent session artifact. */
 export async function GET(request: NextRequest) {
   const sessionFile = request.nextUrl.searchParams.get("sessionFile");
   if (!sessionFile) {
     return NextResponse.json({ error: "sessionFile query parameter is required" }, { status: 400 });
   }
 
-  // Validate: sessionFile must be within the agent sessions directory
-  const sessionsDir = getAgentDir() + "/sessions";
+  let depth: number;
   let resolvedPath: string;
   try {
-    resolvedPath = resolve(sessionFile);
-    if (!existsSync(resolvedPath)) {
+    depth = parseSubagentDetailDepth(request.nextUrl.searchParams.get("depth"));
+    resolvedPath = resolveSubagentArtifactPath(sessionFile, resolve(getAgentDir(), "sessions"));
+  } catch (error) {
+    if (error instanceof SubagentDetailRequestError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
+    return NextResponse.json({ error: "Invalid subagent detail request" }, { status: 400 });
+  }
+
+  try {
+    const fileStat = await stat(resolvedPath);
+    const currentFingerprint = createSubagentDetailFingerprint(fileStat.size, fileStat.mtimeMs);
+    const ifNoneMatch = request.headers.get("if-none-match");
+    if (ifNoneMatch === `"${currentFingerprint}"`) {
+      return new NextResponse(null, {
+        status: 304,
+        headers: { ETag: `"${currentFingerprint}"`, "Cache-Control": "private, no-cache" },
+      });
+    }
+
+    const detail = await parseSubagentDetail(resolvedPath, depth);
+    return NextResponse.json(detail, {
+      headers: {
+        ETag: `"${detail.fingerprint}"`,
+        "Cache-Control": "private, no-cache",
+      },
+    });
+  } catch (error) {
+    if ((error as { code?: string }).code === "ENOENT") {
       return NextResponse.json({ error: "Session file not found" }, { status: 404 });
     }
-    resolvedPath = realpathSync(resolvedPath);
-  } catch {
-    return NextResponse.json({ error: "Invalid session file path" }, { status: 400 });
+    return NextResponse.json({ error: "Failed to read subagent detail" }, { status: 500 });
   }
-
-  // Security: ensure the resolved path is within the sessions directory
-  const resolvedSessionsDir = resolve(sessionsDir);
-  if (!resolvedPath.startsWith(resolvedSessionsDir + sep) && !resolvedPath.startsWith(resolvedSessionsDir + "/")) {
-    return NextResponse.json({ error: "Session file must be within the agent sessions directory" }, { status: 403 });
-  }
-
-  const children = parseSubagentChildren(resolvedPath);
-
-  return NextResponse.json({ children });
 }

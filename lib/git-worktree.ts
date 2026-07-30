@@ -5,6 +5,7 @@ import { existsSync, mkdirSync } from "fs";
 import type { PiWebWorktreeConfig } from "./pi-web-config";
 
 const execFileAsync = promisify(execFile);
+const GIT_COMMAND_TIMEOUT_MS = 120_000;
 
 export interface GitMetadata {
   isWorktree?: boolean;
@@ -93,10 +94,25 @@ async function git(args: string[], cwd?: string): Promise<string> {
       cwd,
       encoding: "utf8",
       maxBuffer: 1024 * 1024,
+      timeout: GIT_COMMAND_TIMEOUT_MS,
+      windowsHide: true,
     });
     return String(stdout).trim();
   } catch (error) {
-    const err = error as { stderr?: string; stdout?: string; message?: string };
+    const err = error as {
+      stderr?: string;
+      stdout?: string;
+      message?: string;
+      killed?: boolean;
+      signal?: string;
+      code?: string | number;
+    };
+    if (err.killed || err.signal === "SIGTERM" || err.code === "ETIMEDOUT") {
+      throw new WorktreeUserError(
+        `Git operation timed out after ${Math.round(GIT_COMMAND_TIMEOUT_MS / 1000)} seconds. `
+        + "The process was stopped; inspect the repository/worktree state before retrying.",
+      );
+    }
     const detail = (err.stderr || err.stdout || err.message || "Git command failed").trim();
     throw new WorktreeUserError(detail);
   }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useMemo, useReducer, useRef } from "react";
 import type {
   SubagentActivityState,
   SubagentProgressSnapshot,
@@ -9,43 +9,123 @@ import type {
 } from "@/hooks/useAgentSession";
 
 interface Props {
-  runs: SubagentRun[];
+  runs: readonly SubagentRun[];
 }
+
+interface SubagentDetail {
+  fingerprint: string;
+  depth: number;
+  output: string | null;
+  outputTruncated: boolean;
+  children: SubagentRun[];
+  childrenTruncated: boolean;
+  fileTruncated: boolean;
+}
+
+type DetailState =
+  | { status: "loading"; detail?: SubagentDetail }
+  | { status: "ready"; detail: SubagentDetail }
+  | { status: "error"; detail?: SubagentDetail };
 
 const CURRENT_TOOL_ARGS_PREVIEW = 60;
 const RECENT_TOOL_ARGS_PREVIEW = 80;
 const MAX_RECENT_TOOLS_DISPLAY = 12;
+const MAX_SUBAGENT_DETAIL_DEPTH = 3;
+const MAX_DETAIL_CACHE_ENTRIES = 32;
+const ACTIVE_DETAIL_REFRESH_MS = 2_000;
+const DETAIL_REQUEST_TIMEOUT_MS = 10_000;
+
+function detailKey(run: SubagentRun, depth: number): string | null {
+  return run.sessionFile ? `${depth}\0${run.sessionFile}` : null;
+}
+
+function useSubagentDetailCache() {
+  const cacheRef = useRef(new Map<string, DetailState>());
+  const controllersRef = useRef(new Map<string, AbortController>());
+  const [, rerender] = useReducer((value: number) => value + 1, 0);
+
+  const abort = useCallback((key: string | null) => {
+    if (!key) return;
+    controllersRef.current.get(key)?.abort();
+    controllersRef.current.delete(key);
+    const current = cacheRef.current.get(key);
+    if (current?.status === "loading") {
+      if (current.detail) cacheRef.current.set(key, { status: "ready", detail: current.detail });
+      else cacheRef.current.delete(key);
+      rerender();
+    }
+  }, []);
+
+  const load = useCallback(async (run: SubagentRun, depth: number, force = false) => {
+    const key = detailKey(run, depth);
+    if (!key || !run.sessionFile || depth > MAX_SUBAGENT_DETAIL_DEPTH) return;
+    const current = cacheRef.current.get(key);
+    if (!force && (current?.status === "ready" || current?.status === "loading")) return;
+
+    abort(key);
+    const controller = new AbortController();
+    controllersRef.current.set(key, controller);
+    cacheRef.current.set(key, { status: "loading", detail: current?.detail });
+    rerender();
+    try {
+      const headers: HeadersInit = {};
+      if (current?.detail?.fingerprint) headers["If-None-Match"] = `"${current.detail.fingerprint}"`;
+      const params = new URLSearchParams({ sessionFile: run.sessionFile, depth: String(depth) });
+      const response = await fetch(`/api/agent/subagent-children?${params}`, {
+        signal: AbortSignal.any([
+          controller.signal,
+          AbortSignal.timeout(DETAIL_REQUEST_TIMEOUT_MS),
+        ]),
+        headers,
+      });
+      if (response.status === 304 && current?.detail) {
+        cacheRef.current.set(key, { status: "ready", detail: current.detail });
+      } else if (response.ok) {
+        const detail = await response.json() as SubagentDetail;
+        cacheRef.current.delete(key);
+        cacheRef.current.set(key, { status: "ready", detail });
+        while (cacheRef.current.size > MAX_DETAIL_CACHE_ENTRIES) {
+          const oldest = cacheRef.current.keys().next().value;
+          if (oldest === undefined) break;
+          abort(oldest);
+          cacheRef.current.delete(oldest);
+        }
+      } else {
+        cacheRef.current.set(key, { status: "error", detail: current?.detail });
+      }
+    } catch (error) {
+      if ((error as { name?: string }).name !== "AbortError") {
+        cacheRef.current.set(key, { status: "error", detail: current?.detail });
+      }
+    } finally {
+      if (controllersRef.current.get(key) === controller) controllersRef.current.delete(key);
+      if (!controller.signal.aborted) rerender();
+    }
+  }, [abort]);
+
+  useEffect(() => () => {
+    for (const controller of controllersRef.current.values()) controller.abort();
+    controllersRef.current.clear();
+    cacheRef.current.clear();
+  }, []);
+
+  const get = useCallback((run: SubagentRun, depth: number) => {
+    const key = detailKey(run, depth);
+    return key ? cacheRef.current.get(key) : undefined;
+  }, []);
+
+  return useMemo(() => ({ get, load, abort }), [abort, get, load]);
+}
+
+type DetailCache = ReturnType<typeof useSubagentDetailCache>;
 
 export function SubagentPanel({ runs }: Props) {
-  const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [childrenCache, setChildrenCache] = useState<Record<string, SubagentRun[]>>({});
-
-  const toggleExpand = useCallback(async (run: SubagentRun) => {
-    const id = run.id;
-    if (expandedId === id) {
-      setExpandedId(null);
-      return;
-    }
-    setExpandedId(id);
-
-    // Lazy-load children if we have a sessionFile and haven't loaded yet
-    if (run.sessionFile && !childrenCache[id]) {
-      try {
-        const res = await fetch(`/api/agent/subagent-children?sessionFile=${encodeURIComponent(run.sessionFile)}`);
-        if (res.ok) {
-          const data = await res.json();
-          if (data.children && data.children.length > 0) {
-            setChildrenCache((prev) => ({ ...prev, [id]: data.children }));
-          }
-        }
-      } catch {
-        // Silently fail — children just won't show
-      }
-    }
-  }, [expandedId, childrenCache]);
-
-  const running = runs.filter((r) => r.status === "running");
-  const completed = runs.filter((r) => r.status === "completed" || r.status === "failed");
+  const detailCache = useSubagentDetailCache();
+  const running = runs.filter((run) => run.status === "running");
+  const completed = runs.filter((run) => run.status !== "running");
+  const renderRuns = (items: readonly SubagentRun[]) => items.map((run) => (
+    <ObservedRunItem key={run.id} run={run} depth={0} detailCache={detailCache} />
+  ));
 
   if (runs.length === 0) {
     return (
@@ -55,31 +135,16 @@ export function SubagentPanel({ runs }: Props) {
     );
   }
 
-  const renderRuns = (items: SubagentRun[], depth: number) => items.map((r) => (
-    <RunItem
-      key={r.id}
-      run={r}
-      isExpanded={expandedId === r.id}
-      childrenRuns={childrenCache[r.id]}
-      onToggle={() => toggleExpand(r)}
-      depth={depth}
-    />
-  ));
-
   return (
     <div className="subagent-panel-root" style={{
-      maxHeight: "min(500px, 60vh)",
-      overflowY: "auto",
-      padding: "8px 0",
-      fontSize: 12,
-      color: "var(--text)",
+      maxHeight: "min(500px, 60vh)", overflowY: "auto", padding: "8px 0", fontSize: 12, color: "var(--text)",
     }}>
       {running.length > 0 && (
         <>
           <div style={{ padding: "6px 16px 4px", fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--text-dim)" }}>
             Running ({running.length})
           </div>
-          {renderRuns(running, 0)}
+          {renderRuns(running)}
         </>
       )}
       {completed.length > 0 && (
@@ -87,21 +152,75 @@ export function SubagentPanel({ runs }: Props) {
           <div style={{ padding: "6px 16px 4px", fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--text-dim)", marginTop: running.length > 0 ? 8 : 0 }}>
             Completed ({completed.length})
           </div>
-          {renderRuns(completed, 0)}
+          {renderRuns(completed)}
         </>
       )}
     </div>
   );
 }
 
+function ObservedRunItem({ run, depth, detailCache }: { run: SubagentRun; depth: number; detailCache: DetailCache }) {
+  const [expanded, setExpanded] = useState(false);
+  const runRef = useRef(run);
+  const previousStatusRef = useRef(run.status);
+  runRef.current = run;
+  const requestDepth = depth + 1;
+  const key = detailKey(run, requestDepth);
+  const detailState = detailCache.get(run, requestDepth);
+
+  const toggle = useCallback(() => {
+    if (expanded) {
+      setExpanded(false);
+      detailCache.abort(key);
+      return;
+    }
+    setExpanded(true);
+    void detailCache.load(run, requestDepth);
+  }, [detailCache, expanded, key, requestDepth, run]);
+
+  useEffect(() => {
+    const previousStatus = previousStatusRef.current;
+    previousStatusRef.current = run.status;
+    if (
+      expanded
+      && previousStatus === "running"
+      && run.status !== "running"
+      && run.sessionFile
+      && requestDepth <= MAX_SUBAGENT_DETAIL_DEPTH
+    ) {
+      void detailCache.load(run, requestDepth, true);
+    }
+  }, [detailCache, expanded, requestDepth, run]);
+
+  useEffect(() => {
+    if (!expanded || run.status !== "running" || !run.sessionFile || requestDepth > MAX_SUBAGENT_DETAIL_DEPTH) return;
+    const timer = setInterval(() => {
+      void detailCache.load(runRef.current, requestDepth, true);
+    }, ACTIVE_DETAIL_REFRESH_MS);
+    return () => clearInterval(timer);
+  }, [detailCache, expanded, requestDepth, run.sessionFile, run.status]);
+
+  return (
+    <RunItem
+      run={run}
+      isExpanded={expanded}
+      detailState={detailState}
+      onToggle={toggle}
+      depth={depth}
+      detailCache={detailCache}
+    />
+  );
+}
+
 function RunItem({
-  run, isExpanded, childrenRuns, onToggle, depth,
+  run, isExpanded, detailState, onToggle, depth, detailCache,
 }: {
   run: SubagentRun;
   isExpanded: boolean;
-  childrenRuns?: SubagentRun[];
+  detailState?: DetailState;
   onToggle: () => void;
   depth: number;
+  detailCache: DetailCache;
 }) {
   const indent = depth * 16;
   const progress = run.progress;
@@ -117,12 +236,19 @@ function RunItem({
     ? run.task.split("\n")[0].slice(0, 120)
     : "(no task)";
 
-  const displayOutput = run.result ?? run.partialOutput;
+  const detail = detailState?.detail;
+  const terminalPreview = run.status !== "running" ? run.result : undefined;
+  const displayOutput = detailState?.status === "ready"
+    ? detail?.output ?? terminalPreview ?? run.partialOutput
+    : terminalPreview ?? detail?.output ?? run.partialOutput;
+  const outputTruncated = detail?.outputTruncated ?? run.outputTruncated ?? false;
   const routingLabel = formatRouting(run.routing);
   const metadata = getRunMetadata(run.routing);
   const metadataTitle = routingLabel ?? metadata.map((item) => `${item.label}: ${item.value}`).join(" · ");
   const hasSessionFile = !!run.sessionFile;
-  const hasChildren = childrenRuns && childrenRuns.length > 0;
+  const canLoadDetail = hasSessionFile && depth < MAX_SUBAGENT_DETAIL_DEPTH;
+  const childrenRuns = detail?.children ?? [];
+  const hasChildren = childrenRuns.length > 0;
   const recentTools = progress?.recentTools?.slice(-MAX_RECENT_TOOLS_DISPLAY) ?? [];
   const progressSummary = progress ? formatProgressActivity(progress, isRunning && !isDetached) : null;
   const progressStats = progress ? formatProgressStats(progress) : null;
@@ -159,9 +285,9 @@ function RunItem({
         {metadata.length > 0 && (
           <RunMetadataChips items={metadata} title={metadataTitle} />
         )}
-        {hasSessionFile && !hasChildren && isExpanded && (
+        {canLoadDetail && !hasChildren && isExpanded && (
           <span style={{ color: "var(--text-dim)", fontSize: 9, flexShrink: 0, fontStyle: "italic" }}>
-            {childrenRuns === undefined ? "loading..." : "no children"}
+            {detailState?.status === "loading" ? "loading..." : detailState?.status === "error" ? "detail unavailable" : "no children"}
           </span>
         )}
         <span style={{ color: statusColor, fontSize: 10, flexShrink: 0 }}>
@@ -285,20 +411,30 @@ function RunItem({
             </div>
           )}
 
-          {/* Show children (nested subagents) first after recent tools, then output */}
+          {/* Load exactly one nested level per expansion. */}
           {hasChildren && (
             <div style={{ marginBottom: 6 }}>
               <div style={{ fontSize: 10, fontWeight: 600, color: "var(--text-dim)", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.04em" }}>
-                Subagents ({childrenRuns!.length})
+                Subagents ({childrenRuns.length}{detail?.childrenTruncated ? "+" : ""})
               </div>
-              {childrenRuns!.map((child) => (
-                <ChildRunItem key={child.id} run={child} depth={depth + 1} />
+              {childrenRuns.map((child) => (
+                <ObservedRunItem
+                  key={`${child.sessionFile ?? child.id}-${child.id}`}
+                  run={child}
+                  depth={depth + 1}
+                  detailCache={detailCache}
+                />
               ))}
             </div>
           )}
-          {childrenRuns === undefined && hasSessionFile && (
+          {detailState?.status === "loading" && !detail && canLoadDetail && (
             <div style={{ fontSize: 10, fontStyle: "italic", color: "var(--text-dim)", marginBottom: 4 }}>
-              Loading nested subagents...
+              Loading details...
+            </div>
+          )}
+          {depth >= MAX_SUBAGENT_DETAIL_DEPTH && hasSessionFile && (
+            <div style={{ fontSize: 10, color: "var(--text-dim)", marginBottom: 4 }}>
+              Nested detail depth limit reached.
             </div>
           )}
           {/* Output */}
@@ -317,6 +453,11 @@ function RunItem({
               overflowY: "auto",
             }}>
               {displayOutput}
+              {outputTruncated && (
+                <div style={{ marginTop: 6, fontStyle: "italic", color: "var(--text-dim)" }}>
+                  Output truncated to the most recent bounded preview.
+                </div>
+              )}
             </div>
           )}
           {!displayOutput && !hasChildren && recentTools.length === 0 && (
@@ -477,79 +618,5 @@ function RunMetadataChips({ items, title }: { items: { label: string; value: str
         </span>
       ))}
     </span>
-  );
-}
-
-function ChildRunItem({ run, depth }: { run: SubagentRun; depth: number }) {
-  const [expanded, setExpanded] = useState(false);
-  const indent = depth * 16;
-  const isRunning = run.status === "running";
-  const isFailed = run.status === "failed";
-  const statusColor = isRunning ? "#f59e0b" : isFailed ? "#ef4444" : "#22c55e";
-  const statusIcon = isRunning ? "○" : isFailed ? "✕" : "✓";
-  const displayOutput = run.result ?? run.partialOutput;
-  const routingLabel = formatRouting(run.routing);
-  const metadata = getRunMetadata(run.routing);
-  const metadataTitle = routingLabel ?? metadata.map((item) => `${item.label}: ${item.value}`).join(" · ");
-
-  return (
-    <div>
-      <div
-        className="subagent-run-row subagent-child-run-row"
-        onClick={() => setExpanded(!expanded)}
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 6,
-          padding: "3px 8px 3px",
-          paddingLeft: 8 + indent,
-          cursor: "pointer",
-          userSelect: "none",
-          borderRadius: 4,
-          transition: "background 0.08s",
-          minWidth: 0,
-        }}
-        onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-hover)"; }}
-        onMouseLeave={(e) => { e.currentTarget.style.background = "none"; }}
-      >
-        <span style={{ color: statusColor, width: 12, textAlign: "center", flexShrink: 0, fontSize: 10 }}>
-          {statusIcon}
-        </span>
-        <span style={{ fontWeight: 500, color: "var(--text)", flexShrink: 0, maxWidth: 100, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 11 }}>
-          {run.agent}
-        </span>
-        <span style={{ color: "var(--text-muted)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 11, minWidth: 0 }}>
-          {run.task ? run.task.split("\n")[0].slice(0, 80) : ""}
-        </span>
-        {metadata.length > 0 && (
-          <RunMetadataChips items={metadata} title={metadataTitle} />
-        )}
-        <span style={{ fontSize: 9, color: "var(--text-dim)", flexShrink: 0 }}>
-          {expanded ? "▲" : "▼"}
-        </span>
-      </div>
-      {expanded && displayOutput && (
-        <div style={{
-          padding: "2px 8px 6px",
-          paddingLeft: 8 + indent + 16,
-        }}>
-          <div style={{
-            background: "var(--bg-subtle)",
-            borderRadius: 4,
-            padding: "6px 8px",
-            fontSize: 10,
-            fontFamily: "var(--font-mono)",
-            color: "var(--text-muted)",
-            lineHeight: 1.4,
-            whiteSpace: "pre-wrap",
-            wordBreak: "break-word",
-            maxHeight: 200,
-            overflowY: "auto",
-          }}>
-            {displayOutput}
-          </div>
-        </div>
-      )}
-    </div>
   );
 }

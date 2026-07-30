@@ -6,6 +6,7 @@ import type { AgentMessage } from "./types";
  * This is compatibility only — not active Trellis product support.
  */
 export const SUBAGENT_TOOL_NAMES = new Set(["subagent", "trellis_subagent"]);
+export const MAX_SUBAGENT_OUTPUT_PREVIEW_CHARS = 8_000;
 
 /** True for current `subagent` and legacy `trellis_subagent` tool names. */
 export function isSubagentToolName(name: unknown): boolean {
@@ -62,8 +63,7 @@ export interface SubagentRun {
   routing?: SubagentRouting;
   progress?: SubagentProgressSnapshot;
   sessionFile?: string;
-  children?: SubagentRun[];
-  loaded?: boolean;
+  outputTruncated?: boolean;
 }
 
 export type SubagentResultMetadata = {
@@ -229,12 +229,24 @@ export function mergePersistedSubagentRuns(
   ];
 }
 
-function resultText(content: unknown): string | undefined {
-  if (!Array.isArray(content)) return undefined;
+export function boundSubagentOutput(text: string | undefined): {
+  text: string | undefined;
+  truncated: boolean;
+} {
+  if (!text) return { text: undefined, truncated: false };
+  if (text.length <= MAX_SUBAGENT_OUTPUT_PREVIEW_CHARS) return { text, truncated: false };
+  return {
+    text: text.slice(-MAX_SUBAGENT_OUTPUT_PREVIEW_CHARS),
+    truncated: true,
+  };
+}
+
+function resultText(content: unknown): { text: string | undefined; truncated: boolean } {
+  if (!Array.isArray(content)) return { text: undefined, truncated: false };
   const text = content
     .map((block) => isRecord(block) && typeof block.text === "string" ? block.text : "")
     .join("");
-  return text || undefined;
+  return boundSubagentOutput(text || undefined);
 }
 
 /** Rebuild panel rows from the tool calls/results persisted in session JSONL. */
@@ -276,14 +288,15 @@ export function parsePersistedSubagentRuns(messages: AgentMessage[]): SubagentRu
         fallbackRouting = routedRun.routing as SubagentRouting;
       }
     }
-    const text = resultText(message.content);
+    const output = resultText(message.content);
 
     for (const run of matched) {
       const index = resultIndexForRun(run.id, message.toolCallId);
       const rawMetadata = index === null ? undefined : results[index];
       const metadata = isRecord(rawMetadata) ? rawMetadata as SubagentResultMetadata : undefined;
       run.status = message.isError || isSubagentResultFailure(metadata) ? "failed" : "completed";
-      run.result = text;
+      run.result = output.text;
+      run.outputTruncated = output.truncated;
       run.sessionFile = metadata?.sessionFile;
       run.routing = routingFromResult(metadata) ?? fallbackRouting ?? run.routing;
     }
