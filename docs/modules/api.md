@@ -33,8 +33,6 @@ API routes live under `app/api/`. When adding, removing, or changing routes, upd
 | `commands/` | GET | List slash commands from extension commands, prompt templates, and skills for a cwd, with provenance metadata and diagnostics. |
 | `pi/resources/` | GET | Inspect Pi SDK resource discovery for a cwd: configured packages, loaded extensions, tools, extension commands, skills, prompts, agent dir, and diagnostics. |
 | `pi/extension-settings/` | GET/PUT | Discover registered `pi-extension-settings` definitions for a cwd, read current `settings-extensions.json` values (including orphan keys), and apply patch/replace writes. |
-| `intercom/sessions/` | GET | List local pi-intercom broker sessions (best-effort hub registration). |
-| `intercom/send/` | POST | Send a one-shot intercom message to a peer session id/name via temporary hub registration. |
 | `cwd/validate/` | POST | Validate a candidate workspace path. |
 | `git/worktrees/` | GET/POST/DELETE | Inspect, create, and remove Git worktrees from the selected cwd; removal also deletes sessions for that worktree cwd. Git subprocesses have a 120-second kill timeout so hooks/locks/filesystems cannot hold the API indefinitely. |
 | `sessions/archive/` | POST | Archive one or more sessions (moves to `sessions-archive/`). |

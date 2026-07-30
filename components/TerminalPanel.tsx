@@ -11,9 +11,6 @@ interface Props {
   collapsed: boolean;
   onToggleCollapsed: () => void;
   onClose: () => void;
-  /** Optional command to inject once after the first tab session connects. */
-  seedCommand?: string | null;
-  onSeedCommandConsumed?: () => void;
 }
 
 type TerminalBackend = "pty" | "script" | "pipe";
@@ -513,11 +510,10 @@ function TerminalSessionView({ tab, visible, layoutVersion, onTabUpdate }: Termi
   );
 }
 
-export function TerminalPanel({ cwd, collapsed, onToggleCollapsed, onClose, seedCommand, onSeedCommandConsumed }: Props) {
+export function TerminalPanel({ cwd, collapsed, onToggleCollapsed, onClose }: Props) {
   const { t } = useI18n();
   const appDialog = useAppDialog();
   const [state, dispatch] = useReducer(terminalReducer, cwd, createInitialState);
-  const seedConsumedRef = useRef<string | null>(null);
   const [editingTabId, setEditingTabId] = useState<string | null>(null);
   const [editingLabel, setEditingLabel] = useState("");
   const [dragPayload, setDragPayload] = useState<{ tabId: string; sourcePaneId: string } | null>(null);
@@ -529,23 +525,6 @@ export function TerminalPanel({ cwd, collapsed, onToggleCollapsed, onClose, seed
   const closedExplicitlyRef = useRef(false);
 
   const allTabs = useMemo(() => Object.values(state.tabs), [state.tabs]);
-
-  // Inject optional seed command once a tab session is connected (interactive_shell bridge).
-  useEffect(() => {
-    if (!seedCommand || collapsed) return;
-    if (seedConsumedRef.current === seedCommand) return;
-    const connected = allTabs.find((tab) => tab.status === "connected" && tab.sessionId);
-    if (!connected?.sessionId) return;
-    seedConsumedRef.current = seedCommand;
-    const payload = seedCommand.endsWith("\r") || seedCommand.endsWith("\n") ? seedCommand : `${seedCommand}\r`;
-    void fetch(`/api/terminal/sessions/${encodeURIComponent(connected.sessionId)}/input`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ data: payload }),
-    }).finally(() => {
-      onSeedCommandConsumed?.();
-    });
-  }, [allTabs, collapsed, onSeedCommandConsumed, seedCommand]);
 
   const activePane = findPane(state.layout, state.activePaneId) ?? findFirstPane(state.layout);
   const activeTabId = activePane.activeTabId ?? activePane.tabIds[0] ?? null;

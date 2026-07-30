@@ -469,8 +469,6 @@ export interface UseAgentSessionOptions {
   onBranchDataChange?: (tree: SessionTreeNode[], activeLeafId: string | null, onLeafChange: (leafId: string | null) => void) => void;
   onSystemPromptChange?: (prompt: string | null) => void;
   onSubagentChange?: OnSubagentChange;
-  /** Open/reuse Web Terminal when interactive_shell tool starts (avoids TUI overlay dependency). */
-  onInteractiveShellRequest?: (request: { cwd: string; command?: string; reason?: string }) => void;
   autoScrollEnabled?: boolean;
   setNewSessionModel?: (model: { provider: string; modelId: string } | null) => void;
   setToolPreset?: (preset: ToolPreset) => void;
@@ -542,15 +540,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const {
     session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked,
     modelsRefreshKey, onBranchDataChange, onSystemPromptChange, onSubagentChange,
-    onInteractiveShellRequest,
     chatInputRef,
     autoScrollEnabled = true,
   } = opts;
-  const onInteractiveShellRequestRef = useRef(onInteractiveShellRequest);
-  onInteractiveShellRequestRef.current = onInteractiveShellRequest;
-  const sessionCwdRef = useRef<string | null>(session?.cwd ?? newSessionCwd);
-  sessionCwdRef.current = session?.cwd ?? newSessionCwd;
-
   const isNew = session === null && newSessionCwd !== null;
 
   const [data, setData] = useState<SessionData | null>(null);
@@ -975,24 +967,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
                 const existing = new Set(prev.map((run) => run.id));
                 const additions = runs.filter((run) => !existing.has(run.id));
                 return additions.length > 0 ? [...prev, ...additions] : prev;
-              });
-            }
-          }
-        }
-        if (name === "interactive_shell") {
-          const args = (event.args ?? event.input ?? {}) as Record<string, unknown>;
-          // Ignore pure status/query calls against an existing session id.
-          const isQueryOnly = Boolean(args.sessionId || args.listBackground || args.monitorStatus || args.monitorEvents || args.kill || args.attach);
-          if (!isQueryOnly) {
-            const command = typeof args.command === "string" ? args.command : undefined;
-            const cwdArg = typeof args.cwd === "string" && args.cwd.trim() ? args.cwd : undefined;
-            const reason = typeof args.reason === "string" ? args.reason : undefined;
-            const targetCwd = cwdArg ?? sessionCwdRef.current ?? undefined;
-            if (targetCwd) {
-              onInteractiveShellRequestRef.current?.({
-                cwd: targetCwd,
-                command,
-                reason,
               });
             }
           }

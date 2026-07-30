@@ -12,35 +12,14 @@ export type ExtensionCommandWebMeta = {
 
 /** Exact command names that are TUI-only in the Web UI. */
 const CLI_ONLY_EXACT = new Set([
-  "slopchop",
-  "diff",
   "paste",
   "extension-settings",
-  "btw",
-  "btw:tangent",
-  "btw:new",
-  "btw:clear",
-  "btw:inject",
-  "btw:summarize",
-  "btw:model",
-  "btw:thinking",
-  "spawn",
-  "attach",
-  "dismiss",
-  "intercom",
   "usage",
 ]);
-
-/** Prefixes (command name starts with) that are TUI-only. */
-const CLI_ONLY_PREFIXES = ["btw:"];
 
 /** Commands that partially work (status/widget/notify/dialogs) but lose TUI chrome. */
 const PARTIAL_EXACT = new Set([
   "plan",
-  "plannotator",
-  "ralph",
-  "ralph-stop",
-  "autoresearch",
   "powerbar",
 ]);
 
@@ -57,7 +36,7 @@ export function getExtensionCommandWebSupport(commandName: string): ExtensionCom
   const name = commandName.trim().replace(/^\//, "");
   if (!name) return { support: "full", reason: REASONS.full };
 
-  if (CLI_ONLY_EXACT.has(name) || CLI_ONLY_PREFIXES.some((prefix) => name.startsWith(prefix))) {
+  if (CLI_ONLY_EXACT.has(name)) {
     return { support: "cli-only", reason: REASONS["cli-only"] };
   }
   if (PARTIAL_EXACT.has(name)) {
