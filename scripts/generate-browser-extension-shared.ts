@@ -5,11 +5,13 @@
  * Source of truth:
  *   - lib/browser-action-policy.ts
  *   - lib/browser-redaction.ts
+ *   - lib/browser-protocol.ts (protocol version + advertised extension features)
  *
  * Outputs:
  *   - extensions/chrome-tab-debug/action-policy.js (ESM)
  *   - extensions/chrome-tab-debug/action-policy.inject.js (classic IIFE for content)
  *   - extensions/chrome-tab-debug/redaction.js (ESM)
+ *   - extensions/chrome-tab-debug/protocol-capabilities.js (ESM constants)
  *
  * Run: npx tsx scripts/generate-browser-extension-shared.ts
  */
@@ -18,6 +20,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
+import { BROWSER_EXTENSION_FEATURES, BROWSER_PROTOCOL_VERSION } from "../lib/browser-protocol";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const EXT_DIR = join(ROOT, "extensions", "chrome-tab-debug");
@@ -100,12 +103,17 @@ function main(): void {
   writeFileSync(join(EXT_DIR, "action-policy.js"), `${HEADER}${policyEsm}`, "utf8");
   writeFileSync(join(EXT_DIR, "redaction.js"), `${HEADER}${redactionEsm}`, "utf8");
   writeFileSync(
+    join(EXT_DIR, "protocol-capabilities.js"),
+    `${HEADER}export const PROTOCOL_VERSION = ${BROWSER_PROTOCOL_VERSION};\nexport const EXTENSION_FEATURES = Object.freeze(${JSON.stringify(BROWSER_EXTENSION_FEATURES)});\n`,
+    "utf8",
+  );
+  writeFileSync(
     join(EXT_DIR, "action-policy.inject.js"),
     esmToIife(policyEsm, "__snailPiActionPolicy"),
     "utf8",
   );
 
-  console.log("generate-browser-extension-shared: wrote action-policy.js, action-policy.inject.js, redaction.js");
+  console.log("generate-browser-extension-shared: wrote policy, redaction, and protocol capability artifacts");
 }
 
 main();

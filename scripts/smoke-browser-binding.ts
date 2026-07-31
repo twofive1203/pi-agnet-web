@@ -12,10 +12,13 @@ import WebSocket from "ws";
 import {
   BrowserControlError,
   BROWSER_PROTOCOL_VERSION,
+  BROWSER_RESPONSE_BUDGETS,
   MAX_ENVELOPE_AGE_MS,
   MAX_SCREENSHOT_BASE64_CHARS,
   createEnvelope,
+  browserResponseBudget,
   parseEnvelope,
+  serializedBrowserResponseBytes,
   toBindingView,
 } from "../lib/browser-protocol";
 import {
@@ -199,6 +202,14 @@ async function main(): Promise<void> {
     } catch (error) {
       assert(error instanceof BrowserControlError && error.code === "PROTOCOL_MISMATCH", "mismatch");
     }
+  });
+
+  await check("response budgets are explicit and command-scoped", () => {
+    assert(browserResponseBudget("page.act") === BROWSER_RESPONSE_BUDGETS.compact, "action compact budget");
+    assert(browserResponseBudget("page.snapshot") === BROWSER_RESPONSE_BUDGETS.snapshot, "snapshot budget");
+    assert(browserResponseBudget("page.console") === BROWSER_RESPONSE_BUDGETS.diagnostics, "diagnostics budget");
+    assert(browserResponseBudget("page.screenshot") === null, "screenshot uses image budget");
+    assert(serializedBrowserResponseBytes({ ok: true }) < BROWSER_RESPONSE_BUDGETS.compact, "small response within budget");
   });
 
   await check("binding state machine and ownership", () => {
@@ -537,6 +548,23 @@ async function main(): Promise<void> {
     assert(acceptPayload.result?.tabId === 42, "tab internal to extension result only");
     assert(manager.listBindings("session-real-1").length === 1, "manager has binding");
     assert(!("tabId" in manager.listBindings("session-real-1")[0]!), "model view hides tabId");
+
+    try {
+      await manager.runToolCommand({
+        sessionId: "session-real-1",
+        command: "page.act",
+        bindingId: acceptPayload.result?.binding?.bindingId,
+        params: { action: "click", elementRef: "el_legacy_1" },
+        requiredCapability: "dom",
+        requiredExtensionFeatures: ["element_diagnostics_v1", "post_action_state_v1"],
+      });
+      assert(false, "legacy extension must fail before action dispatch");
+    } catch (error) {
+      assert(
+        error instanceof BrowserControlError && error.code === "UNSUPPORTED_EXTENSION_CAPABILITY",
+        "legacy extension gets typed upgrade error",
+      );
+    }
 
     // Cross-session tool routing still rejected by manager.
     try {

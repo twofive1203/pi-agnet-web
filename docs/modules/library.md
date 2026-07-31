@@ -55,11 +55,11 @@ Shared logic lives under `lib/`. Prefer adding behavior here when it is used by 
 | `lib/extension-command-web-support.ts` | Classify extension slash commands as full / partial / cli-only for Web autocomplete badges. |
 | `lib/allowed-roots.ts` | Shared authorized-workspace root discovery and path checks for file and workflow APIs. |
 | `lib/terminal-manager.ts` | Web Terminal PTY manager: setting-gated session creation, cwd authorization, platform-aware Unix/Windows shell and custom path resolution, env injection, SSE subscription fan-out, input/resize handling, and process cleanup. |
-| `lib/browser-protocol.ts` | Shared browser-bridge protocol constants, envelopes, binding/capability/error contracts, and model-safe binding views (no raw `tabId`/credentials). |
+| `lib/browser-protocol.ts` | Shared browser-bridge protocol constants, envelopes, binding/capability/error contracts, extension-advertised additive feature registry, command response budgets, and model-safe binding views (no raw `tabId`/credentials). Protocol v1 treats response fields as optional; Part 1 actions require `element_diagnostics_v1` and `post_action_state_v1` before dispatch. |
 | `lib/browser-binding-state.ts` | Pure binding state machine: pending/active/debug/suspended/revoked, single-tab ownership, multi-tab session membership, primary selection, navigation policy. |
 | `lib/browser-pairing.ts` | Installation pairing codes, secret verifiers, connect-token challenge handshake, and atomic `~/.pi/agent/browser-bridge.json` persistence (temp+rename; corrupt files quarantined). |
 | `lib/browser-bridge.ts` | Loopback-only authenticated WebSocket broker (`127.0.0.1`) with heartbeat, deadlines, cancel, duplicate-response cache, and frame limits. Separate from Agent SSE/`extension_ui_request`. |
-| `lib/browser-binding-manager.ts` | Session-scoped binding manager routing commands only to the owning extension client; multi-session pending isolation (`listOpenPendingRequests` / scoped `getOpenPendingRequest`); fork/destroy invalidation; rate limits; audit hooks. |
+| `lib/browser-binding-manager.ts` | Session-scoped binding manager routing commands only to the owning extension client; multi-session pending isolation (`listOpenPendingRequests` / scoped `getOpenPendingRequest`); fork/destroy invalidation; runtime capability and extension-feature gates; serialized response budgets; rate limits; audit hooks. |
 | `lib/browser-tools.ts` | Pi custom tools (`browser_*`) that inject `sessionId` from `ctx.sessionManager.getSessionId()` and never accept model-supplied session ids. |
 | `lib/browser-action-policy.ts` | Deterministic `browser_act` safety policy (source of truth). Extension copies are generated via `scripts/generate-browser-extension-shared.ts`. |
 | `lib/browser-redaction.ts` | URL/header/console/network redaction and sensitive-control detection for tool outputs (source of truth for extension `redaction.js`). |
@@ -80,6 +80,39 @@ Shared logic lives under `lib/`. Prefer adding behavior here when it is used by 
 | `lib/workflow-run-manager.ts` | Restart/reconnect reconciliation for SnFlow run records and native artifacts, including exact parent session/tool-call recovery, stale-run handling, and idempotent terminal task-projection repair. The hidden RPC host remains compatibility code, not the normal implement/check path. |
 | `lib/workspace-title.ts` | Shared workspace title formatting from cwd and Git metadata. |
 | `lib/i18n/` | Lightweight zh/en i18n core: locale types, browser/storage detection, nested message catalogs, and `translate()` with `{param}` interpolation. Consumed by `components/I18nProvider.tsx`. |
+
+## Browser Control Contract
+
+The bridge keeps `BROWSER_PROTOCOL_VERSION = 1` for Part 1 because the envelope and authorization model are unchanged. The extension advertises additive `extensionFeatures` during the authenticated handshake. Missing features are interpreted as an older extension: existing non-action operations remain available, while `page.act` fails before dispatch with `UNSUPPORTED_EXTENSION_CAPABILITY` until both `element_diagnostics_v1` and `post_action_state_v1` are advertised. Unknown additive response fields remain optional. A breaking envelope, identity, or authorization change still requires a protocol-version increment.
+
+| Model tool | Extension command | Required runtime capability | Part 1 feature gate | Serialized result budget |
+| --- | --- | --- | --- | --- |
+| `browser_tabs` | server-local `binding.list` / `binding.set_primary` | none | none | 16 KiB |
+| `browser_snapshot` | `page.snapshot` | `dom` | none | 256 KiB |
+| `browser_find` | `page.find` | `dom` | none | 16 KiB |
+| `browser_act` | `page.act` | `dom` | element diagnostics + post-action state | 16 KiB |
+| `browser_wait` | `page.wait` | `dom` | none | 16 KiB |
+| `browser_screenshot` | `page.screenshot` | `dom` | none | 360,000 base64 characters; separate image budget |
+| `browser_console` | `page.console` | `debug_readonly` | none | 448 KiB |
+| `browser_network` | `page.network` | `debug_readonly` | none | 448 KiB |
+
+Element refs use `el_<document-context>_<sequence>` and remain opaque to the model. The extension records the issuing context per binding so a ref from an expired document returns `STALE_ELEMENT_REF`, while a ref known to another binding returns `WRONG_ELEMENT_CONTEXT`. Before policy-approved execution, the content script rejects detached, hidden, disabled, and covered targets with typed codes. Diagnostics contain only a bounded reason, redacted URL, title, document identity, and recovery guidance.
+
+Successful actions return `completed` plus a `postAction` projection. The background service worker samples pre-action state, then performs a bounded 800 ms navigation-aware stabilization loop. It returns redacted URL, bounded title/document/context identity, ready state, safe focused role/name metadata, and explicit URL/document/focus/DOM change indicators. `stabilization: "pending"` is retained for cross-origin navigation, closure, interrupted loading, or an unstable final sample; typed/fill text is never echoed.
+
+### U1 Fixed-Fixture Baseline
+
+The fixed one-node fixture uses compact JSON serialization (no whitespace). These measurements characterize the contract rather than set new limits: binding list 214 B, one-node snapshot 330 B, one-result find 239 B, legacy action acknowledgement 11 B, wait-timeout diagnostic 163 B, and Part 1 settled action state 404 B. The Part 1 action result remains below the 16 KiB compact budget.
+
+| Workflow from an already bound page | U1 baseline calls | Part 1 calls | Notes |
+| --- | ---: | ---: | --- |
+| Find and click, then confirm state | 3 | 2 | `find -> act -> snapshot` becomes `find -> act` |
+| Find and type, then confirm state | 3 | 2 | action state omits typed value |
+| Click known ref and confirm navigation | 2 | 1 | post-action state reports URL/document change or pending |
+| Recover post-navigation stale ref | 3 | 3 | failed act -> fresh find -> act; failure now identifies stale generation |
+| Wait timeout, then inspect page | 2 | 2 | wait behavior is unchanged in Part 1 |
+
+Redaction remains source-owned by `lib/browser-redaction.ts`, action policy remains source-owned by `lib/browser-action-policy.ts`, and extension artifacts are validated by `npm run test:browser`.
 
 ## Reuse Rules
 

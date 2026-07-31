@@ -8,6 +8,7 @@ import { randomUUID } from "node:crypto";
 import { WebSocketServer, WebSocket, type RawData } from "ws";
 import {
   BROWSER_PROTOCOL_VERSION,
+  BROWSER_EXTENSION_FEATURES,
   BrowserControlError,
   MAX_ENVELOPE_AGE_MS,
   MAX_FRAME_BYTES,
@@ -18,6 +19,7 @@ import {
   type BrowserCommandResponse,
   type BrowserEnvelope,
   type BrowserEventPayload,
+  type BrowserExtensionFeature,
   isRecord,
 } from "./browser-protocol";
 import {
@@ -33,6 +35,7 @@ export type BridgeClient = {
   connectedAt: number;
   lastPongAt: number;
   extensionOrigin?: string;
+  extensionFeatures: BrowserExtensionFeature[];
 };
 
 type PendingBridgeRequest = {
@@ -49,7 +52,12 @@ export type BrowserBridgeStatus = {
   host: "127.0.0.1";
   port: number;
   protocolVersion: typeof BROWSER_PROTOCOL_VERSION;
-  connectedClients: Array<{ clientId: string; connectedAt: number; lastPongAt: number }>;
+  connectedClients: Array<{
+    clientId: string;
+    connectedAt: number;
+    lastPongAt: number;
+    extensionFeatures: BrowserExtensionFeature[];
+  }>;
   pendingRequests: number;
 };
 
@@ -107,6 +115,7 @@ export class BrowserBridge {
         clientId: c.clientId,
         connectedAt: c.connectedAt,
         lastPongAt: c.lastPongAt,
+        extensionFeatures: [...c.extensionFeatures],
       })),
       pendingRequests: this.pending.size,
     };
@@ -216,6 +225,10 @@ export class BrowserBridge {
   isClientConnected(clientId: string): boolean {
     const client = this.clients.get(clientId);
     return Boolean(client && client.socket.readyState === WebSocket.OPEN);
+  }
+
+  getClientExtensionFeatures(clientId: string): BrowserExtensionFeature[] {
+    return [...(this.clients.get(clientId)?.extensionFeatures ?? [])];
   }
 
   async sendCommand(
@@ -400,6 +413,11 @@ export class BrowserBridge {
       const connectToken = typeof parsedJson.connectToken === "string" ? parsedJson.connectToken : "";
       const nonce = typeof parsedJson.nonce === "string" ? parsedJson.nonce : "";
       const response = typeof parsedJson.response === "string" ? parsedJson.response : "";
+      const extensionFeatures = Array.isArray(parsedJson.extensionFeatures)
+        ? parsedJson.extensionFeatures.filter((feature): feature is BrowserExtensionFeature => (
+          BROWSER_EXTENSION_FEATURES.includes(feature as typeof BROWSER_EXTENSION_FEATURES[number])
+        ))
+        : [];
       if (!clientId || !connectToken || !nonce || !response) {
         socket.close(1008, "auth_invalid");
         return;
@@ -454,6 +472,7 @@ export class BrowserBridge {
         connectedAt: now,
         lastPongAt: now,
         extensionOrigin: ctx.extensionOrigin ?? installation?.extensionOrigin,
+        extensionFeatures,
       });
 
       this.sendRaw(socket, {

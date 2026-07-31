@@ -21,6 +21,12 @@ export const MAX_SCREENSHOT_BYTES = 350_000;
 export const MAX_SCREENSHOT_BASE64_CHARS = 360_000;
 export const MAX_CONSOLE_EVENTS = 200;
 export const MAX_NETWORK_EVENTS = 200;
+/** Default serialized JSON budgets. Screenshot image payloads use their own budget. */
+export const BROWSER_RESPONSE_BUDGETS = {
+  compact: 16 * 1024,
+  snapshot: 256 * 1024,
+  diagnostics: 448 * 1024,
+} as const;
 export const RECENT_REQUEST_CACHE = 256;
 /** Reject envelopes older/newer than this skew (replay + clock drift). */
 export const MAX_ENVELOPE_AGE_MS = 5 * 60_000;
@@ -29,6 +35,12 @@ export const MAX_AUDIT_FILE_BYTES = 512 * 1024;
 export const MAX_AUDIT_FILE_LINES = 2_000;
 
 export type BrowserCapability = "dom" | "debug_readonly";
+
+export const BROWSER_EXTENSION_FEATURES = [
+  "element_diagnostics_v1",
+  "post_action_state_v1",
+] as const;
+export type BrowserExtensionFeature = typeof BROWSER_EXTENSION_FEATURES[number];
 
 export type BindingState =
   | "pending"
@@ -54,8 +66,13 @@ export type BrowserErrorCode =
   | "TAB_CLOSED"
   | "DOCUMENT_CHANGED"
   | "STALE_ELEMENT_REF"
+  | "WRONG_ELEMENT_CONTEXT"
+  | "ELEMENT_HIDDEN"
+  | "ELEMENT_DISABLED"
+  | "ELEMENT_COVERED"
   | "CAPABILITY_REQUIRED"
   | "CAPABILITY_UNAVAILABLE"
+  | "UNSUPPORTED_EXTENSION_CAPABILITY"
   | "ACTION_BLOCKED"
   | "BRIDGE_DISCONNECTED"
   | "REQUEST_TIMEOUT"
@@ -77,8 +94,13 @@ export const BROWSER_ERROR_RECOVERY: Record<BrowserErrorCode, string> = {
   TAB_CLOSED: "The tab was closed. Bind a new tab.",
   DOCUMENT_CHANGED: "Take a fresh browser_snapshot; previous element refs are invalid.",
   STALE_ELEMENT_REF: "Take a new browser_snapshot/browser_find and use a fresh elementRef.",
+  WRONG_ELEMENT_CONTEXT: "Run browser_find on the selected binding and use the returned elementRef.",
+  ELEMENT_HIDDEN: "Wait for the element to become visible or choose a visible control.",
+  ELEMENT_DISABLED: "Wait for the control to become enabled or complete its prerequisite.",
+  ELEMENT_COVERED: "Dismiss the covering UI or scroll the target into view, then retry.",
   CAPABILITY_REQUIRED: "Ask the user to enable the required capability (for example debug mode).",
   CAPABILITY_UNAVAILABLE: "Debugger is unavailable (possibly DevTools contention). Continue with DOM tools or re-enable debug mode.",
+  UNSUPPORTED_EXTENSION_CAPABILITY: "Update the Snail Pi Chrome extension, reconnect it, and retry.",
   ACTION_BLOCKED: "Choose a safer control or ask the user to perform the sensitive action manually.",
   BRIDGE_DISCONNECTED: "Ensure the Chrome extension is paired and connected to local Snail Pi.",
   REQUEST_TIMEOUT: "Retry with a narrower action or increase wait specificity.",
@@ -326,6 +348,17 @@ export function clampTimeoutMs(value: unknown, fallback = DEFAULT_TOOL_TIMEOUT_M
 
 export function isActiveBindingState(state: BindingState): boolean {
   return state === "active_dom" || state === "active_debug";
+}
+
+export function browserResponseBudget(command: BrowserCommandName): number | null {
+  if (command === "page.screenshot") return null;
+  if (command === "page.snapshot") return BROWSER_RESPONSE_BUDGETS.snapshot;
+  if (command === "page.console" || command === "page.network") return BROWSER_RESPONSE_BUDGETS.diagnostics;
+  return BROWSER_RESPONSE_BUDGETS.compact;
+}
+
+export function serializedBrowserResponseBytes(value: unknown): number {
+  return new TextEncoder().encode(JSON.stringify(value)).byteLength;
 }
 
 export function bindingHasCapability(

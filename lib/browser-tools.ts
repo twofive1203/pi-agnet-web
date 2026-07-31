@@ -5,7 +5,11 @@
 import type { ExtensionAPI, ExtensionFactory, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { StringEnum } from "@earendil-works/pi-ai";
-import { getBrowserBindingManager, formatToolErrorResult } from "./browser-binding-manager";
+import {
+  getBrowserBindingManager,
+  formatToolErrorResult,
+  PART1_BROWSER_EXTENSION_FEATURES,
+} from "./browser-binding-manager";
 import { clampTimeoutMs, type BrowserCommandName } from "./browser-protocol";
 
 function textResult(data: unknown) {
@@ -35,7 +39,12 @@ async function run(
   ctx: { sessionManager?: { getSessionId?: () => string } },
   params: Record<string, unknown>,
   signal: AbortSignal | undefined,
-  options?: { requiredCapability?: "dom" | "debug_readonly"; bindingId?: string; timeoutMs?: number },
+  options?: {
+    requiredCapability?: "dom" | "debug_readonly";
+    requiredExtensionFeatures?: Array<"element_diagnostics_v1" | "post_action_state_v1">;
+    bindingId?: string;
+    timeoutMs?: number;
+  },
 ) {
   const manager = getBrowserBindingManager();
   const sessionId = sessionIdFromCtx(ctx);
@@ -47,6 +56,7 @@ async function run(
     signal,
     timeoutMs: options?.timeoutMs,
     requiredCapability: options?.requiredCapability,
+    requiredExtensionFeatures: options?.requiredExtensionFeatures,
   });
   return textResult(result);
 }
@@ -133,7 +143,10 @@ export function createBrowserToolDefinitions(): ToolDefinition[] {
     }),
     async execute(_toolCallId, rawParams, signal, _onUpdate, ctx) {
       try {
-        return await run("page.act", ctx, asRecord(rawParams), signal, { requiredCapability: "dom" });
+        return await run("page.act", ctx, asRecord(rawParams), signal, {
+          requiredCapability: "dom",
+          requiredExtensionFeatures: PART1_BROWSER_EXTENSION_FEATURES,
+        });
       } catch (error) {
         return formatToolErrorResult(error);
       }

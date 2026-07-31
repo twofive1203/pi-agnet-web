@@ -7,6 +7,7 @@ import {
   BINDINGS_API,
   DEFAULT_PORT,
   DEFAULT_WEB_PORT,
+  EXTENSION_FEATURES,
   MAX_SCREENSHOT_BASE64_CHARS,
   PROTOCOL_VERSION,
   authorizeLocalBinding,
@@ -182,6 +183,7 @@ async function connectBridge() {
       connectToken: token.connectToken,
       nonce: token.nonce,
       response,
+      extensionFeatures: EXTENSION_FEATURES,
     }));
     if (heartbeatTimer) clearInterval(heartbeatTimer);
     heartbeatTimer = setInterval(() => {
@@ -254,6 +256,7 @@ async function applyReconcileSnapshot(params = {}) {
       url: remote.url || local.url || "",
       capabilities: remote.capabilities || ["dom"],
       state: remote.state || "active_dom",
+      contextId: local.contextId,
     };
   }
 
@@ -439,14 +442,131 @@ async function sendClientRequest(command, params = {}) {
   });
 }
 
-function errorResult(code, message) {
+function errorResult(code, message, details) {
   return {
     ok: false,
     error: {
       code,
-      message: message || code,
-      recovery: "See Snail Pi browser tool error recovery guidance.",
+      message: String(message || code).slice(0, 1_000),
+      recovery: recoveryForError(code),
+      ...(details ? { details } : {}),
     },
+  };
+}
+
+function recoveryForError(code) {
+  if (code === "STALE_ELEMENT_REF") return "Run browser_find again and use a fresh elementRef.";
+  if (code === "WRONG_ELEMENT_CONTEXT") return "Run browser_find on the selected binding and use its elementRef.";
+  if (code === "ELEMENT_HIDDEN") return "Wait for the element to become visible or choose a visible control.";
+  if (code === "ELEMENT_DISABLED") return "Wait for the control to become enabled or complete its prerequisite.";
+  if (code === "ELEMENT_COVERED") return "Dismiss the covering UI or scroll the target into view, then retry.";
+  return "See Snail Pi browser tool error recovery guidance.";
+}
+
+function actionErrorDetails(result, fallbackMeta) {
+  const details = result?.details && typeof result.details === "object" ? result.details : {};
+  return {
+    reason: typeof details.reason === "string" ? details.reason.slice(0, 80) : undefined,
+    action: typeof details.action === "string" ? details.action.slice(0, 40) : undefined,
+    url: redactUrl(String(fallbackMeta?.url || "")).slice(0, 2_000),
+    title: String(fallbackMeta?.title || "").slice(0, 200),
+    documentId: String(fallbackMeta?.documentId || "").slice(0, 300),
+  };
+}
+
+function stateSignature(state) {
+  return JSON.stringify([
+    state?.documentId,
+    state?.url,
+    state?.title,
+    state?.readyState,
+    state?.mutationVersion,
+    state?.focus?.role,
+    state?.focus?.name,
+  ]);
+}
+
+function compactPageState(state) {
+  return {
+    url: redactUrl(String(state?.url || "")).slice(0, 2_000),
+    title: String(state?.title || "").slice(0, 200),
+    documentId: String(state?.documentId || "").slice(0, 300),
+    contextId: String(state?.contextId || "").slice(0, 40),
+    readyState: String(state?.readyState || "unknown").slice(0, 20),
+    mutationVersion: Number(state?.mutationVersion) || 0,
+    focus: state?.focus ? {
+      role: String(state.focus.role || "").slice(0, 40),
+      name: String(state.focus.name || "").slice(0, 120),
+      sensitive: Boolean(state.focus.sensitive),
+    } : null,
+  };
+}
+
+function changeIndicators(before, after) {
+  const focusBefore = JSON.stringify(before?.focus || null);
+  const focusAfter = JSON.stringify(after?.focus || null);
+  const urlChanged = String(before?.url || "") !== String(after?.url || "");
+  const documentChanged = String(before?.documentId || "") !== String(after?.documentId || "");
+  const focusChanged = focusBefore !== focusAfter;
+  const domChanged = documentChanged || Number(before?.mutationVersion || 0) !== Number(after?.mutationVersion || 0);
+  return { changed: urlChanged || documentChanged || focusChanged || domChanged, urlChanged, documentChanged, focusChanged, domChanged };
+}
+
+async function collectPostActionState(tabId, binding, before) {
+  const deadline = Date.now() + 800;
+  let previousSignature = "";
+  let stableReads = 0;
+  let latest = before;
+  await new Promise((resolve) => setTimeout(resolve, 75));
+
+  while (Date.now() < deadline) {
+    const tab = await chrome.tabs.get(tabId).catch(() => null);
+    if (!tab) {
+      return {
+        stabilization: "pending",
+        state: compactPageState(latest),
+        changes: { ...changeIndicators(before, latest), tabClosed: true },
+      };
+    }
+    const tabUrl = tab.url || latest?.url || binding.url || "";
+    const currentOrigin = originOf(tabUrl);
+    if (currentOrigin && binding.origin && currentOrigin !== binding.origin) {
+      const crossOriginState = {
+        ...latest,
+        url: tabUrl,
+        title: tab.title || latest?.title || "",
+        documentId: "",
+        readyState: tab.status || "loading",
+      };
+      return {
+        stabilization: "pending",
+        state: compactPageState(crossOriginState),
+        changes: changeIndicators(before, crossOriginState),
+      };
+    }
+    try {
+      latest = await sendToContent(tabId, "state", {}, undefined);
+    } catch {
+      latest = { ...latest, url: tabUrl, title: tab.title || latest?.title || "", readyState: tab.status || "loading" };
+    }
+    const signature = stateSignature(latest);
+    stableReads = signature === previousSignature ? stableReads + 1 : 0;
+    previousSignature = signature;
+    const tabStatus = String(tab.status || "");
+    if (stableReads >= 1 && tabStatus === "complete" && latest?.readyState === "complete") {
+      return {
+        stabilization: "settled",
+        state: compactPageState(latest),
+        changes: changeIndicators(before, latest),
+      };
+    }
+    await new Promise((resolve) => setTimeout(resolve, 75));
+  }
+
+  return {
+    stabilization: "pending",
+    state: compactPageState(latest),
+    changes: changeIndicators(before, latest),
   };
 }
 
@@ -550,17 +670,59 @@ async function handleCommand(requestId, payload) {
     if (command === "page.snapshot") {
       const result = await sendToContent(tabId, "snapshot", params, requestId);
       if (result?.error) return errorResult(result.error, result.message);
+      if (result?.contextId) {
+        binding.contextId = String(result.contextId).slice(0, 40);
+        state.bindings[binding.bindingId] = binding;
+        await setSessionBindings(state);
+      }
       return { ok: true, result };
     }
     if (command === "page.find") {
       const result = await sendToContent(tabId, "find", params, requestId);
       if (result?.error) return errorResult(result.error, result.message);
+      if (result?.contextId) {
+        binding.contextId = String(result.contextId).slice(0, 40);
+        state.bindings[binding.bindingId] = binding;
+        await setSessionBindings(state);
+      }
       return { ok: true, result };
     }
     if (command === "page.act") {
+      let before;
+      try {
+        before = await sendToContent(tabId, "state", {}, requestId);
+      } catch {
+        before = {
+          documentId: binding.documentId,
+          url: binding.url,
+          title: binding.title,
+          readyState: "unknown",
+          mutationVersion: 0,
+          focus: null,
+        };
+      }
+      const refMatch = /^el_([^_]+)_\d+$/.exec(String(params.elementRef || ""));
+      if (refMatch && before?.contextId && refMatch[1] !== before.contextId) {
+        const belongsToOtherBinding = Object.values(state.bindings || {}).some((candidate) => (
+          candidate?.bindingId !== binding.bindingId && candidate?.contextId === refMatch[1]
+        ));
+        const code = belongsToOtherBinding ? "WRONG_ELEMENT_CONTEXT" : "STALE_ELEMENT_REF";
+        const message = belongsToOtherBinding
+          ? "elementRef belongs to another binding context"
+          : "elementRef belongs to an expired document context";
+        return errorResult(code, message, actionErrorDetails({
+          details: { reason: belongsToOtherBinding ? "wrong_context" : "document_changed" },
+        }, before));
+      }
+      binding.contextId = before?.contextId || binding.contextId;
+      state.bindings[binding.bindingId] = binding;
+      await setSessionBindings(state);
       const result = await sendToContent(tabId, "act", params, requestId);
-      if (result?.error) return errorResult(result.error, result.message);
-      const out = { ok: true, result };
+      if (result?.error) {
+        return errorResult(result.error, result.message, actionErrorDetails(result, before));
+      }
+      const postAction = await collectPostActionState(tabId, binding, before);
+      const out = { ok: true, result: { action: params.action, completed: true, postAction } };
       if (params.action && params.action !== "highlight") {
         recentMutations.set(requestId, out);
         if (recentMutations.size > 200) {
@@ -1099,7 +1261,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
           origin: nextOrigin,
           url: nextUrl,
           title: binding.title,
-          documentId: `${nextUrl}::nav`,
+          documentId: `nav_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`,
         });
       } else if (changeInfo.status === "complete") {
         try {

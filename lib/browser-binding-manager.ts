@@ -5,6 +5,7 @@
 
 import { randomBytes, randomUUID } from "node:crypto";
 import {
+  BROWSER_EXTENSION_FEATURES,
   BrowserControlError,
   DEFAULT_PENDING_BINDING_TTL_MS,
   DEFAULT_TOOL_TIMEOUT_MS,
@@ -19,6 +20,9 @@ import {
   type BrowserEventPayload,
   type PendingBindingRequest,
   bindingHasCapability,
+  browserResponseBudget,
+  serializedBrowserResponseBytes,
+  type BrowserExtensionFeature,
 } from "./browser-protocol";
 import {
   acceptBinding,
@@ -409,6 +413,7 @@ export class BrowserBindingManager {
     signal?: AbortSignal;
     timeoutMs?: number;
     requiredCapability?: BrowserCapability;
+    requiredExtensionFeatures?: BrowserExtensionFeature[];
   }): Promise<unknown> {
     await this.ensureReady();
     this.consumeRateLimit(`tool:${input.sessionId}`, 60, 60_000);
@@ -431,6 +436,16 @@ export class BrowserBindingManager {
         `Capability ${input.requiredCapability} is not available on this binding`,
       );
     }
+    const advertisedFeatures = getBrowserBridge().getClientExtensionFeatures(binding.clientId);
+    const missingFeatures = (input.requiredExtensionFeatures ?? [])
+      .filter((feature) => !advertisedFeatures.includes(feature));
+    if (missingFeatures.length > 0) {
+      throw new BrowserControlError(
+        "UNSUPPORTED_EXTENSION_CAPABILITY",
+        `Connected extension does not advertise: ${missingFeatures.join(", ")}`,
+        { missingFeatures, advertisedFeatures },
+      );
+    }
 
     const response = await this.dispatch(
       binding,
@@ -439,6 +454,17 @@ export class BrowserBindingManager {
       { signal: input.signal, timeoutMs: input.timeoutMs },
     );
     if (!response.ok) throw this.responseError(response);
+    const budget = browserResponseBudget(input.command);
+    if (budget !== null) {
+      const bytes = serializedBrowserResponseBytes(response.result);
+      if (bytes > budget) {
+        throw new BrowserControlError(
+          "OUTPUT_LIMIT_EXCEEDED",
+          `Browser response exceeded ${budget} bytes`,
+          { command: input.command, bytes, budget },
+        );
+      }
+    }
     touchBinding(this.store, binding.bindingId);
     recordBrowserAudit({
       action: `tool.${input.command}`,
@@ -724,7 +750,22 @@ export class BrowserBindingManager {
 
   private responseError(response: BrowserCommandResponse): BrowserControlError {
     const code = response.error?.code ?? "INTERNAL_ERROR";
-    return new BrowserControlError(code, response.error?.message, response.error?.details);
+    const rawDetails = response.error?.details;
+    let details: Record<string, unknown> | undefined;
+    if (rawDetails) {
+      try {
+        details = serializedBrowserResponseBytes(rawDetails) <= 8 * 1024
+          ? rawDetails
+          : { truncated: true };
+      } catch {
+        details = { truncated: true };
+      }
+    }
+    return new BrowserControlError(
+      code,
+      String(response.error?.message ?? code).slice(0, 1_000),
+      details,
+    );
   }
 
   private consumeRateLimit(key: string, max: number, windowMs: number): void {
@@ -740,6 +781,8 @@ export class BrowserBindingManager {
     }
   }
 }
+
+export const PART1_BROWSER_EXTENSION_FEATURES = [...BROWSER_EXTENSION_FEATURES];
 
 declare global {
   var __piBrowserBindingManager: BrowserBindingManager | undefined;

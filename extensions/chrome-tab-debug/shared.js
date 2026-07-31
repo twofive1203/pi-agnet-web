@@ -1,5 +1,7 @@
 /** Shared constants/helpers for the Snail Pi Chrome extension. */
 
+export { PROTOCOL_VERSION, EXTENSION_FEATURES } from "./protocol-capabilities.js";
+
 // Redaction helpers are generated from lib/browser-redaction.ts — single source of truth.
 export {
   isSensitiveHeaderName,
@@ -14,7 +16,6 @@ export {
   networkSummarySafe,
 } from "./redaction.js";
 
-export const PROTOCOL_VERSION = 1;
 export const DEFAULT_PORT = 62667;
 export const PAIR_API = (port) => `http://127.0.0.1:${port}/api/browser/pair`;
 export const BINDINGS_API = (port) => `http://127.0.0.1:${port}/api/browser/bindings`;

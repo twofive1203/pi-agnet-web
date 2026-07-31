@@ -29,11 +29,19 @@
   const MAX_TEXT = 8000;
   const refs = new Map();
   let refSeq = 0;
+  let mutationVersion = 0;
   const cancelled = new Set();
-  const documentId = `${location.href}::${document.documentElement?.outerHTML?.length || 0}::${Date.now()}::${Math.random().toString(36).slice(2)}`;
+  const expiredContexts = new Set();
+  const documentId = `doc_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+  let contextId = Math.random().toString(36).slice(2, 10);
+  if (typeof MutationObserver === "function") {
+    const observer = new MutationObserver(() => { mutationVersion += 1; });
+    observer.observe(document.documentElement, { subtree: true, childList: true, attributes: true, characterData: true });
+  }
 
   function isSensitive(el) {
     if (!(el instanceof HTMLElement)) return true;
+    if (el.isContentEditable) return true;
     const type = (el.getAttribute("type") || "").toLowerCase();
     if (type === "password" || type === "file") return true;
     const name = `${el.getAttribute("name") || ""} ${el.getAttribute("id") || ""} ${el.getAttribute("autocomplete") || ""}`;
@@ -43,8 +51,17 @@
 
   function visible(el) {
     if (!(el instanceof Element)) return false;
-    const style = window.getComputedStyle(el);
-    if (style.display === "none" || style.visibility === "hidden" || style.opacity === "0") return false;
+    let current = el;
+    while (current instanceof Element) {
+      const style = window.getComputedStyle(current);
+      if (
+        style.display === "none"
+        || style.visibility === "hidden"
+        || style.opacity === "0"
+        || current.getAttribute("aria-hidden") === "true"
+      ) return false;
+      current = current.parentElement || current.parentNode;
+    }
     const rect = el.getBoundingClientRect();
     return rect.width > 0 && rect.height > 0;
   }
@@ -70,17 +87,94 @@
   }
 
   function makeRef(el) {
-    const id = `el_${++refSeq}`;
+    const id = `el_${contextId}_${++refSeq}`;
     refs.set(id, el);
     return id;
   }
 
   function resolveRef(ref) {
+    const refContext = typeof ref === "string" ? /^el_([^_]+)_/.exec(ref)?.[1] : null;
+    if (typeof ref !== "string" || refContext !== contextId) {
+      const expired = refContext ? expiredContexts.has(refContext) : false;
+      return {
+        error: expired ? "STALE_ELEMENT_REF" : "WRONG_ELEMENT_CONTEXT",
+        message: expired ? "elementRef was invalidated by a new snapshot" : "elementRef belongs to another document context",
+        details: { reason: expired ? "snapshot_replaced" : "wrong_context", contextId },
+      };
+    }
     const el = refs.get(ref);
     if (!el || !el.isConnected) {
-      return { error: "STALE_ELEMENT_REF" };
+      return {
+        error: "STALE_ELEMENT_REF",
+        message: "elementRef is detached or expired",
+        details: { reason: "detached", contextId },
+      };
     }
     return { el };
+  }
+
+  function focusedElementSummary() {
+    const el = document.activeElement;
+    if (!(el instanceof HTMLElement)) return null;
+    const sensitive = isSensitive(el);
+    const safeName = el.isContentEditable
+      ? (el.getAttribute("aria-label") || el.getAttribute("title") || "")
+      : nameOf(el);
+    return {
+      role: roleOf(el).slice(0, 40),
+      name: safeName.slice(0, 120),
+      sensitive,
+    };
+  }
+
+  function pageState() {
+    return {
+      documentId,
+      contextId,
+      url: location.href,
+      origin: location.origin,
+      title: String(document.title || "").slice(0, 200),
+      readyState: document.readyState,
+      mutationVersion,
+      focus: focusedElementSummary(),
+    };
+  }
+
+  function isDisabled(el) {
+    if (el.disabled || el.getAttribute("aria-disabled") === "true") return true;
+    let current = el;
+    while (current instanceof Element) {
+      if (
+        current.tagName.toLowerCase() === "fieldset"
+        && (current.disabled || current.getAttribute("aria-disabled") === "true")
+      ) return true;
+      current = current.parentElement || current.parentNode;
+    }
+    return false;
+  }
+
+  function enabled(el) {
+    return !isDisabled(el);
+  }
+
+  function interactabilityError(el, action) {
+    if (!visible(el)) {
+      return { error: "ELEMENT_HIDDEN", message: "Target element is hidden", details: { reason: "hidden", action } };
+    }
+    if (isDisabled(el)) {
+      return { error: "ELEMENT_DISABLED", message: "Target element is disabled", details: { reason: "disabled", action } };
+    }
+    if (!["click", "type", "select"].includes(action)) return null;
+    const rect = el.getBoundingClientRect();
+    const x = Math.max(0, Math.min((window.innerWidth || rect.right) - 1, rect.left + rect.width / 2));
+    const y = Math.max(0, Math.min((window.innerHeight || rect.bottom) - 1, rect.top + rect.height / 2));
+    if (typeof document.elementFromPoint === "function") {
+      const top = document.elementFromPoint(x, y);
+      if (top && top !== el && !(typeof el.contains === "function" && el.contains(top))) {
+        return { error: "ELEMENT_COVERED", message: "Target element is covered", details: { reason: "covered", action } };
+      }
+    }
+    return null;
   }
 
   function snapshotNode(el, depth, acc, maxDepth, maxNodes) {
@@ -98,7 +192,7 @@
       role: roleOf(el),
       name: nameOf(el).slice(0, 200),
       visible: visible(el),
-      enabled: !el.disabled,
+      enabled: enabled(el),
       sensitive: isSensitive(el),
       children: [],
     };
@@ -118,6 +212,9 @@
   function handleSnapshot(params) {
     refs.clear();
     refSeq = 0;
+    expiredContexts.add(contextId);
+    while (expiredContexts.size > 8) expiredContexts.delete(expiredContexts.values().next().value);
+    contextId = Math.random().toString(36).slice(2, 10);
     const format = params.format || "accessibility";
     const maxDepth = Math.max(0, Math.min(MAX_DEPTH, Number(params.maxDepth) || MAX_DEPTH));
     const maxNodes = Math.max(1, Math.min(MAX_NODES, Number(params.maxNodes) || MAX_NODES));
@@ -125,6 +222,7 @@
       const text = (document.body?.innerText || "").slice(0, MAX_TEXT);
       return {
         documentId,
+        contextId,
         url: location.href,
         title: document.title,
         origin: location.origin,
@@ -139,6 +237,7 @@
     const root = snapshotNode(document.body || document.documentElement, 0, acc, maxDepth, maxNodes);
     return {
       documentId,
+      contextId,
       url: location.href,
       title: document.title,
       origin: location.origin,
@@ -178,13 +277,13 @@
         name: name.slice(0, 200),
         text: text.slice(0, 200),
         visible: visible(el),
-        enabled: !el.disabled,
+        enabled: enabled(el),
         sensitive: isSensitive(el),
         box: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
       });
       if (results.length >= limit) break;
     }
-    return { documentId, results, count: results.length };
+    return { documentId, contextId, results, count: results.length };
   }
 
   /**
@@ -230,6 +329,12 @@
     if (!decision.allowed) {
       return { error: "ACTION_BLOCKED", message: decision.reason };
     }
+
+    if (["click", "type", "select"].includes(action)) {
+      el.scrollIntoView({ block: "center", inline: "nearest", behavior: "instant" });
+    }
+    const interactability = interactabilityError(el, action);
+    if (interactability) return interactability;
 
     if (action === "highlight") {
       const prev = el.style.outline;
@@ -336,9 +441,7 @@
     if (message.channel !== "snail-pi-content") return false;
     const run = async () => {
       try {
-        if (message.type === "meta") {
-          return { documentId, url: location.href, title: document.title, origin: location.origin };
-        }
+        if (message.type === "meta" || message.type === "state") return pageState();
         if (message.type === "snapshot") return handleSnapshot(message.params || {});
         if (message.type === "find") return handleFind(message.params || {});
         if (message.type === "act") return handleAct(message.params || {});

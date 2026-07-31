@@ -35,9 +35,15 @@ No `<all_urls>`, no always-on content scripts, no remote code, incognito not all
 - Session fork / Snail Pi restart / Chrome restart do not restore tab bindings.
 - Console/exception/network outputs are redacted before leaving Chrome; typed text is never written to audit logs.
 - Click/type/select block downloads, file inputs, password/payment-like fields, permission prompts, and destructive controls.
+- Element refs are document-context scoped. Detached, expired-document, wrong-binding, hidden, disabled, and covered targets fail with typed bounded diagnostics before execution.
+- Successful actions return an 800 ms bounded post-action state summary. Cross-origin or still-loading navigation reports `stabilization: "pending"` rather than a false no-change result.
 - Network tool results never include Cookie/Authorization headers or bodies.
 - Raw CDP and arbitrary JavaScript evaluation are not exposed.
 - Debug mode requires extension popup consent and optional `debugger` permission; contention maps to `CAPABILITY_UNAVAILABLE`.
+
+## Protocol compatibility
+
+The extension and server still use protocol envelope version 1. During authenticated WebSocket setup the extension advertises additive features (`element_diagnostics_v1`, `post_action_state_v1`). A newer server checks these before dispatching `page.act`; an older or capability-limited extension receives `UNSUPPORTED_EXTENSION_CAPABILITY` with upgrade guidance instead of an opaque unsupported-command response. Additive response fields are optional. Envelope or authorization breaking changes require a protocol-version increment.
 
 ## Bridge ports
 

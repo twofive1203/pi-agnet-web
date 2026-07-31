@@ -98,6 +98,7 @@ class MockElement extends MockNode {
   type = "";
   clicked = false;
   focused = false;
+  onFocus: (() => void) | null = null;
 
   constructor(tagName: string) {
     super();
@@ -174,10 +175,21 @@ class MockElement extends MockNode {
 
   focus() {
     this.focused = true;
+    this.onFocus?.();
+  }
+
+  contains(node: MockNode): boolean {
+    if (node === this) return true;
+    return this.children.some((child) => child.contains(node));
   }
 
   click() {
     this.clicked = true;
+  }
+
+  dispatchEvent(event: unknown) {
+    void event;
+    return true;
   }
 
   scrollIntoView() {
@@ -198,6 +210,8 @@ function createDomFixture() {
   const documentElement = new MockHTMLElement("html");
   const body = new MockHTMLElement("body");
   documentElement.appendChild(body);
+  let activeElement: MockElement | null = null;
+  let pointElement: MockElement | null = null;
 
   function el(tag: string, props: Record<string, string> = {}, text = ""): MockHTMLElement {
     let node: MockHTMLElement;
@@ -220,6 +234,8 @@ function createDomFixture() {
     }
     if (props.href) node.href = props.href;
     if (props.type) node.type = props.type;
+    if (props.contenteditable === "true") node.isContentEditable = true;
+    node.onFocus = () => { activeElement = node; };
     body.appendChild(node);
     return node;
   }
@@ -239,6 +255,20 @@ function createDomFixture() {
   file.type = "file";
   const permission = el("button", { role: "button", id: "allow-cam" }, "Allow camera access");
   const payment = el("input", { id: "card", type: "text", name: "card_number", autocomplete: "cc-number" });
+  const hidden = el("button", { role: "button", id: "hidden" }, "Hidden action");
+  hidden.style.display = "none";
+  const disabled = el("button", { role: "button", id: "disabled" }, "Disabled action");
+  disabled.disabled = true;
+  const covered = el("button", { role: "button", id: "covered" }, "Covered action");
+  const overlay = el("div", { id: "overlay" }, "Overlay");
+  const editor = el("div", { id: "editor", contenteditable: "true", "aria-label": "Editor" }, "Existing text");
+  const outerFieldset = el("fieldset", { id: "outer-fieldset" });
+  outerFieldset.disabled = true;
+  const innerFieldset = new MockHTMLElement("fieldset");
+  const nestedDisabled = new MockHTMLInputElement("input");
+  nestedDisabled.setAttribute("id", "nested-disabled");
+  innerFieldset.appendChild(nestedDisabled);
+  outerFieldset.appendChild(innerFieldset);
 
   const all = () => {
     const out: MockElement[] = [];
@@ -255,6 +285,12 @@ function createDomFixture() {
     body,
     title: "Fixture Page",
     readyState: "complete",
+    get activeElement() {
+      return activeElement;
+    },
+    elementFromPoint() {
+      return pointElement;
+    },
     querySelector(selector: string) {
       return all().find((n) => n.matches(selector)) || null;
     },
@@ -273,8 +309,14 @@ function createDomFixture() {
   };
 
   const window = {
-    getComputedStyle() {
-      return { display: "block", visibility: "visible", opacity: "1" };
+    innerWidth: 1024,
+    innerHeight: 768,
+    getComputedStyle(node: MockElement) {
+      return {
+        display: node.style.display || "block",
+        visibility: node.style.visibility || "visible",
+        opacity: node.style.opacity || "1",
+      };
     },
   };
 
@@ -282,7 +324,10 @@ function createDomFixture() {
     document,
     location,
     window,
-    nodes: { benign, destructive, download, password, file, permission, payment },
+    nodes: { benign, destructive, download, password, file, permission, payment, hidden, disabled, covered, overlay, editor, nestedDisabled },
+    setPointElement(node: MockElement | null) {
+      pointElement = node;
+    },
   };
 }
 
@@ -432,7 +477,7 @@ function createChromeMock(options: {
         return [{ id: 7, url: "https://app.example.com/page", title: "Fixture Page", windowId: 1 }];
       },
       async get(tabId: number) {
-        return { id: tabId, url: "https://app.example.com/page", title: "Fixture Page", windowId: 1 };
+        return { id: tabId, url: "https://app.example.com/page", title: "Fixture Page", status: "complete", windowId: 1 };
       },
       async update() {
         return {};
@@ -573,6 +618,7 @@ async function checkManifestAndAssets(): Promise<void> {
     "action-policy.js",
     "action-policy.inject.js",
     "redaction.js",
+    "protocol-capabilities.js",
   ]) {
     referenced.add(entry);
   }
@@ -582,8 +628,11 @@ async function checkManifestAndAssets(): Promise<void> {
     assert(existsSync(abs), `referenced file missing: ${rel}`);
   }
 
+  const backgroundSource = readFileSync(join(EXT_DIR, "background.js"), "utf8");
+  assert(!backgroundSource.includes("${nextUrl}::nav"), "navigation document ids must not embed URLs");
+
   // Generated files must declare their source marker.
-  for (const file of ["action-policy.js", "action-policy.inject.js", "redaction.js"]) {
+  for (const file of ["action-policy.js", "action-policy.inject.js", "redaction.js", "protocol-capabilities.js"]) {
     const text = readFileSync(join(EXT_DIR, file), "utf8");
     assert(text.includes("GENERATED FILE"), `${file} missing generated marker`);
   }
@@ -597,10 +646,19 @@ async function checkManifestAndAssets(): Promise<void> {
     "action-policy.js",
     "action-policy.inject.js",
     "redaction.js",
+    "protocol-capabilities.js",
   ]) {
     const result = spawnSync(process.execPath, ["--check", join(EXT_DIR, file)], { encoding: "utf8" });
     assert(result.status === 0, `${file} syntax check failed: ${result.stderr || result.stdout}`);
   }
+
+  const sourceProtocol = await import("../lib/browser-protocol");
+  const generatedProtocol = await import(pathToFileURL(join(EXT_DIR, "protocol-capabilities.js")).href);
+  assert(generatedProtocol.PROTOCOL_VERSION === sourceProtocol.BROWSER_PROTOCOL_VERSION, "generated protocol version matches source");
+  assert(
+    JSON.stringify(generatedProtocol.EXTENSION_FEATURES) === JSON.stringify(sourceProtocol.BROWSER_EXTENSION_FEATURES),
+    "generated extension features match source",
+  );
 }
 
 async function checkActionPolicyModule(): Promise<void> {
@@ -734,6 +792,7 @@ async function checkContentScriptProductionPaths(): Promise<void> {
 
   const snap = await sendContent({ channel: "snail-pi-content", type: "snapshot", params: { format: "accessibility", maxNodes: 50 } });
   assert(typeof snap.documentId === "string" && snap.documentId.length > 0, "snapshot documentId");
+  assert(!String(snap.documentId).includes("app.example.com"), "documentId is opaque and URL-free");
   assert(snap.origin === "https://app.example.com", "snapshot origin");
 
   async function findOne(text: string): Promise<string> {
@@ -752,6 +811,9 @@ async function checkContentScriptProductionPaths(): Promise<void> {
   const destructiveRef = await findOne("Delete account");
   const downloadRef = await findOne("Download installer");
   const permissionRef = await findOne("Allow camera access");
+  const hiddenRef = await findOne("Hidden action");
+  const disabledRef = await findOne("Disabled action");
+  const coveredRef = await findOne("Covered action");
 
   // Password / file inputs via css
   const pwdFind = await sendContent({ channel: "snail-pi-content", type: "find", params: { css: "input[type=\"password\"]", limit: 3 } });
@@ -769,6 +831,54 @@ async function checkContentScriptProductionPaths(): Promise<void> {
   assert(benignAct.ok === true, "benign click allowed");
   assert(fixture.nodes.benign.clicked, "benign clicked");
 
+  const stateAfterClick = await sendContent({ channel: "snail-pi-content", type: "state", params: {} });
+  assert(stateAfterClick.readyState === "complete", "state includes readyState");
+  assert((stateAfterClick.focus as { role?: string })?.role === "button", "state includes bounded focus role");
+  assert(!("value" in ((stateAfterClick.focus || {}) as Record<string, unknown>)), "focus never includes value");
+
+  const wrongContext = await sendContent({
+    channel: "snail-pi-content",
+    type: "act",
+    params: { action: "click", elementRef: "el_othercontext_1" },
+  });
+  assert(wrongContext.error === "WRONG_ELEMENT_CONTEXT", "cross-document ref rejected");
+
+  const staleRef = await findOne("Save draft");
+  fixture.nodes.benign.isConnected = false;
+  const stale = await sendContent({
+    channel: "snail-pi-content",
+    type: "act",
+    params: { action: "click", elementRef: staleRef },
+  });
+  assert(stale.error === "STALE_ELEMENT_REF", "detached ref rejected");
+  fixture.nodes.benign.isConnected = true;
+
+  const hidden = await sendContent({ channel: "snail-pi-content", type: "act", params: { action: "click", elementRef: hiddenRef } });
+  assert(hidden.error === "ELEMENT_HIDDEN", "hidden control rejected");
+  const disabled = await sendContent({ channel: "snail-pi-content", type: "act", params: { action: "click", elementRef: disabledRef } });
+  assert(disabled.error === "ELEMENT_DISABLED", "disabled control rejected");
+  const nestedDisabledFind = await sendContent({ channel: "snail-pi-content", type: "find", params: { css: "#nested-disabled", limit: 1 } });
+  const nestedDisabledRef = ((nestedDisabledFind.results || []) as Array<{ elementRef: string }>)[0]?.elementRef;
+  assert(nestedDisabledRef, "nested disabled ref");
+  const nestedDisabledAct = await sendContent({ channel: "snail-pi-content", type: "act", params: { action: "click", elementRef: nestedDisabledRef } });
+  assert(nestedDisabledAct.error === "ELEMENT_DISABLED", "disabled fieldset control rejected");
+  fixture.setPointElement(fixture.nodes.overlay);
+  const covered = await sendContent({ channel: "snail-pi-content", type: "act", params: { action: "click", elementRef: coveredRef } });
+  fixture.setPointElement(null);
+  assert(covered.error === "ELEMENT_COVERED", "covered control rejected");
+
+  const editorFind = await sendContent({ channel: "snail-pi-content", type: "find", params: { css: "#editor", limit: 1 } });
+  const editorRef = ((editorFind.results || []) as Array<{ elementRef: string }>)[0]?.elementRef;
+  assert(editorRef, "contenteditable ref");
+  const editorAct = await sendContent({
+    channel: "snail-pi-content",
+    type: "act",
+    params: { action: "type", elementRef: editorRef, text: "content-secret", clearFirst: true },
+  });
+  assert(editorAct.ok === true, `contenteditable type allowed: ${JSON.stringify(editorAct)}`);
+  const editorState = await sendContent({ channel: "snail-pi-content", type: "state", params: {} });
+  assert(!JSON.stringify(editorState).includes("content-secret"), "contenteditable value never enters focus state");
+
   for (const [label, ref, action] of [
     ["destructive", destructiveRef, "click"],
     ["download", downloadRef, "click"],
@@ -783,6 +893,15 @@ async function checkContentScriptProductionPaths(): Promise<void> {
     });
     assert(result.error === "ACTION_BLOCKED", `${label} must be ACTION_BLOCKED, got ${JSON.stringify(result)}`);
   }
+
+  const replacedSnapshot = await sendContent({ channel: "snail-pi-content", type: "snapshot", params: { format: "accessibility", maxNodes: 10 } });
+  assert(replacedSnapshot.contextId !== snap.contextId, "snapshot rotates ref context");
+  const refAfterSnapshot = await sendContent({
+    channel: "snail-pi-content",
+    type: "act",
+    params: { action: "click", elementRef: editorRef },
+  });
+  assert(refAfterSnapshot.error === "STALE_ELEMENT_REF", "snapshot invalidates previous refs");
 
   // Cancel envelope aborts wait path in production content.js
   const waitReqId = "wait-req-1";
@@ -813,12 +932,16 @@ async function checkBackgroundProductionPaths(): Promise<void> {
   const chrome = createChromeMock({
     contentMessageHandler: async (message) => {
       if (activeContentHandler) return activeContentHandler(message);
-      if (message.type === "meta") {
+      if (message.type === "meta" || message.type === "state") {
         return {
           documentId: "doc-a",
+          contextId: "ctx-a",
           url: "https://app.example.com/page",
           title: "Fixture Page",
           origin: "https://app.example.com",
+          readyState: "complete",
+          mutationVersion: 0,
+          focus: null,
         };
       }
       if (message.type === "wait") {
@@ -1201,6 +1324,173 @@ async function checkBackgroundProductionPaths(): Promise<void> {
   });
   assert(okSnap.ok === true, "authorized snapshot ok");
 
+  const actionState = await commandResult({
+    command: "page.act",
+    bindingId,
+    sessionId,
+    params: {
+      __tabId: tabId,
+      __documentId: documentId,
+      __origin: origin,
+      action: "type",
+      elementRef: "el_ctx-a_1",
+      text: "never-echo-this-value",
+    },
+  });
+  assert(actionState.ok === true, `authorized action ok: ${JSON.stringify(actionState)}`);
+  const actionPayload = actionState.result as {
+    completed?: boolean;
+    postAction?: { stabilization?: string; state?: { url?: string; readyState?: string }; changes?: { changed?: boolean } };
+  };
+  assert(actionPayload.completed === true, "action reports completion");
+  assert(actionPayload.postAction?.stabilization === "settled", "action state settles after two stable reads");
+  assert(actionPayload.postAction?.state?.readyState === "complete", "action state includes loading status");
+  assert(typeof actionPayload.postAction?.changes?.changed === "boolean", "action state includes change indicator");
+  assert(!JSON.stringify(actionState).includes("never-echo-this-value"), "action response never echoes typed value");
+
+  const loadingTabsGet = chrome.tabs.get.bind(chrome.tabs);
+  chrome.tabs.get = async (id: number) => ({
+    id,
+    url: `${origin}/page/loading`,
+    title: "Loading Page",
+    status: "loading",
+    windowId: 1,
+  });
+  activeContentHandler = async (message) => {
+    if (message.type === "state") {
+      return {
+        documentId,
+        contextId: "ctx-a",
+        url: `${origin}/page/loading`,
+        title: "Loading Page",
+        origin,
+        readyState: "complete",
+        mutationVersion: 0,
+        focus: null,
+      };
+    }
+    return { ok: true };
+  };
+  try {
+    const loadingAction = await commandResult({
+      command: "page.act",
+      bindingId,
+      sessionId,
+      params: { __tabId: tabId, __documentId: documentId, __origin: origin, action: "click", elementRef: "el_ctx-a_1" },
+    });
+    assert(
+      (loadingAction.result as { postAction?: { stabilization?: string } })?.postAction?.stabilization === "pending",
+      "tab loading keeps stabilization pending",
+    );
+  } finally {
+    activeContentHandler = null;
+    chrome.tabs.get = loadingTabsGet;
+  }
+
+  activeContentHandler = async (message) => {
+    if (message.type === "state") {
+      return {
+        documentId: "doc-new",
+        contextId: "ctx-new",
+        url: `${origin}/next`,
+        title: "Next Page",
+        origin,
+        readyState: "complete",
+        mutationVersion: 0,
+        focus: null,
+      };
+    }
+    throw new Error("stale ref must fail before DOM action dispatch");
+  };
+  const staleAfterNavigation = await commandResult({
+    command: "page.act",
+    bindingId,
+    sessionId,
+    params: { __tabId: tabId, __documentId: documentId, __origin: origin, action: "click", elementRef: "el_ctx-a_1" },
+  });
+  assert((staleAfterNavigation.error as { code?: string })?.code === "STALE_ELEMENT_REF", "post-navigation ref is stale");
+  assert(
+    (staleAfterNavigation.error as { details?: { reason?: string } })?.details?.reason === "document_changed",
+    "stale navigation diagnostic includes reason",
+  );
+
+  activeContentHandler = async (message) => {
+    if (message.type === "state") {
+      return {
+        documentId,
+        contextId: "ctx-a",
+        url: `${origin}/page?token=diagnostic-secret`,
+        title: "Fixture Page",
+        origin,
+        readyState: "complete",
+        mutationVersion: 0,
+        focus: null,
+      };
+    }
+    if (message.type === "act") {
+      return { error: "ELEMENT_COVERED", message: "Target element is covered", details: { reason: "covered" } };
+    }
+    return { ok: true };
+  };
+  const coveredDiagnostic = await commandResult({
+    command: "page.act",
+    bindingId,
+    sessionId,
+    params: { __tabId: tabId, __documentId: documentId, __origin: origin, action: "click", elementRef: "el_ctx-a_1" },
+  });
+  assert((coveredDiagnostic.error as { code?: string })?.code === "ELEMENT_COVERED", "covered action keeps typed code");
+  const coveredDetails = (coveredDiagnostic.error as { details?: { reason?: string; url?: string; title?: string } })?.details;
+  assert(coveredDetails?.reason === "covered", "covered diagnostic includes reason");
+  assert(coveredDetails?.title === "Fixture Page", "covered diagnostic includes bounded title");
+  assert(!String(coveredDetails?.url || "").includes("diagnostic-secret"), "diagnostic URL is redacted");
+
+  let navigated = false;
+  const originalActionTabsGet = chrome.tabs.get.bind(chrome.tabs);
+  chrome.tabs.get = async (id: number) => ({
+    id,
+    url: navigated ? "https://other.example/next?token=navigation-secret" : `${origin}/page`,
+    title: navigated ? "Other Page" : "Fixture Page",
+    status: navigated ? "loading" : "complete",
+    windowId: 1,
+  });
+  activeContentHandler = async (message) => {
+    if (message.type === "state") {
+      return {
+        documentId,
+        contextId: "ctx-a",
+        url: `${origin}/page`,
+        title: "Fixture Page",
+        origin,
+        readyState: "complete",
+        mutationVersion: 0,
+        focus: null,
+      };
+    }
+    if (message.type === "act") {
+      navigated = true;
+      return { ok: true };
+    }
+    return { ok: true };
+  };
+  try {
+    const navigationAction = await commandResult({
+      command: "page.act",
+      bindingId,
+      sessionId,
+      params: { __tabId: tabId, __documentId: documentId, __origin: origin, action: "click", elementRef: "el_ctx-a_1" },
+    });
+    const navigationPost = (navigationAction.result as {
+      postAction?: { stabilization?: string; state?: { url?: string }; changes?: { documentChanged?: boolean; urlChanged?: boolean } };
+    })?.postAction;
+    assert(navigationPost?.stabilization === "pending", "cross-origin navigation remains pending");
+    assert(navigationPost?.changes?.documentChanged === true, "navigation reports document change");
+    assert(navigationPost?.changes?.urlChanged === true, "navigation reports URL change");
+    assert(!String(navigationPost?.state?.url || "").includes("navigation-secret"), "post-action URL is redacted");
+  } finally {
+    activeContentHandler = null;
+    chrome.tabs.get = originalActionTabsGet;
+  }
+
   // Console/exception redaction via production debugger event path
   chrome.__test.setDebuggerPermission(true);
   await chrome.storage.session.set({
@@ -1317,6 +1607,7 @@ async function checkBackgroundProductionPaths(): Promise<void> {
     id,
     url: "https://app.example.com/page?token=shot-secret&q=1",
     title: "Fixture Page",
+    status: "complete",
     windowId: 1,
   });
   try {
@@ -1492,6 +1783,7 @@ async function checkBackgroundProductionPaths(): Promise<void> {
     id,
     url: "https://other.example/confirmed",
     title: "Confirmed",
+    status: "complete",
     windowId: 1,
   });
   activeContentHandler = async (message) => {
