@@ -365,7 +365,6 @@ export const WorkspacePicker = memo(function WorkspacePicker({
             transition: "border-color 0.15s, background 0.15s",
           }}
         >
-          <span className="workspace-mark" aria-hidden="true">螺</span>
           <span className="workspace-card-copy">
             <strong>{workspaceTitle}</strong>
             <span title={selectedWorktree ? `${activeCwd ?? ""}\n${t("sidebar.worktreeContextHint")}` : activeCwd ?? ""}>

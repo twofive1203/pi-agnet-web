@@ -2306,18 +2306,6 @@ span.linenumber {
 .workspace-card:hover {
   border-color: color-mix(in srgb, var(--accent) 30%, var(--line)) !important;
 }
-.workspace-mark {
-  width: 38px;
-  height: 38px;
-  border-radius: 11px;
-  display: grid;
-  place-items: center;
-  color: #fff;
-  font-size: 15px;
-  font-weight: 800;
-  background: linear-gradient(135deg, var(--accent), var(--accent-2));
-  box-shadow: 0 8px 20px color-mix(in srgb, var(--accent) 22%, transparent);
-}
 .workspace-card-copy {
   min-width: 0;
   display: flex;
@@ -2380,6 +2368,30 @@ span.linenumber {
 .workspace-action-label {
   display: none;
 }
+
+/* Sidebar top: New session */
+.sidebar-new-session-row {
+  padding: 2px 10px 6px;
+  flex-shrink: 0;
+}
+.sidebar-new-session-row .new-session-btn {
+  width: 100%;
+  height: 32px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  cursor: pointer;
+  transition: filter 0.12s;
+}
+.sidebar-new-session-row .new-session-btn:hover:not(:disabled) { filter: brightness(1.06); }
+.sidebar-new-session-row .new-session-btn:disabled { opacity: 0.45; cursor: default; }
 
 /* Sidebar nav pills + search */
 .sidebar-nav-pills {
@@ -2470,36 +2482,13 @@ span.linenumber {
   padding: 10px;
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
   flex-shrink: 0;
 }
-.sidebar-foot .ghost {
-  flex: 1;
-  height: 34px;
-  border-radius: 10px;
-  border: 1px solid var(--line);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-2);
-  background: none;
-  cursor: pointer;
-  transition: background 0.12s, color 0.12s, border-color 0.12s;
-}
-.sidebar-foot .ghost:hover { background: var(--bg-hover); color: var(--text); }
-.sidebar-foot .ghost.primary {
-  background: linear-gradient(135deg, var(--accent), var(--accent-2));
-  border-color: transparent;
-  color: #fff;
-}
-.sidebar-foot .ghost.primary:hover { filter: brightness(1.06); color: #fff; }
-.sidebar-foot .ghost.primary:disabled { opacity: 0.45; cursor: default; filter: none; }
 .sidebar-foot .hub-row {
   display: grid;
-  grid-template-columns: repeat(4, 30px);
+  grid-template-columns: repeat(3, 30px);
   gap: 4px;
 }
 .sidebar-foot .hub-btn {

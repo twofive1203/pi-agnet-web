@@ -37,8 +37,6 @@ interface Props {
   onOpenFile?: (filePath: string, fileName: string) => void;
   explorerRefreshKey?: number;
   onAtMention?: (relativePath: string) => void;
-  /** Bump to open the Files explorer pane (nav pill). */
-  filesPill?: number;
   /** Bump to expand the archived sessions section (nav pill). */
   archivePill?: number;
 }
@@ -56,7 +54,6 @@ export function SessionSidebar({
   onOpenFile,
   explorerRefreshKey,
   onAtMention,
-  filesPill,
   archivePill,
 }: Props) {
   const { t } = useI18n();
@@ -505,10 +502,6 @@ export function SessionSidebar({
   }, []);
 
   useEffect(() => {
-    if (filesPill) setExplorerOpen(true);
-  }, [filesPill]);
-
-  useEffect(() => {
     if (archivePill && activeCwd) {
       setArchivedExpanded(true);
       void loadArchivedSessions(activeCwd, true);
@@ -583,7 +576,24 @@ export function SessionSidebar({
         onClearWorktreeError={handleClearWorktreeError}
       />
 
-      {/* Nav pills: Sessions / Files / Archive */}
+      {/* New session — primary action at the top of the sidebar */}
+      <div className="sidebar-new-session-row">
+        <button
+          className="new-session-btn"
+          onClick={() => {
+            if (activeCwd) onNewSession?.(makeTempSessionId(), activeCwd);
+          }}
+          disabled={!activeCwd}
+          title={t("sidebar.newSession")}
+        >
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+            <line x1="6" y1="1" x2="6" y2="11" /><line x1="1" y1="6" x2="11" y2="6" />
+          </svg>
+          {t("sidebar.newSession")}
+        </button>
+      </div>
+
+      {/* Nav pills: Sessions / Archive */}
       <div className="sidebar-nav-pills">
         <button
           className={!explorerOpen ? "on" : ""}
@@ -591,13 +601,6 @@ export function SessionSidebar({
           title={t("sidebar.sessions")}
         >
           {t("sidebar.sessions")}
-        </button>
-        <button
-          className={explorerOpen ? "on" : ""}
-          onClick={() => setExplorerOpen(true)}
-          title={t("sidebar.files")}
-        >
-          {t("sidebar.files")}
         </button>
         <button
           className={archivedExpanded ? "on" : ""}

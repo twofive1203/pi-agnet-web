@@ -778,21 +778,6 @@ export function AppShell() {
         onAtMention={handleAtMention}
       />
       <div className="sidebar-foot">
-        <button
-          className="ghost primary"
-          onClick={() => {
-            const cwd = activeCwd ?? selectedSession?.cwd ?? newSessionCwd;
-            if (!cwd) return;
-            handleNewSession(makeTempSessionId(), cwd);
-          }}
-          disabled={!activeCwd && !selectedSession?.cwd && !newSessionCwd}
-          title={t("sidebar.newSession")}
-        >
-          <svg width="13" height="13" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
-            <line x1="6" y1="1" x2="6" y2="11" /><line x1="1" y1="6" x2="11" y2="6" />
-          </svg>
-          {t("sidebar.newSession")}
-        </button>
         <div className="hub-row">
         {([
           {
@@ -807,18 +792,6 @@ export function AppShell() {
                 <line x1="9" y1="20" x2="9" y2="23" /><line x1="15" y1="20" x2="15" y2="23" />
                 <line x1="20" y1="9" x2="23" y2="9" /><line x1="20" y1="14" x2="23" y2="14" />
                 <line x1="1" y1="9" x2="4" y2="9" /><line x1="1" y1="14" x2="4" y2="14" />
-              </svg>
-            ),
-          },
-          {
-            id: "usage",
-            label: t("sidebar.usage"),
-            onClick: () => setUsageStatsOpen(true),
-            disabled: false,
-            icon: (
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="12" y1="1" x2="12" y2="23" />
-                <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7H14a3.5 3.5 0 0 1 0 7H6" />
               </svg>
             ),
           },
