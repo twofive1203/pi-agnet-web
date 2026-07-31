@@ -20,10 +20,13 @@ import {
   parseEnvelope,
   serializedBrowserResponseBytes,
   toBindingView,
+  validateBrowserSnapshotParams,
+  validateBrowserWaitParams,
 } from "../lib/browser-protocol";
 import {
   acceptBinding,
   canTransition,
+  closeBinding,
   createBindingStore,
   createPendingRequest,
   crossOriginNavigation,
@@ -210,6 +213,14 @@ async function main(): Promise<void> {
     assert(browserResponseBudget("page.console") === BROWSER_RESPONSE_BUDGETS.diagnostics, "diagnostics budget");
     assert(browserResponseBudget("page.screenshot") === null, "screenshot uses image budget");
     assert(serializedBrowserResponseBytes({ ok: true }) < BROWSER_RESPONSE_BUDGETS.compact, "small response within budget");
+    validateBrowserSnapshotParams({ mode: "interactive", maxTextChars: 100 });
+    validateBrowserWaitParams({ condition: "clickable", value: "#submit" });
+    try {
+      validateBrowserWaitParams({ condition: "not-supported", value: "x" });
+      assert(false, "invalid wait condition must fail validation");
+    } catch (error) {
+      assert(error instanceof BrowserControlError && error.code === "INVALID_WAIT_CONDITION", "invalid wait validation code");
+    }
   });
 
   await check("binding state machine and ownership", () => {
@@ -256,6 +267,7 @@ async function main(): Promise<void> {
     } catch (error) {
       assert(error instanceof BrowserControlError && error.code === "TAB_ALREADY_BOUND", "conflict");
     }
+    assert(store.pendingById.has("p2"), "tab conflict preserves pending request");
 
     createPendingRequest(store, {
       pendingRequestId: "p3",
@@ -320,12 +332,56 @@ async function main(): Promise<void> {
     const view = toBindingView(target, "b3");
     assert(view.primary === true, "view primary");
     assert(!("tabId" in view), "no tabId in view");
+    const redactedView = toBindingView({
+      ...target,
+      title: "x".repeat(400),
+      url: "https://a.example/?access_token=secret-value",
+    }, "b3");
+    assert(!redactedView.url.includes("secret-value"), "binding view redacts URL credentials");
+    assert(redactedView.title.length <= 200, "binding view bounds title");
 
+    suspendBinding(store, "b3", "cross_origin", {
+      origin: "https://other.example",
+      title: "Other",
+      url: "https://other.example/",
+      documentId: "d3-suspended",
+    });
+    setPrimaryBinding(store, "s1", "b3");
     revokeBinding(store, "b3");
-    assert(getPrimaryBindingId(store, "s1") === "b1" || getPrimaryBindingId(store, "s1") === null, "recompute primary");
+    assert(getPrimaryBindingId(store, "s1") === "b1", "primary fallback prefers active binding over suspended");
+
     revokeSessionBindings(store, "s1");
     assert(listSessionBindings(store, "s1").length === 0, "session clear");
     void suspendBinding;
+  });
+
+  await check("closed binding tombstone has typed recovery", () => {
+    const store = createBindingStore();
+    createPendingRequest(store, {
+      pendingRequestId: "p-closed",
+      sessionId: "closed-session",
+      sessionLabel: "Closed",
+      requestedCapabilities: ["dom"],
+      ttlMs: 60_000,
+    });
+    acceptBinding(store, {
+      bindingId: "b-closed",
+      pendingRequestId: "p-closed",
+      clientId: "ext-closed",
+      tabId: 88,
+      documentId: "doc-closed",
+      origin: "https://closed.example",
+      title: "Closed",
+      url: "https://closed.example/",
+    });
+    const closed = closeBinding(store, "b-closed");
+    assert(closed.state === "closed", "closed state retained");
+    try {
+      resolveTargetBinding(store, "closed-session", "b-closed");
+      assert(false, "closed binding must not resolve");
+    } catch (error) {
+      assert(error instanceof BrowserControlError && error.code === "TAB_CLOSED", "closed binding recovery code");
+    }
   });
 
   await check("redaction of console/network/audit secrets", () => {
@@ -399,6 +455,18 @@ async function main(): Promise<void> {
       role: "button",
       text: "Save draft",
     });
+    const semanticAllowed = [
+      evaluateActionPolicy({ action: "fill", tagName: "input", type: "text", name: "email" }),
+      evaluateActionPolicy({ action: "clear", tagName: "textarea", name: "comment" }),
+      evaluateActionPolicy({ action: "press", tagName: "input", type: "text", key: "Enter", modifiers: ["Control"] }),
+      evaluateActionPolicy({ action: "check", tagName: "input", type: "checkbox", text: "Subscribe" }),
+      evaluateActionPolicy({ action: "hover", tagName: "button", role: "button", text: "Open menu" }),
+    ];
+    assert(semanticAllowed.every((decision) => decision.allowed), "safe semantic actions allowed");
+    assert(!evaluateActionPolicy({ action: "hover", tagName: "button", role: "button", text: "Delete account" }).allowed, "destructive hover blocked");
+    assert(!evaluateActionPolicy({ action: "press", tagName: "input", type: "text", key: "F12" }).allowed, "arbitrary press key blocked");
+  assert(!evaluateActionPolicy({ action: "fill", tagName: "input", type: "password", name: "password" }).allowed, "fill password blocked");
+  assert(!evaluateActionPolicy({ action: "clear", tagName: "input", type: "file" }).allowed, "clear file input blocked");
     assert(allowed.allowed, "safe click allowed");
   });
 
@@ -453,6 +521,12 @@ async function main(): Promise<void> {
     ]) {
       assert(source.includes(`name: "${name}"`), `tool ${name} defined`);
     }
+    assert(source.includes('"fill"'), "semantic fill action schema");
+    assert(source.includes('"semantic_actions_v1"'), "semantic feature gate");
+    assert(source.includes("key"), "press key schema");
+    assert(source.includes("modifiers"), "press modifiers schema");
+    assert(source.includes("interactive"), "interactive snapshot schema");
+    assert(source.includes("clickable"), "enhanced wait schema");
     // sessionId must come from ctx.sessionManager, never from model tool parameters schema.
     assert(source.includes("sessionIdFromCtx"), "injects session from ctx");
     assert(source.includes("sessionManager?.getSessionId"), "reads session from manager");
@@ -554,9 +628,9 @@ async function main(): Promise<void> {
         sessionId: "session-real-1",
         command: "page.act",
         bindingId: acceptPayload.result?.binding?.bindingId,
-        params: { action: "click", elementRef: "el_legacy_1" },
+        params: { action: "fill", elementRef: "el_legacy_1", text: "secret-value" },
         requiredCapability: "dom",
-        requiredExtensionFeatures: ["element_diagnostics_v1", "post_action_state_v1"],
+        requiredExtensionFeatures: ["element_diagnostics_v1", "post_action_state_v1", "semantic_actions_v1"],
       });
       assert(false, "legacy extension must fail before action dispatch");
     } catch (error) {
@@ -564,6 +638,23 @@ async function main(): Promise<void> {
         error instanceof BrowserControlError && error.code === "UNSUPPORTED_EXTENSION_CAPABILITY",
         "legacy extension gets typed upgrade error",
       );
+    }
+    assert(
+      listBrowserAudit(50).some((entry) => entry.status === "error" && entry.code === "UNSUPPORTED_EXTENSION_CAPABILITY"),
+      "unsupported semantic action is audited",
+    );
+    try {
+      await manager.runToolCommand({
+        sessionId: "session-real-1",
+        command: "page.wait",
+        bindingId: acceptPayload.result?.binding?.bindingId,
+        params: { condition: "clickable", value: "#submit" },
+        requiredCapability: "dom",
+        requiredExtensionFeatures: ["wait_diagnostics_v1"],
+      });
+      assert(false, "legacy extension must fail enhanced wait before dispatch");
+    } catch (error) {
+      assert(error instanceof BrowserControlError && error.code === "UNSUPPORTED_EXTENSION_CAPABILITY", "legacy enhanced wait upgrade error");
     }
 
     // Cross-session tool routing still rejected by manager.
@@ -935,6 +1026,29 @@ async function main(): Promise<void> {
     const afterOwner = manager.listBindings(sessionId);
     assert(afterOwner.length === 1, "owner suspend keeps binding record");
     assert(afterOwner[0]!.state === "suspended", "owner suspend applies");
+
+    owner.send({
+      protocolVersion: 1,
+      kind: "event",
+      requestId: "owner-close-1",
+      clientId: owner.clientId,
+      timestamp: Date.now(),
+      payload: {
+        event: "binding.revoked",
+        bindingId,
+        sessionId,
+        data: { bindingId, sessionId, reason: "tab_closed" },
+      },
+    });
+    await new Promise((r) => setTimeout(r, 100));
+    const afterClose = manager.listBindings(sessionId);
+    assert(afterClose[0]?.state === "closed", "tab close keeps bounded tombstone");
+    try {
+      await manager.runToolCommand({ sessionId, command: "page.snapshot", bindingId });
+      assert(false, "closed tab command must fail");
+    } catch (error) {
+      assert(error instanceof BrowserControlError && error.code === "TAB_CLOSED", "closed tab command recovery");
+    }
 
     owner.close();
     attacker.close();

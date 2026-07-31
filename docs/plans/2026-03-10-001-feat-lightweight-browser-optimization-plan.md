@@ -1,7 +1,7 @@
 # feat: Optimize Lightweight Browser Control
 
 Created: 2026-03-10
-Status: Part 1 complete; Parts 2-3 pending
+Status: Part 1 complete; Part 2 complete; Part 3 pending
 
 ## Problem Frame
 
@@ -94,7 +94,7 @@ The optimization goal is not to expose the full Playwright/CDP surface. The goal
   - **Test scenarios:** Click navigation reports the new URL/document; an SPA update reports a same-document change when observable; typing reports completion without its value; a verified no-op reports no change; tab closure and interrupted navigation are explicit; every field stays within its fixed size limit.
   - **Verification:** Fixed click/type/wait fixtures require fewer follow-up snapshots than the U1 baseline.
 
-- [ ] U4. **Add High-Value Semantic Actions**
+- [x] U4. **Add High-Value Semantic Actions**
   - **Goal:** Cover common workflows with small, predictable operations while preserving policy checks.
   - **Dependencies:** U2, U3
   - **Files:** `lib/browser-tools.ts`, `lib/browser-protocol.ts`, `lib/browser-action-policy.ts`, `lib/browser-redaction.ts`, `extensions/chrome-tab-debug/content.js`, `extensions/chrome-tab-debug/background.js`, `scripts/generate-browser-extension-shared.ts`, `scripts/smoke-browser-binding.ts`, `scripts/smoke-chrome-extension-artifacts.ts`
@@ -103,7 +103,7 @@ The optimization goal is not to expose the full Playwright/CDP surface. The goal
   - **Test scenarios:** Fill replaces existing text and emits expected input/change behavior; clear is idempotent; check/uncheck validate target type and are idempotent; press supports an allowlisted Enter and common modifiers without bypassing policy; hover exposes a menu; unsupported capabilities fail before dispatch; sensitive values never appear in output or audit logs.
   - **Verification:** Each action has a typed tool schema, capability check, protocol path, policy decision, audit entry, extension implementation, and artifact smoke coverage.
 
-- [ ] U5. **Harden Already-Bound Tab Context Lifecycle**
+- [x] U5. **Harden Already-Bound Tab Context Lifecycle**
   - **Goal:** Improve selection and diagnostics for tabs already authorized to the current session without widening tab authority.
   - **Dependencies:** U2, U3
   - **Files:** `lib/browser-binding-manager.ts`, `lib/browser-binding-state.ts`, `lib/browser-protocol.ts`, `lib/browser-tools.ts`, `app/api/browser/bindings/route.ts`, `hooks/useBrowserBridgeStatus.ts`, `components/BrowserBindingPanel.tsx`, `components/BrowserBindingTrigger.tsx`, `extensions/chrome-tab-debug/background.js`, `extensions/chrome-tab-debug/popup.js`, `scripts/smoke-browser-binding.ts`, `scripts/smoke-chrome-extension-artifacts.ts`
@@ -112,7 +112,7 @@ The optimization goal is not to expose the full Playwright/CDP surface. The goal
   - **Test scenarios:** Multiple existing bindings remain selectable; primary changes are explicit; closed and suspended tabs return typed recovery errors; a newly opened tab cannot be acted on before user binding; default output contains only model-safe binding projections.
   - **Verification:** Existing single-tab behavior remains compatible, and no context operation exposes raw Chrome tab ids or bypasses per-tab authorization.
 
-- [ ] U6. **Improve Bounded Snapshots and Wait Diagnostics**
+- [x] U6. **Improve Bounded Snapshots and Wait Diagnostics**
   - **Goal:** Make snapshots and waits more useful per token while retaining strict limits.
   - **Dependencies:** U3
   - **Files:** `lib/browser-tools.ts`, `lib/browser-protocol.ts`, `extensions/chrome-tab-debug/content.js`, `extensions/chrome-tab-debug/background.js`, `scripts/smoke-browser-binding.ts`, `scripts/smoke-chrome-extension-artifacts.ts`
@@ -171,6 +171,8 @@ This part adds the capabilities used by ordinary browser workflows:
 **Delivery boundary:** Common top-frame workflows across one or more explicitly bound tabs are feature-complete. File upload, implicit popup authority, and iframe contexts remain excluded.
 
 **Part gate:** Every new action has policy, audit, extension artifact, and smoke coverage; snapshot/response byte budgets pass; fixed workflows improve on the U1 round-trip baseline; existing single-tab behavior remains compatible.
+
+**Part 2 delivery note (2026-03-10):** U4-U6 are implemented. Semantic actions are capability-gated by `semantic_actions_v1`; closed tabs retain bounded server-side tombstones and return `TAB_CLOSED`; URL/title projections are bounded and redacted; primary binding selection is active-first and included in extension reconcile. Enhanced snapshot and wait parameters are additive capability-gated features with explicit truncation, typed timeout/cancel/selector diagnostics, and compact current state.
 
 ### Part 3: Advanced Contexts and Release Hardening
 

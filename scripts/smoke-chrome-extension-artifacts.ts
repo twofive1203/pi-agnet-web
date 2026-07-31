@@ -94,6 +94,8 @@ class MockElement extends MockNode {
   isContentEditable = false;
   value = "";
   innerText = "";
+  checked = false;
+  events: Array<{ type?: string; key?: string }> = [];
   href = "";
   type = "";
   clicked = false;
@@ -188,7 +190,8 @@ class MockElement extends MockNode {
   }
 
   dispatchEvent(event: unknown) {
-    void event;
+    const record = event as { type?: string; key?: string };
+    this.events.push({ type: record?.type, key: record?.key });
     return true;
   }
 
@@ -234,6 +237,7 @@ function createDomFixture() {
     }
     if (props.href) node.href = props.href;
     if (props.type) node.type = props.type;
+    if (props.value) node.value = props.value;
     if (props.contenteditable === "true") node.isContentEditable = true;
     node.onFocus = () => { activeElement = node; };
     body.appendChild(node);
@@ -262,6 +266,10 @@ function createDomFixture() {
   const covered = el("button", { role: "button", id: "covered" }, "Covered action");
   const overlay = el("div", { id: "overlay" }, "Overlay");
   const editor = el("div", { id: "editor", contenteditable: "true", "aria-label": "Editor" }, "Existing text");
+  const textInput = el("input", { id: "semantic-input", type: "text", value: "old value" });
+  const checkbox = el("input", { id: "semantic-checkbox", type: "checkbox" });
+  const radio = el("input", { id: "semantic-radio", type: "radio" });
+  const hoverTarget = el("button", { id: "hover-target", role: "button" }, "Open menu");
   const outerFieldset = el("fieldset", { id: "outer-fieldset" });
   outerFieldset.disabled = true;
   const innerFieldset = new MockHTMLElement("fieldset");
@@ -279,6 +287,10 @@ function createDomFixture() {
     walk(body);
     return out;
   };
+  Object.defineProperty(body, "innerText", {
+    configurable: true,
+    get: () => all().filter((node) => node !== body).map((node) => node.innerText || node.textContent || "").join(" "),
+  });
 
   const document = {
     documentElement,
@@ -292,9 +304,11 @@ function createDomFixture() {
       return pointElement;
     },
     querySelector(selector: string) {
+      if (selector === "[") throw new Error("Invalid selector");
       return all().find((n) => n.matches(selector)) || null;
     },
     querySelectorAll(selector: string) {
+      if (selector === "[") throw new Error("Invalid selector");
       if (selector === "body *") return all().filter((n) => n !== body);
       return all().filter((n) => n.matches(selector));
     },
@@ -324,7 +338,7 @@ function createDomFixture() {
     document,
     location,
     window,
-    nodes: { benign, destructive, download, password, file, permission, payment, hidden, disabled, covered, overlay, editor, nestedDisabled },
+    nodes: { benign, destructive, download, password, file, permission, payment, hidden, disabled, covered, overlay, editor, nestedDisabled, textInput, checkbox, radio, hoverTarget },
     setPointElement(node: MockElement | null) {
       pointElement = node;
     },
@@ -753,6 +767,7 @@ async function checkContentScriptProductionPaths(): Promise<void> {
     Set,
     JSON,
     Date,
+    TextEncoder,
     Error,
   };
   sandbox.globalThis = sandbox;
@@ -879,6 +894,43 @@ async function checkContentScriptProductionPaths(): Promise<void> {
   const editorState = await sendContent({ channel: "snail-pi-content", type: "state", params: {} });
   assert(!JSON.stringify(editorState).includes("content-secret"), "contenteditable value never enters focus state");
 
+  const semanticInputFind = await sendContent({ channel: "snail-pi-content", type: "find", params: { css: "#semantic-input", limit: 1 } });
+  const semanticInputRef = ((semanticInputFind.results || []) as Array<{ elementRef: string }>)[0]?.elementRef;
+  const checkboxFind = await sendContent({ channel: "snail-pi-content", type: "find", params: { css: "#semantic-checkbox", limit: 1 } });
+  const checkboxRef = ((checkboxFind.results || []) as Array<{ elementRef: string }>)[0]?.elementRef;
+  const radioFind = await sendContent({ channel: "snail-pi-content", type: "find", params: { css: "#semantic-radio", limit: 1 } });
+  const radioRef = ((radioFind.results || []) as Array<{ elementRef: string }>)[0]?.elementRef;
+  const hoverFind = await sendContent({ channel: "snail-pi-content", type: "find", params: { css: "#hover-target", limit: 1 } });
+  const hoverRef = ((hoverFind.results || []) as Array<{ elementRef: string }>)[0]?.elementRef;
+  assert(semanticInputRef && checkboxRef && radioRef && hoverRef, "semantic action refs");
+
+  const filled = await sendContent({ channel: "snail-pi-content", type: "act", params: { action: "fill", elementRef: semanticInputRef, text: "replacement-value" } });
+  assert(filled.ok === true && filled.changed === true, "fill replaces text");
+  assert(fixture.nodes.textInput.value === "replacement-value", "fill value applied");
+  assert(!JSON.stringify(filled).includes("replacement-value"), "fill result does not echo value");
+  const cleared = await sendContent({ channel: "snail-pi-content", type: "act", params: { action: "clear", elementRef: semanticInputRef } });
+  const clearedAgain = await sendContent({ channel: "snail-pi-content", type: "act", params: { action: "clear", elementRef: semanticInputRef } });
+  assert(cleared.ok === true && cleared.changed === true, "clear changes non-empty input");
+  assert(clearedAgain.ok === true && clearedAgain.changed === false, "clear is idempotent");
+
+  const pressed = await sendContent({ channel: "snail-pi-content", type: "act", params: { action: "press", elementRef: semanticInputRef, key: "Enter", modifiers: ["Control"] } });
+  assert(pressed.ok === true && pressed.key === "Enter", "press allowlisted key");
+  assert(fixture.nodes.textInput.events.some((event) => event.type === "keydown" && event.key === "Enter"), "press dispatches keydown");
+  const invalidPress = await sendContent({ channel: "snail-pi-content", type: "act", params: { action: "press", elementRef: semanticInputRef, key: "F12" } });
+  assert(invalidPress.error === "INVALID_ACTION_TARGET", "press rejects arbitrary key");
+
+  const checked = await sendContent({ channel: "snail-pi-content", type: "act", params: { action: "check", elementRef: checkboxRef } });
+  const checkedAgain = await sendContent({ channel: "snail-pi-content", type: "act", params: { action: "check", elementRef: checkboxRef } });
+  const unchecked = await sendContent({ channel: "snail-pi-content", type: "act", params: { action: "uncheck", elementRef: checkboxRef } });
+  assert(checked.ok === true && checked.changed === true && checked.checked === true, "check changes checkbox");
+  assert(checkedAgain.ok === true && checkedAgain.changed === false, "check is idempotent");
+  assert(unchecked.ok === true && unchecked.changed === true && unchecked.checked === false, "uncheck changes checkbox");
+  const radioUncheck = await sendContent({ channel: "snail-pi-content", type: "act", params: { action: "uncheck", elementRef: radioRef } });
+  assert(radioUncheck.error === "INVALID_ACTION_TARGET", "radio cannot be unchecked");
+
+  const hovered = await sendContent({ channel: "snail-pi-content", type: "act", params: { action: "hover", elementRef: hoverRef } });
+  assert(hovered.ok === true && fixture.nodes.hoverTarget.events.some((event) => event.type === "mouseenter"), "hover dispatches pointer events");
+
   for (const [label, ref, action] of [
     ["destructive", destructiveRef, "click"],
     ["download", downloadRef, "click"],
@@ -891,15 +943,50 @@ async function checkContentScriptProductionPaths(): Promise<void> {
       type: "act",
       params: { action, elementRef: ref, text: action === "type" ? "secret" : undefined },
     });
-    assert(result.error === "ACTION_BLOCKED", `${label} must be ACTION_BLOCKED, got ${JSON.stringify(result)}`);
+  assert(result.error === "ACTION_BLOCKED", `${label} must be ACTION_BLOCKED, got ${JSON.stringify(result)}`);
   }
 
+  const interactiveSnapshot = await sendContent({
+    channel: "snail-pi-content",
+    type: "snapshot",
+    params: { format: "accessibility", mode: "interactive", maxNodes: 50 },
+  });
+  assert(interactiveSnapshot.mode === "interactive", "interactive snapshot mode");
+  assert(!((interactiveSnapshot.root as { children?: Array<{ name?: string }> })?.children || []).some((node) => node.name === "Overlay"), "interactive snapshot omits non-actionable nodes");
+  const scopedInputFind = await sendContent({ channel: "snail-pi-content", type: "find", params: { css: "#semantic-input", limit: 1 } });
+  const scopedInputRef = ((scopedInputFind.results || []) as Array<{ elementRef: string }>)[0]?.elementRef;
+  assert(scopedInputRef, "scoped snapshot ref");
+  const scopedSnapshot = await sendContent({ channel: "snail-pi-content", type: "snapshot", params: { scopeElementRef: scopedInputRef, maxNodes: 10 } });
+  assert((scopedSnapshot.root as { tag?: string })?.tag === "input", "scoped snapshot root");
+  const nodeTruncated = await sendContent({ channel: "snail-pi-content", type: "snapshot", params: { maxNodes: 1 } });
+  assert((nodeTruncated.truncation as { nodes?: boolean } | undefined)?.nodes === true, "snapshot node truncation metadata");
+  const depthTruncated = await sendContent({ channel: "snail-pi-content", type: "snapshot", params: { maxDepth: 1, maxNodes: 50 } });
+  assert((depthTruncated.truncation as { depth?: boolean } | undefined)?.depth === true, "snapshot depth truncation metadata");
+  const textTruncated = await sendContent({ channel: "snail-pi-content", type: "snapshot", params: { format: "visible_text", maxTextChars: 100 } });
+  assert((textTruncated.truncation as { text?: boolean } | undefined)?.text === true, "snapshot text truncation metadata");
+
+  const clickableWait = await sendContent({ channel: "snail-pi-content", type: "wait", params: { condition: "clickable", value: "#semantic-input", timeoutMs: 1000 } });
+  assert(clickableWait.ok === true && clickableWait.condition === "clickable", "clickable wait resolves");
+  const urlPatternWait = await sendContent({ channel: "snail-pi-content", type: "wait", params: { condition: "url_pattern", value: "https://app.example.com/*", timeoutMs: 1000 } });
+  assert(urlPatternWait.ok === true && urlPatternWait.condition === "url_pattern", "URL pattern wait resolves");
+  const textChangeWait = await sendContent({ channel: "snail-pi-content", type: "wait", params: { condition: "text_change", selector: "#editor", value: "Existing text", timeoutMs: 1000 } });
+  assert(textChangeWait.ok === true && textChangeWait.condition === "text_change", "text change wait resolves");
+  const documentIdleWait = await sendContent({ channel: "snail-pi-content", type: "wait", params: { condition: "document_idle", value: "idle", timeoutMs: 1000 } });
+  assert(documentIdleWait.ok === true && documentIdleWait.condition === "document_idle", "document idle wait resolves");
+  const invalidWait = await sendContent({ channel: "snail-pi-content", type: "wait", params: { condition: "unknown", value: "x", timeoutMs: 1000 } });
+  assert(invalidWait.error === "INVALID_WAIT_CONDITION", "invalid wait condition fails fast");
+  const invalidSelectorWait = await sendContent({ channel: "snail-pi-content", type: "wait", params: { condition: "clickable", value: "[", timeoutMs: 1000 } });
+  assert(invalidSelectorWait.error === "INVALID_SELECTOR", "invalid wait selector fails fast");
+
+  const freshEditorFind = await sendContent({ channel: "snail-pi-content", type: "find", params: { css: "#editor", limit: 1 } });
+  const freshEditorRef = ((freshEditorFind.results || []) as Array<{ elementRef: string }>)[0]?.elementRef;
+  assert(freshEditorRef, "fresh editor ref");
   const replacedSnapshot = await sendContent({ channel: "snail-pi-content", type: "snapshot", params: { format: "accessibility", maxNodes: 10 } });
   assert(replacedSnapshot.contextId !== snap.contextId, "snapshot rotates ref context");
   const refAfterSnapshot = await sendContent({
     channel: "snail-pi-content",
     type: "act",
-    params: { action: "click", elementRef: editorRef },
+    params: { action: "click", elementRef: freshEditorRef },
   });
   assert(refAfterSnapshot.error === "STALE_ELEMENT_REF", "snapshot invalidates previous refs");
 
@@ -920,7 +1007,7 @@ async function checkContentScriptProductionPaths(): Promise<void> {
     }, {}, () => undefined);
   }
   const waitResult = await waitPromise;
-  assert(waitResult.error === "REQUEST_TIMEOUT", "cancelled wait returns REQUEST_TIMEOUT-class result");
+  assert(waitResult.error === "WAIT_CANCELLED", "cancelled wait has distinct code");
   assert(String(waitResult.message || "").toLowerCase().includes("cancel"), "cancel message");
 }
 
@@ -1625,6 +1712,38 @@ async function checkBackgroundProductionPaths(): Promise<void> {
     chrome.tabs.get = originalTabsGet;
   }
 
+  activeContentHandler = async (message) => {
+    if (message.type === "wait") {
+      return {
+        error: "WAIT_TIMEOUT",
+        message: "Wait condition not met",
+        waitedMs: 123,
+        condition: "clickable",
+        state: {
+          documentId: "doc-a",
+          contextId: "ctx-a",
+          url: "https://app.example.com/page?token=wait-secret",
+          title: "Fixture Page",
+          readyState: "complete",
+          mutationVersion: 0,
+          focus: null,
+        },
+      };
+    }
+    return { ok: true };
+  };
+  const waitTimeoutResponse = await commandResult({
+    command: "page.wait",
+    bindingId,
+    sessionId,
+    params: { __tabId: tabId, __documentId: documentId, __origin: origin, condition: "clickable", value: "#missing", timeoutMs: 1000 },
+  });
+  assert((waitTimeoutResponse.error as { code?: string })?.code === "WAIT_TIMEOUT", "wait timeout typed code");
+  const waitTimeoutDetails = (waitTimeoutResponse.error as { details?: { condition?: string; elapsedMs?: number; state?: { url?: string } } })?.details;
+  assert(waitTimeoutDetails?.condition === "clickable" && waitTimeoutDetails.elapsedMs === 123, "wait timeout details bounded");
+  assert(!String(waitTimeoutDetails?.state?.url || "").includes("wait-secret"), "wait timeout state URL redacted");
+  activeContentHandler = null;
+
   // Cancel envelope aborts in-flight wait via tabs.sendMessage (not runtime.sendMessage).
   activeContentHandler = async (message) => {
     if (message.type === "wait") {
@@ -1634,7 +1753,7 @@ async function checkBackgroundProductionPaths(): Promise<void> {
         const started = Date.now();
         const check = () => {
           if ((chrome as { __cancelIds?: Set<string> }).__cancelIds?.has(requestId)) {
-            resolve({ error: "REQUEST_TIMEOUT", message: "Wait cancelled", waitedMs: Date.now() - started });
+            resolve({ error: "WAIT_CANCELLED", message: "Wait cancelled", waitedMs: Date.now() - started });
             return;
           }
           if (Date.now() - started > 2500) {
@@ -1687,7 +1806,7 @@ async function checkBackgroundProductionPaths(): Promise<void> {
   const waitResp = await waitRespPromise;
   const waitPayload = (waitResp.payload || {}) as { ok?: boolean; error?: { code?: string; message?: string } };
   assert(waitPayload.ok === false, "cancelled wait not ok");
-  assert(waitPayload.error?.code === "REQUEST_TIMEOUT", "cancel maps to REQUEST_TIMEOUT");
+  assert(waitPayload.error?.code === "WAIT_CANCELLED", "cancel maps to WAIT_CANCELLED");
 
   // Popup channel is loadable (status handler responds)
   const status = await new Promise<Record<string, unknown>>((resolve, reject) => {

@@ -3,6 +3,8 @@
  * Model-facing types never include raw Chrome tabId or installation credentials.
  */
 
+import { redactUrl } from "./browser-redaction";
+
 export const BROWSER_PROTOCOL_VERSION = 1 as const;
 
 export const DEFAULT_BROWSER_BRIDGE_PORT = 62667;
@@ -39,14 +41,25 @@ export type BrowserCapability = "dom" | "debug_readonly";
 export const BROWSER_EXTENSION_FEATURES = [
   "element_diagnostics_v1",
   "post_action_state_v1",
+  "semantic_actions_v1",
+  "bounded_snapshot_v1",
+  "wait_diagnostics_v1",
 ] as const;
 export type BrowserExtensionFeature = typeof BROWSER_EXTENSION_FEATURES[number];
+
+export const BROWSER_SEMANTIC_ACTIONS = ["fill", "clear", "press", "check", "uncheck", "hover"] as const;
+export type BrowserSemanticAction = typeof BROWSER_SEMANTIC_ACTIONS[number];
+export const BROWSER_PRESS_KEYS = ["Enter", "Space", "Tab", "Escape", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"] as const;
+export type BrowserPressKey = typeof BROWSER_PRESS_KEYS[number];
+export const BROWSER_PRESS_MODIFIERS = ["Shift", "Control", "Alt", "Meta"] as const;
+export type BrowserPressModifier = typeof BROWSER_PRESS_MODIFIERS[number];
 
 export type BindingState =
   | "pending"
   | "active_dom"
   | "active_debug"
   | "suspended"
+  | "closed"
   | "revoked"
   | "expired";
 
@@ -70,6 +83,12 @@ export type BrowserErrorCode =
   | "ELEMENT_HIDDEN"
   | "ELEMENT_DISABLED"
   | "ELEMENT_COVERED"
+  | "INVALID_ACTION_TARGET"
+  | "INVALID_SELECTOR"
+  | "INVALID_WAIT_CONDITION"
+  | "WAIT_TIMEOUT"
+  | "WAIT_CANCELLED"
+  | "REQUEST_CANCELLED"
   | "CAPABILITY_REQUIRED"
   | "CAPABILITY_UNAVAILABLE"
   | "UNSUPPORTED_EXTENSION_CAPABILITY"
@@ -92,6 +111,12 @@ export const BROWSER_ERROR_RECOVERY: Record<BrowserErrorCode, string> = {
   BINDING_SUSPENDED: "Ask the user to re-confirm the tab in the extension after navigation.",
   TAB_ALREADY_BOUND: "That tab is owned by another session; unbind it first or pick another tab.",
   TAB_CLOSED: "The tab was closed. Bind a new tab.",
+  INVALID_ACTION_TARGET: "Use the matching semantic action for this element type, then retry.",
+  INVALID_SELECTOR: "Use a valid bounded CSS selector and retry.",
+  INVALID_WAIT_CONDITION: "Use a supported wait condition with the required value or selector.",
+  WAIT_TIMEOUT: "Inspect the compact current state, then narrow the condition or retry.",
+  WAIT_CANCELLED: "The wait was cancelled before the condition matched; issue a new wait if needed.",
+  REQUEST_CANCELLED: "The browser request was cancelled before completion.",
   DOCUMENT_CHANGED: "Take a fresh browser_snapshot; previous element refs are invalid.",
   STALE_ELEMENT_REF: "Take a new browser_snapshot/browser_find and use a fresh elementRef.",
   WRONG_ELEMENT_CONTEXT: "Run browser_find on the selected binding and use the returned elementRef.",
@@ -180,6 +205,7 @@ export type PendingBindingRequest = {
 export type BrowserCommandName =
   | "ping"
   | "reconcile"
+  | "binding.closed"
   | "binding.accept"
   | "binding.list"
   | "binding.set_primary"
@@ -310,9 +336,9 @@ export function toBindingView(
 ): BrowserBindingView {
   return {
     bindingId: binding.bindingId,
-    title: binding.title,
-    origin: binding.origin,
-    url: binding.url,
+    title: binding.title.slice(0, 200),
+    origin: binding.origin.slice(0, 200),
+    url: redactUrl(binding.url).slice(0, 2_000),
     state: binding.state,
     capabilities: [...binding.capabilities],
     primary: primaryBindingId === binding.bindingId,
@@ -348,6 +374,96 @@ export function clampTimeoutMs(value: unknown, fallback = DEFAULT_TOOL_TIMEOUT_M
 
 export function isActiveBindingState(state: BindingState): boolean {
   return state === "active_dom" || state === "active_debug";
+}
+
+export function isClosedBindingState(state: BindingState): boolean {
+  return state === "closed";
+}
+
+export const BROWSER_SNAPSHOT_MODES = ["full", "interactive"] as const;
+export type BrowserSnapshotMode = typeof BROWSER_SNAPSHOT_MODES[number];
+export const BROWSER_WAIT_CONDITIONS = [
+  "element", "text", "url", "dom_idle", "clickable", "url_pattern", "text_change", "document_idle",
+] as const;
+export type BrowserWaitCondition = typeof BROWSER_WAIT_CONDITIONS[number];
+
+export function validateBrowserActParams(params: Record<string, unknown>): void {
+  const action = params.action;
+  const actions = ["highlight", "scroll_into_view", "click", "type", "select", "reload", "fill", "clear", "press", "check", "uncheck", "hover"];
+  if (typeof action !== "string" || !actions.includes(action)) {
+    throw new BrowserControlError("INVALID_ACTION_TARGET", "Unsupported browser action");
+  }
+  if (action === "reload") return;
+  if (typeof params.elementRef !== "string" || !params.elementRef.trim()) {
+    throw new BrowserControlError("STALE_ELEMENT_REF", "elementRef is required for this action");
+  }
+  if (action === "type" && typeof params.text !== "string") {
+    throw new BrowserControlError("INVALID_ACTION_TARGET", "type requires bounded text");
+  }
+  if ((action === "type" || action === "fill") && (typeof params.text !== "string" || params.text.length > MAX_TEXT_CHARS)) {
+    throw new BrowserControlError("INVALID_ACTION_TARGET", "Text must be a bounded string");
+  }
+  if (action === "select" && typeof params.value !== "string") {
+    throw new BrowserControlError("INVALID_ACTION_TARGET", "select requires a value");
+  }
+  if (action === "press") {
+    if (!BROWSER_PRESS_KEYS.includes(params.key as BrowserPressKey)) {
+      throw new BrowserControlError("INVALID_ACTION_TARGET", "press requires an allowlisted key");
+    }
+    if (params.modifiers !== undefined && (!Array.isArray(params.modifiers) || params.modifiers.length > BROWSER_PRESS_MODIFIERS.length || params.modifiers.some((modifier) => !BROWSER_PRESS_MODIFIERS.includes(modifier as BrowserPressModifier)))) {
+      throw new BrowserControlError("INVALID_ACTION_TARGET", "press modifiers are not allowlisted");
+    }
+  }
+}
+
+export function validateBrowserSnapshotParams(params: Record<string, unknown>): void {
+  const mode = params.mode;
+  if (mode !== undefined && mode !== "full" && mode !== "interactive") {
+    throw new BrowserControlError("INVALID_FRAME", "snapshot mode must be full or interactive");
+  }
+  if (params.scopeElementRef !== undefined && typeof params.scopeElementRef !== "string") {
+    throw new BrowserControlError("INVALID_FRAME", "scopeElementRef must be a string");
+  }
+  if (params.region !== undefined) {
+    if (!isRecord(params.region)) throw new BrowserControlError("INVALID_FRAME", "snapshot region must be an object");
+    const region = params.region;
+    for (const key of ["x", "y", "width", "height"]) {
+      if (typeof region[key] !== "number" || !Number.isFinite(region[key])) {
+        throw new BrowserControlError("INVALID_FRAME", `snapshot region ${key} must be a finite number`);
+      }
+    }
+    const width = region.width as number;
+    const height = region.height as number;
+    if (width <= 0 || height <= 0 || width > 10_000 || height > 10_000) {
+      throw new BrowserControlError("INVALID_FRAME", "snapshot region dimensions are out of bounds");
+    }
+    if (params.scopeElementRef !== undefined) {
+      throw new BrowserControlError("INVALID_FRAME", "snapshot scopeElementRef and region are mutually exclusive");
+    }
+  }
+  if (params.maxTextChars !== undefined && (
+    typeof params.maxTextChars !== "number" || !Number.isInteger(params.maxTextChars) || params.maxTextChars < 100 || params.maxTextChars > MAX_TEXT_CHARS
+  )) {
+    throw new BrowserControlError("INVALID_FRAME", `maxTextChars must be an integer between 100 and ${MAX_TEXT_CHARS}`);
+  }
+}
+
+export function validateBrowserWaitParams(params: Record<string, unknown>): void {
+  const condition = params.condition;
+  if (!BROWSER_WAIT_CONDITIONS.includes(condition as BrowserWaitCondition)) {
+    throw new BrowserControlError("INVALID_WAIT_CONDITION", "Unsupported browser wait condition");
+  }
+  if (typeof params.value !== "string" || !params.value.trim()) {
+    throw new BrowserControlError("INVALID_WAIT_CONDITION", "Wait value is required");
+  }
+  if (["element", "clickable"].includes(String(condition)) && params.value.length > 500) {
+    throw new BrowserControlError("INVALID_SELECTOR", "Wait selector is too long");
+  }
+  if (condition === "text_change" && params.selector !== undefined && (
+    typeof params.selector !== "string" || params.selector.length > 500
+  )) {
+    throw new BrowserControlError("INVALID_SELECTOR", "Wait selector is invalid or too long");
+  }
 }
 
 export function browserResponseBudget(command: BrowserCommandName): number | null {

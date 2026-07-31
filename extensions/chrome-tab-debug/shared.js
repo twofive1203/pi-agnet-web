@@ -180,6 +180,7 @@ export async function getSessionBindings() {
     "debugConsent",
     "pendingRequest",
     "pendingRequests",
+    "closedBindings",
   ]);
   const pendingRequests = Array.isArray(data.pendingRequests)
     ? data.pendingRequests
@@ -190,6 +191,7 @@ export async function getSessionBindings() {
     debugConsent: data.debugConsent || {},
     pendingRequest: data.pendingRequest || (pendingRequests.length === 1 ? pendingRequests[0] : null),
     pendingRequests,
+    closedBindings: data.closedBindings || {},
   };
 }
 
@@ -203,6 +205,7 @@ export async function setSessionBindings(state) {
     debugConsent: state.debugConsent || {},
     pendingRequests,
     pendingRequest: pendingRequests.length === 1 ? pendingRequests[0] : null,
+    closedBindings: state.closedBindings || {},
   });
 }
 
@@ -213,5 +216,6 @@ export async function resetTemporaryState() {
     debugConsent: {},
     pendingRequest: null,
     pendingRequests: [],
+    closedBindings: {},
   });
 }

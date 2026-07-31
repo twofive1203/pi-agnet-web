@@ -239,12 +239,15 @@ function scheduleReconnect() {
 async function applyReconcileSnapshot(params = {}) {
   const state = await getSessionBindings();
   const serverBindings = Array.isArray(params.bindings) ? params.bindings : [];
-  const next = { bindings: {}, primaryBySession: {}, debugConsent: state.debugConsent || {}, pendingRequest: params.pending || null };
+  const next = { bindings: {}, primaryBySession: {}, debugConsent: state.debugConsent || {}, pendingRequest: params.pending || null, closedBindings: state.closedBindings || {} };
   const allowed = new Set(serverBindings.map((b) => b.bindingId));
+  for (const remote of serverBindings) {
+    if (state.closedBindings?.[remote?.bindingId]) allowed.delete(remote.bindingId);
+  }
 
   // Keep only bindings still authorized by the server for this client.
   for (const remote of serverBindings) {
-    if (!remote?.bindingId) continue;
+    if (!remote?.bindingId || !allowed.has(remote.bindingId)) continue;
     const local = state.bindings[remote.bindingId] || {};
     next.bindings[remote.bindingId] = {
       bindingId: remote.bindingId,
@@ -268,7 +271,15 @@ async function applyReconcileSnapshot(params = {}) {
     }
   }
 
-  // Recompute primary map from remaining session ids.
+  // Prefer the server's primary projection; legacy servers fall back to insertion order.
+  const serverPrimary = params.primaryBySession && typeof params.primaryBySession === "object"
+    ? params.primaryBySession
+    : {};
+  for (const binding of Object.values(next.bindings)) {
+    if (serverPrimary[binding.sessionId] === binding.bindingId) {
+      next.primaryBySession[binding.sessionId] = binding.bindingId;
+    }
+  }
   for (const binding of Object.values(next.bindings)) {
     if (!next.primaryBySession[binding.sessionId]) {
       next.primaryBySession[binding.sessionId] = binding.bindingId;
@@ -301,6 +312,16 @@ async function onSocketMessage(text) {
     await setBadge("", "#22c55e");
     // After auth, request/accept reconcile so restart cannot leave stale authorizations.
     try {
+      const state = await getSessionBindings();
+      const closed = Object.entries(state.closedBindings || {})
+        .filter(([, entry]) => Date.now() - Number(entry?.closedAt || 0) <= 5 * 60_000);
+      for (const [bindingId, entry] of closed) {
+        try {
+          await sendClientRequest("binding.closed", { bindingId, sessionId: entry.sessionId });
+        } catch {
+          // Retry on the next authenticated reconnect while the tombstone is fresh.
+        }
+      }
       const install = await getLocalInstall();
       if (install) {
         // Server also pushes reconcile command via manager; pull as backup.
@@ -442,7 +463,7 @@ async function sendClientRequest(command, params = {}) {
   });
 }
 
-function errorResult(code, message, details) {
+  function errorResult(code, message, details) {
   return {
     ok: false,
     error: {
@@ -460,6 +481,10 @@ function recoveryForError(code) {
   if (code === "ELEMENT_HIDDEN") return "Wait for the element to become visible or choose a visible control.";
   if (code === "ELEMENT_DISABLED") return "Wait for the control to become enabled or complete its prerequisite.";
   if (code === "ELEMENT_COVERED") return "Dismiss the covering UI or scroll the target into view, then retry.";
+  if (code === "WAIT_TIMEOUT") return "Inspect the compact current state, then narrow the condition or retry.";
+  if (code === "WAIT_CANCELLED" || code === "REQUEST_CANCELLED") return "The wait was cancelled; issue a new wait if needed.";
+  if (code === "INVALID_SELECTOR") return "Use a valid bounded CSS selector and retry.";
+  if (code === "INVALID_WAIT_CONDITION") return "Use a supported wait condition with the required value or selector.";
   return "See Snail Pi browser tool error recovery guidance.";
 }
 
@@ -512,7 +537,28 @@ function changeIndicators(before, after) {
   return { changed: urlChanged || documentChanged || focusChanged || domChanged, urlChanged, documentChanged, focusChanged, domChanged };
 }
 
-async function collectPostActionState(tabId, binding, before) {
+function sanitizeStateForAction(state, input) {
+  const safe = JSON.parse(JSON.stringify(state || {}));
+  const submitted = typeof input?.text === "string" ? input.text : "";
+  if (submitted) {
+    const submittedValues = [submitted];
+    try {
+      const encoded = encodeURIComponent(submitted);
+      if (encoded !== submitted) submittedValues.push(encoded);
+    } catch {
+      // Keep the raw value as the only scrub token.
+    }
+    const scrub = (value) => typeof value === "string"
+      ? submittedValues.reduce((current, token) => current.split(token).join("[redacted]"), value)
+      : value;
+    safe.url = scrub(safe.url);
+    safe.title = scrub(safe.title);
+    if (safe.focus) safe.focus.name = scrub(safe.focus.name);
+  }
+  return safe;
+}
+
+async function collectPostActionState(tabId, binding, before, actionParams) {
   const deadline = Date.now() + 800;
   let previousSignature = "";
   let stableReads = 0;
@@ -524,7 +570,7 @@ async function collectPostActionState(tabId, binding, before) {
     if (!tab) {
       return {
         stabilization: "pending",
-        state: compactPageState(latest),
+        state: compactPageState(sanitizeStateForAction(latest, actionParams)),
         changes: { ...changeIndicators(before, latest), tabClosed: true },
       };
     }
@@ -540,7 +586,7 @@ async function collectPostActionState(tabId, binding, before) {
       };
       return {
         stabilization: "pending",
-        state: compactPageState(crossOriginState),
+        state: compactPageState(sanitizeStateForAction(crossOriginState, actionParams)),
         changes: changeIndicators(before, crossOriginState),
       };
     }
@@ -556,7 +602,7 @@ async function collectPostActionState(tabId, binding, before) {
     if (stableReads >= 1 && tabStatus === "complete" && latest?.readyState === "complete") {
       return {
         stabilization: "settled",
-        state: compactPageState(latest),
+        state: compactPageState(sanitizeStateForAction(latest, actionParams)),
         changes: changeIndicators(before, latest),
       };
     }
@@ -565,7 +611,7 @@ async function collectPostActionState(tabId, binding, before) {
 
   return {
     stabilization: "pending",
-    state: compactPageState(latest),
+    state: compactPageState(sanitizeStateForAction(latest, actionParams)),
     changes: changeIndicators(before, latest),
   };
 }
@@ -579,6 +625,25 @@ async function handleCommand(requestId, payload) {
   abortByRequest.set(requestId, cancelHandle);
 
   try {
+    if (command === "binding.closed") {
+      const bindingId = typeof params.bindingId === "string" ? params.bindingId : "";
+      const sessionId = typeof params.sessionId === "string" ? params.sessionId : "";
+      if (!bindingId || !sessionId) return errorResult("INVALID_FRAME", "binding.closed requires bindingId and sessionId");
+      const state = await getSessionBindings();
+      const binding = state.bindings[bindingId];
+      if (!binding || binding.sessionId !== sessionId) return errorResult("BINDING_NOT_FOUND", "Closed binding is not owned by session");
+      delete state.bindings[bindingId];
+      state.closedBindings = state.closedBindings || {};
+      state.closedBindings[bindingId] = { closedAt: Date.now(), sessionId };
+      for (const [ownerSessionId, primary] of Object.entries(state.primaryBySession)) {
+        if (primary === bindingId) delete state.primaryBySession[ownerSessionId];
+      }
+      if (state.debugConsent) delete state.debugConsent[bindingId];
+      debugBuffers.delete(bindingId);
+      await setSessionBindings(state);
+      return { ok: true, result: { closed: true, bindingId } };
+    }
+
     if (command === "ping") {
       const state = await getSessionBindings();
       return { ok: true, result: { bindings: Object.values(state.bindings) } };
@@ -665,7 +730,7 @@ async function handleCommand(requestId, payload) {
       }
     }
 
-    if (cancelHandle.aborted) return errorResult("REQUEST_TIMEOUT", "Browser command aborted");
+    if (cancelHandle.aborted) return errorResult(command === "page.wait" ? "REQUEST_CANCELLED" : "REQUEST_TIMEOUT", "Browser command aborted");
 
     if (command === "page.snapshot") {
       const result = await sendToContent(tabId, "snapshot", params, requestId);
@@ -721,7 +786,7 @@ async function handleCommand(requestId, payload) {
       if (result?.error) {
         return errorResult(result.error, result.message, actionErrorDetails(result, before));
       }
-      const postAction = await collectPostActionState(tabId, binding, before);
+      const postAction = await collectPostActionState(tabId, binding, before, params);
       const out = { ok: true, result: { action: params.action, completed: true, postAction } };
       if (params.action && params.action !== "highlight") {
         recentMutations.set(requestId, out);
@@ -734,8 +799,15 @@ async function handleCommand(requestId, payload) {
     }
     if (command === "page.wait") {
       const result = await sendToContent(tabId, "wait", params, requestId);
-      if (cancelHandle.aborted) return errorResult("REQUEST_TIMEOUT", "Browser command aborted");
-      if (result?.error) return errorResult(result.error, result.message);
+      if (result?.error) {
+        const details = {
+          condition: typeof params.condition === "string" ? params.condition : undefined,
+          elapsedMs: Number(result.waitedMs) || undefined,
+          state: result.state ? compactPageState(result.state) : undefined,
+        };
+        return errorResult(result.error, result.message, details);
+      }
+      if (cancelHandle.aborted) return errorResult("REQUEST_CANCELLED", "Browser wait cancelled");
       return { ok: true, result };
     }
     if (command === "page.screenshot") {
@@ -1230,9 +1302,11 @@ chrome.tabs.onRemoved.addListener((tabId) => {
       if (binding.tabId === tabId) {
         await detachDebugger(tabId, bindingId);
         delete state.bindings[bindingId];
+        state.closedBindings = state.closedBindings || {};
+        state.closedBindings[bindingId] = { closedAt: Date.now(), sessionId: binding.sessionId };
         if (state.debugConsent) delete state.debugConsent[bindingId];
         debugBuffers.delete(bindingId);
-        await emitEvent("binding.revoked", { bindingId, sessionId: binding.sessionId });
+        await emitEvent("binding.revoked", { bindingId, sessionId: binding.sessionId, reason: "tab_closed" });
       }
     }
     await setSessionBindings(state);

@@ -5,7 +5,6 @@
 
 import { randomBytes, randomUUID } from "node:crypto";
 import {
-  BROWSER_EXTENSION_FEATURES,
   BrowserControlError,
   DEFAULT_PENDING_BINDING_TTL_MS,
   DEFAULT_TOOL_TIMEOUT_MS,
@@ -22,11 +21,15 @@ import {
   bindingHasCapability,
   browserResponseBudget,
   serializedBrowserResponseBytes,
+  validateBrowserSnapshotParams,
+  validateBrowserWaitParams,
+  validateBrowserActParams,
   type BrowserExtensionFeature,
 } from "./browser-protocol";
 import {
   acceptBinding,
   clearAllBindings,
+  closeBinding,
   createBindingStore,
   createPendingRequest,
   crossOriginNavigation,
@@ -58,6 +61,17 @@ export type BrowserSessionStatus = {
   pendingRequest: PendingBindingRequest | null;
   bindings: BrowserBindingView[];
   primaryBindingId: string | null;
+};
+
+export type BrowserToolCommandInput = {
+  sessionId: string;
+  command: BrowserCommandName;
+  bindingId?: string;
+  params?: Record<string, unknown>;
+  signal?: AbortSignal;
+  timeoutMs?: number;
+  requiredCapability?: BrowserCapability;
+  requiredExtensionFeatures?: BrowserExtensionFeature[];
 };
 
 function newId(prefix: string): string {
@@ -165,7 +179,11 @@ export class BrowserBindingManager {
         const owned = this.requireOwnedBindingForEvent(event, event.bindingId);
         if (!owned) return;
         try {
-          revokeBinding(this.store, event.bindingId);
+          if (event.data?.reason === "tab_closed") {
+            closeBinding(this.store, event.bindingId);
+          } else {
+            revokeBinding(this.store, event.bindingId);
+          }
         } catch {
           // ignore
         }
@@ -405,16 +423,24 @@ export class BrowserBindingManager {
     return toBindingView(updated, primary);
   }
 
-  async runToolCommand(input: {
-    sessionId: string;
-    command: BrowserCommandName;
-    bindingId?: string;
-    params?: Record<string, unknown>;
-    signal?: AbortSignal;
-    timeoutMs?: number;
-    requiredCapability?: BrowserCapability;
-    requiredExtensionFeatures?: BrowserExtensionFeature[];
-  }): Promise<unknown> {
+  async runToolCommand(input: BrowserToolCommandInput): Promise<unknown> {
+    try {
+      return await this.runToolCommandInternal(input);
+    } catch (error) {
+      const formatted = formatBrowserToolError(error);
+      recordBrowserAudit({
+        action: `tool.${input.command}`,
+        status: "error",
+        code: formatted.code,
+        sessionId: input.sessionId,
+        bindingId: input.bindingId,
+        params: summarizeAuditParams(input.params),
+      });
+      throw error;
+    }
+  }
+
+  private async runToolCommandInternal(input: BrowserToolCommandInput): Promise<unknown> {
     await this.ensureReady();
     this.consumeRateLimit(`tool:${input.sessionId}`, 60, 60_000);
 
@@ -426,6 +452,10 @@ export class BrowserBindingManager {
       if (!bindingId) throw new BrowserControlError("BINDING_NOT_FOUND", "bindingId is required");
       return { bindings: this.setPrimary(input.sessionId, bindingId) };
     }
+
+    if (input.command === "page.act") validateBrowserActParams(input.params ?? {});
+    if (input.command === "page.snapshot") validateBrowserSnapshotParams(input.params ?? {});
+    if (input.command === "page.wait") validateBrowserWaitParams(input.params ?? {});
 
     const binding = this.resolveBinding(input.sessionId, input.bindingId);
     if (input.requiredCapability && !bindingHasCapability(binding, input.requiredCapability)) {
@@ -486,7 +516,7 @@ export class BrowserBindingManager {
   /** Bindings owned by a connected extension client (for reconcile snapshots). */
   listBindingsForClient(clientId: string): BrowserBindingRecord[] {
     return [...this.store.byId.values()]
-      .filter((b) => b.clientId === clientId)
+      .filter((b) => b.clientId === clientId && b.state !== "closed")
       .map((b) => ({ ...b, capabilities: [...b.capabilities] }));
   }
 
@@ -500,6 +530,18 @@ export class BrowserBindingManager {
       : {};
 
     try {
+      if (command === "binding.closed") {
+        const bindingId = typeof params.bindingId === "string" ? params.bindingId : "";
+        const sessionId = typeof params.sessionId === "string" ? params.sessionId : "";
+        if (!bindingId || !sessionId) throw new BrowserControlError("INVALID_FRAME", "binding.closed missing bindingId/sessionId");
+        const owned = this.store.byId.get(bindingId);
+        if (!owned || owned.clientId !== clientId || owned.sessionId !== sessionId) {
+          throw new BrowserControlError("BINDING_NOT_FOUND", "Closed binding is not owned by this client");
+        }
+        closeBinding(this.store, bindingId);
+        return { ok: true, result: { closed: true, bindingId } };
+      }
+
       if (command === "binding.accept") {
         const pendingRequestId = typeof params.pendingRequestId === "string" ? params.pendingRequestId : "";
         const tabId = typeof params.tabId === "number" ? params.tabId : Number.NaN;
@@ -554,6 +596,10 @@ export class BrowserBindingManager {
       if (command === "reconcile") {
         const bindings = this.listBindingsForClient(clientId);
         const pendings = this.listOpenPendingRequests();
+        const primaryBySession = Object.fromEntries(
+          [...new Set(bindings.map((binding) => binding.sessionId))]
+            .map((sessionId) => [sessionId, getPrimaryBindingId(this.store, sessionId)]),
+        );
         return {
           ok: true,
           result: {
@@ -568,6 +614,7 @@ export class BrowserBindingManager {
               capabilities: b.capabilities,
               state: b.state,
             })),
+            primaryBySession,
             pendings,
             pending: pendings.length === 1 ? pendings[0] : null,
           },
@@ -594,6 +641,10 @@ export class BrowserBindingManager {
     if (!bridge.isClientConnected(clientId)) return;
     const bindings = this.listBindingsForClient(clientId);
     const pendings = this.listOpenPendingRequests();
+    const primaryBySession = Object.fromEntries(
+      [...new Set(bindings.map((binding) => binding.sessionId))]
+        .map((sessionId) => [sessionId, getPrimaryBindingId(this.store, sessionId)]),
+    );
     await bridge.sendCommand(
       clientId,
       {
@@ -611,6 +662,7 @@ export class BrowserBindingManager {
             capabilities: b.capabilities,
             state: b.state,
           })),
+          primaryBySession,
           pendings,
           pending: pendings.length === 1 ? pendings[0] : null,
         },
@@ -677,6 +729,9 @@ export class BrowserBindingManager {
     if (binding.sessionId !== sessionId) {
       throw new BrowserControlError("BINDING_NOT_FOUND", "Binding does not belong to this session");
     }
+    if (binding.state === "closed") {
+      throw new BrowserControlError("TAB_CLOSED", "The browser tab was closed");
+    }
     if (!options?.allowSuspended && binding.state === "suspended") {
       throw new BrowserControlError("BINDING_SUSPENDED", "Binding is suspended");
     }
@@ -697,6 +752,8 @@ export class BrowserBindingManager {
     if (!bridge.isClientConnected(binding.clientId)) {
       throw new BrowserControlError("BRIDGE_DISCONNECTED", "Owning extension is not connected");
     }
+    const commandTimeoutMs = clampTimeoutMs(options?.timeoutMs, DEFAULT_TOOL_TIMEOUT_MS);
+    const transportTimeoutMs = command === "page.wait" ? commandTimeoutMs + 2_000 : commandTimeoutMs;
     return bridge.sendCommand(
       binding.clientId,
       {
@@ -710,10 +767,12 @@ export class BrowserBindingManager {
           __documentId: binding.documentId,
           __origin: binding.origin,
         },
-        deadlineMs: clampTimeoutMs(options?.timeoutMs, DEFAULT_TOOL_TIMEOUT_MS),
+        deadlineMs: commandTimeoutMs,
       },
       {
-        timeoutMs: clampTimeoutMs(options?.timeoutMs, DEFAULT_TOOL_TIMEOUT_MS),
+        timeoutMs: transportTimeoutMs,
+        timeoutCode: command === "page.wait" ? "WAIT_TIMEOUT" : "REQUEST_TIMEOUT",
+        abortCode: command === "page.wait" ? "REQUEST_CANCELLED" : "REQUEST_TIMEOUT",
         signal: options?.signal,
         requestId: randomUUID(),
       },
@@ -782,7 +841,11 @@ export class BrowserBindingManager {
   }
 }
 
-export const PART1_BROWSER_EXTENSION_FEATURES = [...BROWSER_EXTENSION_FEATURES];
+export const PART1_BROWSER_EXTENSION_FEATURES: BrowserExtensionFeature[] = [
+  "element_diagnostics_v1",
+  "post_action_state_v1",
+];
+export const SEMANTIC_BROWSER_EXTENSION_FEATURE = "semantic_actions_v1" as const;
 
 declare global {
   var __piBrowserBindingManager: BrowserBindingManager | undefined;

@@ -139,7 +139,7 @@ export function acceptBinding(
   },
 ): BrowserBindingRecord {
   const now = input.now ?? Date.now();
-  const pending = consumePendingRequest(store, input.pendingRequestId, now);
+  const pending = getPendingRequest(store, input.pendingRequestId, now);
 
   const existingTab = store.byTabKey.get(tabKey(input.clientId, input.tabId));
   if (existingTab) {
@@ -152,6 +152,8 @@ export function acceptBinding(
     }
     if (owner) revokeBinding(store, owner.bindingId, now);
   }
+
+  consumePendingRequest(store, input.pendingRequestId, now);
 
   const capabilities: BrowserCapability[] = pending.requestedCapabilities.includes("dom")
     ? ["dom"]
@@ -193,7 +195,10 @@ function recomputePrimary(store: BindingStore, sessionId: string, now: number): 
   const active = [...ids]
     .map((id) => store.byId.get(id))
     .filter((b): b is BrowserBindingRecord => b != null && (isActiveBindingState(b.state) || b.state === "suspended"))
-    .sort((a, b) => b.lastActiveAt - a.lastActiveAt || b.createdAt - a.createdAt);
+    .sort((a, b) => {
+      const rank = (state: BindingState) => isActiveBindingState(state) ? 0 : 1;
+      return rank(a.state) - rank(b.state) || b.lastActiveAt - a.lastActiveAt || b.createdAt - a.createdAt;
+    });
   if (active.length === 0) {
     store.primaryBySession.delete(sessionId);
     return null;
@@ -224,6 +229,32 @@ export function revokeBinding(store: BindingStore, bindingId: string, now = Date
   }
 
   return { ...binding, capabilities: [...binding.capabilities] };
+}
+
+export function closeBinding(store: BindingStore, bindingId: string, now = Date.now()): BrowserBindingRecord {
+  const binding = requireBinding(store, bindingId);
+  binding.state = "closed";
+  binding.capabilities = [];
+  binding.lastValidatedAt = now;
+  binding.lastActiveAt = now;
+  store.byTabKey.delete(tabKey(binding.clientId, binding.tabId));
+  if (store.primaryBySession.get(binding.sessionId) === bindingId) {
+    recomputePrimary(store, binding.sessionId, now);
+  }
+  pruneClosedBindings(store);
+  return { ...binding, capabilities: [...binding.capabilities] };
+}
+
+export function pruneClosedBindings(store: BindingStore, max = 32): void {
+  const closed = [...store.byId.values()]
+    .filter((binding) => binding.state === "closed")
+    .sort((a, b) => b.lastValidatedAt - a.lastValidatedAt);
+  for (const binding of closed.slice(Math.max(0, max))) {
+    store.byId.delete(binding.bindingId);
+    const ids = store.bySession.get(binding.sessionId);
+    ids?.delete(binding.bindingId);
+    if (ids && ids.size === 0) store.bySession.delete(binding.sessionId);
+  }
 }
 
 export function revokeSessionBindings(store: BindingStore, sessionId: string, now = Date.now()): BrowserBindingRecord[] {
@@ -307,6 +338,9 @@ export function setPrimaryBinding(store: BindingStore, sessionId: string, bindin
   const binding = requireBinding(store, bindingId);
   if (binding.sessionId !== sessionId) {
     throw new BrowserControlError("BINDING_NOT_FOUND", "Binding does not belong to this session");
+  }
+  if (binding.state === "closed") {
+    throw new BrowserControlError("TAB_CLOSED", "The browser tab was closed");
   }
   if (binding.state === "revoked" || binding.state === "expired") {
     throw new BrowserControlError("BINDING_NOT_FOUND", "Binding is no longer available");
@@ -395,6 +429,9 @@ export function resolveTargetBinding(
   if (binding.sessionId !== sessionId) {
     throw new BrowserControlError("BINDING_NOT_FOUND", "Binding does not belong to this session");
   }
+  if (binding.state === "closed") {
+    throw new BrowserControlError("TAB_CLOSED", "The browser tab was closed");
+  }
   if (binding.state === "suspended") {
     throw new BrowserControlError("BINDING_SUSPENDED", "Binding is suspended after navigation");
   }
@@ -424,6 +461,7 @@ export function canTransition(from: BindingState, to: BindingState): boolean {
     active_dom: ["active_debug", "suspended", "revoked"],
     active_debug: ["active_dom", "suspended", "revoked"],
     suspended: ["active_dom", "revoked"],
+    closed: ["revoked"],
     revoked: [],
     expired: [],
   };

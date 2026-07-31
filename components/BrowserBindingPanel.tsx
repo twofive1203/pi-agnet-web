@@ -264,23 +264,24 @@ export function BrowserBindingPanel({
                   </div>
                   <div style={{ color: "var(--text-dim)", wordBreak: "break-all" }}>
                     {binding.state} · {binding.origin}
+                    {binding.state === "closed" ? ` · ${t("panels.browser.closedState")}` : ""}
                     {binding.capabilities.includes("debug_readonly") ? " · debug" : ""}
                   </div>
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
-                    {!binding.primary && (
+                    {!binding.primary && binding.state !== "closed" && (
                       <button type="button" disabled={busy} onClick={() => void setPrimary(binding.bindingId)}>
                         {t("panels.browser.setPrimary")}
                       </button>
                     )}
                     {binding.capabilities.includes("debug_readonly") ? (
-                      <button type="button" disabled={busy} onClick={() => void toggleDebug(binding, false)}>
+                      <button type="button" disabled={busy || binding.state === "closed"} onClick={() => void toggleDebug(binding, false)}>
                         {t("panels.browser.disableDebug")}
                       </button>
-                    ) : (
+                    ) : binding.state !== "closed" ? (
                       <button type="button" disabled={busy || binding.state === "suspended"} onClick={() => void toggleDebug(binding, true)}>
                         {t("panels.browser.enableDebug")}
                       </button>
-                    )}
+                    ) : null}
                     <button type="button" disabled={busy} onClick={() => void revoke(binding.bindingId)}>
                       {t("panels.browser.revoke")}
                     </button>

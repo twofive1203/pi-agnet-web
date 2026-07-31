@@ -56,12 +56,12 @@ Shared logic lives under `lib/`. Prefer adding behavior here when it is used by 
 | `lib/allowed-roots.ts` | Shared authorized-workspace root discovery and path checks for file and workflow APIs. |
 | `lib/terminal-manager.ts` | Web Terminal PTY manager: setting-gated session creation, cwd authorization, platform-aware Unix/Windows shell and custom path resolution, env injection, SSE subscription fan-out, input/resize handling, and process cleanup. |
 | `lib/browser-protocol.ts` | Shared browser-bridge protocol constants, envelopes, binding/capability/error contracts, extension-advertised additive feature registry, command response budgets, and model-safe binding views (no raw `tabId`/credentials). Protocol v1 treats response fields as optional; Part 1 actions require `element_diagnostics_v1` and `post_action_state_v1` before dispatch. |
-| `lib/browser-binding-state.ts` | Pure binding state machine: pending/active/debug/suspended/revoked, single-tab ownership, multi-tab session membership, primary selection, navigation policy. |
+| `lib/browser-binding-state.ts` | Pure binding state machine: pending/active/debug/suspended/closed/revoked, single-tab ownership, multi-tab session membership, primary selection with active-first fallback, navigation policy, and bounded closed-tab tombstones. |
 | `lib/browser-pairing.ts` | Installation pairing codes, secret verifiers, connect-token challenge handshake, and atomic `~/.pi/agent/browser-bridge.json` persistence (temp+rename; corrupt files quarantined). |
 | `lib/browser-bridge.ts` | Loopback-only authenticated WebSocket broker (`127.0.0.1`) with heartbeat, deadlines, cancel, duplicate-response cache, and frame limits. Separate from Agent SSE/`extension_ui_request`. |
-| `lib/browser-binding-manager.ts` | Session-scoped binding manager routing commands only to the owning extension client; multi-session pending isolation (`listOpenPendingRequests` / scoped `getOpenPendingRequest`); fork/destroy invalidation; runtime capability and extension-feature gates; serialized response budgets; rate limits; audit hooks. |
-| `lib/browser-tools.ts` | Pi custom tools (`browser_*`) that inject `sessionId` from `ctx.sessionManager.getSessionId()` and never accept model-supplied session ids. |
-| `lib/browser-action-policy.ts` | Deterministic `browser_act` safety policy (source of truth). Extension copies are generated via `scripts/generate-browser-extension-shared.ts`. |
+| `lib/browser-binding-manager.ts` | Session-scoped binding manager routing commands only to the owning extension client; multi-session pending isolation (`listOpenPendingRequests` / scoped `getOpenPendingRequest`); fork/destroy invalidation; runtime capability and extension-feature gates; serialized response budgets; error/success audit hooks; closed-tab recovery; primary projection during reconcile; rate limits. |
+| `lib/browser-tools.ts` | Pi custom tools (`browser_*`) that inject `sessionId` from `ctx.sessionManager.getSessionId()` and never accept model-supplied session ids. Part 2 adds capability-gated `fill`, `clear`, `press`, `check`, `uncheck`, `hover`; interactive/scoped snapshot parameters; and clickable/pattern/text-change/document-idle wait parameters. |
+| `lib/browser-action-policy.ts` | Deterministic `browser_act` safety policy (source of truth), including allowlisted press keys/modifiers and semantic action target checks. Extension copies are generated via `scripts/generate-browser-extension-shared.ts`. |
 | `lib/browser-redaction.ts` | URL/header/console/network redaction and sensitive-control detection for tool outputs (source of truth for extension `redaction.js`). |
 | `lib/browser-audit.ts` | Bounded browser-control audit metadata (no page payloads or secrets). |
 | `lib/workflow-types.ts` | Versioned SnFlow task/run/status/transition and browser projection types. Tasks may optionally reference one immutable `parentTaskId`; summaries expose direct child counts and details expose parent/children projections. |
@@ -100,6 +100,10 @@ Element refs use `el_<document-context>_<sequence>` and remain opaque to the mod
 
 Successful actions return `completed` plus a `postAction` projection. The background service worker samples pre-action state, then performs a bounded 800 ms navigation-aware stabilization loop. It returns redacted URL, bounded title/document/context identity, ready state, safe focused role/name metadata, and explicit URL/document/focus/DOM change indicators. `stabilization: "pending"` is retained for cross-origin navigation, closure, interrupted loading, or an unstable final sample; typed/fill text is never echoed.
 
+Part 2 adds six semantic actions behind `semantic_actions_v1`: `fill` replaces editable text, `clear` is idempotent, `press` accepts only the allowlisted key/modifier set, checkbox/radio changes are typed and idempotent, and `hover` dispatches bounded pointer events. Every mutating action remains behind the existing policy/interactability gate and error attempts are audited with redacted parameters.
+
+Enhanced snapshots and waits are additive and capability-gated. `bounded_snapshot_v1` enables `mode: "interactive"`, `scopeElementRef` or bounded `region`, explicit truncation metadata, and `maxTextChars`. `wait_diagnostics_v1` enables `clickable`, `url_pattern` (glob semantics), `text_change`, and `document_idle`; invalid conditions/selectors fail fast, cancellation returns `WAIT_CANCELLED`, and unmet conditions return bounded `WAIT_TIMEOUT` details with compact current state.
+
 ### U1 Fixed-Fixture Baseline
 
 The fixed one-node fixture uses compact JSON serialization (no whitespace). These measurements characterize the contract rather than set new limits: binding list 214 B, one-node snapshot 330 B, one-result find 239 B, legacy action acknowledgement 11 B, wait-timeout diagnostic 163 B, and Part 1 settled action state 404 B. The Part 1 action result remains below the 16 KiB compact budget.
@@ -112,7 +116,7 @@ The fixed one-node fixture uses compact JSON serialization (no whitespace). Thes
 | Recover post-navigation stale ref | 3 | 3 | failed act -> fresh find -> act; failure now identifies stale generation |
 | Wait timeout, then inspect page | 2 | 2 | wait behavior is unchanged in Part 1 |
 
-Redaction remains source-owned by `lib/browser-redaction.ts`, action policy remains source-owned by `lib/browser-action-policy.ts`, and extension artifacts are validated by `npm run test:browser`.
+Redaction remains source-owned by `lib/browser-redaction.ts`, action policy remains source-owned by `lib/browser-action-policy.ts`, and extension artifacts are validated by `npm run test:browser`. Closed tabs retain at most 32 server-side tombstones; their model-safe projection is bounded and never includes raw Chrome tab ids. Reconcile carries the server-selected opaque primary binding so extension-local state does not silently override WebUI selection.
 
 ## Reuse Rules
 

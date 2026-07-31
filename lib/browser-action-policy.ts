@@ -19,7 +19,14 @@ export type ActionPolicyInput = {
   rel?: string | null;
   inputMode?: string | null;
   isContentEditable?: boolean;
+  key?: string | null;
+  modifiers?: string[] | null;
 };
+
+export const ALLOWED_PRESS_KEYS = [
+  "Enter", "Space", "Tab", "Escape", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight",
+] as const;
+export const ALLOWED_PRESS_MODIFIERS = ["Shift", "Control", "Alt", "Meta"] as const;
 
 export type ActionPolicyDecision =
   | { allowed: true }
@@ -107,19 +114,28 @@ export function evaluateActionPolicy(input: ActionPolicyInput): ActionPolicyDeci
     return { allowed: true };
   }
 
-  if (action !== "click" && action !== "type" && action !== "select") {
+  if (action !== "click" && action !== "type" && action !== "select" && action !== "fill" && action !== "clear" && action !== "press" && action !== "check" && action !== "uncheck" && action !== "hover") {
     return { allowed: false, reason: `Unknown action ${action}` };
+  }
+
+  if (action === "press") {
+    if (!ALLOWED_PRESS_KEYS.includes(input.key as typeof ALLOWED_PRESS_KEYS[number])) {
+      return { allowed: false, reason: "Key is not allowed" };
+    }
+    if ((input.modifiers ?? []).some((modifier) => !ALLOWED_PRESS_MODIFIERS.includes(modifier as typeof ALLOWED_PRESS_MODIFIERS[number]))) {
+      return { allowed: false, reason: "Modifier is not allowed" };
+    }
   }
 
   if (isFileInput(input)) {
     return { allowed: false, reason: "File inputs are blocked" };
   }
 
-  if (isPasswordOrPaymentField(input) && (action === "type" || action === "click" || action === "select")) {
+  if (isPasswordOrPaymentField(input) && ["type", "fill", "clear", "click", "select", "press", "check", "uncheck", "hover"].includes(action)) {
     return { allowed: false, reason: "Password/payment-like controls are blocked" };
   }
 
-  if (action === "click" || action === "type") {
+  if (action === "click" || action === "type" || action === "fill" || action === "clear" || action === "press" || action === "check" || action === "uncheck" || action === "hover") {
     if (isDownloadLike(input)) {
       return { allowed: false, reason: "Download links/controls are blocked" };
     }
@@ -131,17 +147,14 @@ export function evaluateActionPolicy(input: ActionPolicyInput): ActionPolicyDeci
     }
   }
 
-  if (action === "type") {
+  if (action === "type" || action === "fill" || action === "clear") {
     const tag = (input.tagName ?? "").toLowerCase();
     const type = (input.type ?? "").toLowerCase();
     const editable =
       input.isContentEditable
       || tag === "textarea"
-      || (tag === "input" && !["button", "submit", "checkbox", "radio", "file", "image", "reset", "hidden"].includes(type))
-      || tag === "select";
-    if (!editable && tag !== "select") {
-      // select is handled by select action; type into non-editable is blocked by caller
-    }
+      || (tag === "input" && !["button", "submit", "checkbox", "radio", "file", "image", "reset", "hidden"].includes(type));
+    if (!editable) return { allowed: false, reason: "Target is not editable" };
   }
 
   if (action === "select") {

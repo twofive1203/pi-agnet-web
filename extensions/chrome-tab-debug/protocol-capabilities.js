@@ -5,4 +5,4 @@
  */
 
 export const PROTOCOL_VERSION = 1;
-export const EXTENSION_FEATURES = Object.freeze(["element_diagnostics_v1","post_action_state_v1"]);
+export const EXTENSION_FEATURES = Object.freeze(["element_diagnostics_v1","post_action_state_v1","semantic_actions_v1","bounded_snapshot_v1","wait_diagnostics_v1"]);

@@ -234,7 +234,7 @@ export class BrowserBridge {
   async sendCommand(
     clientId: string,
     command: BrowserCommandRequest,
-    options?: { timeoutMs?: number; signal?: AbortSignal; requestId?: string },
+    options?: { timeoutMs?: number; signal?: AbortSignal; requestId?: string; timeoutCode?: "REQUEST_TIMEOUT" | "WAIT_TIMEOUT"; abortCode?: "REQUEST_TIMEOUT" | "REQUEST_CANCELLED" },
   ): Promise<BrowserCommandResponse> {
     if (!this.started) {
       throw new BrowserControlError("BRIDGE_DISCONNECTED", "Browser bridge is not running");
@@ -254,14 +254,12 @@ export class BrowserBridge {
     return await new Promise<BrowserCommandResponse>((resolve, reject) => {
       const onAbort = () => {
         cleanup();
-        this.sendCancel(clientId, requestId);
-        reject(new BrowserControlError("REQUEST_TIMEOUT", "Browser command aborted"));
+        reject(new BrowserControlError(options?.abortCode ?? "REQUEST_TIMEOUT", "Browser command aborted"));
       };
 
       const timer = setTimeout(() => {
         cleanup();
-        this.sendCancel(clientId, requestId);
-        reject(new BrowserControlError("REQUEST_TIMEOUT", `Browser command timed out after ${timeoutMs}ms`));
+        reject(new BrowserControlError(options?.timeoutCode ?? "REQUEST_TIMEOUT", `Browser command timed out after ${timeoutMs}ms`));
       }, timeoutMs);
 
       const cleanup = () => {
@@ -272,8 +270,7 @@ export class BrowserBridge {
 
       if (options?.signal) {
         if (options.signal.aborted) {
-          clearTimeout(timer);
-          reject(new BrowserControlError("REQUEST_TIMEOUT", "Browser command aborted"));
+          reject(new BrowserControlError(options?.abortCode ?? "REQUEST_TIMEOUT", "Browser command aborted"));
           return;
         }
         options.signal.addEventListener("abort", onAbort, { once: true });

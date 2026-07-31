@@ -10,7 +10,12 @@ import {
   formatToolErrorResult,
   PART1_BROWSER_EXTENSION_FEATURES,
 } from "./browser-binding-manager";
-import { clampTimeoutMs, type BrowserCommandName } from "./browser-protocol";
+import {
+  BROWSER_WAIT_CONDITIONS,
+  clampTimeoutMs,
+  type BrowserCommandName,
+  type BrowserExtensionFeature,
+} from "./browser-protocol";
 
 function textResult(data: unknown) {
   return {
@@ -41,7 +46,7 @@ async function run(
   signal: AbortSignal | undefined,
   options?: {
     requiredCapability?: "dom" | "debug_readonly";
-    requiredExtensionFeatures?: Array<"element_diagnostics_v1" | "post_action_state_v1">;
+    requiredExtensionFeatures?: BrowserExtensionFeature[];
     bindingId?: string;
     timeoutMs?: number;
   },
@@ -97,10 +102,24 @@ export function createBrowserToolDefinitions(): ToolDefinition[] {
       format: Type.Optional(StringEnum(["accessibility", "dom", "visible_text"] as const)),
       maxDepth: Type.Optional(Type.Integer({ minimum: 1, maximum: 12 })),
       maxNodes: Type.Optional(Type.Integer({ minimum: 1, maximum: 400 })),
+      mode: Type.Optional(StringEnum(["full", "interactive"] as const)),
+      scopeElementRef: Type.Optional(Type.String()),
+      region: Type.Optional(Type.Object({
+        x: Type.Number(),
+        y: Type.Number(),
+        width: Type.Number({ minimum: 1, maximum: 10_000 }),
+        height: Type.Number({ minimum: 1, maximum: 10_000 }),
+      })),
+      maxTextChars: Type.Optional(Type.Integer({ minimum: 100, maximum: 8_000 })),
     }),
     async execute(_toolCallId, rawParams, signal, _onUpdate, ctx) {
       try {
-        return await run("page.snapshot", ctx, asRecord(rawParams), signal, { requiredCapability: "dom" });
+        const params = asRecord(rawParams);
+        const enhanced = params.mode === "interactive" || params.scopeElementRef !== undefined || params.region !== undefined || params.maxTextChars !== undefined;
+        return await run("page.snapshot", ctx, params, signal, {
+          requiredCapability: "dom",
+          requiredExtensionFeatures: enhanced ? ["bounded_snapshot_v1"] : undefined,
+        });
       } catch (error) {
         return formatToolErrorResult(error);
       }
@@ -128,24 +147,41 @@ export function createBrowserToolDefinitions(): ToolDefinition[] {
     },
   };
 
+  const browserActActions = ["highlight", "scroll_into_view", "click", "type", "select", "reload", "fill", "clear", "press", "check", "uncheck", "hover"] as const;
+  void browserActActions;
+  const pressKeys = ["Enter", "Space", "Tab", "Escape", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"] as const;
+  const pressModifiers = ["Shift", "Control", "Alt", "Meta"] as const;
+
+  const browserActParameters = Type.Union([
+    Type.Object({ bindingId: bindingIdParam, action: Type.Literal("reload") }),
+    Type.Object({ bindingId: bindingIdParam, action: Type.Literal("highlight"), elementRef: Type.String() }),
+    Type.Object({ bindingId: bindingIdParam, action: Type.Literal("scroll_into_view"), elementRef: Type.String() }),
+    Type.Object({ bindingId: bindingIdParam, action: Type.Literal("click"), elementRef: Type.String() }),
+    Type.Object({ bindingId: bindingIdParam, action: Type.Literal("type"), elementRef: Type.String(), text: Type.String({ maxLength: 8_000 }), clearFirst: Type.Optional(Type.Boolean()) }),
+    Type.Object({ bindingId: bindingIdParam, action: Type.Literal("select"), elementRef: Type.String(), value: Type.String({ maxLength: 2_000 }) }),
+    Type.Object({ bindingId: bindingIdParam, action: Type.Literal("fill"), elementRef: Type.String(), text: Type.String({ maxLength: 8_000 }) }),
+    Type.Object({ bindingId: bindingIdParam, action: Type.Literal("clear"), elementRef: Type.String() }),
+    Type.Object({ bindingId: bindingIdParam, action: Type.Literal("press"), elementRef: Type.String(), key: StringEnum(pressKeys), modifiers: Type.Optional(Type.Array(StringEnum(pressModifiers), { maxItems: 4 })) }),
+    Type.Object({ bindingId: bindingIdParam, action: Type.Literal("check"), elementRef: Type.String() }),
+    Type.Object({ bindingId: bindingIdParam, action: Type.Literal("uncheck"), elementRef: Type.String() }),
+    Type.Object({ bindingId: bindingIdParam, action: Type.Literal("hover"), elementRef: Type.String() }),
+  ]);
+
   const browserAct: ToolDefinition = {
     name: "browser_act",
     label: "Browser Act",
     description:
-      "Perform one controlled DOM action: highlight, scroll_into_view, click, type, select, or reload. Sensitive fields and destructive actions are blocked.",
-    parameters: Type.Object({
-      bindingId: bindingIdParam,
-      action: StringEnum(["highlight", "scroll_into_view", "click", "type", "select", "reload"] as const),
-      elementRef: Type.Optional(Type.String()),
-      text: Type.Optional(Type.String()),
-      value: Type.Optional(Type.String()),
-      clearFirst: Type.Optional(Type.Boolean()),
-    }),
+      "Perform one controlled DOM action: highlight, scroll_into_view, click, type, select, reload, fill, clear, press, check, uncheck, or hover. Sensitive fields and destructive actions are blocked.",
+    parameters: browserActParameters,
     async execute(_toolCallId, rawParams, signal, _onUpdate, ctx) {
       try {
-        return await run("page.act", ctx, asRecord(rawParams), signal, {
+        const params = asRecord(rawParams);
+        const semantic = ["fill", "clear", "press", "check", "uncheck", "hover"].includes(String(params.action));
+        return await run("page.act", ctx, params, signal, {
           requiredCapability: "dom",
-          requiredExtensionFeatures: PART1_BROWSER_EXTENSION_FEATURES,
+          requiredExtensionFeatures: semantic
+            ? [...PART1_BROWSER_EXTENSION_FEATURES, "semantic_actions_v1"]
+            : PART1_BROWSER_EXTENSION_FEATURES,
         });
       } catch (error) {
         return formatToolErrorResult(error);
@@ -156,11 +192,12 @@ export function createBrowserToolDefinitions(): ToolDefinition[] {
   const browserWait: ToolDefinition = {
     name: "browser_wait",
     label: "Browser Wait",
-    description: "Wait for a bounded page condition (element/text/url/dom_idle) with timeout.",
+    description: "Wait for a bounded page condition (element, text, URL, clickable state, text change, or document idle).",
     parameters: Type.Object({
       bindingId: bindingIdParam,
-      condition: StringEnum(["element", "text", "url", "dom_idle"] as const),
-      value: Type.String(),
+      condition: StringEnum([...BROWSER_WAIT_CONDITIONS] as typeof BROWSER_WAIT_CONDITIONS),
+      value: Type.String({ maxLength: 8_000 }),
+      selector: Type.Optional(Type.String({ maxLength: 500 })),
       state: Type.Optional(StringEnum(["present", "absent", "visible", "hidden"] as const)),
       timeoutMs: Type.Optional(Type.Integer({ minimum: 1000, maximum: 120000 })),
     }),
@@ -168,8 +205,10 @@ export function createBrowserToolDefinitions(): ToolDefinition[] {
       try {
         const params = asRecord(rawParams);
         const timeoutMs = clampTimeoutMs(params.timeoutMs);
+        const enhanced = ["clickable", "url_pattern", "text_change", "document_idle"].includes(String(params.condition));
         return await run("page.wait", ctx, params, signal, {
           requiredCapability: "dom",
+          requiredExtensionFeatures: enhanced ? ["wait_diagnostics_v1"] : undefined,
           timeoutMs,
         });
       } catch (error) {

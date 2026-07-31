@@ -10,6 +10,10 @@
  * Deterministic action safety policy for browser_act.
  * Mirrored in extensions/chrome-tab-debug/action-policy.js — keep in sync.
  */
+const ALLOWED_PRESS_KEYS = [
+    "Enter", "Space", "Tab", "Escape", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight",
+];
+const ALLOWED_PRESS_MODIFIERS = ["Shift", "Control", "Alt", "Meta"];
 const PASSWORD_LIKE_RE = /password|passwd|pwd|passcode|pin|cvv|cvc|card.?number|cc-?num|credit.?card|ssn|secret|one.?time.?code|otp/i;
 const PAYMENT_RE = /payment|pay\b|checkout|billing|credit.?card|cardholder|iban|routing.?number/i;
 const DESTRUCTIVE_TEXT_RE = /\b(delete|remove|destroy|drop\b|reset|wipe|deactivate|disable account|close account|terminate|purge|factory reset)\b/i;
@@ -93,16 +97,24 @@ function evaluateActionPolicy(input) {
     if (action === "reload" || action === "highlight" || action === "scroll_into_view") {
         return { allowed: true };
     }
-    if (action !== "click" && action !== "type" && action !== "select") {
+    if (action !== "click" && action !== "type" && action !== "select" && action !== "fill" && action !== "clear" && action !== "press" && action !== "check" && action !== "uncheck" && action !== "hover") {
         return { allowed: false, reason: `Unknown action ${action}` };
+    }
+    if (action === "press") {
+        if (!ALLOWED_PRESS_KEYS.includes(input.key)) {
+            return { allowed: false, reason: "Key is not allowed" };
+        }
+        if ((input.modifiers ?? []).some((modifier) => !ALLOWED_PRESS_MODIFIERS.includes(modifier))) {
+            return { allowed: false, reason: "Modifier is not allowed" };
+        }
     }
     if (isFileInput(input)) {
         return { allowed: false, reason: "File inputs are blocked" };
     }
-    if (isPasswordOrPaymentField(input) && (action === "type" || action === "click" || action === "select")) {
+    if (isPasswordOrPaymentField(input) && ["type", "fill", "clear", "click", "select", "press", "check", "uncheck", "hover"].includes(action)) {
         return { allowed: false, reason: "Password/payment-like controls are blocked" };
     }
-    if (action === "click" || action === "type") {
+    if (action === "click" || action === "type" || action === "fill" || action === "clear" || action === "press" || action === "check" || action === "uncheck" || action === "hover") {
         if (isDownloadLike(input)) {
             return { allowed: false, reason: "Download links/controls are blocked" };
         }
@@ -113,16 +125,14 @@ function evaluateActionPolicy(input) {
             return { allowed: false, reason: "Destructive controls are blocked" };
         }
     }
-    if (action === "type") {
+    if (action === "type" || action === "fill" || action === "clear") {
         const tag = (input.tagName ?? "").toLowerCase();
         const type = (input.type ?? "").toLowerCase();
         const editable = input.isContentEditable
             || tag === "textarea"
-            || (tag === "input" && !["button", "submit", "checkbox", "radio", "file", "image", "reset", "hidden"].includes(type))
-            || tag === "select";
-        if (!editable && tag !== "select") {
-            // select is handled by select action; type into non-editable is blocked by caller
-        }
+            || (tag === "input" && !["button", "submit", "checkbox", "radio", "file", "image", "reset", "hidden"].includes(type));
+        if (!editable)
+            return { allowed: false, reason: "Target is not editable" };
     }
     if (action === "select") {
         const tag = (input.tagName ?? "").toLowerCase();
@@ -166,5 +176,7 @@ global.__snailPiActionPolicy = Object.freeze({
   isDestructiveControl,
   evaluateActionPolicy,
   elementActionMeta,
+  ALLOWED_PRESS_KEYS,
+  ALLOWED_PRESS_MODIFIERS,
 });
 })(typeof globalThis !== "undefined" ? globalThis : self);
