@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import type { GitInfo, SessionInfo, WorktreeInfo } from "@/lib/types";
 import { buildSessionTree } from "@/lib/sidebar-session-tree";
-import { formatWorkspaceHeaderTitle, formatWorkspaceSubtitle, formatWorkspaceTitle } from "@/lib/workspace-title";
+import { formatWorkspaceHeaderTitle } from "@/lib/workspace-title";
 import { useSessionBrowser } from "@/hooks/useSessionBrowser";
 import { useI18n } from "@/components/I18nProvider";
 import { useAppDialog } from "@/components/AppDialogProvider";
@@ -309,11 +309,6 @@ export function SessionSidebar({
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  const handleNewSession = useCallback(() => {
-    if (!activeCwd) return;
-    onNewSession?.(makeTempSessionId(), activeCwd);
-  }, [activeCwd, onNewSession]);
-
   const handleNewWorktree = useCallback(async () => {
     if (!activeCwd || creatingWorktree) return;
     setCreatingWorktree(true);
@@ -467,8 +462,6 @@ export function SessionSidebar({
     mainWorktreeBranch: selectedWorktree.mainWorktreeBranch,
   } : undefined);
   const workspaceTitle = formatWorkspaceHeaderTitle(activeCwd, currentGit);
-  const workspaceTitleDetail = formatWorkspaceTitle(activeCwd, currentGit);
-  const workspaceSubtitle = formatWorkspaceSubtitle(activeCwd, currentGit);
 
   const archivedOnlyCwds = useMemo(
     () => new Set(archivedCwds.filter((acwd) => !visibleProjects.some((p) => p.cwd === acwd))),
@@ -575,8 +568,6 @@ export function SessionSidebar({
         activeCwd={activeCwd}
         homeDir={homeDir}
         workspaceTitle={workspaceTitle}
-        workspaceTitleDetail={workspaceTitleDetail}
-        workspaceSubtitle={workspaceSubtitle}
         worktreeByCwd={worktreeByCwd}
         cwdGroups={cwdGroups}
         archivedOnlyCwds={archivedOnlyCwds}
@@ -585,7 +576,6 @@ export function SessionSidebar({
         sessionRefreshDone={sessionRefreshDone}
         suppressEmptyPlaceholder={Boolean(initialSessionId && !restoredRef.current)}
         onActiveCwdChange={onActiveCwdChange}
-        onNewSession={handleNewSession}
         onNewWorktree={handlePickerNewWorktree}
         onRefresh={handlePickerRefresh}
         onRequestArchiveAll={handleRequestArchiveAll}

@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useCallback, useRef, useState } from "react";
+import { memo, useCallback, useMemo, useRef, useState } from "react";
 import type { SessionInfo } from "@/lib/types";
 import type { SidebarSessionTreeNode } from "@/lib/sidebar-session-tree";
 import { useI18n } from "@/components/I18nProvider";
@@ -51,6 +51,26 @@ export const SessionList = memo(function SessionList({
   onBatchArchive,
 }: SessionListProps) {
   const { t } = useI18n();
+  const groupedSessionTree = useMemo(() => {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const todayStart = today.getTime();
+    const yesterdayStart = yesterday.getTime();
+    const groups = [
+      { label: t("sidebar.today"), nodes: [] as SessionTreeNode[] },
+      { label: t("sidebar.yesterday"), nodes: [] as SessionTreeNode[] },
+      { label: t("sidebar.earlier"), nodes: [] as SessionTreeNode[] },
+    ];
+    for (const node of sessionTree) {
+      const modified = new Date(node.session.modified).getTime();
+      if (Number.isFinite(modified) && modified >= todayStart) groups[0].nodes.push(node);
+      else if (Number.isFinite(modified) && modified >= yesterdayStart) groups[1].nodes.push(node);
+      else groups[2].nodes.push(node);
+    }
+    return groups.filter((group) => group.nodes.length > 0);
+  }, [sessionTree, t]);
 
   return (
     <>
@@ -69,20 +89,25 @@ export const SessionList = memo(function SessionList({
           {t("sidebar.noSessions")}
         </div>
       )}
-      {sessionTree.map((node) => (
-        <SessionTreeItem
-          key={node.session.id}
-          node={node}
-          selectedSessionId={selectedSessionId}
-          onSelectSession={onSelectSession}
-          onRenamed={onRenamed}
-          onSessionDeleted={onSessionDeleted}
-          onArchive={onArchive}
-          onContextMenu={onContextMenu}
-          depth={0}
-          selectedForArchive={selectedForArchive}
-          onToggleSelect={onToggleSelect}
-        />
+      {groupedSessionTree.map((group) => (
+        <div key={group.label} className="session-day-group">
+          <div className="session-day-label">{group.label}</div>
+          {group.nodes.map((node) => (
+            <SessionTreeItem
+              key={node.session.id}
+              node={node}
+              selectedSessionId={selectedSessionId}
+              onSelectSession={onSelectSession}
+              onRenamed={onRenamed}
+              onSessionDeleted={onSessionDeleted}
+              onArchive={onArchive}
+              onContextMenu={onContextMenu}
+              depth={0}
+              selectedForArchive={selectedForArchive}
+              onToggleSelect={onToggleSelect}
+            />
+          ))}
+        </div>
       ))}
 
       {!loading && !error && filteredSessions.length > 0 && projectSessionTotal > 0 && (
@@ -335,8 +360,11 @@ const SessionItem = memo(function SessionItem({
     onArchive?.(session.id);
   }, [session.id, onArchive]);
 
-  // Fixed-height outer wrapper — content swaps in place so the list never reflows
-  const ITEM_HEIGHT = 54;
+  // Fixed-height outer wrapper — content swaps in place so the list never reflows.
+  const ITEM_HEIGHT = 62;
+  const summary = session.name && session.firstMessage
+    ? session.firstMessage
+    : t("sidebar.messageCount", { count: session.messageCount });
 
   return (
     <div
@@ -349,22 +377,26 @@ const SessionItem = memo(function SessionItem({
       }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => { setHovered(false); }}
+      className={`session-list-item${isSelected ? " is-selected" : ""}`}
       style={{
+        position: "relative",
         height: ITEM_HEIGHT,
         display: "flex",
         alignItems: "center",
-        paddingLeft: depth > 0 ? depth * 12 + 14 : 14,
-        paddingRight: 8,
+        margin: "0 8px 4px",
+        paddingLeft: depth > 0 ? depth * 12 + 10 : 10,
+        paddingRight: 10,
+        borderRadius: 12,
         cursor: confirmDelete || renaming ? "default" : "pointer",
         background: confirmDelete
           ? "rgba(239,68,68,0.06)"
-          : isSelected ? "var(--bg-selected)" : hovered ? "var(--bg-hover)" : "transparent",
-        borderLeft: confirmDelete
-          ? "2px solid #ef4444"
-          : isSelected ? "2px solid var(--accent)" : "2px solid transparent",
-        transition: "background 0.1s",
+          : isSelected ? "var(--accent-soft)" : hovered ? "var(--bg-hover)" : "transparent",
+        border: confirmDelete
+          ? "1px solid rgba(239,68,68,0.35)"
+          : isSelected ? "1px solid color-mix(in srgb, var(--accent) 28%, transparent)" : "1px solid transparent",
+        transition: "background 0.1s, border-color 0.1s",
         opacity: deleting ? 0.5 : 1,
-        gap: 6,
+        gap: 8,
         overflow: "hidden",
       }}
     >
@@ -436,35 +468,38 @@ const SessionItem = memo(function SessionItem({
       ) : (
         /* ── Normal view ── */
         <>
-          {/* Multi-select checkbox */}
-          {onToggleSelect && (
-            <div
-              onClick={(e) => e.stopPropagation()}
-              style={{ display: "flex", alignItems: "center", flexShrink: 0 }}
-            >
+          {/* Preserve multi-select without making every row look like a checklist. */}
+          <div
+            className="session-state-slot"
+            onClick={(e) => e.stopPropagation()}
+            style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 14, flexShrink: 0 }}
+          >
+            {onToggleSelect && (hovered || selectedForArchive) ? (
               <input
                 type="checkbox"
                 checked={!!selectedForArchive}
                 onChange={() => onToggleSelect(session.id)}
                 style={{ width: 14, height: 14, cursor: "pointer", accentColor: "var(--accent)" }}
               />
-            </div>
-          )}
-          {/* Fork indicator for child sessions */}
-          {depth > 0 && (
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-              <line x1="6" y1="3" x2="6" y2="15" />
-              <circle cx="18" cy="6" r="3" />
-              <circle cx="6" cy="18" r="3" />
-              <path d="M18 9a9 9 0 0 1-9 9" />
-            </svg>
-          )}
+            ) : (
+              <span className={`session-status-dot${isSelected ? " active" : ""}`} />
+            )}
+          </div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+              {depth > 0 && (
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                  <line x1="6" y1="3" x2="6" y2="15" />
+                  <circle cx="18" cy="6" r="3" />
+                  <circle cx="6" cy="18" r="3" />
+                  <path d="M18 9a9 9 0 0 1-9 9" />
+                </svg>
+              )}
               <div
                 style={{
-                  fontSize: 12,
-                  fontWeight: isSelected ? 500 : 400,
+                  flex: 1,
+                  fontSize: 12.5,
+                  fontWeight: 600,
                   lineHeight: 1.4,
                   overflow: "hidden",
                   textOverflow: "ellipsis",
@@ -477,10 +512,14 @@ const SessionItem = memo(function SessionItem({
                 {title}
               </div>
               <WorktreeBadge worktree={session.worktree} />
+              {!hovered && (
+                <span title={session.modified} style={{ color: "var(--text-3)", fontSize: 10.5, flexShrink: 0 }}>
+                  {formatRelativeTime(session.modified, t)}
+                </span>
+              )}
             </div>
-            <div style={{ marginTop: 2, display: "flex", gap: 8, color: "var(--text-dim)", fontSize: 11 }}>
-              <span title={session.modified}>{formatRelativeTime(session.modified, t)}</span>
-              <span>{session.messageCount} msgs</span>
+            <div style={{ marginTop: 3, color: "var(--text-2)", fontSize: 11.5, lineHeight: 1.35, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {summary}
             </div>
           </div>
 
@@ -506,7 +545,7 @@ const SessionItem = memo(function SessionItem({
 
           {/* Action buttons — shown on hover */}
           {hovered && (
-            <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+            <div className="session-item-actions" style={{ display: "flex", gap: 4, flexShrink: 0 }}>
               <button
                 onClick={startRename}
                 title={t("common.rename")}

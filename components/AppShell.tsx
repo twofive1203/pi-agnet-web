@@ -38,15 +38,15 @@ import { SubagentStore } from "@/lib/subagent-store";
 import { makeTempSessionId } from "./sidebar/sidebar-utils";
 
 const TOP_PANEL_SAFE_SELECTOR = ".app-top-aux-panel, .app-top-aux-tab, .branch-navigator-inline";
-const RIGHT_PANEL_WIDTH_STORAGE_KEY = "pi-web-right-panel-width-v1";
-const DEFAULT_RIGHT_PANEL_RATIO = 0.42;
+const RIGHT_PANEL_WIDTH_STORAGE_KEY = "pi-web-right-panel-width-v2";
+const DEFAULT_RIGHT_PANEL_WIDTH = 380;
 const MAX_RIGHT_PANEL_RATIO = 0.7;
 const MIN_RIGHT_PANEL_WIDTH = 300;
 const MIN_CHAT_WIDTH = 360;
-const DESKTOP_SIDEBAR_WIDTH = 260;
+const DESKTOP_SIDEBAR_WIDTH = 300;
 /** Inline dock needs sidebar + chat min + right min; below this use overlay drawer. */
 const RIGHT_PANEL_INLINE_MIN_VIEWPORT =
-  DESKTOP_SIDEBAR_WIDTH + MIN_CHAT_WIDTH + MIN_RIGHT_PANEL_WIDTH; // 920
+  DESKTOP_SIDEBAR_WIDTH + MIN_CHAT_WIDTH + MIN_RIGHT_PANEL_WIDTH; // 960
 const RIGHT_PANEL_RESIZE_STEP = 10;
 const RIGHT_PANEL_RESIZE_STEP_LARGE = 40;
 
@@ -72,8 +72,7 @@ function isRightPanelInlineViewport(): boolean {
 }
 
 function getDefaultRightPanelWidth(): number {
-  if (typeof window === "undefined") return MIN_RIGHT_PANEL_WIDTH;
-  return Math.round(window.innerWidth * DEFAULT_RIGHT_PANEL_RATIO);
+  return DEFAULT_RIGHT_PANEL_WIDTH;
 }
 
 function readStoredRightPanelWidth(): number {
@@ -271,12 +270,12 @@ export function AppShell() {
   // Right panel — file tabs and optional SnFlow task drawer
   const [fileTabs, setFileTabs] = useState<Tab[]>([]);
   const [activeFileTabId, setActiveFileTabId] = useState<string | null>(null);
-  const [rightPanelOpen, setRightPanelOpen] = useState(false);
+  const [rightPanelOpen, setRightPanelOpen] = useState(true);
   /** Inspector tabs: files(Preview) / workflow(SnFlow) / changes / git / agents. */
-  const [rightPanelMode, setRightPanelMode] = useState<"files" | "workflow" | "changes" | "git" | "agents">("files");
+  const [rightPanelMode, setRightPanelMode] = useState<"files" | "workflow" | "changes" | "git" | "agents">("changes");
   const [automationOpen, setAutomationOpen] = useState(false);
   const [automationUnread, setAutomationUnread] = useState(0);
-  const [rightPanelWidth, setRightPanelWidth] = useState(MIN_RIGHT_PANEL_WIDTH);
+  const [rightPanelWidth, setRightPanelWidth] = useState(DEFAULT_RIGHT_PANEL_WIDTH);
   const [rightPanelResizing, setRightPanelResizing] = useState(false);
   const [isDesktopLayout, setIsDesktopLayout] = useState(false);
   const [rightPanelInline, setRightPanelInline] = useState(false);
@@ -397,8 +396,8 @@ export function AppShell() {
     if (cwd === activeCwdRef.current) return;
     setFileTabs([]);
     setActiveFileTabId(null);
-    // Session-scoped inspector tabs (changes/git/agents/files) must not survive a workspace switch.
-    if (rightPanelMode !== "workflow") setRightPanelOpen(false);
+    // Keep the Inspector shell visible across workspace changes; each tab already
+    // derives its content from the current workspace/session and clears stale data.
     // Eager ref updates so nested WorkTree bulk-delete onSessionDeleted callbacks
     // observe the fallback cwd / cleared selection before React re-renders.
     activeCwdRef.current = cwd;
@@ -433,7 +432,7 @@ export function AppShell() {
     setGitRefreshKey((k) => k + 1);
     setGitDirty(false);
     router.replace("/", { scroll: false });
-  }, [rightPanelMode, router]);
+  }, [router]);
 
   const handleSelectSession = useCallback((session: SessionInfo, isRestore = false) => {
     setNewSessionCwd(null);
@@ -443,7 +442,6 @@ export function AppShell() {
     if (session.cwd && session.cwd !== activeCwdRef.current) {
       setFileTabs([]);
       setActiveFileTabId(null);
-      if (rightPanelMode !== "workflow") setRightPanelOpen(false);
     }
     if (session.cwd) {
       activeCwdRef.current = session.cwd;
@@ -457,7 +455,7 @@ export function AppShell() {
     if (!isRestore) {
       router.replace(`?session=${encodeURIComponent(session.id)}`, { scroll: false });
     }
-  }, [rightPanelMode, router]);
+  }, [router]);
 
   const handleNewSession = useCallback((_sessionId: string, cwd: string) => {
     selectedSessionRef.current = null;
@@ -466,7 +464,6 @@ export function AppShell() {
     if (cwd !== activeCwdRef.current) {
       setFileTabs([]);
       setActiveFileTabId(null);
-      if (rightPanelMode !== "workflow") setRightPanelOpen(false);
     }
     activeCwdRef.current = cwd;
     setActiveCwd(cwd);
@@ -476,7 +473,7 @@ export function AppShell() {
     setSystemPrompt(null);
     setActiveTopPanel(null);
     router.replace("/", { scroll: false });
-  }, [rightPanelMode, router]);
+  }, [router]);
 
   // Called by ChatWindow when a new session gets its real id from pi
   const handleSessionCreated = useCallback((session: SessionInfo) => {
@@ -572,7 +569,6 @@ export function AppShell() {
   const handleCloseFileTab = useCallback((tabId: string) => {
     setFileTabs((prev) => {
       const next = prev.filter((t) => t.id !== tabId);
-      if (next.length === 0 && rightPanelMode === "files") setRightPanelOpen(false);
       return next;
     });
     setActiveFileTabId((cur) => {
@@ -580,7 +576,7 @@ export function AppShell() {
       const remaining = fileTabs.filter((t) => t.id !== tabId);
       return remaining.length > 0 ? remaining[remaining.length - 1].id : null;
     });
-  }, [fileTabs, rightPanelMode]);
+  }, [fileTabs]);
 
   const handleExportSession = useCallback(() => {
     if (!selectedSession) return;
@@ -934,6 +930,8 @@ export function AppShell() {
 
           {/* Breadcrumb: workspace / session */}
           <div className="breadcrumb" title={workspaceCwd ?? undefined}>
+            <span className="workspace-breadcrumb-label">Workspace</span>
+            <span>/</span>
             <strong style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 180 }}>
               {formatWorkspaceHeaderTitle(workspaceCwd, activeCwdGit)}
             </strong>
@@ -950,7 +948,7 @@ export function AppShell() {
           {showChat && (
             <div className="app-top-actions" style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <button
-                className="app-top-pill"
+                className="icon-round context-action"
                 onClick={handleExportSession}
                 disabled={!selectedSession}
                 title={selectedSession ? t("app.exportHtml") : t("app.exportHtmlDisabled")}
@@ -958,10 +956,8 @@ export function AppShell() {
                 style={{
                   display: "flex",
                   alignItems: "center",
-                  gap: 6,
-                  padding: "0 12px",
-                  background: "none",
-                  border: "none",
+                  background: "var(--bg-card)",
+                  border: "1px solid var(--line)",
                   color: selectedSession ? "var(--text-muted)" : "var(--text-dim)",
                   cursor: selectedSession ? "pointer" : "not-allowed",
                   opacity: selectedSession ? 1 : 0.45,
@@ -997,7 +993,6 @@ export function AppShell() {
                     <line x1="12" y1="15" x2="12" y2="3" />
                   </svg>
                 </span>
-                <span className="app-top-label">{t("app.export")}</span>
               </button>
               <BranchNavigator
                 tree={branchTree}
@@ -1011,13 +1006,10 @@ export function AppShell() {
               />
               <button
                 ref={systemBtnRef}
-                className={`app-top-aux-tab app-top-pill${activeTopPanel === "system" ? " app-top-pill-active" : ""}`}
+                className={`app-top-aux-tab icon-round context-action${activeTopPanel === "system" ? " on" : ""}`}
                 onClick={() => toggleTopPanel("system")}
                 style={{
-                  display: "flex", alignItems: "center", gap: 6,
-                  padding: "0 12px",
-                  background: activeTopPanel === "system" ? "var(--bg-selected)" : "none",
-                  border: "none",
+                  display: "grid", alignItems: "center",
                   cursor: "pointer",
                   color: activeTopPanel === "system" ? "var(--text)" : "var(--text-muted)",
                   fontSize: 11, whiteSpace: "nowrap", transition: "color 0.1s, background 0.1s",
@@ -1031,13 +1023,12 @@ export function AppShell() {
                   <line x1="8" y1="13" x2="16" y2="13" />
                   <line x1="8" y1="17" x2="13" y2="17" />
                 </svg>
-                <span className="app-top-label">{t("app.system")}</span>
               </button>
             </div>
           )}
           {terminalEnabled && terminalCwd && (
             <button
-              className={`app-top-pill${terminalOpen ? " app-top-pill-active" : ""}`}
+              className={`icon-round context-action${terminalOpen ? " on" : ""}`}
               onClick={async () => {
                 if (!terminalOpen) {
                   setTerminalDockCwd(terminalCwd);
@@ -1060,10 +1051,7 @@ export function AppShell() {
               }}
               title={terminalOpen && terminalDockCwd && terminalDockCwd !== terminalCwd ? t("app.openTerminalForWorkspace") : t("app.openTerminal")}
               style={{
-                display: "flex", alignItems: "center", gap: 6,
-                padding: "0 12px",
-                background: terminalOpen ? "var(--bg-selected)" : "none",
-                border: "none",
+                display: "grid", alignItems: "center",
                 cursor: "pointer",
                 color: terminalOpen ? "var(--text)" : "var(--text-muted)",
                 fontSize: 11, whiteSpace: "nowrap", transition: "color 0.1s, background 0.1s",
@@ -1075,7 +1063,6 @@ export function AppShell() {
                 <polyline points="4 17 10 11 4 5" />
                 <line x1="12" y1="19" x2="20" y2="19" />
               </svg>
-              <span className="app-top-label">{t("app.terminal")}</span>
             </button>
           )}
           {/* Session stats — right-aligned in top bar */}

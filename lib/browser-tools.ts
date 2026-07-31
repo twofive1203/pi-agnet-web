@@ -148,24 +148,22 @@ export function createBrowserToolDefinitions(): ToolDefinition[] {
   };
 
   const browserActActions = ["highlight", "scroll_into_view", "click", "type", "select", "reload", "fill", "clear", "press", "check", "uncheck", "hover"] as const;
-  void browserActActions;
   const pressKeys = ["Enter", "Space", "Tab", "Escape", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"] as const;
   const pressModifiers = ["Shift", "Control", "Alt", "Meta"] as const;
 
-  const browserActParameters = Type.Union([
-    Type.Object({ bindingId: bindingIdParam, action: Type.Literal("reload") }),
-    Type.Object({ bindingId: bindingIdParam, action: Type.Literal("highlight"), elementRef: Type.String() }),
-    Type.Object({ bindingId: bindingIdParam, action: Type.Literal("scroll_into_view"), elementRef: Type.String() }),
-    Type.Object({ bindingId: bindingIdParam, action: Type.Literal("click"), elementRef: Type.String() }),
-    Type.Object({ bindingId: bindingIdParam, action: Type.Literal("type"), elementRef: Type.String(), text: Type.String({ maxLength: 8_000 }), clearFirst: Type.Optional(Type.Boolean()) }),
-    Type.Object({ bindingId: bindingIdParam, action: Type.Literal("select"), elementRef: Type.String(), value: Type.String({ maxLength: 2_000 }) }),
-    Type.Object({ bindingId: bindingIdParam, action: Type.Literal("fill"), elementRef: Type.String(), text: Type.String({ maxLength: 8_000 }) }),
-    Type.Object({ bindingId: bindingIdParam, action: Type.Literal("clear"), elementRef: Type.String() }),
-    Type.Object({ bindingId: bindingIdParam, action: Type.Literal("press"), elementRef: Type.String(), key: StringEnum(pressKeys), modifiers: Type.Optional(Type.Array(StringEnum(pressModifiers), { maxItems: 4 })) }),
-    Type.Object({ bindingId: bindingIdParam, action: Type.Literal("check"), elementRef: Type.String() }),
-    Type.Object({ bindingId: bindingIdParam, action: Type.Literal("uncheck"), elementRef: Type.String() }),
-    Type.Object({ bindingId: bindingIdParam, action: Type.Literal("hover"), elementRef: Type.String() }),
-  ]);
+  // Keep the provider-facing root schema as a plain object. Some OpenAI-compatible
+  // providers reject a top-level anyOf/union before inference, which prevents every
+  // prompt from reaching the model even when browser_act is never called.
+  const browserActParameters = Type.Object({
+    bindingId: bindingIdParam,
+    action: StringEnum(browserActActions),
+    elementRef: Type.Optional(Type.String({ description: "Required for every action except reload" })),
+    text: Type.Optional(Type.String({ maxLength: 8_000, description: "Required for type and fill" })),
+    value: Type.Optional(Type.String({ maxLength: 2_000, description: "Required for select" })),
+    clearFirst: Type.Optional(Type.Boolean({ description: "Optional for type" })),
+    key: Type.Optional(StringEnum(pressKeys, { description: "Required for press" })),
+    modifiers: Type.Optional(Type.Array(StringEnum(pressModifiers), { maxItems: 4, description: "Optional for press" })),
+  });
 
   const browserAct: ToolDefinition = {
     name: "browser_act",

@@ -522,6 +522,8 @@ async function main(): Promise<void> {
       assert(source.includes(`name: "${name}"`), `tool ${name} defined`);
     }
     assert(source.includes('"fill"'), "semantic fill action schema");
+    assert(source.includes("const browserActParameters = Type.Object"), "browser_act keeps a provider-compatible object root schema");
+    assert(!source.includes("const browserActParameters = Type.Union"), "browser_act does not expose a top-level union schema");
     assert(source.includes('"semantic_actions_v1"'), "semantic feature gate");
     assert(source.includes("key"), "press key schema");
     assert(source.includes("modifiers"), "press modifiers schema");
