@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect, useReducer } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo, useReducer } from "react";
 import type {
   AgentMessage,
   ExtensionDialogRequest,
@@ -580,6 +580,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [extensionToasts, setExtensionToasts] = useState<ExtensionToastItem[]>([]);
 
   const eventSourceRef = useRef<EventSource | null>(null);
+  const eventReconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hiddenMessageUpdateRef = useRef<AgentEvent | null>(null);
+  const hiddenMessageUpdateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const extensionStatusMapRef = useRef<Map<string, string>>(new Map());
   const extensionWidgetMapRef = useRef<Map<string, ExtensionWidgetItem>>(new Map());
   const extensionDialogIdRef = useRef<string | null>(null);
@@ -637,7 +640,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const currentModel = currentModelOverride ?? data?.context.model ?? pendingModel ?? null;
   const displayModel = isNew ? newSessionModel : currentModel;
 
-  const sessionStats = (() => {
+  const sessionStats = useMemo(() => {
     const tokens = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
     let cost = 0;
     for (const msg of messages) {
@@ -652,7 +655,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     }
     const total = tokens.input + tokens.output + tokens.cacheRead + tokens.cacheWrite;
     return total > 0 ? { tokens, cost } : null;
-  })();
+  }, [messages]);
 
   const loadSession = useCallback(async (sid: string, showLoading = false, includeState = false) => {
     const requestId = ++sessionLoadRequestRef.current;
@@ -737,7 +740,21 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     }
   }, [setToolPresetState]);
 
+  const flushHiddenMessageUpdate = useCallback(() => {
+    if (hiddenMessageUpdateTimerRef.current) {
+      clearTimeout(hiddenMessageUpdateTimerRef.current);
+      hiddenMessageUpdateTimerRef.current = null;
+    }
+    const pending = hiddenMessageUpdateRef.current;
+    hiddenMessageUpdateRef.current = null;
+    if (pending) handleAgentEventRef.current?.(pending);
+  }, []);
+
   const connectEvents = useCallback((sid: string) => {
+    if (eventReconnectTimerRef.current) {
+      clearTimeout(eventReconnectTimerRef.current);
+      eventReconnectTimerRef.current = null;
+    }
     if (eventSourceRef.current) {
       eventSourceRef.current.close();
       eventSourceRef.current = null;
@@ -745,9 +762,26 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     const es = new EventSource(`/api/agent/${encodeURIComponent(sid)}/events`);
     eventSourceRef.current = es;
     es.onmessage = (e) => {
+      if (eventSourceRef.current !== es || sessionIdRef.current !== sid) return;
       try {
         const event = JSON.parse(e.data) as AgentEvent;
         recordSubagentClientMetric("sseEvents");
+        if (event.type === "message_update" && document.hidden) {
+          hiddenMessageUpdateRef.current = event;
+          if (!hiddenMessageUpdateTimerRef.current) {
+            hiddenMessageUpdateTimerRef.current = setTimeout(flushHiddenMessageUpdate, 500);
+          }
+          return;
+        }
+        if (event.type !== "message_update") {
+          flushHiddenMessageUpdate();
+        } else {
+          hiddenMessageUpdateRef.current = null;
+          if (hiddenMessageUpdateTimerRef.current) {
+            clearTimeout(hiddenMessageUpdateTimerRef.current);
+            hiddenMessageUpdateTimerRef.current = null;
+          }
+        }
         handleAgentEventRef.current?.(event);
       } catch {
         // ignore
@@ -757,16 +791,25 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       if (eventSourceRef.current === es && agentRunningRef.current) {
         es.close();
         eventSourceRef.current = null;
-        setTimeout(() => {
-          if (agentRunningRef.current) connectEvents(sid);
+        eventReconnectTimerRef.current = setTimeout(() => {
+          eventReconnectTimerRef.current = null;
+          if (agentRunningRef.current && sessionIdRef.current === sid) connectEvents(sid);
         }, 1000);
       }
     };
-  }, []);
+  }, [flushHiddenMessageUpdate]);
 
   useEffect(() => {
     agentRunningRef.current = agentRunning;
   }, [agentRunning]);
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden) flushHiddenMessageUpdate();
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, [flushHiddenMessageUpdate]);
 
   const clearExtensionChrome = useCallback(() => {
     extensionStatusMapRef.current.clear();
@@ -1372,8 +1415,18 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     }
     const toastTimers = toastTimersRef.current;
     return () => {
+      agentRunningRef.current = false;
       eventSourceRef.current?.close();
       eventSourceRef.current = null;
+      if (eventReconnectTimerRef.current) {
+        clearTimeout(eventReconnectTimerRef.current);
+        eventReconnectTimerRef.current = null;
+      }
+      hiddenMessageUpdateRef.current = null;
+      if (hiddenMessageUpdateTimerRef.current) {
+        clearTimeout(hiddenMessageUpdateTimerRef.current);
+        hiddenMessageUpdateTimerRef.current = null;
+      }
       for (const timer of toastTimers.values()) clearTimeout(timer);
       toastTimers.clear();
       if (subagentFlushTimerRef.current) {

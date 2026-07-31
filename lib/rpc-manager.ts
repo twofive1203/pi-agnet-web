@@ -14,6 +14,7 @@ import { disposeAgentSession } from "./pi-session-lifecycle";
 import type { AgentSessionLike, ToolInfo } from "./pi-types";
 import { isSubagentToolName } from "./subagent-runs";
 import { SubagentProgressThrottler } from "./subagent-progress-throttler";
+import { AgentEventThrottler } from "./agent-event-throttler";
 import { projectSubagentEvent } from "./subagent-event-projection";
 import {
   nowForSubagentMetric,
@@ -91,6 +92,7 @@ export class AgentSessionWrapper {
   private onDestroyCallback: (() => void) | null = null;
   private destroyPromise: Promise<void> | null = null;
   private extensionUiBridge: ExtensionWebUiBridge;
+  private agentEventThrottler: AgentEventThrottler<AgentEvent>;
   private subagentProgressThrottler: SubagentProgressThrottler<AgentEvent>;
   private activeToolCallIds = new Set<string>();
   private activeSubagentToolCallIds = new Set<string>();
@@ -101,8 +103,12 @@ export class AgentSessionWrapper {
       (event) => this.emitEvent(event),
       () => this.listeners.length > 0,
     );
-    this.subagentProgressThrottler = new SubagentProgressThrottler(
+    this.agentEventThrottler = new AgentEventThrottler(
       (event) => this.deliverAgentEvent(event),
+      50,
+    );
+    this.subagentProgressThrottler = new SubagentProgressThrottler(
+      (event) => this.agentEventThrottler.handle(event),
       300,
       Date.now,
       () => recordSubagentMetric("coalescedProgress"),
@@ -174,9 +180,7 @@ export class AgentSessionWrapper {
       if (event.type === "tool_execution_end" && toolCallId) {
         this.activeSubagentToolCallIds.delete(toolCallId);
       }
-      if (fileChangeUpdate) {
-        for (const listener of this.listeners) listener(fileChangeUpdate);
-      }
+      if (fileChangeUpdate) this.emitEvent(fileChangeUpdate);
       recordSubagentDuration("handlerMs", handlerStartedAt);
     });
     this.resetIdleTimer();
@@ -191,7 +195,9 @@ export class AgentSessionWrapper {
     if (isSubagentEvent && event.type === "tool_execution_update") {
       recordSubagentMetric("deliveredProgress");
     }
-    for (const listener of this.listeners) listener(browserEvent);
+    // Reuse the buffered path so a throttled trailing snapshot is not lost while
+    // the browser is between SSE connections.
+    this.publishEvent(browserEvent);
   }
 
   private resetIdleTimer(): void {
@@ -213,6 +219,11 @@ export class AgentSessionWrapper {
   }
 
   emitEvent(event: AgentEvent): void {
+    // Extension/UI events share the same ordering barrier as SDK lifecycle events.
+    this.agentEventThrottler.handle(event);
+  }
+
+  private publishEvent(event: AgentEvent): void {
     if (this.listeners.length === 0) {
       this.eventBuffer.push(event);
       if (this.eventBuffer.length > MAX_BUFFERED_EVENTS) {
@@ -477,6 +488,7 @@ export class AgentSessionWrapper {
     if (this.idleTimer) clearTimeout(this.idleTimer);
     this.unsubscribe?.();
     this.subagentProgressThrottler.clear();
+    this.agentEventThrottler.clear();
     this.activeToolCallIds.clear();
     this.activeSubagentToolCallIds.clear();
     this.extensionUiBridge.rejectAll();

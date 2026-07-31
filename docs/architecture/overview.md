@@ -81,6 +81,7 @@ Recent-session browse order uses file mtime (then filename timestamp, then path)
 - Pi stores tool calls as `{type:"toolCall", id, name, arguments}`.
 - Web UI types use `{toolCallId, toolName, input}`.
 - Normalize with `normalizeToolCalls()` in `lib/normalize.ts`; it is used during file load and streaming.
+- SDK `message_update` events are cumulative token-level snapshots. `lib/agent-event-throttler.ts` keeps the first and latest snapshots, caps browser delivery to 20 updates/second, and flushes pending text before lifecycle/tool events so SSE ordering is preserved. Hidden browser tabs apply a second 500 ms presentation coalescer; they still consume lifecycle and extension events normally.
 - The Subagent panel uses `lib/subagent-runs.ts` for both live tool-call row expansion and persisted message replay. Session/branch loads pair normalized assistant `subagent` calls with tool results to restore final status, output, routing, and child session paths. Live progress/recent-tool snapshots are not persisted by the session format and intentionally degrade after reload.
 - Newer pi emits `compaction_start` / `compaction_end`; older pi emits `auto_compaction_start` / `auto_compaction_end`. Handle both.
 

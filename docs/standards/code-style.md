@@ -37,6 +37,7 @@ There is no full app test framework. Targeted smoke scripts cover high-risk flow
 
 ```bash
 npm run test:browser      # browser binding protocol/manager + chrome-tab-debug artifact harness
+npm run test:agent-stream # token-stream coalescing and lifecycle ordering smoke
 npm run test:snflow       # SnFlow setup/store/session-link/spec-review smokes
 npm run test:runtime      # Next server externals + published launcher invariants
 npm run test:automation   # Automation store/schedule/policy/runner/API/security smokes

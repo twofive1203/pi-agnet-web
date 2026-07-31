@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentMessage, SessionInfo, SessionTreeNode } from "@/lib/types";
 import { MessageView } from "./MessageView";
 import { ChatInput, type ChatInputHandle } from "./ChatInput";
@@ -184,7 +184,23 @@ export const ChatWindow = memo(function ChatWindow({ session, newSessionCwd, onA
 
   const { isDragOver, handleDragEnter, handleDragOver, handleDragLeave, handleDrop } = useDragDrop(onDrop);
 
-  const visibleMessages = messages.filter((m) => m.role === "user" || m.role === "assistant");
+  const visibleMessages = useMemo(
+    () => messages.filter((m) => m.role === "user" || m.role === "assistant"),
+    [messages],
+  );
+  const toolResultsMap = useMemo(() => {
+    const results = new Map<string, import("@/lib/types").ToolResultMessage>();
+    for (const message of messages) {
+      if (message.role === "toolResult") {
+        const toolResult = message as import("@/lib/types").ToolResultMessage;
+        results.set(toolResult.toolCallId, toolResult);
+      }
+    }
+    return results;
+  }, [messages]);
+  const handleEditMessage = useCallback((content: string) => {
+    chatInputRef?.current?.insertIfEmpty(content);
+  }, [chatInputRef]);
   const messageRefs = useMessageRefs(visibleMessages.length);
   const visibleExtensionStatuses = extensionStatuses.filter((item) => !isPowerbarExtensionItem(item));
   const visibleExtensionWidgets = extensionWidgets.filter(
@@ -372,12 +388,6 @@ export const ChatWindow = memo(function ChatWindow({ session, newSessionCwd, onA
           <div className="mx-auto max-w-[820px] px-4">
 
             {(() => {
-              const toolResultsMap = new Map<string, import("@/lib/types").ToolResultMessage>();
-              for (const msg of messages) {
-                if (msg.role === "toolResult") {
-                  toolResultsMap.set((msg as import("@/lib/types").ToolResultMessage).toolCallId, msg as import("@/lib/types").ToolResultMessage);
-                }
-              }
               let lastUserIdx = -1;
               for (let i = messages.length - 1; i >= 0; i--) {
                 if (messages[i].role === "user") { lastUserIdx = i; break; }
@@ -414,7 +424,7 @@ export const ChatWindow = memo(function ChatWindow({ session, newSessionCwd, onA
                     forking={forkingEntryId === entryIds[idx]}
                     onNavigate={agentRunning ? undefined : handleNavigate}
                     prevAssistantEntryId={agentRunning ? undefined : prevAssistantEntryId}
-                    onEditContent={(content) => chatInputRef?.current?.insertIfEmpty(content)}
+                    onEditContent={handleEditMessage}
                     showTimestamp={showTimestamp}
                     prevTimestamp={idx > 0 ? (messages[idx - 1] as import("@/lib/types").AgentMessage & { timestamp?: number }).timestamp : undefined}
                   />
