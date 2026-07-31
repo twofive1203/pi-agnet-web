@@ -37,6 +37,10 @@ interface Props {
   onOpenFile?: (filePath: string, fileName: string) => void;
   explorerRefreshKey?: number;
   onAtMention?: (relativePath: string) => void;
+  /** Bump to open the Files explorer pane (nav pill). */
+  filesPill?: number;
+  /** Bump to expand the archived sessions section (nav pill). */
+  archivePill?: number;
 }
 
 export function SessionSidebar({
@@ -52,6 +56,8 @@ export function SessionSidebar({
   onOpenFile,
   explorerRefreshKey,
   onAtMention,
+  filesPill,
+  archivePill,
 }: Props) {
   const { t } = useI18n();
   const appDialog = useAppDialog();
@@ -71,6 +77,7 @@ export function SessionSidebar({
   const [removedWorktreeCwds, setRemovedWorktreeCwds] = useState<string[]>([]);
   const [activeCwdGit, setActiveCwdGit] = useState<GitInfo | undefined>(undefined);
   const [archivedExpanded, setArchivedExpanded] = useState(false);
+  const [sessionSearch, setSessionSearch] = useState("");
   const explorerRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sidebarRootRef = useRef<HTMLDivElement>(null);
   const restoredRef = useRef(false);
@@ -476,7 +483,17 @@ export function SessionSidebar({
   const activeSessionCountForCwd = selectedProject?.sessionCount
     ?? (projectSessionTotal > 0 ? projectSessionTotal : filteredSessions.length);
 
-  const sessionTree = useMemo(() => buildSessionTree(filteredSessions), [filteredSessions]);
+  // Client-side search over the visible session rows (title / first message).
+  const searchFilteredSessions = useMemo(() => {
+    const query = sessionSearch.trim().toLowerCase();
+    if (!query) return filteredSessions;
+    return filteredSessions.filter((s) =>
+      (s.name ?? "").toLowerCase().includes(query)
+      || (s.firstMessage ?? "").toLowerCase().includes(query),
+    );
+  }, [filteredSessions, sessionSearch]);
+
+  const sessionTree = useMemo(() => buildSessionTree(searchFilteredSessions), [searchFilteredSessions]);
 
   const equalShareExplorerOpen = Boolean(explorerOpen && activeCwd && !isDesktopLayout);
   const sessionListFlex = equalShareExplorerOpen ? "1 1 0" : "1 1 auto";
@@ -493,6 +510,17 @@ export function SessionSidebar({
   const handleSessionContextMenu = useCallback((event: React.MouseEvent, session: SessionInfo) => {
     setSessionContextMenu({ x: event.clientX, y: event.clientY, session });
   }, []);
+
+  useEffect(() => {
+    if (filesPill) setExplorerOpen(true);
+  }, [filesPill]);
+
+  useEffect(() => {
+    if (archivePill && activeCwd) {
+      setArchivedExpanded(true);
+      void loadArchivedSessions(activeCwd, true);
+    }
+  }, [archivePill, activeCwd, loadArchivedSessions]);
 
   const handleSessionDeletedFromList = useCallback((id: string) => {
     onSessionDeleted?.(id);
@@ -564,6 +592,60 @@ export function SessionSidebar({
         onWorktreeAction={openWorktreeAction}
         onClearWorktreeError={handleClearWorktreeError}
       />
+
+      {/* Nav pills: Sessions / Files / Archive */}
+      <div className="sidebar-nav-pills">
+        <button
+          className={!explorerOpen ? "on" : ""}
+          onClick={() => setExplorerOpen(false)}
+          title={t("sidebar.sessions")}
+        >
+          {t("sidebar.sessions")}
+        </button>
+        <button
+          className={explorerOpen ? "on" : ""}
+          onClick={() => setExplorerOpen(true)}
+          title={t("sidebar.files")}
+        >
+          {t("sidebar.files")}
+        </button>
+        <button
+          className={archivedExpanded ? "on" : ""}
+          onClick={() => {
+            if (activeCwd) {
+              setArchivedExpanded(true);
+              void loadArchivedSessions(activeCwd, true);
+            }
+          }}
+          title={t("sidebar.archive")}
+        >
+          {t("sidebar.archive")}
+        </button>
+      </div>
+
+      {/* Search sessions */}
+      <div className="sidebar-search-row">
+        <div className="sidebar-search">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+            <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
+          <input
+            value={sessionSearch}
+            onChange={(e) => setSessionSearch(e.target.value)}
+            placeholder={t("sidebar.searchSessions")}
+            spellCheck={false}
+          />
+          {sessionSearch && (
+            <button
+              onClick={() => setSessionSearch("")}
+              title={t("common.clear")}
+              style={{ background: "none", border: "none", color: "var(--text-3)", cursor: "pointer", padding: 2, lineHeight: 1 }}
+            >
+              ×
+            </button>
+          )}
+        </div>
+      </div>
 
       {sessionContextMenu && (
         <div
@@ -711,7 +793,7 @@ export function SessionSidebar({
           loading={loading}
           error={error}
           sessionTree={sessionTree}
-          filteredSessions={filteredSessions}
+          filteredSessions={searchFilteredSessions}
           selectedSessionId={selectedSessionId}
           projectSessionTotal={projectSessionTotal}
           hasMoreSessions={hasMoreSessions}

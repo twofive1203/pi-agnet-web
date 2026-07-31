@@ -20,37 +20,58 @@
 }
 
 :root {
-  --bg: #ffffff;
-  --bg-panel: #f5f5f5;
-  --bg-hover: #eeeeee;
-  --bg-selected: #e8e8e8;
-  --border: #e0e0e0;
-  --text: #1a1a1a;
-  --text-muted: #6b7280;
-  --text-dim: #9ca3af;
-  --accent: #2563eb;
-  --accent-hover: #1d4ed8;
-  --user-bg: #eff6ff;
+  --bg: #f4f5f8;
+  --bg-panel: #ffffff;
+  --bg-hover: #eef0f5;
+  --bg-selected: #e7e9f2;
+  --border: #e2e5ee;
+  --text: #171a22;
+  --text-muted: #5c6578;
+  --text-dim: #8b93a5;
+  --accent: #6358e6;
+  --accent-hover: #4f46d0;
+  --user-bg: #f0eefe;
   --assistant-bg: #ffffff;
-  --tool-bg: #f9fafb;
-  --bg-subtle: rgba(0,0,0,0.03);
+  --tool-bg: #f7f7fb;
+  --bg-subtle: rgba(23,26,34,0.035);
 }
 
 html.dark {
-  --bg: #1a1a1a;
-  --bg-panel: #242424;
-  --bg-hover: #2e2e2e;
-  --bg-selected: #383838;
-  --border: #3a3a3a;
-  --text: #e8e8e8;
-  --text-muted: #9ca3af;
-  --text-dim: #6b7280;
-  --accent: #60a5fa;
-  --accent-hover: #93c5fd;
-  --user-bg: #1e293b;
-  --assistant-bg: #1a1a1a;
-  --tool-bg: #1f2937;
+  --bg: #0e0f13;
+  --bg-panel: #14161d;
+  --bg-hover: #1f2430;
+  --bg-selected: #272d3d;
+  --border: #2a2f3c;
+  --text: #eef0f6;
+  --text-muted: #9aa3b5;
+  --text-dim: #6d7689;
+  --accent: #7c6af5;
+  --accent-hover: #9180f9;
+  --user-bg: #221e3a;
+  --assistant-bg: #181b24;
+  --tool-bg: #1c2029;
   --bg-subtle: rgba(255,255,255,0.04);
+}
+
+/* Concept-B workbench semantic aliases — map the prototype's token roles onto
+   the active theme so every theme/skin keeps a coherent card-panel look. */
+:root {
+  --bg-soft: var(--bg);
+  --bg-card: var(--bg-panel);
+  --line: var(--border);
+  --line-soft: color-mix(in srgb, var(--border) 52%, transparent);
+  --text-2: var(--text-muted);
+  --text-3: var(--text-dim);
+  --accent-soft: color-mix(in srgb, var(--accent) 14%, transparent);
+  --accent-2: color-mix(in srgb, var(--accent) 72%, #5b8cff);
+  --ok: #3ecf8e;
+  --warn: #f0b429;
+  --danger: #f07178;
+  --info: #6ec8ff;
+  --radius: 12px;
+  --radius-sm: 8px;
+  --radius-lg: 18px;
+  --shadow-panel: 0 10px 40px color-mix(in srgb, #0b0d14 16%, transparent);
 }
 
 /* Curated themes keep the same semantic token contract as the default modes. */
@@ -2067,4 +2088,381 @@ span.linenumber {
 .automation-run-changes li {
   padding: 3px 0;
   overflow-wrap: anywhere;
+}
+
+/* ============================================================
+ * Concept-B Workbench shell
+ * Three floating card panels: left context / center chat / right inspector.
+ * ============================================================ */
+
+/* Outer shell: padded container with gaps between the card panels. */
+.app-shell-root {
+  gap: 12px;
+  padding: 12px;
+}
+
+/* Card panels */
+.app-shell-root > .sidebar-container,
+.app-shell-root > .right-panel-container {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--bg-panel);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 3%, transparent), var(--shadow-panel);
+}
+
+/* Center column hosts the chat card */
+.center-column {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.center-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background:
+    radial-gradient(760px 220px at 50% -10%, color-mix(in srgb, var(--accent) 9%, transparent), transparent 60%),
+    var(--bg-panel);
+  overflow: hidden;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 3%, transparent), var(--shadow-panel);
+}
+
+/* Top context strip (merged old top bar into the center panel) */
+.top-context {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line-soft);
+  flex-shrink: 0;
+  min-height: 46px;
+}
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+  color: var(--text-2);
+  font-size: 12.5px;
+}
+.breadcrumb strong {
+  color: var(--text);
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+/* Chips & icon buttons */
+.chip {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--bg-card);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-2);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 0.12s, background 0.12s, color 0.12s;
+}
+.chip:hover { background: var(--bg-hover); color: var(--text); }
+.chip.on {
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+  color: var(--text);
+}
+.chip .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ok);
+}
+.chip .dot.warn { background: var(--warn); }
+
+.icon-round {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--bg-card);
+  display: grid;
+  place-items: center;
+  position: relative;
+  color: var(--text-2);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: border-color 0.12s, background 0.12s, color 0.12s;
+}
+.icon-round:hover { background: var(--bg-hover); color: var(--text); }
+.icon-round .badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 16px;
+  height: 16px;
+  border-radius: 8px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 10px;
+  line-height: 16px;
+  text-align: center;
+  padding: 0 4px;
+}
+
+/* Observe bar — Changes / Git / Subagents / Todo */
+.observe-bar {
+  display: flex;
+  gap: 6px;
+  padding: 0 14px 10px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+/* Right inspector header + tabs */
+.insp-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 14px 0;
+  flex-shrink: 0;
+}
+.insp-head h3 {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.insp-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 10px 12px 0;
+  flex-shrink: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.insp-tabs button {
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+  cursor: pointer;
+  border: 1px solid transparent;
+  white-space: nowrap;
+  transition: background 0.12s, color 0.12s;
+}
+.insp-tabs button:hover { background: var(--bg-hover); color: var(--text); }
+.insp-tabs button.on {
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+  color: var(--text);
+}
+.insp-body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  padding: 10px 12px 12px;
+}
+
+/* Sidebar nav pills + search */
+.sidebar-nav-pills {
+  display: flex;
+  gap: 4px;
+  padding: 8px 10px 2px;
+  flex-shrink: 0;
+}
+.sidebar-nav-pills button {
+  flex: 1;
+  height: 30px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.sidebar-nav-pills button:hover { background: var(--bg-hover); color: var(--text); }
+.sidebar-nav-pills button.on {
+  background: var(--accent-soft);
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+.sidebar-search-row {
+  padding: 6px 10px 2px;
+  flex-shrink: 0;
+}
+.sidebar-search {
+  height: 32px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  color: var(--text-3);
+}
+.sidebar-search input {
+  flex: 1;
+  outline: none;
+  color: var(--text);
+  font-size: 12.5px;
+  background: none;
+  border: none;
+}
+
+/* Sidebar foot: New + settings hub */
+.sidebar-foot {
+  border-top: 1px solid var(--line-soft);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.sidebar-foot .ghost {
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+  background: none;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.sidebar-foot .ghost:hover { background: var(--bg-hover); color: var(--text); }
+.sidebar-foot .ghost.primary {
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  border-color: transparent;
+  color: #fff;
+}
+.sidebar-foot .ghost.primary:hover { filter: brightness(1.06); color: #fff; }
+.sidebar-foot .ghost.primary:disabled { opacity: 0.45; cursor: default; filter: none; }
+.sidebar-foot .hub-row {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+}
+.sidebar-foot .hub-btn {
+  height: 30px;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--text-2);
+  background: none;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.sidebar-foot .hub-btn:hover:not(:disabled) { background: var(--bg-hover); color: var(--text); }
+.sidebar-foot .hub-btn:disabled { opacity: 0.35; cursor: default; }
+
+/* Composer: prototype style rounded card with accent focus ring */
+.chat-input-main-row {
+  border-radius: var(--radius-lg) !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 24px -12px rgba(15, 23, 42, 0.10) !important;
+}
+.chat-input-main-row:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line)) !important;
+  box-shadow: 0 0 0 3px var(--accent-soft) !important;
+}
+
+/* Assistant messages: subtle card framing to match the prototype */
+.message-view-assistant .markdown-body {
+  border: 1px solid var(--line-soft);
+  border-radius: 14px;
+  background: var(--bg-card);
+  padding: 12px 14px;
+}
+
+/* Empty / hero state */
+.hero-mark {
+  width: 52px;
+  height: 52px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  color: #fff;
+  display: grid;
+  place-items: center;
+  font-size: 22px;
+  font-weight: 700;
+  box-shadow: 0 10px 30px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+/* Narrow screens: collapse to a single card */
+@media (max-width: 860px) {
+  .app-shell-root {
+    padding: 8px;
+    gap: 0;
+  }
+  .app-shell-root > .right-panel-container {
+    border-radius: 14px;
+  }
+  .app-shell-root > .sidebar-container {
+    border-radius: 14px;
+  }
+  .center-panel {
+    border-radius: 14px;
+  }
+}
+
+/* Inspector Changes tab stat cards */
+.stat-card {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 10px;
+  background: var(--bg-card);
+}
+.stat-card .stat-k {
+  color: var(--text-3);
+  font-size: 11px;
+}
+.stat-card .stat-v {
+  font-size: 18px;
+  font-weight: 700;
+  margin-top: 2px;
+  letter-spacing: -0.03em;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Mobile: context strip scrolls horizontally like the old top bar */
+@media (max-width: 640px) {
+  .top-context {
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .top-context::-webkit-scrollbar {
+    display: none;
+  }
+  .top-context > * {
+    flex-shrink: 0;
+  }
+  .top-context .breadcrumb {
+    flex: none;
+    min-width: 160px;
+  }
+  .center-panel {
+    border-radius: 0;
+  }
 }

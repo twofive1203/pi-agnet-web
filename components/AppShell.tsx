@@ -23,9 +23,10 @@ import type { WorkflowSessionTaskLinkResult } from "@/lib/workflow-session-link"
 import { workflowTaskToChatContext, type WorkflowTaskChatContext } from "@/lib/workflow-chat-context";
 import { BranchNavigator } from "./BranchNavigator";
 import { GitPanel } from "./GitPanel";
+import { InspectorChangesPanel } from "./InspectorChangesPanel";
 import { TerminalPanel } from "./TerminalPanel";
 import { getRelativeFilePath } from "@/lib/file-paths";
-import { formatWorkspaceTitle } from "@/lib/workspace-title";
+import { formatWorkspaceHeaderTitle, formatWorkspaceTitle } from "@/lib/workspace-title";
 import { ThemePicker } from "./ThemePicker";
 import { useI18n } from "@/components/I18nProvider";
 import { useAppDialog } from "@/components/AppDialogProvider";
@@ -34,6 +35,7 @@ import type { PiWebConfig } from "@/lib/pi-web-config";
 import type { ChatInputHandle } from "./ChatInput";
 import { recordSubagentClientMetric } from "@/lib/subagent-observability-client";
 import { SubagentStore } from "@/lib/subagent-store";
+import { makeTempSessionId } from "./sidebar/sidebar-utils";
 
 const TOP_PANEL_SAFE_SELECTOR = ".app-top-aux-panel, .app-top-aux-tab, .branch-navigator-inline";
 const RIGHT_PANEL_WIDTH_STORAGE_KEY = "pi-web-right-panel-width-v1";
@@ -188,6 +190,18 @@ export function AppShell() {
     setSessionStats(stats);
   }, []);
 
+  // Agent running state — driven by ChatWindow, used by observe-bar / Changes polling
+  const [agentRunning, setAgentRunning] = useState(false);
+  const handleAgentRunningChange = useCallback((running: boolean) => {
+    setAgentRunning(running);
+  }, []);
+
+  // Extension Todo List widget active in the current chat
+  const [todoActive, setTodoActive] = useState(false);
+  const handleTodoActiveChange = useCallback((active: boolean) => {
+    setTodoActive(active);
+  }, []);
+
   // Context usage — populated by ChatWindow, displayed in top bar
   const [contextUsage, setContextUsage] = useState<{ percent: number | null; contextWindow: number; tokens: number | null } | null>(null);
   const handleContextUsageChange = useCallback((usage: { percent: number | null; contextWindow: number; tokens: number | null } | null) => {
@@ -258,7 +272,8 @@ export function AppShell() {
   const [fileTabs, setFileTabs] = useState<Tab[]>([]);
   const [activeFileTabId, setActiveFileTabId] = useState<string | null>(null);
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
-  const [rightPanelMode, setRightPanelMode] = useState<"files" | "workflow">("files");
+  /** Inspector tabs: files(Preview) / workflow(SnFlow) / changes / git / agents. */
+  const [rightPanelMode, setRightPanelMode] = useState<"files" | "workflow" | "changes" | "git" | "agents">("files");
   const [automationOpen, setAutomationOpen] = useState(false);
   const [automationUnread, setAutomationUnread] = useState(0);
   const [rightPanelWidth, setRightPanelWidth] = useState(MIN_RIGHT_PANEL_WIDTH);
@@ -382,7 +397,8 @@ export function AppShell() {
     if (cwd === activeCwdRef.current) return;
     setFileTabs([]);
     setActiveFileTabId(null);
-    if (rightPanelMode === "files") setRightPanelOpen(false);
+    // Session-scoped inspector tabs (changes/git/agents/files) must not survive a workspace switch.
+    if (rightPanelMode !== "workflow") setRightPanelOpen(false);
     // Eager ref updates so nested WorkTree bulk-delete onSessionDeleted callbacks
     // observe the fallback cwd / cleared selection before React re-renders.
     activeCwdRef.current = cwd;
@@ -427,7 +443,7 @@ export function AppShell() {
     if (session.cwd && session.cwd !== activeCwdRef.current) {
       setFileTabs([]);
       setActiveFileTabId(null);
-      if (rightPanelMode === "files") setRightPanelOpen(false);
+      if (rightPanelMode !== "workflow") setRightPanelOpen(false);
     }
     if (session.cwd) {
       activeCwdRef.current = session.cwd;
@@ -450,7 +466,7 @@ export function AppShell() {
     if (cwd !== activeCwdRef.current) {
       setFileTabs([]);
       setActiveFileTabId(null);
-      if (rightPanelMode === "files") setRightPanelOpen(false);
+      if (rightPanelMode !== "workflow") setRightPanelOpen(false);
     }
     activeCwdRef.current = cwd;
     setActiveCwd(cwd);
@@ -535,6 +551,11 @@ export function AppShell() {
       }
     }
   }, [router]);
+
+  const openInspectorTab = useCallback((mode: "files" | "workflow" | "changes" | "git" | "agents") => {
+    setRightPanelMode(mode);
+    setRightPanelOpen(true);
+  }, []);
 
   const handleOpenFile = useCallback((filePath: string, fileName: string, line?: number) => {
     const tabId = `file:${filePath}`;
@@ -696,8 +717,7 @@ export function AppShell() {
     }
   }, [workflowCwd, selectedSession?.id, handleWorkflowTaskCreated, appDialog, t]);
 
-  const rightToggleCount = 2; /* files + always-on SnFlow */
-  const rightTogglePad = rightPanelOpen ? 12 : 12 + rightToggleCount * 36;
+  const rightEdgePad = 12; /* context strip right padding for inspector-less layout */
 
   useEffect(() => {
     if (!terminalEnabled || (!terminalCwd && !terminalDockCwd)) {
@@ -761,7 +781,23 @@ export function AppShell() {
         explorerRefreshKey={explorerRefreshKey}
         onAtMention={handleAtMention}
       />
-      <div style={{ padding: "8px", flexShrink: 0, display: "flex", justifyContent: "space-between", gap: 4 }}>
+      <div className="sidebar-foot">
+        <button
+          className="ghost primary"
+          onClick={() => {
+            const cwd = activeCwd ?? selectedSession?.cwd ?? newSessionCwd;
+            if (!cwd) return;
+            handleNewSession(makeTempSessionId(), cwd);
+          }}
+          disabled={!activeCwd && !selectedSession?.cwd && !newSessionCwd}
+          title={t("sidebar.newSession")}
+        >
+          <svg width="13" height="13" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+            <line x1="6" y1="1" x2="6" y2="11" /><line x1="1" y1="6" x2="11" y2="6" />
+          </svg>
+          {t("sidebar.newSession")}
+        </button>
+        <div className="hub-row">
         {([
           {
             id: "models",
@@ -818,23 +854,16 @@ export function AppShell() {
         ] as { id: string; label: string; onClick: () => void; disabled: boolean; icon: React.ReactNode }[]).map(({ id, label, onClick, disabled, icon }) => (
           <button
             key={id}
+            className="hub-btn"
             onClick={onClick}
             disabled={disabled}
             title={label}
-            style={{
-              flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-              height: 32, padding: 0, background: "none", border: "none",
-              borderRadius: 9, color: "var(--text-muted)", cursor: disabled ? "default" : "pointer",
-              fontSize: 12, opacity: disabled ? 0.35 : 1,
-              transition: "background 0.12s, color 0.12s",
-            }}
-            onMouseEnter={(e) => { if (!disabled) { e.currentTarget.style.background = "var(--bg-hover)"; e.currentTarget.style.color = "var(--text)"; } }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = "none"; e.currentTarget.style.color = "var(--text-muted)"; }}
           >
             {icon}
             {label}
           </button>
         ))}
+        </div>
       </div>
     </>
   );
@@ -882,20 +911,15 @@ export function AppShell() {
       </div>
 
       {/* Center: chat */}
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minWidth: 0 }}>
-        {/* Top bar with sidebar toggle */}
-        <div ref={topBarRef} className="app-top-bar" style={{ display: "flex", alignItems: "center", flexShrink: 0, borderBottom: "1px solid var(--border)", height: 36, background: "var(--bg-panel)" }}>
+      <div className="center-column">
+        <div className="center-panel">
+        {/* Context strip — merged top bar */}
+        <div ref={topBarRef} className="top-context">
           <button
+            className="icon-round"
             onClick={() => setSidebarOpen((v) => !v)}
             title={sidebarOpen ? t("app.hideSidebar") : t("app.showSidebar")}
-            style={{
-              display: "flex", alignItems: "center", justifyContent: "center",
-              width: 36, height: 36, padding: 0,
-              background: "none", border: "none", borderRight: "1px solid var(--border)",
-              color: "var(--text-muted)", cursor: "pointer", flexShrink: 0, transition: "color 0.12s",
-            }}
-            onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text)"; }}
-            onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-muted)"; }}
+            style={{ width: 30, height: 30 }}
           >
             {sidebarOpen ? (
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -907,26 +931,24 @@ export function AppShell() {
               </svg>
             )}
           </button>
-          <ThemePicker />
-          <button
-            type="button"
-            onClick={() => setLocale(locale === "zh" ? "en" : "zh")}
-            title={t("app.languageSwitch")}
-            aria-label={t("app.languageSwitch")}
-            style={{
-              display: "flex", alignItems: "center", justifyContent: "center",
-              width: 36, height: 36, padding: 0,
-              background: "none", border: "none", borderRight: "1px solid var(--border)",
-              color: "var(--text-muted)", cursor: "pointer", flexShrink: 0, transition: "color 0.12s",
-              fontSize: 11, fontWeight: 700, letterSpacing: "-0.02em",
-            }}
-            onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text)"; }}
-            onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-muted)"; }}
-          >
-            {locale === "zh" ? "EN" : "中"}
-          </button>
+
+          {/* Breadcrumb: workspace / session */}
+          <div className="breadcrumb" title={workspaceCwd ?? undefined}>
+            <strong style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 180 }}>
+              {formatWorkspaceHeaderTitle(workspaceCwd, activeCwdGit)}
+            </strong>
+            {showChat && (
+              <>
+                <span>/</span>
+                <strong style={{ maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 500, color: "var(--text-2)" }}>
+                  {selectedSession?.name || selectedSession?.firstMessage?.slice(0, 40) || (selectedSession ? selectedSession.id.slice(0, 8) : t("sidebar.newSession"))}
+                </strong>
+              </>
+            )}
+          </div>
+
           {showChat && (
-            <div className="app-top-actions" style={{ display: "flex", alignItems: "stretch", height: "100%" }}>
+            <div className="app-top-actions" style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <button
                 className="app-top-pill"
                 onClick={handleExportSession}
@@ -937,12 +959,9 @@ export function AppShell() {
                   display: "flex",
                   alignItems: "center",
                   gap: 6,
-                  height: "100%",
                   padding: "0 12px",
                   background: "none",
                   border: "none",
-                  borderTop: "2px solid transparent",
-                  borderRight: "1px solid var(--border)",
                   color: selectedSession ? "var(--text-muted)" : "var(--text-dim)",
                   cursor: selectedSession ? "pointer" : "not-allowed",
                   opacity: selectedSession ? 1 : 0.45,
@@ -996,11 +1015,9 @@ export function AppShell() {
                 onClick={() => toggleTopPanel("system")}
                 style={{
                   display: "flex", alignItems: "center", gap: 6,
-                  height: "100%", padding: "0 12px",
+                  padding: "0 12px",
                   background: activeTopPanel === "system" ? "var(--bg-selected)" : "none",
                   border: "none",
-                  borderTop: activeTopPanel === "system" ? "2px solid var(--accent)" : "2px solid transparent",
-                  borderRight: "1px solid var(--border)",
                   cursor: "pointer",
                   color: activeTopPanel === "system" ? "var(--text)" : "var(--text-muted)",
                   fontSize: 11, whiteSpace: "nowrap", transition: "color 0.1s, background 0.1s",
@@ -1015,64 +1032,6 @@ export function AppShell() {
                   <line x1="8" y1="17" x2="13" y2="17" />
                 </svg>
                 <span className="app-top-label">{t("app.system")}</span>
-              </button>
-              <button
-                className={`app-top-aux-tab app-top-pill${activeTopPanel === "subagents" ? " app-top-pill-active" : ""}`}
-                onClick={() => toggleTopPanel("subagents")}
-                style={{
-                  display: "flex", alignItems: "center", gap: 6,
-                  height: "100%", padding: "0 12px",
-                  background: activeTopPanel === "subagents" ? "var(--bg-selected)" : "none",
-                  border: "none",
-                  borderTop: activeTopPanel === "subagents" ? "2px solid var(--accent)" : "2px solid transparent",
-                  borderRight: "1px solid var(--border)",
-                  cursor: "pointer",
-                  color: activeTopPanel === "subagents" ? "var(--text)" : "var(--text-muted)",
-                  fontSize: 11, whiteSpace: "nowrap", transition: "color 0.1s, background 0.1s",
-                  position: "relative",
-                }}
-                onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text)"; }}
-                onMouseLeave={(e) => { e.currentTarget.style.color = activeTopPanel === "subagents" ? "var(--text)" : "var(--text-muted)"; }}
-              >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-                  <circle cx="12" cy="12" r="3" />
-                  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
-                </svg>
-                <span className="app-top-label">{t("app.subagents")}</span>
-                <SubagentBadgeIndicator store={subagentStore} />
-              </button>
-              <button
-                className={`app-top-aux-tab app-top-pill${activeTopPanel === "git" ? " app-top-pill-active" : ""}`}
-                onClick={() => toggleTopPanel("git")}
-                style={{
-                  display: "flex", alignItems: "center", gap: 6,
-                  height: "100%", padding: "0 12px",
-                  background: activeTopPanel === "git" ? "var(--bg-selected)" : "none",
-                  border: "none",
-                  borderTop: activeTopPanel === "git" ? "2px solid var(--accent)" : "2px solid transparent",
-                  borderRight: "1px solid var(--border)",
-                  cursor: "pointer",
-                  color: activeTopPanel === "git" ? "var(--text)" : "var(--text-muted)",
-                  fontSize: 11, whiteSpace: "nowrap", transition: "color 0.1s, background 0.1s",
-                  position: "relative",
-                }}
-                onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text)"; }}
-                onMouseLeave={(e) => { e.currentTarget.style.color = activeTopPanel === "git" ? "var(--text)" : "var(--text-muted)"; }}
-              >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-                  <line x1="6" y1="3" x2="6" y2="15" />
-                  <circle cx="18" cy="6" r="3" />
-                  <circle cx="6" cy="18" r="3" />
-                  <path d="M18 9a9 9 0 0 1-9 9" />
-                </svg>
-                <span className="app-top-label">{t("app.git")}</span>
-                {gitDirty && (
-                  <span style={{
-                    position: "absolute", top: 4, right: 4,
-                    width: 7, height: 7, borderRadius: "50%",
-                    background: "#f59e0b",
-                  }} />
-                )}
               </button>
             </div>
           )}
@@ -1102,11 +1061,9 @@ export function AppShell() {
               title={terminalOpen && terminalDockCwd && terminalDockCwd !== terminalCwd ? t("app.openTerminalForWorkspace") : t("app.openTerminal")}
               style={{
                 display: "flex", alignItems: "center", gap: 6,
-                height: "100%", padding: "0 12px",
+                padding: "0 12px",
                 background: terminalOpen ? "var(--bg-selected)" : "none",
                 border: "none",
-                borderTop: terminalOpen ? "2px solid var(--accent)" : "2px solid transparent",
-                borderRight: "1px solid var(--border)",
                 cursor: "pointer",
                 color: terminalOpen ? "var(--text)" : "var(--text-muted)",
                 fontSize: 11, whiteSpace: "nowrap", transition: "color 0.1s, background 0.1s",
@@ -1153,17 +1110,16 @@ export function AppShell() {
 
             return (
               <div
-                className="app-top-stats"
+                className="app-top-stats chip"
                 title={tooltip}
+                onClick={() => setUsageStatsOpen(true)}
                 style={{
                   marginLeft: "auto",
-                  display: "flex", alignItems: "center", gap: 10,
-                  paddingLeft: 12,
-                  paddingRight: (webConfig?.chatgpt.usagePanelEnabled || webConfig?.grok.usagePanelEnabled) ? 12 : rightTogglePad,
-                  height: "100%",
+                  height: 28,
                   fontSize: 11, color: "var(--text-muted)",
-                  whiteSpace: "nowrap", cursor: "default",
+                  whiteSpace: "nowrap", cursor: "pointer",
                   fontVariantNumeric: "tabular-nums",
+                  gap: 8,
                 }}
               >
                 {t && t.input > 0 && (
@@ -1206,8 +1162,34 @@ export function AppShell() {
               </div>
             );
           })()}
+          <ThemePicker />
+          <button
+            className="icon-round"
+            type="button"
+            onClick={() => setLocale(locale === "zh" ? "en" : "zh")}
+            title={t("app.languageSwitch")}
+            aria-label={t("app.languageSwitch")}
+            style={{ width: 30, height: 30, fontSize: 11, fontWeight: 700 }}
+          >
+            {locale === "zh" ? "EN" : "中"}
+          </button>
+          {/* Automation — global badge entry */}
+          <button
+            className="icon-round"
+            onClick={() => setAutomationOpen((open) => !open)}
+            title={automationOpen ? t("automation.close") : t("automation.open")}
+            aria-label={automationOpen ? t("automation.close") : t("automation.open")}
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10" />
+              <polyline points="12 6 12 12 16 14" />
+            </svg>
+            {automationUnread > 0 && (
+              <span className="badge">{automationUnread > 9 ? "9+" : automationUnread}</span>
+            )}
+          </button>
           {(webConfig?.chatgpt.usagePanelEnabled || webConfig?.grok.usagePanelEnabled) && (
-            <div className="app-top-usage-panel" style={{ marginLeft: showChat && (sessionStats || contextUsage) ? 0 : "auto", paddingRight: rightTogglePad, height: "100%", display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+            <div className="app-top-usage-panel" style={{ marginLeft: showChat && (sessionStats || contextUsage) ? 0 : "auto", paddingRight: rightEdgePad, height: "100%", display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
               {webConfig?.chatgpt.usagePanelEnabled && <ChatGptUsagePanel />}
               {webConfig?.grok.usagePanelEnabled && <GrokUsagePanel />}
             </div>
@@ -1271,6 +1253,52 @@ export function AppShell() {
 
         </div>
 
+        {/* Observe bar — Changes / Git / Subagents / Todo */}
+        <div className="observe-bar">
+          <button
+            className={`chip${rightPanelOpen && rightPanelMode === "changes" ? " on" : ""}`}
+            onClick={() => {
+              if (rightPanelOpen && rightPanelMode === "changes") setRightPanelOpen(false);
+              else openInspectorTab("changes");
+            }}
+            title="本次会话编辑/写入的文件变更"
+          >
+            <span className="dot" />Changes
+          </button>
+          <button
+            className={`chip${rightPanelOpen && rightPanelMode === "git" ? " on" : ""}`}
+            onClick={() => {
+              if (rightPanelOpen && rightPanelMode === "git") setRightPanelOpen(false);
+              else openInspectorTab("git");
+            }}
+            title="Git 状态与历史"
+          >
+            {gitDirty && <span className="dot warn" />}
+            {!gitDirty && <span className="dot" style={{ background: "var(--text-3)" }} />}
+            Git
+          </button>
+          <button
+            className={`chip${rightPanelOpen && rightPanelMode === "agents" ? " on" : ""}`}
+            onClick={() => {
+              if (rightPanelOpen && rightPanelMode === "agents") setRightPanelOpen(false);
+              else openInspectorTab("agents");
+            }}
+            title="子代理运行情况"
+          >
+            <SubagentBadgeIndicator store={subagentStore} />
+            Subagents
+          </button>
+          <span
+            className={`chip${todoActive ? " on" : ""}`}
+            title={todoActive ? "Todo List 插件窗口在对话中可用" : "当前无 Todo List 插件窗口"}
+            style={{ cursor: "default" }}
+          >
+            {todoActive && <span className="dot" />}
+            {!todoActive && <span className="dot" style={{ background: "var(--text-3)" }} />}
+            Todo
+          </span>
+        </div>
+
         {/* Chat content + optional bottom terminal dock */}
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
           <div style={{ flex: 1, overflow: "hidden", position: "relative", minHeight: 0 }}>
@@ -1289,26 +1317,40 @@ export function AppShell() {
               onSessionStatsChange={handleSessionStatsChange}
               onContextUsageChange={handleContextUsageChange}
               onSubagentChange={handleSubagentChange}
+              onAgentRunningChange={handleAgentRunningChange}
+              onTodoActiveChange={handleTodoActiveChange}
             />
           ) : showPlaceholder ? (
-            activeCwd ? (
-              <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", fontSize: 15 }}>
-                {t("app.selectSession")}
+            <div style={{ height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", gap: 10, padding: 40, color: "var(--text-2)" }}>
+              <div className="hero-mark">π</div>
+              <h3 style={{ color: "var(--text)", fontSize: 18, letterSpacing: "-0.02em" }}>{t("app.getStarted")}</h3>
+              {activeCwd ? (
+                <p style={{ maxWidth: 380, lineHeight: 1.6, color: "var(--text-3)", fontSize: 12.5 }}>{t("app.selectSession")}</p>
+              ) : (
+                <p style={{ maxWidth: 380, lineHeight: 1.6, color: "var(--text-3)", fontSize: 12.5 }}>
+                  <span style={{ color: "var(--text-dim)", marginRight: 6 }}>1.</span>{t("app.getStartedStep1")}<br />
+                  <span style={{ color: "var(--text-dim)", marginRight: 6 }}>2.</span>{t("app.getStartedStep2Before")} <strong style={{ color: "var(--text)" }}>{t("app.getStartedStep2Strong")}</strong> {t("app.getStartedStep2After")}
+                </p>
+              )}
+              <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+                <button
+                  style={{
+                    height: 32, padding: "0 16px", borderRadius: 999, border: "none",
+                    background: "linear-gradient(135deg, var(--accent), var(--accent-2))",
+                    color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer",
+                    opacity: activeCwd ? 1 : 0.5,
+                  }}
+                  onClick={() => {
+                    // In this placeholder branch there is no selected session; only cwd candidates remain.
+                    const cwd = activeCwd ?? newSessionCwd;
+                    if (!cwd) return;
+                    handleNewSession(makeTempSessionId(), cwd);
+                  }}
+                >
+                  ＋ {t("sidebar.newSession")}
+                </button>
               </div>
-            ) : (
-              <div style={{ position: "absolute", top: 12, left: 12, display: "flex", alignItems: "flex-start", gap: 8, userSelect: "none", pointerEvents: "none" }}>
-                <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.7, flexShrink: 0 }}>
-                  <line x1="20" y1="12" x2="4" y2="12" /><polyline points="10 6 4 12 10 18" />
-                </svg>
-                <div>
-                  <div style={{ fontSize: 18, fontWeight: 600, color: "var(--text)", marginBottom: 8 }}>{t("app.getStarted")}</div>
-                  <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.8 }}>
-                    <span style={{ color: "var(--text-dim)", marginRight: 6 }}>1.</span>{t("app.getStartedStep1")}<br />
-                    <span style={{ color: "var(--text-dim)", marginRight: 6 }}>2.</span>{t("app.getStartedStep2Before")} <strong style={{ color: "var(--text)" }}>{t("app.getStartedStep2Strong")}</strong> {t("app.getStartedStep2After")}
-                  </div>
-                </div>
-              </div>
-            )
+            </div>
           ) : null}
           {showChat && workflowCurrentTask?.task && !(rightPanelOpen && rightPanelMode === "workflow" && focusedWorkflowTaskId === workflowCurrentTask.task.id) && (
             <WorkflowSessionWidget
@@ -1335,6 +1377,7 @@ export function AppShell() {
             />
           )}
         </div>
+        </div>
       </div>
 
       {/* Right panel: file viewer or SnFlow — always mounted, width animated via CSS */}
@@ -1344,8 +1387,8 @@ export function AppShell() {
         style={{
           display: "flex",
           flexDirection: "column",
-          borderLeft: "1px solid var(--border)",
-          background: "var(--bg)",
+          borderLeft: "1px solid var(--line)",
+          background: "var(--bg-panel)",
           position: "relative",
         }}
       >
@@ -1364,133 +1407,100 @@ export function AppShell() {
             onKeyDown={handleRightPanelResizeKeyDown}
           />
         )}
-        {rightPanelMode === "files" ? (
+        {rightPanelOpen && (
           <>
-            {/* Right panel tab bar */}
-            <div style={{ display: "flex", alignItems: "center", flexShrink: 0, background: "var(--bg-panel)", borderBottom: "1px solid var(--border)", height: 36 }}>
-              <div style={{ flex: 1, overflow: "hidden" }}>
-                <TabBar
-                  tabs={fileTabs}
-                  activeTabId={activeFileTabId ?? ""}
-                  onSelectTab={setActiveFileTabId}
-                  onCloseTab={handleCloseFileTab}
-                />
-              </div>
+            <div className="insp-head">
+              <h3>Inspector</h3>
+              <button
+                className="chip"
+                onClick={() => setRightPanelOpen(false)}
+                title={t("app.hidePreview")}
+                style={{ height: 26 }}
+              >
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                  <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
             </div>
+            <div className="insp-tabs">
+              <button className={rightPanelMode === "changes" ? "on" : ""} onClick={() => openInspectorTab("changes")}>Changes</button>
+              <button className={rightPanelMode === "files" ? "on" : ""} onClick={() => openInspectorTab("files")}>Preview</button>
+              <button className={rightPanelMode === "git" ? "on" : ""} onClick={() => openInspectorTab("git")}>Git</button>
+              <button
+                className={rightPanelMode === "workflow" ? "on" : ""}
+                onClick={(e) => {
+                  // Alt+click: create SnFlow task from current chat without opening the create form.
+                  if (e.altKey && selectedSession?.id && workflowCwd) {
+                    void handleStartWorkflowFromChat();
+                    return;
+                  }
+                  openInspectorTab("workflow");
+                }}
+                title={selectedSession?.id ? t("app.workflowToggleWithCreate") : undefined}
+              >SnFlow</button>
+              <button className={rightPanelMode === "agents" ? "on" : ""} onClick={() => openInspectorTab("agents")}>Agents</button>
+            </div>
+            <div className="insp-body">
+              {rightPanelMode === "changes" && (
+                <InspectorChangesPanel sessionId={selectedSession?.id ?? null} agentRunning={agentRunning} refreshKey={refreshKey} />
+              )}
+              {rightPanelMode === "files" && (
+                <div style={{ height: "100%", display: "flex", flexDirection: "column", minHeight: 0 }}>
+                  {/* File tabs */}
+                  <div style={{ display: "flex", alignItems: "center", flexShrink: 0, borderBottom: "1px solid var(--line-soft)", height: 36 }}>
+                    <div style={{ flex: 1, overflow: "hidden" }}>
+                      <TabBar
+                        tabs={fileTabs}
+                        activeTabId={activeFileTabId ?? ""}
+                        onSelectTab={setActiveFileTabId}
+                        onCloseTab={handleCloseFileTab}
+                      />
+                    </div>
+                  </div>
 
-            {/* File content */}
-            <div style={{ flex: 1, overflow: "hidden" }}>
-              {activeFileTab?.filePath ? (
-                <FileViewer filePath={activeFileTab.filePath} cwd={activeCwd ?? undefined} initialLine={activeFileTab.line} editorConfig={webConfig?.editor} onAddChat={handleAddChat} onOpenFile={handleOpenFile} />
-              ) : (
-                <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-dim)", fontSize: 12 }}>
-                  {t("app.noOpenFile")}
+                  {/* File content */}
+                  <div style={{ flex: 1, overflow: "hidden", minHeight: 0 }}>
+                    {activeFileTab?.filePath ? (
+                      <FileViewer filePath={activeFileTab.filePath} cwd={activeCwd ?? undefined} initialLine={activeFileTab.line} editorConfig={webConfig?.editor} onAddChat={handleAddChat} onOpenFile={handleOpenFile} />
+                    ) : (
+                      <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-dim)", fontSize: 12 }}>
+                        {t("app.noOpenFile")}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+              {rightPanelMode === "git" && (
+                <div style={{ height: "100%", overflowY: "auto", minHeight: 0 }}>
+                  <GitPanel cwd={workspaceCwd} refreshKey={gitRefreshKey} onDirtyChange={setGitDirty} />
+                </div>
+              )}
+              {rightPanelMode === "workflow" && (
+                <div style={{ height: "100%", display: "flex", flexDirection: "column", minHeight: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", flexShrink: 0, borderBottom: "1px solid var(--line-soft)", height: 36, padding: "0 12px", gap: 8 }}>
+                    <span style={{ color: "var(--text)", fontSize: 13, fontWeight: 700 }}>{t("workflow.panelTitle")}</span>
+                    {workflowCwd && <span title={workflowCwd} style={{ color: "var(--text-dim)", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{workflowCwd}</span>}
+                  </div>
+                  <div style={{ flex: 1, overflow: "auto", minHeight: 0 }}>
+                    <WorkflowPanel
+                      cwd={workflowCwd}
+                      includeArchivedDefault={workflowIncludeArchivedDefault}
+                      focusedTaskId={focusedWorkflowTaskId}
+                      sessionId={selectedSession?.id ?? null}
+                      onTaskCreated={handleWorkflowTaskCreated}
+                    />
+                  </div>
+                </div>
+              )}
+              {rightPanelMode === "agents" && (
+                <div style={{ height: "100%", overflowY: "auto", minHeight: 0 }}>
+                  <StoredSubagentPanel store={subagentStore} />
                 </div>
               )}
             </div>
           </>
-        ) : (
-          <>
-            <div style={{ display: "flex", alignItems: "center", flexShrink: 0, background: "var(--bg-panel)", borderBottom: "1px solid var(--border)", height: 36, padding: "0 12px", gap: 8 }}>
-              <span style={{ color: "var(--text)", fontSize: 13, fontWeight: 700 }}>{t("workflow.panelTitle")}</span>
-              {workflowCwd && <span title={workflowCwd} style={{ color: "var(--text-dim)", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{workflowCwd}</span>}
-            </div>
-            <div style={{ flex: 1, overflow: "hidden" }}>
-              <WorkflowPanel
-                cwd={workflowCwd}
-                includeArchivedDefault={workflowIncludeArchivedDefault}
-                focusedTaskId={focusedWorkflowTaskId}
-                sessionId={selectedSession?.id ?? null}
-                onTaskCreated={handleWorkflowTaskCreated}
-              />
-            </div>
-          </>
         )}
       </div>
-    </div>
-    {/* Right panel mode toggles — Preview first, SnFlow to its right. */}
-    <div className="right-panel-toggle-strip" style={{ position: "fixed", top: 0, right: 0, zIndex: 300, display: "flex", flexDirection: "row" }}>
-      <button
-        className={`right-panel-toggle${rightPanelOpen && rightPanelMode === "files" ? " right-panel-toggle-active" : ""}`}
-        onClick={() => {
-          if (rightPanelOpen && rightPanelMode === "files") setRightPanelOpen(false);
-          else {
-            setRightPanelMode("files");
-            setRightPanelOpen(true);
-          }
-        }}
-        title={rightPanelOpen && rightPanelMode === "files" ? t("app.hidePreview") : t("app.showPreview")}
-        aria-label={rightPanelOpen && rightPanelMode === "files" ? t("app.hidePreview") : t("app.showPreview")}
-        style={{
-          display: "flex", alignItems: "center", justifyContent: "center",
-          width: 36, height: 36, padding: 0,
-          background: "var(--bg-panel)", border: "none", borderLeft: "1px solid var(--border)", borderBottom: "1px solid var(--border)",
-          color: rightPanelOpen && rightPanelMode === "files" ? "var(--text)" : "var(--text-muted)",
-          cursor: "pointer", transition: "color 0.12s",
-        }}
-        onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text)"; }}
-        onMouseLeave={(e) => { e.currentTarget.style.color = rightPanelOpen && rightPanelMode === "files" ? "var(--text)" : "var(--text-muted)"; }}
-      >
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" />
-          <circle cx="12" cy="12" r="3" />
-        </svg>
-      </button>
-      <button
-          className={`right-panel-toggle${rightPanelOpen && rightPanelMode === "workflow" ? " right-panel-toggle-active" : ""}`}
-          onClick={(e) => {
-            // Alt/Option+click: create SnFlow task from current chat without opening the panel create form.
-            if (e.altKey && selectedSession?.id && workflowCwd) {
-              void handleStartWorkflowFromChat();
-              return;
-            }
-            if (rightPanelOpen && rightPanelMode === "workflow") setRightPanelOpen(false);
-            else {
-              setRightPanelMode("workflow");
-              setRightPanelOpen(true);
-            }
-          }}
-          title={selectedSession?.id ? t("app.workflowToggleWithCreate") : (rightPanelOpen && rightPanelMode === "workflow" ? t("app.hideWorkflow") : t("app.showWorkflow"))}
-          aria-label={rightPanelOpen && rightPanelMode === "workflow" ? t("app.hideWorkflow") : t("app.showWorkflow")}
-          style={{
-            display: "flex", alignItems: "center", justifyContent: "center",
-            width: 36, height: 36, padding: 0,
-            background: "var(--bg-panel)", border: "none", borderLeft: "1px solid var(--border)", borderBottom: "1px solid var(--border)",
-            color: rightPanelOpen && rightPanelMode === "workflow" ? "var(--accent)" : "var(--text-muted)",
-            cursor: "pointer", transition: "color 0.12s",
-            fontSize: 12, fontWeight: 800,
-          }}
-          onMouseEnter={(e) => { e.currentTarget.style.color = "var(--accent)"; }}
-          onMouseLeave={(e) => { e.currentTarget.style.color = rightPanelOpen && rightPanelMode === "workflow" ? "var(--accent)" : "var(--text-muted)"; }}
-        >
-          SF
-        </button>
-      <button
-        className={`right-panel-toggle${automationOpen ? " right-panel-toggle-active" : ""}`}
-        onClick={() => setAutomationOpen((open) => !open)}
-        title={automationOpen ? t("automation.close") : t("automation.open")}
-        aria-label={automationOpen ? t("automation.close") : t("automation.open")}
-        style={{
-          display: "flex", alignItems: "center", justifyContent: "center",
-          width: 36, height: 36, padding: 0, position: "relative",
-          background: "var(--bg-panel)", border: "none", borderLeft: "1px solid var(--border)", borderBottom: "1px solid var(--border)",
-          color: automationOpen ? "var(--accent)" : "var(--text-muted)",
-          cursor: "pointer", transition: "color 0.12s", fontSize: 11, fontWeight: 700,
-        }}
-      >
-        A
-        {automationUnread > 0 ? (
-          <span
-            aria-label={t("automation.badge")}
-            style={{
-              position: "absolute", top: 2, right: 2, minWidth: 14, height: 14, borderRadius: 7,
-              background: "var(--accent)", color: "#fff", fontSize: 9, lineHeight: "14px", textAlign: "center",
-            }}
-          >
-            {automationUnread > 9 ? "9+" : automationUnread}
-          </span>
-        ) : null}
-      </button>
     </div>
     {/* Keep mounted so unread badge stays live while drawer is closed. */}
     <div

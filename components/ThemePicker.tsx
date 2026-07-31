@@ -12,8 +12,8 @@ const OPTIONS: Array<{
   colors: [string, string, string];
 }> = [
   { id: "system", labelKey: "app.themeSystem", colors: ["#f5f5f5", "#242424", "#60a5fa"] },
-  { id: "light", labelKey: "app.themeLight", colors: ["#ffffff", "#e8e8e8", "#2563eb"] },
-  { id: "dark", labelKey: "app.themeDark", colors: ["#1a1a1a", "#383838", "#60a5fa"] },
+  { id: "light", labelKey: "app.themeLight", colors: ["#f4f5f8", "#ffffff", "#6358e6"] },
+  { id: "dark", labelKey: "app.themeDark", colors: ["#0e0f13", "#14161d", "#7c6af5"] },
   { id: "paper", labelKey: "app.themePaper", colors: ["#f7f6f2", "#ddd9cf", "#306b5b"] },
   { id: "graphite", labelKey: "app.themeGraphite", colors: ["#171918", "#333834", "#a8c7b5"] },
   { id: "ocean", labelKey: "app.themeOcean", colors: ["#f3f8f9", "#d3e2e6", "#146c7c"] },

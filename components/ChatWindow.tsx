@@ -31,6 +31,10 @@ interface Props {
   onSubagentChange?: (runs: import("@/hooks/useAgentSession").SubagentRun[]) => void;
   onSessionStatsChange?: (stats: { tokens: { input: number; output: number; cacheRead: number; cacheWrite: number }; cost?: number } | null) => void;
   onContextUsageChange?: (usage: { percent: number | null; contextWindow: number; tokens: number | null } | null) => void;
+  /** Agent running state — used by AppShell's observe bar / Changes tab polling. */
+  onAgentRunningChange?: (running: boolean) => void;
+  /** Whether an extension Todo List widget is currently active in the chat. */
+  onTodoActiveChange?: (active: boolean) => void;
 }
 
 function isPowerbarExtensionItem(item: { key: string }): boolean {
@@ -111,7 +115,7 @@ function Typewriter({ phrases }: { phrases: string[] }) {
   );
 }
 
-export const ChatWindow = memo(function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSubagentChange, onSessionStatsChange, onContextUsageChange }: Props) {
+export const ChatWindow = memo(function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSubagentChange, onSessionStatsChange, onContextUsageChange, onAgentRunningChange, onTodoActiveChange }: Props) {
   const { t } = useI18n();
   const { autoScrollEnabled, onAutoScrollToggle } = useAutoScroll();
   const {
@@ -175,6 +179,11 @@ export const ChatWindow = memo(function ChatWindow({ session, newSessionCwd, onA
   }, [ctxKey, onContextUsageChange]);
   useEffect(() => () => { onContextUsageChange?.(null); }, [onContextUsageChange]);
 
+  // Push agent running state up to AppShell (observe bar / Changes tab polling).
+  useEffect(() => {
+    onAgentRunningChange?.(agentRunning);
+  }, [agentRunning, onAgentRunningChange]);
+
   const onDrop = useCallback((files: File[]) => {
     const imageFiles = files.filter((f) => f.type.startsWith("image/"));
     const textFiles = files.filter((f) => !f.type.startsWith("image/"));
@@ -207,6 +216,11 @@ export const ChatWindow = memo(function ChatWindow({ session, newSessionCwd, onA
     (item) => !isPowerbarExtensionItem(item) && !isSuppressedSubagentWidget(item),
   );
   const todoWidget = visibleExtensionWidgets.find(isTodoWidget) ?? null;
+
+  // Report whether an extension Todo List widget is active in this chat.
+  useEffect(() => {
+    onTodoActiveChange?.(todoWidget != null);
+  }, [todoWidget, onTodoActiveChange]);
 
   const isEmptyNew = isNew && messages.length === 0 && !streamState.isStreaming && !agentRunning;
 
