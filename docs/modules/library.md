@@ -31,7 +31,7 @@ Shared logic lives under `lib/`. Prefer adding behavior here when it is used by 
 | `lib/cwd.ts` | Cwd validation and normalization helpers. |
 | `lib/git-worktree.ts` | Git worktree creation, status, archive, and removal helpers. Every Git subprocess has a 120-second termination deadline and returns actionable timeout guidance; timed-out partial state is left for explicit inspection rather than destructive automatic cleanup. |
 | `lib/deepseek-balance.ts` | Query DeepSeek account balance. |
-| `lib/pi-auth.ts` | pi 0.80.10+ (pinned `0.82.1`) auth/model facade helpers around `ModelRuntime`/`ModelRegistry`, OAuth provider listing, API-key write/delete, and request-auth mapping. |
+| `lib/pi-auth.ts` | pi 0.80.10+ (pinned `0.83.0`) auth/model facade helpers around `ModelRuntime`/`ModelRegistry`, OAuth provider listing, API-key write/delete, and request-auth mapping. |
 | `lib/file-credential-store.ts` | File-backed `CredentialStore` for `~/.pi/agent/auth.json`; used by multi-account Codex helpers after public `AuthStorage` removal. |
 | `lib/grok-usage.ts` | Resolve Grok subscription OAuth/env token directly from `GROK_CLI_OAUTH_TOKEN` or stored `grok-cli` / built-in `xai` credentials without initializing AgentSession/extension registries; fetch monthly/weekly billing concurrently, persist success-only cache, and return browser-safe structured results. |
 | `lib/grok-billing-fetch.ts` | Dependency-free concurrent monthly/optional-weekly xAI billing fetch helper with independent deadlines and graceful weekly degradation. |

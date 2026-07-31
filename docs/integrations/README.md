@@ -7,7 +7,8 @@ See `package.json` for exact versions.
 | Dependency | Purpose |
 | --- | --- |
 | `next`, `react`, `react-dom` | Web application framework/runtime. |
-| `@earendil-works/pi-coding-agent`, `@earendil-works/pi-ai` | In-process pi AgentSession and AI provider integration. **Pinned to exact `0.82.1`**. Auth/catalog access goes through `ModelRuntime` (`lib/pi-auth.ts`); multi-account helpers use `FileCredentialStore` for `auth.json` because public `AuthStorage` was removed. |
+| `@earendil-works/pi-coding-agent`, `@earendil-works/pi-ai` | In-process pi AgentSession and AI provider integration. **Pinned to exact `0.83.0`**. Auth/catalog access goes through `ModelRuntime` (`lib/pi-auth.ts`); multi-account helpers use `FileCredentialStore` for `auth.json` because public `AuthStorage` was removed. |
+| `typebox` | Tool parameter schemas used directly by first-party extensions. Pinned to Pi's `1.3.7` runtime version to keep schema objects compatible. |
 | `react-markdown`, `remark-gfm`, `remark-math`, `rehype-raw`, `rehype-sanitize`, `rehype-katex`, `katex` | Markdown, raw HTML sanitization, and math rendering. |
 | `react-syntax-highlighter` | Code block highlighting. |
 | `mermaid` | Diagram rendering. |

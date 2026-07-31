@@ -1,5 +1,5 @@
 /**
- * Auth/model helpers for pi-coding-agent 0.80.10+ (currently pinned to 0.82.1).
+ * Auth/model helpers for pi-coding-agent 0.80.10+ (currently pinned to 0.83.0).
  *
  * AuthStorage is no longer a public export. Prefer ModelRuntime for login,
  * logout, catalog, and request auth. Use FileCredentialStore only when the
