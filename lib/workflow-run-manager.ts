@@ -20,6 +20,7 @@ import {
 import {
   beginWorkflowRun,
   findWorkflowRunById,
+  getWorkflowRunSnapshotIntegrityError,
   getWorkflowTaskDetail,
   getWorkflowTaskDocumentsPaths,
   readWorkflowRunRecord,
@@ -29,6 +30,12 @@ import {
   WorkflowConflictError,
   WorkflowStoreError,
 } from "./workflow-store";
+import {
+  normalizeWorkflowNativeResult,
+  type NativeToolResultEnvelope,
+  type NormalizedWorkflowNativeResult,
+} from "./workflow-native-result";
+import { applyWorkflowNativeTerminal } from "./workflow-run-terminal";
 import {
   WORKFLOW_ACTIVE_RUN_STATES,
   WORKFLOW_TERMINAL_RUN_STATES,
@@ -414,9 +421,20 @@ function pickNativeRefs(data: unknown): {
   thinking: string | null;
   state: WorkflowRunState | null;
   summaryText: string;
+  normalized: NormalizedWorkflowNativeResult;
 } {
   const root = isRecord(data) ? data : {};
-  const details = isRecord(root.details) ? root.details : root;
+  const explicitDetails = isRecord(root.details) ? root.details : null;
+  const nestedDetails = isRecord(root.result) && isRecord(root.result.details)
+    ? root.result.details
+    : null;
+  const details = explicitDetails ?? nestedDetails ?? root;
+  const normalized = normalizeWorkflowNativeResult({
+    isError: root.isError === true,
+    content: root.content,
+    details: explicitDetails ?? (nestedDetails ? undefined : root),
+    result: root.result,
+  });
   const results = Array.isArray(details.results) ? details.results : [];
   const firstResult = isRecord(results[0]) ? results[0] : null;
 
@@ -456,21 +474,23 @@ function pickNativeRefs(data: unknown): {
     (typeof root.state === "string" && root.state) ||
     null;
 
-  let state: WorkflowRunState | null = null;
-  if (nativeStateRaw === "running" || nativeStateRaw === "starting") state = nativeStateRaw;
-  if (
+  let state: WorkflowRunState | null = normalized.kind === "terminal" && normalized.state
+    ? normalized.state
+    : null;
+  if (!state && (nativeStateRaw === "running" || nativeStateRaw === "starting")) state = nativeStateRaw;
+  if (!state && (
     nativeStateRaw === "complete" ||
     nativeStateRaw === "completed" ||
     nativeStateRaw === "succeeded" ||
     nativeStateRaw === "success"
-  ) {
+  )) {
     state = "completed";
   }
-  if (nativeStateRaw === "failed" || nativeStateRaw === "error") state = "failed";
-  if (nativeStateRaw === "cancelled" || nativeStateRaw === "canceled" || nativeStateRaw === "stopped") {
+  if (!state && (nativeStateRaw === "failed" || nativeStateRaw === "error")) state = "failed";
+  if (!state && (nativeStateRaw === "cancelled" || nativeStateRaw === "canceled" || nativeStateRaw === "stopped")) {
     state = "cancelled";
   }
-  if (nativeStateRaw === "stopping") state = "running";
+  if (!state && nativeStateRaw === "stopping") state = "running";
 
   return {
     nativeRunId,
@@ -480,8 +500,32 @@ function pickNativeRefs(data: unknown): {
     model,
     thinking,
     state,
-    summaryText: textFromUnknown(data),
+    summaryText: normalized.text || textFromUnknown(data),
+    normalized,
   };
+}
+
+function finalizeFromNativeRefs(
+  cwd: string,
+  taskId: string,
+  run: WorkflowRunRecord,
+  refs: ReturnType<typeof pickNativeRefs>,
+  fallbackText: string,
+): WorkflowRunRecord {
+  const state = refs.normalized.kind === "terminal" && refs.normalized.state
+    ? refs.normalized.state
+    : refs.state === "completed" || refs.state === "failed" || refs.state === "cancelled"
+      ? refs.state
+      : null;
+  if (!state) return finalizeRunRecord(run, "stale", fallbackText);
+  return applyWorkflowNativeTerminal(run, {
+    ...refs.normalized,
+    kind: "terminal",
+    state,
+    text: refs.normalized.text || fallbackText,
+    diagnostic: refs.normalized.diagnostic || fallbackText,
+    snapshotIntegrityError: getWorkflowRunSnapshotIntegrityError(cwd, taskId, run),
+  });
 }
 
 function readArtifactText(filePath: string | null | undefined, maxChars = 20_000): string {
@@ -506,22 +550,15 @@ function readStatusJson(asyncDir: string | null | undefined): Record<string, unk
   }
 }
 
-function textBlocks(value: unknown): string {
-  if (!Array.isArray(value)) return "";
-  return value
-    .map((block) => (isRecord(block) && typeof block.text === "string" ? block.text : ""))
-    .join("");
-}
-
 async function readPersistedToolResult(
   sessionFile: string,
   toolCallId: string,
-): Promise<{ isError: boolean; text: string; details?: unknown } | null> {
+): Promise<NativeToolResultEnvelope | null> {
   const lines = createInterface({
     input: createReadStream(sessionFile, { encoding: "utf8" }),
     crlfDelay: Infinity,
   });
-  let match: { isError: boolean; text: string; details?: unknown } | null = null;
+  let match: NativeToolResultEnvelope | null = null;
   for await (const line of lines) {
     if (!line.trim()) continue;
     let entry: unknown;
@@ -535,8 +572,9 @@ async function readPersistedToolResult(
     if (message.role !== "toolResult" || message.toolCallId !== toolCallId) continue;
     match = {
       isError: message.isError === true,
-      text: textBlocks(message.content),
+      content: message.content,
       details: message.details,
+      result: message.result,
     };
   }
   return match;
@@ -555,10 +593,10 @@ async function reconcileChatCorrelatedRun(
       const persisted = await readPersistedToolResult(sessionFile, run.parentToolCallId);
       if (persisted) {
         const { finalizeWorkflowChatRun } = await import("./workflow-chat-lifecycle");
-        return {
-          running: false,
-          terminal: finalizeWorkflowChatRun(cwd, run, persisted),
-        };
+        const reconciled = finalizeWorkflowChatRun(cwd, run, persisted);
+        if (WORKFLOW_TERMINAL_RUN_STATES.has(reconciled.state)) {
+          return { running: false, terminal: reconciled };
+        }
       }
     }
   } catch {
@@ -640,14 +678,20 @@ export async function startWorkflowRun(options: StartRunOptions): Promise<StartR
           ? readWorkflowRunRecord(canonical, options.taskId, detail.latestImplementRunId).summary
           : null;
 
+      const snapshotPaths = begun.run.snapshotPaths ?? paths.pathLabels;
       const taskPrompt = buildPhasePrompt({
         taskId: options.taskId,
         title: detail.title,
         cwd: canonical,
-        pathLabels: paths.pathLabels,
+        pathLabels: {
+          ...snapshotPaths,
+          taskJson: paths.pathLabels.taskJson,
+        },
         phase: options.phase,
         implementSummary,
         taskRevision: options.expectedRevision,
+        runId: begun.run.id,
+        specRevision: begun.run.specRevision,
       });
 
       const spawnData = await rpcRequest<unknown>(
@@ -658,12 +702,13 @@ export async function startWorkflowRun(options: StartRunOptions): Promise<StartR
           task: taskPrompt,
           context: "fresh",
           cwd: canonical,
+          agentContract: { version: 1 },
           async: true,
           clarify: false,
           reads: [
-            paths.pathLabels.requirements,
-            paths.pathLabels.design,
-            paths.pathLabels.plan,
+            snapshotPaths.requirements,
+            snapshotPaths.design,
+            snapshotPaths.plan,
             paths.pathLabels.taskJson,
           ],
         },
@@ -805,7 +850,13 @@ export async function reconcileWorkflowRun(cwd: string, runId: string): Promise<
           : nativeState === "failed"
             ? "failed"
             : "cancelled";
-      run = finalizeRunRecord(run, mapped, summaryText);
+      run = finalizeFromNativeRefs(
+        canonical,
+        taskId,
+        run,
+        { ...refs, state: refs.state ?? mapped },
+        summaryText,
+      );
       writeWorkflowRunRecord(canonical, taskId, run);
       const task = applyTerminalProjection(canonical, taskId, run);
       return { task, run };
@@ -840,7 +891,7 @@ export async function reconcileWorkflowRun(cwd: string, runId: string): Promise<
     };
 
     if (refs.state && WORKFLOW_TERMINAL_RUN_STATES.has(refs.state)) {
-      run = finalizeRunRecord(run, refs.state, summaryText);
+      run = finalizeFromNativeRefs(canonical, taskId, run, refs, summaryText);
       writeWorkflowRunRecord(canonical, taskId, run);
       const task = applyTerminalProjection(canonical, taskId, run);
       return { task, run };

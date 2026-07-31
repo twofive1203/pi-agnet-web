@@ -1,8 +1,11 @@
 import { canonicalizeCwd } from "./cwd";
 import {
   beginWorkflowRun,
+  computeWorkflowSpecRevision,
+  createWorkflowRunId,
+  getWorkflowRunSnapshotIntegrityError,
+  getWorkflowRunSnapshotPathLabels,
   getWorkflowTaskDetail,
-  getWorkflowTaskDocumentsPaths,
   hasActiveWorkflowRunInCwd,
   readWorkflowRunRecord,
   repairWorkflowTerminalProjection,
@@ -13,8 +16,6 @@ import {
 import {
   agentNameForPhase,
   buildDirectSubagentInstruction,
-  normalizeCheckResult,
-  normalizeImplementResult,
   parseWorkflowDispatchMarker,
   WorkflowDispatchMarkerError,
   type WorkflowDispatchMarker,
@@ -25,9 +26,13 @@ import {
   WORKFLOW_TERMINAL_RUN_STATES,
   type WorkflowRunPhase,
   type WorkflowRunRecord,
-  type WorkflowRunState,
   type WorkflowTaskDetail,
 } from "./workflow-types";
+import {
+  normalizeWorkflowNativeResult,
+  type NativeToolResultEnvelope,
+} from "./workflow-native-result";
+import { applyWorkflowNativeTerminal } from "./workflow-run-terminal";
 import type { InlineExtension } from "@earendil-works/pi-coding-agent";
 
 type NativeToolCall = {
@@ -63,197 +68,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function textFromContent(value: unknown): string {
-  if (!Array.isArray(value)) return "";
-  return value
-    .map((block) => (isRecord(block) && typeof block.text === "string" ? block.text : ""))
-    .join("");
-}
-
-function resultDetails(event: NativeToolResult): Record<string, unknown> | null {
-  if (isRecord(event.details)) return event.details;
-  if (isRecord(event.result) && isRecord(event.result.details)) return event.result.details;
-  return null;
-}
-
-function firstResult(details: Record<string, unknown> | null): Record<string, unknown> | null {
-  if (!details || !Array.isArray(details.results)) return null;
-  return details.results.find(isRecord) ?? null;
-}
-
-function finalAssistantText(messages: unknown): string {
-  if (!Array.isArray(messages)) return "";
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index];
-    if (!isRecord(message) || message.role !== "assistant") continue;
-    const content = typeof message.content === "string"
-      ? message.content
-      : textFromContent(message.content);
-    if (content.trim()) return content;
-  }
-  return "";
-}
-
-function resultText(event: NativeToolResult, details: Record<string, unknown> | null): string {
-  const child = firstResult(details);
-  const structured = optionalString(child?.finalOutput) ?? finalAssistantText(child?.messages);
-  if (structured) return structured;
-  const direct = textFromContent(event.content);
-  if (direct) return direct;
-  if (isRecord(event.result)) return textFromContent(event.result.content);
-  return "";
-}
-
 function optionalString(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value : null;
-}
-
-function stateString(value: unknown): string {
-  return typeof value === "string" ? value.trim().toLowerCase() : "";
-}
-
-function errorString(value: unknown): string | null {
-  if (typeof value === "string" && value.trim()) return value.trim();
-  if (isRecord(value)) {
-    return optionalString(value.message) ?? optionalString(value.error);
-  }
-  return null;
-}
-
-function resultShapes(details: Record<string, unknown> | null): Record<string, unknown>[] {
-  if (!details) return [];
-  const shapes = [details];
-  if (isRecord(details.result)) shapes.push(details.result);
-  if (Array.isArray(details.results)) shapes.push(...details.results.filter(isRecord));
-  return shapes;
-}
-
-function executionShapes(shape: Record<string, unknown> | null): Record<string, unknown>[] {
-  if (!shape) return [];
-  return isRecord(shape.execution) ? [shape, shape.execution] : [shape];
-}
-
-function hasTerminalEvidence(shape: Record<string, unknown>): boolean {
-  return ["exitCode", "state", "status", "success", "isError", "error", "timedOut", "timeout",
-    "stopped", "interrupted", "cancelled", "canceled", "detached"].some((key) => key in shape);
-}
-
-function classifyTerminalResult(
-  isError: boolean,
-  text: string,
-  details: Record<string, unknown> | null,
-): { state: Extract<WorkflowRunState, "completed" | "failed" | "cancelled">; diagnostic: string } {
-  const child = firstResult(details);
-  const childShapes = executionShapes(child);
-  const allShapes = resultShapes(details).flatMap((shape) => executionShapes(shape));
-  const allStates = allShapes.map((shape) => stateString(shape.state ?? shape.status));
-  const childStates = childShapes.map((shape) => stateString(shape.state ?? shape.status));
-  const childHasTerminalEvidence = childShapes.some(hasTerminalEvidence);
-  const structuredCancelled = allShapes.some((shape) =>
-    shape.stopped === true ||
-    shape.interrupted === true ||
-    shape.cancelled === true ||
-    shape.canceled === true ||
-    shape.detached === true
-  ) || allStates.some((state) =>
-    state === "stopped" || state === "interrupted" || state === "cancelled" ||
-    state === "canceled" || state === "paused" || state === "detached"
-  );
-  // Text is a compatibility fallback only for an errored result with no child lifecycle metadata.
-  const textCancelled = isError && !childHasTerminalEvidence &&
-    /\b(abort(?:ed)?|cancel(?:led|ed)?|interrupt(?:ed)?)\b/i.test(text);
-  const timedOut = allShapes.some((shape) => shape.timedOut === true || shape.timeout === true) ||
-    allStates.some((state) => state === "timed_out" || state === "timed-out" || state === "timeout");
-  const failureShapes = childHasTerminalEvidence ? childShapes : allShapes;
-  const failureStates = childHasTerminalEvidence ? childStates : allStates;
-  const structuredFailure = timedOut || failureShapes.some((shape) =>
-    (typeof shape.exitCode === "number" && shape.exitCode !== 0) ||
-    shape.success === false ||
-    shape.isError === true ||
-    Boolean(errorString(shape.error))
-  ) || failureStates.some((state) => state === "failed" || state === "error");
-  const failure = structuredFailure || (isError && !childHasTerminalEvidence);
-  const detailError = failureShapes.map((shape) => errorString(shape.error)).find(Boolean);
-  const diagnostic = detailError ?? (timedOut ? "Native subagent run timed out" : text.trim());
-
-  if (structuredCancelled || textCancelled) {
-    return { state: "cancelled", diagnostic: diagnostic || "Native subagent run cancelled" };
-  }
-  if (failure) return { state: "failed", diagnostic: diagnostic || "Native subagent run failed" };
-  return { state: "completed", diagnostic: text };
-}
-
-function missingExpectedMutation(child: Record<string, unknown> | null): boolean {
-  if (!child || !isRecord(child.effects) || !isRecord(child.effects.fileMutation)) return false;
-  return child.effects.fileMutation.status === "missing" && child.effects.fileMutation.expected === true;
-}
-
-function isValidatedNoChange(result: ReturnType<typeof normalizeImplementResult>): boolean {
-  return Boolean(
-    result &&
-    result.outcome === "validated_no_change" &&
-    result.acceptanceSatisfied === true &&
-    result.changedFiles.length === 0 &&
-    result.validation.length > 0 &&
-    result.validation.every((validation) => validation.ok),
-  );
-}
-
-function terminalRun(
-  run: WorkflowRunRecord,
-  state: Extract<WorkflowRunState, "completed" | "failed" | "cancelled">,
-  text: string,
-  details: Record<string, unknown> | null,
-): WorkflowRunRecord {
-  const child = firstResult(details);
-  const endedAt = new Date().toISOString();
-  const summaryText = text.trim();
-  const normalizedImplement =
-    state === "completed" && run.phase === "implement"
-      ? normalizeImplementResult(summaryText)
-      : run.implementResult;
-  const invalidNoChange = state === "completed" && run.phase === "implement" &&
-    missingExpectedMutation(child) && !isValidatedNoChange(normalizedImplement);
-  const finalState = invalidNoChange ? "failed" : state;
-  const implementResult = finalState === "completed" ? normalizedImplement : run.implementResult;
-  const checkResult =
-    finalState === "completed" && run.phase === "check"
-      ? normalizeCheckResult(summaryText)
-      : run.checkResult;
-  const summary =
-    run.phase === "implement"
-      ? normalizedImplement?.summary ?? summaryText
-      : checkResult?.summary ?? summaryText;
-  return {
-    ...run,
-    state: finalState,
-    nativeRunId:
-      optionalString(details?.runId) ?? optionalString(details?.id) ?? run.nativeRunId,
-    asyncDir: optionalString(details?.asyncDir) ?? run.asyncDir,
-    sessionFile:
-      optionalString(child?.sessionFile) ?? optionalString(details?.sessionFile) ?? run.sessionFile,
-    outputFile: optionalString(details?.outputFile) ?? run.outputFile,
-    model: optionalString(child?.model) ?? optionalString(details?.model) ?? run.model,
-    thinking:
-      optionalString(child?.thinking) ??
-      optionalString(child?.thinkingLevel) ??
-      optionalString(details?.thinking) ??
-      run.thinking,
-    summary: summary || run.summary,
-    implementResult,
-    checkResult,
-    error:
-      finalState === "completed"
-        ? null
-        : {
-            code: invalidNoChange ? "invalid_no_change" : finalState,
-            message: invalidNoChange
-              ? "Implementation made no observed edits and did not provide a validated_no_change result with passing validation."
-              : summaryText || `Native subagent run ${finalState}`,
-          },
-    endedAt: run.endedAt ?? endedAt,
-    lastReconciledAt: endedAt,
-  };
 }
 
 function progressMetadata(partialResult: unknown): Partial<WorkflowRunRecord> | null {
@@ -281,21 +97,21 @@ function progressMetadata(partialResult: unknown): Partial<WorkflowRunRecord> | 
 export function finalizeWorkflowChatRun(
   cwd: string,
   run: WorkflowRunRecord,
-  input: { isError: boolean; text: string; details?: unknown },
+  input: NativeToolResultEnvelope & { text?: string },
 ): WorkflowRunRecord {
-  const details = isRecord(input.details) ? input.details : null;
-  const child = firstResult(details);
-  const authoritativeChild = Boolean(
-    child && (executionShapes(child).some(hasTerminalEvidence) || optionalString(child.finalOutput)),
-  );
-  const classification = classifyTerminalResult(input.isError, input.text, details);
-  // Pi may emit a wrapper-only tool_result before tool_execution_end carries child details.
-  // A later structured result from the same tracked tool call is allowed to repair that projection.
-  const shouldFinalize = !WORKFLOW_TERMINAL_RUN_STATES.has(run.state) || authoritativeChild;
-  const finalized = shouldFinalize
-    ? terminalRun(run, classification.state, classification.diagnostic, details)
-    : run;
-  if (shouldFinalize) writeWorkflowRunRecord(cwd, run.taskId, finalized);
+  const normalized = normalizeWorkflowNativeResult({
+    ...input,
+    content: input.content ?? (input.text ? [{ type: "text", text: input.text }] : undefined),
+  });
+  // Wrapper-only events are display/progress data. They cannot release the run lock.
+  if (normalized.kind !== "terminal" || !normalized.state) return run;
+  const finalized = applyWorkflowNativeTerminal(run, {
+    ...normalized,
+    kind: "terminal",
+    state: normalized.state,
+    snapshotIntegrityError: getWorkflowRunSnapshotIntegrityError(cwd, run.taskId, run),
+  });
+  writeWorkflowRunRecord(cwd, run.taskId, finalized);
   repairWorkflowTerminalProjection(cwd, run.taskId, finalized);
   return finalized;
 }
@@ -338,7 +154,9 @@ export function prepareWorkflowChatDispatch(
       code: "missing_documents",
     });
   }
-  const paths = getWorkflowTaskDocumentsPaths(canonical, task.id);
+  const runId = createWorkflowRunId(phase);
+  const specRevision = computeWorkflowSpecRevision(task.documents);
+  const pathLabels = getWorkflowRunSnapshotPathLabels(canonical, task.id, runId);
   const implementSummary = phase === "check"
     ? task.runs.find((run) => run.id === task.latestImplementRunId)?.summary ?? null
     : null;
@@ -348,10 +166,12 @@ export function prepareWorkflowChatDispatch(
       taskId: task.id,
       title: task.title,
       cwd: canonical,
-      pathLabels: paths.pathLabels,
+      pathLabels,
       phase,
       implementSummary,
       taskRevision: task.revision,
+      runId,
+      specRevision,
     }),
   };
 }
@@ -415,10 +235,12 @@ export class WorkflowChatLifecycleObserver {
       const begun = beginWorkflowRun(this.cwd, marker.taskId, {
         phase: marker.phase,
         expectedRevision: marker.revision,
+        expectedSpecRevision: marker.specRevision,
         agentName: agent,
         hostSessionId: sessionId,
         requestedCwd: markerCwd,
         effectiveCwd: this.cwd,
+        runId: marker.runId,
         parentSessionId: sessionId,
         parentToolCallId: event.toolCallId,
       });
@@ -472,12 +294,7 @@ export class WorkflowChatLifecycleObserver {
     if (!tracked) return;
     try {
       const run = readWorkflowRunRecord(this.cwd, tracked.marker.taskId, tracked.runId);
-      const details = resultDetails(event);
-      finalizeWorkflowChatRun(this.cwd, run, {
-        isError: event.isError,
-        text: resultText(event, details),
-        details,
-      });
+      finalizeWorkflowChatRun(this.cwd, run, event);
     } catch {
       // Final result delivery to the chat must not be replaced by persistence errors.
     }

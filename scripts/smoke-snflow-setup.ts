@@ -208,6 +208,7 @@ try {
   assert(ext.includes("buildGuidance"), "extension missing buildGuidance");
   assert(ext.includes(".join(\"\\n\")"), "extension should join with real newlines");
   assert(ext.includes("`Active SnFlow task: ${base}`"), "extension template literals broken");
+  assert(ext.includes("specRevision") && ext.includes("runId"), "extension dispatch must bind run and specification snapshot");
   assert(
     ext.includes("If only one marker exists or marker order is invalid"),
     "extension bootstrap guidance should fail closed on malformed AGENTS.md markers",

@@ -6,7 +6,7 @@
  * Bump SNFLOW_ASSETS_VERSION (SemVer) whenever any managed file content changes.
  */
 
-export const SNFLOW_ASSETS_VERSION = "1.7.0";
+export const SNFLOW_ASSETS_VERSION = "1.8.0";
 
 export interface SnflowAssetFile {
   /** Project-relative path using forward slashes. */
@@ -22,6 +22,7 @@ const EXTENSION_INDEX = `/**
  * Installed/updated by the WebUI SnFlow setup (manifest-managed).
  */
 
+import { createHash, randomBytes } from "node:crypto";
 import { existsSync, lstatSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { join } from "node:path";
 
@@ -279,13 +280,33 @@ function directDispatch(cwd: string, task: { id: string; title: string; revision
   if (!task.revision) {
     return "Task revision is missing or stale. Open/save the task in SnFlow before dispatch; fail closed instead of inventing a revision.";
   }
+  const taskDir = join(cwd, ".pi", "snflows", "tasks", task.id);
+  let specRevision: string;
+  try {
+    const documents = [
+      ["requirements.md", readFileSync(join(taskDir, "requirements.md"), "utf8")],
+      ["design.md", readFileSync(join(taskDir, "design.md"), "utf8")],
+      ["plan.md", readFileSync(join(taskDir, "plan.md"), "utf8")],
+    ];
+    specRevision = createHash("sha256")
+      .update("snflow-spec-v1\\0")
+      .update(JSON.stringify(documents))
+      .digest("hex")
+      .slice(0, 16);
+  } catch {
+    return "Task documents are missing or unreadable. Repair requirements.md, design.md, and plan.md before dispatch.";
+  }
   const agent = phase === "implement" ? "snflow-implement" : "snflow-check";
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const runId = (phase + "-" + stamp + "-" + randomBytes(3).toString("hex")).toLowerCase().slice(0, 80);
   const marker = "SNFLOW_DISPATCH " + JSON.stringify({
     v: 1,
     taskId: task.id,
     phase,
     revision: task.revision,
     cwd,
+    runId,
+    specRevision,
   });
   return [
     "Call the current chat native subagent tool once (foreground, not CLI/RPC wait):",
@@ -297,7 +318,7 @@ function directDispatch(cwd: string, task: { id: string; title: string; revision
     "- clarify: false",
     "- task first line must be exactly:",
     marker,
-    "After the marker, provide the task id/title/revision, task document and spec paths, latest implement summary when checking, focused validation expectations, and the structured result contract.",
+    "After the marker, provide the task id/title/state revision/specification revision, task.json path, run-owned snapshot paths under .pi/snflows/tasks/" + task.id + "/runs/" + runId + "/snapshot/, applicable project Spec paths, latest implement summary when checking, focused validation expectations, and the structured result contract.",
     phase === "check"
       ? "For check: only error findings are blockers; warnings/info are advisory and must still pass for user choice."
       : "Keep implementation within the approved task scope.",
@@ -645,7 +666,7 @@ Active SnFlow task: .pi/snflows/tasks/<id>
 - Edit \`requirements.md\`, \`design.md\`, \`plan.md\`.
 - Consent to create ≠ consent to implement.
 
-When the user approves implementation, mark the task ready, re-read its revision, and call the current chat native \`subagent\` tool with project agent \`snflow-implement\`, \`context:fresh\`, canonical \`cwd\`, \`agentContract:{version:1}\`, \`async:false\`, and \`clarify:false\`. The task prompt must begin with the exact \`SNFLOW_DISPATCH\` v1 marker.
+When the user approves implementation, mark the task ready and use the prepared \`SNFLOW_DISPATCH\` v1 marker, which binds the task state revision, reserved run id, and specification revision. Call the current chat native \`subagent\` tool with project agent \`snflow-implement\`, \`context:fresh\`, canonical \`cwd\`, \`agentContract:{version:1}\`, \`async:false\`, and \`clarify:false\`; the child reads the run-owned immutable snapshot paths from that marked prompt.
 
 ## Phase 2 — Execute
 
@@ -711,8 +732,8 @@ You implement one approved SnFlow task directly; you are not the workflow orches
 
 ## Execution
 
-1. Resolve the task only from the marked dispatch prompt and its explicit document paths. Stop if the marker, cwd, dispatch revision, or task documents are missing. The dispatch revision is the approved pre-run snapshot: verify it against the active run record's \`taskRevision\`, not the lifecycle-mutated \`task.json.revision\`.
-2. Read task.json, its active \`runs/<run-id>.json\`, requirements.md, design.md, plan.md, applicable .pi/snflows/spec indexes, and project AGENTS.md before editing.
+1. Resolve the task only from the marked dispatch prompt and its explicit document paths. For a bound marker, stop if cwd, run id, task revision, specification revision, or snapshot documents are missing; verify both revisions against the active \`runs/<run-id>.json\` and use only its snapshot documents. For a legacy marker without run/spec fields, verify its task revision against the active run record and use the explicit live document paths from the prompt.
+2. Read task.json, the active run record, the bound snapshot (or legacy explicit documents), applicable .pi/snflows/spec indexes, and project AGENTS.md before editing. Never compare the marker to lifecycle-mutated live task revision fields.
 3. Inspect affected code and callers, implement the approved scope using existing patterns, and keep the diff reviewable.
 4. Run focused tests plus repository lint/typecheck when practical.
 5. Return the result contract requested by the dispatch prompt, including outcome, acceptance satisfaction, changed files, validation, and residual risks. Use \`validated_no_change\` only when the existing diff already satisfies every acceptance criterion and focused validation passes; otherwise make the required edits or report a blocker.
@@ -737,8 +758,8 @@ You independently review one completed SnFlow implementation; you do not impleme
 
 ## Execution
 
-1. Resolve the task only from the marked dispatch prompt and its explicit document paths. Stop if the marker, cwd, dispatch revision, or task documents are missing. The dispatch revision is the approved pre-run snapshot: verify it against the active run record's \`taskRevision\`, not the lifecycle-mutated \`task.json.revision\`.
-2. Read task.json, its active \`runs/<run-id>.json\`, requirements.md, design.md, plan.md, applicable .pi/snflows/spec indexes, project AGENTS.md, the current diff, and affected callers.
+1. Resolve the task only from the marked dispatch prompt and its explicit document paths. For a bound marker, stop if cwd, run id, task revision, specification revision, or snapshot documents are missing; verify both revisions against the active \`runs/<run-id>.json\` and use only its snapshot documents. For a legacy marker without run/spec fields, verify its task revision against the active run record and use the explicit live document paths from the prompt.
+2. Read task.json, the active run record, the bound snapshot (or legacy explicit documents), applicable .pi/snflows/spec indexes, project AGENTS.md, the current diff, and affected callers. Never compare the marker to lifecycle-mutated live task revision fields.
 3. Evaluate correctness, acceptance criteria, regressions, project conventions, and validation coverage without expanding the approved scope.
 4. Run focused tests plus repository lint/typecheck when practical.
 5. Classify findings using the decision policy below and return the verdict contract requested by the dispatch prompt with concrete, path-based findings.

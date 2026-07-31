@@ -124,7 +124,16 @@ export interface WorkflowRunRecord {
   requestedCwd: string;
   effectiveCwd: string;
   hostSessionId: string;
+  /** Mutable task-record revision checked once when the run is reserved. */
   taskRevision: string;
+  /** Immutable digest of the approved requirements/design/plan bytes. */
+  specRevision?: string;
+  /** Run-owned immutable task document paths, relative to the project cwd. */
+  snapshotPaths?: {
+    requirements: string;
+    design: string;
+    plan: string;
+  };
   /** Parent chat correlation for direct foreground native subagent dispatch. */
   parentSessionId?: string;
   parentToolCallId?: string;

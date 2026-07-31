@@ -43,6 +43,7 @@ import {
   type WorkflowCreateTaskInput,
   type WorkflowDocuments,
   type WorkflowPriority,
+  type WorkflowRunPhase,
   type WorkflowRunRecord,
   type WorkflowTaskCommitMeta,
   type WorkflowTaskDetail,
@@ -197,6 +198,22 @@ function makeRunId(phase: string): string {
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   const suffix = randomBytes(3).toString("hex");
   return `${phase}-${stamp}-${suffix}`.toLowerCase().slice(0, 80);
+}
+
+export function createWorkflowRunId(phase: WorkflowRunPhase): string {
+  return makeRunId(phase);
+}
+
+export function computeWorkflowSpecRevision(documents: WorkflowDocuments): string {
+  return createHash("sha256")
+    .update("snflow-spec-v1\0")
+    .update(JSON.stringify([
+      ["requirements.md", documents.requirements],
+      ["design.md", documents.design],
+      ["plan.md", documents.plan],
+    ]))
+    .digest("hex")
+    .slice(0, 16);
 }
 
 export function createStoreContext(cwd: string): StoreContext {
@@ -496,6 +513,21 @@ export function parseRunRecord(raw: unknown, expectedId?: string): WorkflowRunRe
     effectiveCwd: raw.effectiveCwd as string,
     hostSessionId: raw.hostSessionId as string,
     taskRevision: raw.taskRevision as string,
+    specRevision:
+      typeof raw.specRevision === "string" && /^[a-f0-9]{16}$/.test(raw.specRevision)
+        ? raw.specRevision
+        : undefined,
+    snapshotPaths:
+      isRecord(raw.snapshotPaths) &&
+        typeof raw.snapshotPaths.requirements === "string" &&
+        typeof raw.snapshotPaths.design === "string" &&
+        typeof raw.snapshotPaths.plan === "string"
+        ? {
+            requirements: raw.snapshotPaths.requirements,
+            design: raw.snapshotPaths.design,
+            plan: raw.snapshotPaths.plan,
+          }
+        : undefined,
     parentSessionId:
       typeof raw.parentSessionId === "string" && raw.parentSessionId.trim()
         ? raw.parentSessionId
@@ -1178,6 +1210,7 @@ export function findWorkflowRunById(
 export interface BeginWorkflowRunInput {
   phase: "implement" | "check";
   expectedRevision: string;
+  expectedSpecRevision?: string;
   agentName: string;
   hostSessionId: string;
   requestedCwd: string;
@@ -1231,11 +1264,32 @@ export function beginWorkflowRun(cwd: string, taskId: string, input: BeginWorkfl
     });
   }
 
+  const specRevision = computeWorkflowSpecRevision(docs);
+  if (input.expectedSpecRevision && specRevision !== input.expectedSpecRevision) {
+    throw new WorkflowConflictError(
+      `Specification changed after dispatch preparation: expected ${input.expectedSpecRevision} but current is ${specRevision}`,
+    );
+  }
+
   const runId = input.runId ?? makeRunId(input.phase);
   if (!isValidWorkflowRunId(runId)) {
     throw new WorkflowStoreError("Invalid run id", { status: 400, code: "invalid_run_id" });
   }
+  const runsDir = path.join(located.dir, "runs");
+  if (existsSync(path.join(runsDir, `${runId}.json`)) || existsSync(path.join(runsDir, runId))) {
+    throw new WorkflowConflictError(`Run id already exists: ${runId}`);
+  }
   const timestamp = nowIso();
+  const snapshotDir = path.join(located.dir, "runs", runId, "snapshot");
+  const snapshotPaths = {
+    requirements: relativeLabel(ctx.workspaceRoot, path.join(snapshotDir, "requirements.md")),
+    design: relativeLabel(ctx.workspaceRoot, path.join(snapshotDir, "design.md")),
+    plan: relativeLabel(ctx.workspaceRoot, path.join(snapshotDir, "plan.md")),
+  };
+  atomicWriteText(path.join(snapshotDir, "requirements.md"), docs.requirements, ctx.workspaceRoot);
+  atomicWriteText(path.join(snapshotDir, "design.md"), docs.design, ctx.workspaceRoot);
+  atomicWriteText(path.join(snapshotDir, "plan.md"), docs.plan, ctx.workspaceRoot);
+
   const run: WorkflowRunRecord = {
     schemaVersion: WORKFLOW_SCHEMA_VERSION,
     id: runId,
@@ -1247,6 +1301,8 @@ export function beginWorkflowRun(cwd: string, taskId: string, input: BeginWorkfl
     effectiveCwd: input.effectiveCwd,
     hostSessionId: input.hostSessionId,
     taskRevision: current.revision,
+    specRevision,
+    snapshotPaths,
     parentSessionId: input.parentSessionId,
     parentToolCallId: input.parentToolCallId,
     nativeRunId: null,
@@ -1554,6 +1610,64 @@ export function getWorkflowTaskDocumentsPaths(cwd: string, taskId: string): {
       plan: relativeLabel(ctx.workspaceRoot, path.join(located.dir, "plan.md")),
       taskJson: relativeLabel(ctx.workspaceRoot, path.join(located.dir, "task.json")),
     },
+  };
+}
+
+export function getWorkflowRunSnapshotIntegrityError(
+  cwd: string,
+  taskId: string,
+  run: WorkflowRunRecord,
+): string | null {
+  if (!run.specRevision && !run.snapshotPaths) return null;
+  if (!run.specRevision || !run.snapshotPaths) {
+    return "Bound run is missing its specification revision or snapshot paths.";
+  }
+  try {
+    const ctx = createStoreContext(cwd);
+    const located = resolveExistingTaskDir(ctx, taskId);
+    const snapshotDir = path.join(located.dir, "runs", run.id, "snapshot");
+    const expectedPaths = {
+      requirements: relativeLabel(ctx.workspaceRoot, path.join(snapshotDir, "requirements.md")),
+      design: relativeLabel(ctx.workspaceRoot, path.join(snapshotDir, "design.md")),
+      plan: relativeLabel(ctx.workspaceRoot, path.join(snapshotDir, "plan.md")),
+    };
+    if (
+      run.snapshotPaths.requirements !== expectedPaths.requirements ||
+      run.snapshotPaths.design !== expectedPaths.design ||
+      run.snapshotPaths.plan !== expectedPaths.plan
+    ) {
+      return "Run snapshot paths no longer match the reserved run directory.";
+    }
+    const documents: WorkflowDocuments = {
+      requirements: readFileSync(path.join(snapshotDir, "requirements.md"), "utf8"),
+      design: readFileSync(path.join(snapshotDir, "design.md"), "utf8"),
+      plan: readFileSync(path.join(snapshotDir, "plan.md"), "utf8"),
+    };
+    const actual = computeWorkflowSpecRevision(documents);
+    return actual === run.specRevision
+      ? null
+      : `Run snapshot specification revision mismatch: expected ${run.specRevision}, got ${actual}.`;
+  } catch (error) {
+    return `Run snapshot could not be verified: ${error instanceof Error ? error.message : String(error)}`;
+  }
+}
+
+export function getWorkflowRunSnapshotPathLabels(
+  cwd: string,
+  taskId: string,
+  runId: string,
+): { requirements: string; design: string; plan: string; taskJson: string } {
+  const ctx = createStoreContext(cwd);
+  const located = resolveExistingTaskDir(ctx, taskId);
+  if (!isValidWorkflowRunId(runId)) {
+    throw new WorkflowStoreError("Invalid run id", { status: 400, code: "invalid_run_id" });
+  }
+  const snapshotDir = path.join(located.dir, "runs", runId, "snapshot");
+  return {
+    requirements: relativeLabel(ctx.workspaceRoot, path.join(snapshotDir, "requirements.md")),
+    design: relativeLabel(ctx.workspaceRoot, path.join(snapshotDir, "design.md")),
+    plan: relativeLabel(ctx.workspaceRoot, path.join(snapshotDir, "plan.md")),
+    taskJson: relativeLabel(ctx.workspaceRoot, path.join(located.dir, "task.json")),
   };
 }
 

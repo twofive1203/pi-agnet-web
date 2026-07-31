@@ -68,3 +68,4 @@ handoff/
 .pi/agents/snflow-check.md
 scripts/snflow-task.ts
 # <<< snflow-managed <<<
+/.pi

@@ -3,7 +3,7 @@
  * Run: npx tsx scripts/smoke-workflow-chat-lifecycle.ts
  */
 
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import path from "path";
 import { SNFLOW_ASSET_FILES } from "../lib/snflow-assets";
@@ -17,11 +17,13 @@ import {
   parseWorkflowDispatchMarker,
 } from "../lib/workflow-prompts";
 import {
+  beginWorkflowRun,
   createWorkflowTask,
   getWorkflowTaskDetail,
   markWorkflowTaskReady,
   parseRunRecord,
   updateWorkflowTaskProjection,
+  writeWorkflowRunRecord,
 } from "../lib/workflow-store";
 import { setWorkflowCurrentTask } from "../lib/workflow-current";
 import { reconcileWorkflowRun } from "../lib/workflow-run-manager";
@@ -355,9 +357,21 @@ try {
       },
       "cancel-session",
     );
+    const wrapperOnly = getWorkflowTaskDetail(cancelProject, cancelTask.id);
+    assert(wrapperOnly.status === "implementing", "wrapper cancellation prose cannot terminate a run");
+    assert(wrapperOnly.activeRunId !== null, "wrapper-only result keeps the run lock");
+    cancelObserver.onToolResult(
+      {
+        toolCallId: "cancel-call",
+        toolName: "subagent",
+        details: { results: [{ exitCode: 0, stopped: true }] },
+        isError: true,
+      },
+      "cancel-session",
+    );
     const cancelled = getWorkflowTaskDetail(cancelProject, cancelTask.id);
-    assert(cancelled.status === "cancelled", "aborted native run projects cancelled");
-    assert(cancelled.activeRunId === null, "cancelled run releases lock");
+    assert(cancelled.status === "cancelled", "structured stopped result projects cancelled");
+    assert(cancelled.activeRunId === null, "structured cancellation releases lock");
   } finally {
     rmSync(cancelProject, { recursive: true, force: true });
   }
@@ -385,7 +399,7 @@ try {
       content: [{ type: "text", text: "Operation cancelled by wrapper" }],
       isError: true,
     }, "ordered-session");
-    assert(getWorkflowTaskDetail(orderedProject, orderedTask.id).status === "cancelled", "wrapper-only event is provisionally terminal");
+    assert(getWorkflowTaskDetail(orderedProject, orderedTask.id).status === "implementing", "wrapper-only event remains non-terminal");
     orderedObserver.onToolResult({
       toolCallId: "ordered-call",
       toolName: "subagent",
@@ -407,13 +421,14 @@ try {
   const checkedPrompt = phasePrompt(project, checked, "check");
   const marker = parseWorkflowDispatchMarker(checkedPrompt);
   assert(marker?.taskId === checked.id && marker.phase === "check", "phase prompt starts with marker");
-  assert(checkedPrompt.includes("activeRunId -> runs/<run-id>.json taskRevision"), "worker prompt explains active-run revision validation");
+  assert(checkedPrompt.includes("Legacy dispatch"), "legacy prompt keeps explicit-path compatibility");
 
   const detailCases = [
     { id: "child-failed", details: { results: [{ exitCode: 1, error: "child failed" }] }, state: "failed", status: "failed" },
     { id: "child-stopped", details: { results: [{ exitCode: 0, stopped: true }] }, state: "cancelled", status: "cancelled" },
     { id: "child-timeout", details: { results: [{ exitCode: 1, timedOut: true }] }, state: "failed", status: "failed" },
-    { id: "outer-interrupted", details: { interrupted: true, results: [{ exitCode: 0 }] }, state: "cancelled", status: "cancelled" },
+    { id: "child-outranks-wrapper", details: { interrupted: true, results: [{ exitCode: 0 }] }, state: "completed", status: "review_ready" },
+    { id: "legacy-final-output", details: { results: [{ finalOutput: '{"summary":"legacy complete","outcome":"changed","acceptanceSatisfied":true,"changedFiles":["example.ts"],"validation":[],"residualRisks":[]}' }] }, state: "completed", status: "review_ready" },
     { id: "invalid-no-change", details: { results: [{ exitCode: 0, effects: { fileMutation: { status: "missing", expected: true, attempted: false } } }] }, state: "failed", status: "failed" },
     { id: "v1-acceptance-separate", details: { results: [{ exitCode: 0, execution: { status: "completed", success: true, exitCode: 0 }, acceptance: { status: "rejected" } }] }, state: "completed", status: "review_ready" },
   ] as const;
@@ -458,11 +473,111 @@ try {
     const taskB = readyTask(dispatchProject, "Task B", "task-b");
     setWorkflowCurrentTask(dispatchProject, taskA.id, { source: "agent" });
     const prepared = prepareWorkflowChatDispatch(dispatchProject, taskB.id, "implement", taskB.revision);
-    const preparedMarker = parseWorkflowDispatchMarker(prepared.dispatchPrompt.split("```text\n")[1]);
+    const preparedTask = prepared.dispatchPrompt.split("```text\n")[1]?.split("\n```")[0] ?? "";
+    const preparedMarker = parseWorkflowDispatchMarker(preparedTask);
     assert(preparedMarker?.taskId === taskB.id, "selected task B dispatch does not use current pointer task A");
-    assert(preparedMarker.revision === taskB.revision, "selected task revision is exact");
+    assert(preparedMarker.revision === taskB.revision, "selected task state revision is exact");
+    assert(Boolean(preparedMarker.runId && preparedMarker.specRevision), "new dispatch binds run id and specification revision");
+    writeFileSync(
+      path.join(dispatchProject, ".pi", "snflows", "tasks", taskB.id, "requirements.md"),
+      "# changed after prepare\n",
+      "utf8",
+    );
+    const drifted = new WorkflowChatLifecycleObserver(dispatchProject).beforeToolCall({
+      toolCallId: "drifted-spec",
+      toolName: "subagent",
+      input: { agent: "snflow-implement", task: preparedTask, context: "fresh", agentContract: { version: 1 }, cwd: dispatchProject, async: false, clarify: false },
+    }, "dispatch-session");
+    assert(drifted.block && drifted.reason?.includes("Specification changed"), "document drift blocks before run reservation");
+    assert(getWorkflowTaskDetail(dispatchProject, taskB.id).activeRunId === null, "drifted dispatch holds no run lock");
+
+    const taskC = readyTask(dispatchProject, "Task C", "task-c");
+    const bound = prepareWorkflowChatDispatch(dispatchProject, taskC.id, "implement", taskC.revision);
+    const boundTask = bound.dispatchPrompt.split("```text\n")[1]?.split("\n```")[0] ?? "";
+    const boundMarker = parseWorkflowDispatchMarker(boundTask);
+    assert(boundTask.includes("run record's taskRevision/specRevision"), "bound prompt explains run-snapshot validation");
+    const boundObserver = new WorkflowChatLifecycleObserver(dispatchProject);
+    const accepted = boundObserver.beforeToolCall({
+      toolCallId: "bound-spec",
+      toolName: "subagent",
+      input: { agent: "snflow-implement", task: boundTask, context: "fresh", agentContract: { version: 1 }, cwd: dispatchProject, async: false, clarify: false },
+    }, "dispatch-session");
+    assert(!accepted.block, `bound dispatch starts: ${accepted.reason ?? ""}`);
+    const boundRun = getWorkflowTaskDetail(dispatchProject, taskC.id).runs.find((run) => run.id === boundMarker?.runId);
+    assert(boundRun, "bound run record exists");
+    assert(boundRun.specRevision === boundMarker?.specRevision, "run preserves approved specification revision");
+    assert(Boolean(boundRun.snapshotPaths), "run owns immutable document snapshot paths");
+    writeFileSync(
+      path.join(dispatchProject, ".pi", "snflows", "tasks", taskC.id, "requirements.md"),
+      "# live document changed after reservation\n",
+      "utf8",
+    );
+    const requirementSnapshot = boundRun?.snapshotPaths?.requirements;
+    assert(
+      requirementSnapshot && readFileSync(path.join(dispatchProject, ...requirementSnapshot.split("/")), "utf8") === taskC.documents.requirements,
+      "run snapshot preserves approved requirements bytes",
+    );
+    writeFileSync(
+      path.join(dispatchProject, ...requirementSnapshot.split("/")),
+      "# tampered run snapshot\n",
+      "utf8",
+    );
+    boundObserver.onToolResult({
+      toolCallId: "bound-spec",
+      toolName: "subagent",
+      details: { results: [{ exitCode: 0, finalOutput: '{"summary":"done","outcome":"changed","acceptanceSatisfied":true,"changedFiles":["example.ts"],"validation":[],"residualRisks":[]}' }] },
+      isError: false,
+    }, "dispatch-session");
+    const tampered = getWorkflowTaskDetail(dispatchProject, taskC.id);
+    const tamperedRun = tampered.runs.find((run) => run.id === boundRun.id);
+    assert(tamperedRun?.state === "failed" && tamperedRun.error?.code === "snapshot_integrity", "snapshot tampering fails terminal projection closed");
+    assert(tampered.activeRunId === null, "snapshot-integrity failure releases the run lock");
   } finally {
     rmSync(dispatchProject, { recursive: true, force: true });
+  }
+
+  for (const fixture of [
+    {
+      id: "status-steps-effects",
+      status: {
+        state: "completed",
+        steps: [{ status: "complete", exitCode: 0, effects: { fileMutation: { status: "missing", expected: true } } }],
+      },
+    },
+    {
+      id: "nested-result-details",
+      status: {
+        state: "completed",
+        result: { details: { results: [{ exitCode: 0, effects: { fileMutation: { status: "missing", expected: true } } }] } },
+      },
+    },
+  ]) {
+    const reconciliationProject = mkdtempSync(path.join(tmpdir(), `snflow-${fixture.id}-`));
+    try {
+      const task = readyTask(reconciliationProject, fixture.id, fixture.id);
+      const begun = beginWorkflowRun(reconciliationProject, task.id, {
+        phase: "implement",
+        expectedRevision: task.revision,
+        agentName: "snflow-implement",
+        hostSessionId: "compat-host",
+        requestedCwd: reconciliationProject,
+        effectiveCwd: reconciliationProject,
+      });
+      const asyncDir = path.join(reconciliationProject, `.async-${fixture.id}`);
+      mkdirSync(asyncDir, { recursive: true });
+      writeFileSync(path.join(asyncDir, "status.json"), JSON.stringify(fixture.status), "utf8");
+      writeWorkflowRunRecord(reconciliationProject, task.id, {
+        ...begun.run,
+        state: "running",
+        startedAt: new Date().toISOString(),
+        asyncDir,
+      });
+      const reconciled = await reconcileWorkflowRun(reconciliationProject, begun.run.id);
+      assert(reconciled.run.state === "failed", `${fixture.id} applies structured mutation effects during reconciliation`);
+      assert(reconciled.run.error?.code === "invalid_no_change", `${fixture.id} uses the shared terminal reducer`);
+    } finally {
+      rmSync(reconciliationProject, { recursive: true, force: true });
+    }
   }
 
   const repairProject = mkdtempSync(path.join(tmpdir(), "snflow-terminal-repair-"));
@@ -529,6 +644,7 @@ try {
     checkResult: null,
   });
   assert(!historical.parentSessionId && !historical.parentToolCallId, "historical runs remain readable");
+  assert(!historical.specRevision && !historical.snapshotPaths, "legacy runs remain valid without snapshot binding");
 
   const managedGuidance = SNFLOW_ASSET_FILES
     .filter((file) =>

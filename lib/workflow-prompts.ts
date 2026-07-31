@@ -3,6 +3,7 @@
  */
 
 import {
+  isValidWorkflowRunId,
   isValidWorkflowTaskId,
   isWorkflowRunPhase,
   type WorkflowCheckFinding,
@@ -24,6 +25,10 @@ export interface WorkflowDispatchMarker {
   phase: WorkflowRunPhase;
   revision: string;
   cwd: string;
+  /** Optional v1 extension used by new dispatches; omitted by legacy assets. */
+  runId?: string;
+  /** Immutable requirements/design/plan digest for the run-owned snapshot. */
+  specRevision?: string;
 }
 
 export class WorkflowDispatchMarkerError extends Error {
@@ -47,6 +52,8 @@ export interface WorkflowPromptContext {
   /** Optional summary from the latest implement run, for check phase. */
   implementSummary?: string | null;
   taskRevision: string;
+  runId?: string;
+  specRevision?: string;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -71,6 +78,8 @@ export function buildWorkflowDispatchMarker(
     phase: marker.phase,
     revision: marker.revision,
     cwd: marker.cwd,
+    ...(marker.runId ? { runId: marker.runId } : {}),
+    ...(marker.specRevision ? { specRevision: marker.specRevision } : {}),
   })}`;
 }
 
@@ -103,12 +112,22 @@ export function parseWorkflowDispatchMarker(text: unknown): WorkflowDispatchMark
   if (typeof raw.cwd !== "string" || !raw.cwd.trim() || raw.cwd.length > 2048) {
     throw new WorkflowDispatchMarkerError("Invalid SnFlow dispatch cwd");
   }
+  if (raw.runId !== undefined &&
+    (typeof raw.runId !== "string" || !isValidWorkflowRunId(raw.runId))) {
+    throw new WorkflowDispatchMarkerError("Invalid SnFlow dispatch run id");
+  }
+  if (raw.specRevision !== undefined &&
+    (typeof raw.specRevision !== "string" || !/^[a-f0-9]{16}$/.test(raw.specRevision))) {
+    throw new WorkflowDispatchMarkerError("Invalid SnFlow dispatch specification revision");
+  }
   return {
     v: WORKFLOW_DISPATCH_PROTOCOL_VERSION,
     taskId: raw.taskId,
     phase: raw.phase,
     revision: raw.revision,
     cwd: raw.cwd,
+    ...(typeof raw.runId === "string" ? { runId: raw.runId } : {}),
+    ...(typeof raw.specRevision === "string" ? { specRevision: raw.specRevision } : {}),
   };
 }
 
@@ -132,8 +151,11 @@ export function buildImplementPrompt(ctx: WorkflowPromptContext): string {
   return [
     `Implement SnFlow task ${ctx.taskId}: ${ctx.title}`,
     `Project cwd: ${ctx.cwd}`,
-    `Dispatch revision: ${ctx.taskRevision}`,
-    "The dispatch revision is the approved pre-run snapshot. After launch, verify it against task.json activeRunId -> runs/<run-id>.json taskRevision; task.json.revision changes with lifecycle state and is not the dispatch token.",
+    `Dispatch state revision: ${ctx.taskRevision}`,
+    ...(ctx.specRevision ? [`Approved specification revision: ${ctx.specRevision}`] : []),
+    ctx.specRevision
+      ? "After launch, resolve task.json activeRunId and verify the run record's taskRevision/specRevision. Read only the run-owned snapshot document paths below; the live task revision and documents may change without changing this run."
+      : "Legacy dispatch: verify the active run record's taskRevision and use the explicit document paths below.",
     "",
     "Read:",
     `- ${ctx.pathLabels.taskJson}`,
@@ -165,8 +187,11 @@ export function buildCheckPrompt(ctx: WorkflowPromptContext): string {
   return [
     `Review SnFlow task ${ctx.taskId}: ${ctx.title}`,
     `Project cwd: ${ctx.cwd}`,
-    `Dispatch revision: ${ctx.taskRevision}`,
-    "The dispatch revision is the approved pre-run snapshot. After launch, verify it against task.json activeRunId -> runs/<run-id>.json taskRevision; task.json.revision changes with lifecycle state and is not the dispatch token.",
+    `Dispatch state revision: ${ctx.taskRevision}`,
+    ...(ctx.specRevision ? [`Approved specification revision: ${ctx.specRevision}`] : []),
+    ctx.specRevision
+      ? "After launch, resolve task.json activeRunId and verify the run record's taskRevision/specRevision. Read only the run-owned snapshot document paths below; the live task revision and documents may change without changing this run."
+      : "Legacy dispatch: verify the active run record's taskRevision and use the explicit document paths below.",
     "",
     "Read:",
     `- ${ctx.pathLabels.taskJson}`,
@@ -205,6 +230,8 @@ export function buildPhasePrompt(ctx: WorkflowPromptContext): string {
     phase: ctx.phase,
     revision: ctx.taskRevision,
     cwd: ctx.cwd,
+    runId: ctx.runId,
+    specRevision: ctx.specRevision,
   });
   const body = ctx.phase === "implement" ? buildImplementPrompt(ctx) : buildCheckPrompt(ctx);
   return `${marker}\n\n${body}`;
