@@ -1,7 +1,7 @@
 import { createAgentSession, SessionManager } from "@earendil-works/pi-coding-agent";
 import { cleanupSessionResources } from "@earendil-works/pi-ai";
 import { cacheSessionPath } from "./session-reader";
-import { recordSessionFileChangeEvent } from "./session-file-changes";
+import { flushSessionFileChanges, recordSessionFileChangeEvent } from "./session-file-changes";
 import { canonicalizeCwd } from "./cwd";
 import {
   getSnflowChatLifecycleLoadDiagnostic,
@@ -153,34 +153,33 @@ export class AgentSessionWrapper {
         recordSubagentMetric("terminalEvents");
       }
 
-      let fileChangeUpdate: AgentEvent | null = null;
       if (event.type === "tool_execution_start" || event.type === "tool_execution_end") {
         const fileProjectionStartedAt = nowForSubagentMetric();
-        try {
-          const result = recordSessionFileChangeEvent({
-            sessionId: this.sessionId,
-            sessionFile: this.sessionFile,
-            cwd: this.cwd,
-            event,
-          });
-          if (result.changed && event.type === "tool_execution_end") {
-            fileChangeUpdate = {
+        const isEnd = event.type === "tool_execution_end";
+        void recordSessionFileChangeEvent({
+          sessionId: this.sessionId,
+          sessionFile: this.sessionFile,
+          cwd: this.cwd,
+          event,
+        }).then((result) => {
+          recordSubagentDuration("fileProjectionMs", fileProjectionStartedAt);
+          if (this._alive && result.changed && isEnd) {
+            this.emitEvent({
               type: "session_file_changes_update",
               sessionId: this.sessionId,
               fileCount: result.fileCount,
-            };
+            });
           }
-        } catch {
+        }, () => {
           // File-change projection must never interrupt normal agent event delivery.
-        }
-        recordSubagentDuration("fileProjectionMs", fileProjectionStartedAt);
+          recordSubagentDuration("fileProjectionMs", fileProjectionStartedAt);
+        });
       }
 
       this.subagentProgressThrottler.handle(event, isSubagentEvent);
       if (event.type === "tool_execution_end" && toolCallId) {
         this.activeSubagentToolCallIds.delete(toolCallId);
       }
-      if (fileChangeUpdate) this.emitEvent(fileChangeUpdate);
       recordSubagentDuration("handlerMs", handlerStartedAt);
     });
     this.resetIdleTimer();
@@ -506,6 +505,11 @@ export class AgentSessionWrapper {
         }
       } catch {
         // ignore
+      }
+      try {
+        await flushSessionFileChanges(this.inner.sessionId);
+      } catch {
+        // Changed-file projection is best-effort and must not block SDK disposal on failure.
       }
       await disposeAgentSession(this.inner, reason);
       this.onDestroyCallback?.();

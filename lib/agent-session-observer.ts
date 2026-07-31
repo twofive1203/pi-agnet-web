@@ -4,7 +4,7 @@
 
 export type SessionObserver = {
   onEvent: (event: unknown) => void;
-  dispose: () => void;
+  dispose: () => Promise<void>;
 };
 
 /**
@@ -22,18 +22,23 @@ export function createFileChangeObserver(input: {
         // Lazy import keeps runner unit smokes free of pi SDK package exports.
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         const { recordSessionFileChangeEvent } = require("./session-file-changes") as typeof import("./session-file-changes");
-        recordSessionFileChangeEvent({
+        void recordSessionFileChangeEvent({
           sessionId: input.sessionId,
           cwd: input.cwd,
           sessionFile: input.sessionFile,
           event: event as never,
+        }).catch(() => {
+          // observer must not break runner
         });
       } catch {
         // observer must not break runner
       }
     },
-    dispose() {
-      // no-op; sidecar is file-backed
+    async dispose() {
+      // Lazy import keeps runner unit smokes free of pi SDK package exports.
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { flushSessionFileChanges } = require("./session-file-changes") as typeof import("./session-file-changes");
+      await flushSessionFileChanges(input.sessionId);
     },
   };
 }

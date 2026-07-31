@@ -15,6 +15,7 @@ npm run dev     # http://localhost:62666
 | `npm run lint` | Run ESLint. |
 | `node_modules/.bin/tsc --noEmit` | Type-check without emitting. |
 | `npm run test:agent-stream` | Agent token-stream coalescing and lifecycle ordering smoke suite. |
+| `npm run test:session-changes` | Async session changed-file projection and serialization smoke suite. |
 | `npm run test:snflow` | SnFlow setup/store/session-link/spec-review smoke suite. |
 | `npm run test:automation` | Automation store/schedule/policy/runner/API smoke suite. |
 | `npm run test:mcp` | MCP configuration domain/API smoke suite (adapter-native files, secrets, revisions). |

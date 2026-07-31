@@ -5,8 +5,8 @@ API routes live under `app/api/`. When adding, removing, or changing routes, upd
 | Route | Methods | Purpose |
 | --- | --- | --- |
 | `sessions/` | GET | Session browser/list API. Modes: `?view=projects` returns lightweight project summaries for the sidebar; `?cwd=<path>&limit=10&before=&beforePath=` returns one mtime-ordered page of active sessions for a project (bounded JSONL parse + parent-closure ancestors) with `total` / `hasMore` / `nextBefore` / `nextBeforePath`; default (no view/cwd) remains the full active session list for Usage/compat callers. Always includes `archivedCwds` / `archivedCounts`. |
-| `sessions/[id]/` | GET/PATCH/DELETE | Read session detail, rename, delete. Returns `archived: true` for archived sessions. |
-| `sessions/[id]/context/` | GET | Get context for a specific `leafId`. |
+| `sessions/[id]/` | GET/PATCH/DELETE | Read session detail, rename, delete. Returns `archived: true` for archived sessions. GET reuses a matching live RPC session's parsed manager and falls back to disk for inactive sessions. |
+| `sessions/[id]/context/` | GET | Get context for a specific `leafId`; reuses a matching live parsed manager when available. |
 | `sessions/[id]/changes/` | GET | List files changed by tracked agent file tools in this session from non-Git sidecar data. |
 | `sessions/[id]/changes/file/` | GET | Return the stored unified diff or metadata-only reason for one tracked session-changed file. |
 | `sessions/[id]/snflow-task/` | GET | Resolve the SnFlow task associated with one pi session. Uses an exact `current.json.sessionId` match or explicit task evidence from that session transcript; cwd-global or unbound pointers alone never surface the floating widget. |

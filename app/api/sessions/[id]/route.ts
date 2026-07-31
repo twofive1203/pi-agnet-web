@@ -140,7 +140,15 @@ export async function GET(
     let leafId: string | null;
     let tree: ReturnType<typeof projectTreeForResponse>;
     try {
-      sm = SessionManager.open(filePath);
+      const liveSession = getRpcSession(id);
+      const liveManager = liveSession?.isAlive()
+        && liveSession.sessionFile
+        && canonicalizeCwd(liveSession.sessionFile) === canonicalizeCwd(filePath)
+        ? liveSession.inner.sessionManager
+        : null;
+      // The SSE route already owns a parsed SessionManager for active chats. Reuse it
+      // instead of synchronously reparsing multi-megabyte JSONL on every agent_end.
+      sm = liveManager ?? SessionManager.open(filePath);
       header = sm.getHeader();
       // Guard against substring/path-cache mismatches: requested id must equal header id.
       if (!header?.id || header.id !== id) {

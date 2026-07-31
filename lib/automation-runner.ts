@@ -129,6 +129,7 @@ type CreatedSession = {
   };
   sessionDir: string;
   unsubscribe?: () => void;
+  flushFileChanges?: () => Promise<void>;
   appliedModel: { provider: string; modelId: string; thinking: string | null };
   runnerEnv?: NodeJS.ProcessEnv;
   /** Detached prompt promise when abort is ignored (for late-settle fencing). */
@@ -328,6 +329,7 @@ async function defaultCreateSession(input: {
   }
 
   let unsubscribe: (() => void) | undefined;
+  let flushFileChanges: (() => Promise<void>) | undefined;
   if (session.subscribe && session.sessionId) {
     const observer = createFileChangeObserver({
       sessionId: session.sessionId,
@@ -335,12 +337,14 @@ async function defaultCreateSession(input: {
       sessionFile: session.sessionFile,
     });
     unsubscribe = session.subscribe((event) => observer.onEvent(event));
+    flushFileChanges = () => observer.dispose();
   }
 
   return {
     session: session as CreatedSession["session"],
     sessionDir: input.sessionDir,
     unsubscribe,
+    flushFileChanges,
     appliedModel,
     runnerEnv: input.runnerEnv,
   };
@@ -1419,6 +1423,11 @@ export async function runAutomationOnce(input: {
         } catch {
           // ignore
         }
+        try {
+          await session?.flushFileChanges?.();
+        } catch {
+          // ignore
+        }
         // Best-effort dispose; may race continuing tools — caller only invokes after deadline.
         try {
           if (session?.session) {
@@ -1860,6 +1869,11 @@ async function finalizeAfterShutdown(input: {
       input.created.session.abort?.();
     } catch {
       // ignore
+    }
+    try {
+      await input.created.flushFileChanges?.();
+    } catch {
+      // Changed-file projection is best-effort; sealing must still follow dispose policy.
     }
     try {
       let done = false;

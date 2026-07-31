@@ -1,7 +1,8 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "fs";
+import { existsSync, readFileSync, statSync, unlinkSync } from "fs";
+import { mkdir, readFile, rename, unlink as unlinkAsync, writeFile } from "fs/promises";
 import path from "path";
+import { homedir } from "os";
 import { createHash } from "crypto";
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { createUnifiedDiff } from "./unified-diff";
 import type {
   SessionChangedFileSummary,
@@ -89,7 +90,15 @@ function normalizeSlashes(value: string): string {
 }
 
 function getSessionChangesDir(): string {
-  return path.join(getAgentDir(), "session-changes");
+  const configured = process.env.PI_CODING_AGENT_DIR?.trim();
+  const agentDir = !configured
+    ? path.join(homedir(), ".pi", "agent")
+    : configured === "~"
+      ? homedir()
+      : configured.startsWith("~/") || configured.startsWith("~\\")
+        ? path.resolve(homedir(), configured.slice(2))
+        : path.resolve(configured);
+  return path.join(agentDir, "session-changes");
 }
 
 function getSessionChangesPath(sessionId: string): string {
@@ -108,11 +117,10 @@ function emptySidecar(sessionId: string, cwd: string, sessionFile?: string): Ses
   };
 }
 
-function readSidecarForWrite(sessionId: string, cwd: string, sessionFile?: string): SessionFileChangesSidecar {
+async function readSidecarForWrite(sessionId: string, cwd: string, sessionFile?: string): Promise<SessionFileChangesSidecar> {
   const filePath = getSessionChangesPath(sessionId);
-  if (!existsSync(filePath)) return emptySidecar(sessionId, cwd, sessionFile);
   try {
-    const parsed = JSON.parse(readFileSync(filePath, "utf8")) as Partial<SessionFileChangesSidecar>;
+    const parsed = JSON.parse(await readFile(filePath, "utf8")) as Partial<SessionFileChangesSidecar>;
     if (parsed.version !== SIDECAR_VERSION || parsed.sessionId !== sessionId || !parsed.files) {
       return emptySidecar(sessionId, cwd, sessionFile);
     }
@@ -150,12 +158,17 @@ export function readSessionChangesSidecar(sessionId: string): SessionFileChanges
   }
 }
 
-function writeSidecar(sidecar: SessionFileChangesSidecar): void {
+async function writeSidecar(sidecar: SessionFileChangesSidecar): Promise<void> {
   const filePath = getSessionChangesPath(sidecar.sessionId);
-  mkdirSync(path.dirname(filePath), { recursive: true });
-  const tmpPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
-  writeFileSync(tmpPath, JSON.stringify(sidecar, null, 2));
-  renameSync(tmpPath, filePath);
+  await mkdir(path.dirname(filePath), { recursive: true });
+  const tmpPath = `${filePath}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`;
+  try {
+    await writeFile(tmpPath, JSON.stringify(sidecar, null, 2));
+    await rename(tmpPath, filePath);
+  } catch (error) {
+    await unlinkAsync(tmpPath).catch(() => {});
+    throw error;
+  }
 }
 
 export function deleteSessionChangesSidecar(sessionId: string): void {
@@ -178,9 +191,9 @@ function resolveWorkspacePath(cwd: string, inputPath: string): { absolutePath: s
 
 function readSnapshot(absolutePath: string): FileSnapshot {
   try {
-    const stat = statSync(absolutePath);
-    if (!stat.isFile()) return { kind: "unreadable", exists: true, reason: "unreadable" };
-    if (stat.size > MAX_TEXT_FILE_BYTES) return { kind: "too-large", exists: true, reason: "too-large" };
+    const fileStat = statSync(absolutePath);
+    if (!fileStat.isFile()) return { kind: "unreadable", exists: true, reason: "unreadable" };
+    if (fileStat.size > MAX_TEXT_FILE_BYTES) return { kind: "too-large", exists: true, reason: "too-large" };
     const buffer = readFileSync(absolutePath);
     const hash = sha256(buffer);
     if (buffer.includes(0)) return { kind: "binary", exists: true, hash, reason: "binary" };
@@ -290,38 +303,36 @@ function updateRecord(sidecar: SessionFileChangesSidecar, pending: PendingToolSn
   return true;
 }
 
-export function recordSessionFileChangeEvent(input: {
+type RecordSessionFileChangeInput = {
   sessionId: string;
   sessionFile?: string;
   cwd: string;
   event: AgentToolEvent;
-}): SessionFileChangeEventResult {
-  const { sessionId, sessionFile, cwd, event } = input;
-  if (event.type !== "tool_execution_start" && event.type !== "tool_execution_end") {
-    return { changed: false, fileCount: 0 };
-  }
-  const toolCallId = typeof event.toolCallId === "string" ? event.toolCallId : "";
-  const toolName = event.toolName === "edit" || event.toolName === "write" ? event.toolName : null;
-  if (!toolCallId || !toolName) return { changed: false, fileCount: 0 };
+};
 
-  const sidecar = readSidecarForWrite(sessionId, cwd, sessionFile);
+type EventTimeCaptures = {
+  pending?: PendingToolSnapshot;
+  after?: FileSnapshot;
+};
+
+const sessionFileChangeQueues = new Map<string, Promise<void>>();
+const pendingEventTimeCaptures = new Map<string, Map<string, PendingToolSnapshot>>();
+
+async function recordSessionFileChangeEventUnqueued(
+  input: RecordSessionFileChangeInput,
+  toolCallId: string,
+  toolName: SessionFileChangeSourceKind,
+  captures: EventTimeCaptures,
+): Promise<SessionFileChangeEventResult> {
+  const { sessionId, sessionFile, cwd, event } = input;
+  const sidecar = await readSidecarForWrite(sessionId, cwd, sessionFile);
   sidecar.pendingTools ??= {};
 
   if (event.type === "tool_execution_start") {
-    const requestedPath = getToolPath(event.args);
-    if (!requestedPath) return { changed: false, fileCount: Object.keys(sidecar.files).length };
-    const resolved = resolveWorkspacePath(cwd, requestedPath);
-    if (!resolved) return { changed: false, fileCount: Object.keys(sidecar.files).length };
-    sidecar.pendingTools[toolCallId] = {
-      toolCallId,
-      toolName,
-      path: resolved.relativePath,
-      absolutePath: resolved.absolutePath,
-      before: readSnapshot(resolved.absolutePath),
-      startedAt: new Date().toISOString(),
-    };
+    if (!captures.pending) return { changed: false, fileCount: Object.keys(sidecar.files).length };
+    sidecar.pendingTools[toolCallId] = captures.pending;
     sidecar.updatedAt = new Date().toISOString();
-    writeSidecar(sidecar);
+    await writeSidecar(sidecar);
     return { changed: true, fileCount: Object.keys(sidecar.files).length };
   }
 
@@ -329,14 +340,68 @@ export function recordSessionFileChangeEvent(input: {
   if (!pending) return { changed: false, fileCount: Object.keys(sidecar.files).length };
   delete sidecar.pendingTools[toolCallId];
 
-  const after = readSnapshot(pending.absolutePath);
+  const after = captures.after ?? readSnapshot(pending.absolutePath);
   let changed = false;
   if (!event.isError || pending.before.hash !== after.hash || pending.before.exists !== after.exists) {
     changed = updateRecord(sidecar, pending, after, new Date().toISOString());
   }
   sidecar.updatedAt = new Date().toISOString();
-  writeSidecar(sidecar);
+  await writeSidecar(sidecar);
   return { changed, fileCount: Object.keys(sidecar.files).length };
+}
+
+export function recordSessionFileChangeEvent(
+  input: RecordSessionFileChangeInput,
+): Promise<SessionFileChangeEventResult> {
+  const { sessionId, event } = input;
+  if (event.type !== "tool_execution_start" && event.type !== "tool_execution_end") {
+    return Promise.resolve({ changed: false, fileCount: 0 });
+  }
+  const toolCallId = typeof event.toolCallId === "string" ? event.toolCallId : "";
+  const toolName = event.toolName === "edit" || event.toolName === "write" ? event.toolName : null;
+  if (!toolCallId || !toolName) return Promise.resolve({ changed: false, fileCount: 0 });
+
+  let captures: EventTimeCaptures = {};
+  if (event.type === "tool_execution_start") {
+    const requestedPath = getToolPath(event.args);
+    const resolved = requestedPath ? resolveWorkspacePath(input.cwd, requestedPath) : null;
+    if (resolved) {
+      const pending: PendingToolSnapshot = {
+        toolCallId,
+        toolName,
+        path: resolved.relativePath,
+        absolutePath: resolved.absolutePath,
+        before: readSnapshot(resolved.absolutePath),
+        startedAt: new Date().toISOString(),
+      };
+      const sessionCaptures = pendingEventTimeCaptures.get(sessionId) ?? new Map<string, PendingToolSnapshot>();
+      sessionCaptures.set(toolCallId, pending);
+      pendingEventTimeCaptures.set(sessionId, sessionCaptures);
+      captures = { pending };
+    }
+  } else {
+    const sessionCaptures = pendingEventTimeCaptures.get(sessionId);
+    const pending = sessionCaptures?.get(toolCallId);
+    if (pending) {
+      captures = { after: readSnapshot(pending.absolutePath) };
+      sessionCaptures?.delete(toolCallId);
+      if (sessionCaptures?.size === 0) pendingEventTimeCaptures.delete(sessionId);
+    }
+  }
+
+  const previous = sessionFileChangeQueues.get(sessionId) ?? Promise.resolve();
+  const operation = previous.then(() => recordSessionFileChangeEventUnqueued(input, toolCallId, toolName, captures));
+  const settled = operation.then(() => undefined, () => undefined);
+  sessionFileChangeQueues.set(sessionId, settled);
+  void settled.finally(() => {
+    if (sessionFileChangeQueues.get(sessionId) === settled) sessionFileChangeQueues.delete(sessionId);
+  });
+  return operation;
+}
+
+export async function flushSessionFileChanges(sessionId: string): Promise<void> {
+  await sessionFileChangeQueues.get(sessionId);
+  pendingEventTimeCaptures.delete(sessionId);
 }
 
 function toSummary(record: SessionFileChangeRecord): SessionChangedFileSummary {

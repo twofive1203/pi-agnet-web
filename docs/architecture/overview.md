@@ -31,6 +31,7 @@ Project discovery and per-cwd candidate collection are accelerated by a rebuilda
 
 - Session browsing does not create an AgentSession: API routes read `.jsonl` files through `lib/session-reader.ts`; the only write side effect is pruning stale sessions whose cwd points at a deleted WorkTree.
 - Sending commands creates or reuses an in-process AgentSession through `lib/rpc-manager.ts`.
+- Session detail/context routes reuse the live wrapper's already-parsed `SessionManager` when its canonical session file matches, avoiding another synchronous JSONL parse during active-chat refreshes; inactive sessions still open from disk as the source of truth.
 - Client state and SSE streaming behavior are centralized in `hooks/useAgentSession.ts`.
 - File viewing and workspace metadata use explicit API routes under `app/api/files/`, `app/api/cwd/`, and `app/api/git/`. The standalone `/file?path=...&line=...` page reuses the same `FileViewer` and API authorization; it never reads arbitrary paths directly. Historical root-level Windows links (`/D:/.../File.java:11`) are compatibility redirects only.
 
@@ -88,7 +89,7 @@ Recent-session browse order uses file mtime (then filename timestamp, then path)
 ### Session file-change projection
 
 - Session changed-file UI is sidecar-based and non-Git; do not derive it from `git status` or `git diff`.
-- `lib/rpc-manager.ts` forwards live edit/write tool events to `lib/session-file-changes.ts`, which captures bounded before/after text snapshots and persists `~/.pi/agent/session-changes/<session-id>.json`.
+- `lib/rpc-manager.ts` forwards live edit/write tool events to `lib/session-file-changes.ts`, which captures bounded before/after text snapshots and persists `~/.pi/agent/session-changes/<session-id>.json`. Projection captures bounded target-file snapshots synchronously at the start/end event boundary so rapid tool mutation cannot corrupt the baseline, then moves sidecar read/parse/diff/write behind asynchronous filesystem operations and a per-session promise queue. This preserves read-modify-write ordering and atomic rename while removing the growing sidecar from the SDK event callback; wrapper teardown drains queued writes.
 - Session JSONL files are not modified for this UI-only projection.
 - MVP tracks built-in `edit` and `write` tools only; arbitrary `bash` file mutations are not shown unless a future scanner/sandbox design adds explicit support.
 

@@ -23,7 +23,7 @@ Shared logic lives under `lib/`. Prefer adding behavior here when it is used by 
 | `lib/subagent-detail-route.ts` | Pure depth/path validation for on-demand detail routes, including canonical sessions-root containment, `session.jsonl` enforcement, and symlink-escape rejection. |
 | `lib/subagent-observability.ts` | Opt-in server diagnostics (`PI_WEB_SUBAGENT_OBSERVABILITY=1`) using fixed-key five-second aggregation for raw/coalesced/delivered progress, projection/handler timing, SSE count/bytes, and event-loop delay. It never retains event payloads or output. |
 | `lib/subagent-observability-client.ts` | Opt-in browser diagnostics (`NEXT_PUBLIC_PI_WEB_SUBAGENT_OBSERVABILITY=1`) for SSE/handler/serialization/AppShell/SubagentPanel activity, aggregated to one console record per five seconds without retaining run output. |
-| `lib/session-file-changes.ts` | Non-Git session file-change tracker: observes edit/write tool events, persists sidecar summaries, and serves browser-safe changed-file projections. |
+| `lib/session-file-changes.ts` | Non-Git session file-change tracker: observes edit/write tool events, captures bounded target-file snapshots at event time, serializes each session's sidecar projection through a promise queue, uses asynchronous sidecar I/O with atomic rename, and serves browser-safe changed-file projections. |
 | `lib/unified-diff.ts` | Wrapper around the `diff` package for bounded unified diff generation and addition/deletion counting. |
 | `lib/agent-client.ts` | Client-side helper for `POST /api/agent/[id]`. |
 | `lib/file-paths.ts` | Path normalization utilities for file viewer APIs. |
