@@ -556,7 +556,7 @@ export function SessionSidebar({
   }, []);
 
   return (
-    <div ref={sidebarRootRef} className="session-sidebar-root" style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
+    <div ref={sidebarRootRef} className="session-sidebar-root">
       <WorkspacePicker
         activeCwd={activeCwd}
         homeDir={homeDir}
@@ -596,8 +596,11 @@ export function SessionSidebar({
       {/* Nav pills: Sessions / Archive */}
       <div className="sidebar-nav-pills">
         <button
-          className={!explorerOpen ? "on" : ""}
-          onClick={() => setExplorerOpen(false)}
+          className={!explorerOpen && !archivedExpanded ? "on" : ""}
+          onClick={() => {
+            setExplorerOpen(false);
+            setArchivedExpanded(false);
+          }}
           title={t("sidebar.sessions")}
         >
           {t("sidebar.sessions")}
@@ -630,9 +633,10 @@ export function SessionSidebar({
           />
           {sessionSearch && (
             <button
+              className="sidebar-search-clear"
               onClick={() => setSessionSearch("")}
               title={t("common.clear")}
-              style={{ background: "none", border: "none", color: "var(--text-3)", cursor: "pointer", padding: 2, lineHeight: 1 }}
+              aria-label={t("common.clear")}
             >
               ×
             </button>
@@ -642,19 +646,9 @@ export function SessionSidebar({
 
       {sessionContextMenu && (
         <div
+          className="sidebar-context-menu"
           onMouseDown={(e) => e.stopPropagation()}
-          style={{
-            position: "fixed",
-            left: sessionContextMenu.x,
-            top: sessionContextMenu.y,
-            zIndex: 1000,
-            minWidth: 150,
-            padding: 4,
-            borderRadius: 8,
-            background: "var(--bg)",
-            border: "1px solid var(--border)",
-            boxShadow: "0 10px 28px rgba(0,0,0,0.18)",
-          }}
+          style={{ left: sessionContextMenu.x, top: sessionContextMenu.y }}
         >
           <button
             onMouseDown={(e) => {
@@ -664,7 +658,7 @@ export function SessionSidebar({
               setSessionContextMenu(null);
               void handleArchiveSession(session.id);
             }}
-            style={{ width: "100%", padding: "8px 10px", background: "none", border: "none", color: "var(--text)", textAlign: "left", cursor: "pointer", fontSize: 12, borderRadius: 6 }}
+            className="sidebar-menu-item"
           >
             {t("common.archive")}
           </button>
@@ -676,7 +670,7 @@ export function SessionSidebar({
               setSessionContextMenu(null);
               void handleDeleteSession(session);
             }}
-            style={{ width: "100%", padding: "8px 10px", background: "none", border: "none", color: "#dc2626", textAlign: "left", cursor: "pointer", fontSize: 12, borderRadius: 6 }}
+            className="sidebar-menu-item is-danger"
           >
             {t("common.delete")}
           </button>
@@ -685,10 +679,10 @@ export function SessionSidebar({
 
       {worktreeAction && (
         <div
+          className="sidebar-dialog-overlay"
           onMouseDown={(e) => e.stopPropagation()}
-          style={{ position: "fixed", inset: 0, zIndex: 1100, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.28)", padding: 16 }}
         >
-          <div style={{ width: "min(520px, 100%)", borderRadius: 12, background: "var(--bg)", border: "1px solid var(--border)", boxShadow: "0 18px 50px rgba(0,0,0,0.25)", padding: 16 }}>
+          <div className="sidebar-dialog-panel sidebar-dialog-panel-wide">
             <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>
               {worktreeAction.kind === "archive" ? t("sidebar.archiveWorktreeTitle") : t("sidebar.deleteWorktreeTitle")}
             </div>
@@ -700,11 +694,11 @@ export function SessionSidebar({
               )}
             </div>
             {worktreeAction.kind === "archive" ? (
-              <div style={{ padding: "10px 12px", borderRadius: 8, background: "rgba(245,158,11,0.10)", border: "1px solid rgba(245,158,11,0.25)", color: "var(--text)", fontSize: 12, lineHeight: 1.5, marginBottom: 12 }}>
+              <div className="sidebar-dialog-notice is-warning">
                 {t("sidebar.archiveWorktreeBody")}
               </div>
             ) : (
-              <div style={{ padding: "10px 12px", borderRadius: 8, background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.22)", color: "var(--text)", fontSize: 12, lineHeight: 1.5, marginBottom: 12 }}>
+              <div className="sidebar-dialog-notice is-danger">
                 {t("sidebar.deleteWorktreeBody")}
               </div>
             )}
@@ -714,7 +708,7 @@ export function SessionSidebar({
               </div>
             ) : null}
             {worktreeAction.error && (
-              <div style={{ padding: "8px 10px", borderRadius: 7, background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.22)", color: "#dc2626", fontSize: 12, lineHeight: 1.4, overflowWrap: "anywhere", marginBottom: 10 }}>
+              <div className="sidebar-dialog-error">
                 {worktreeAction.error}
               </div>
             )}
@@ -732,14 +726,16 @@ export function SessionSidebar({
               <button
                 onClick={() => setWorktreeAction(null)}
                 disabled={worktreeAction.busy}
-                style={{ padding: "7px 12px", borderRadius: 7, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-muted)", cursor: worktreeAction.busy ? "not-allowed" : "pointer", fontSize: 12 }}
+                className="sidebar-dialog-button"
+                style={{ cursor: worktreeAction.busy ? "not-allowed" : "pointer" }}
               >
                 {t("common.cancel")}
               </button>
               <button
                 onClick={() => void confirmWorktreeAction()}
                 disabled={worktreeAction.busy || (worktreeAction.kind === "delete" && Boolean(worktreeAction.dirtySummary?.length) && !worktreeAction.force)}
-                style={{ padding: "7px 12px", borderRadius: 7, border: "none", background: worktreeAction.kind === "archive" ? "var(--accent)" : "#ef4444", color: "#fff", cursor: worktreeAction.busy ? "not-allowed" : "pointer", fontSize: 12, fontWeight: 700, opacity: worktreeAction.busy || (worktreeAction.kind === "delete" && Boolean(worktreeAction.dirtySummary?.length) && !worktreeAction.force) ? 0.65 : 1 }}
+                className={`sidebar-dialog-button is-primary${worktreeAction.kind === "delete" ? " is-danger" : ""}`}
+                style={{ cursor: worktreeAction.busy ? "not-allowed" : "pointer", opacity: worktreeAction.busy || (worktreeAction.kind === "delete" && Boolean(worktreeAction.dirtySummary?.length) && !worktreeAction.force) ? 0.65 : 1 }}
               >
                 {worktreeAction.busy ? (worktreeAction.kind === "archive" ? t("common.archiving") : t("common.deleting")) : (worktreeAction.kind === "archive" ? t("common.archive") : t("common.delete"))}
               </button>
@@ -750,10 +746,10 @@ export function SessionSidebar({
 
       {archiveAllConfirming && activeCwd && (
         <div
+          className="sidebar-dialog-overlay"
           onMouseDown={(e) => e.stopPropagation()}
-          style={{ position: "fixed", inset: 0, zIndex: 1100, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.28)", padding: 16 }}
         >
-          <div style={{ width: "min(420px, 100%)", borderRadius: 12, background: "var(--bg)", border: "1px solid var(--border)", boxShadow: "0 18px 50px rgba(0,0,0,0.25)", padding: 16 }}>
+          <div className="sidebar-dialog-panel">
             <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>
               {t("sidebar.archiveAllTitle")}
             </div>
@@ -772,7 +768,8 @@ export function SessionSidebar({
               <button
                 onClick={() => void handleArchiveAll()}
                 disabled={archiveAllBusy}
-                style={{ padding: "7px 12px", borderRadius: 7, border: "none", background: "var(--accent)", color: "#fff", cursor: archiveAllBusy ? "not-allowed" : "pointer", fontSize: 12, fontWeight: 700, opacity: archiveAllBusy ? 0.65 : 1 }}
+                className="sidebar-dialog-button is-primary"
+                style={{ cursor: archiveAllBusy ? "not-allowed" : "pointer", opacity: archiveAllBusy ? 0.65 : 1 }}
               >
                 {archiveAllBusy ? t("common.archiving") : t("sidebar.confirmArchive")}
               </button>
@@ -781,7 +778,7 @@ export function SessionSidebar({
         </div>
       )}
 
-      <div style={{ flex: sessionListFlex, overflowY: "auto", padding: "0", minHeight: MIN_SESSION_LIST_HEIGHT }}>
+      <div className="sidebar-session-scroll" style={{ flex: sessionListFlex, minHeight: MIN_SESSION_LIST_HEIGHT }}>
         <SessionList
           loading={loading}
           error={error}

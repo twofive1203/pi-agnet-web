@@ -235,7 +235,7 @@ flowchart TB
 - 主题契约 smoke 能发现主题注册、首屏脚本或关键 Token 缺失。
 - 默认浅色、默认深色和全部 curated skins 的主要文本、卡片、浮层、Selected 与 Focus 状态可辨识。
 
-- [ ] U2. **优化工作台骨架、顶部上下文栏与 Observe Bar**
+- [x] U2. **优化工作台骨架、顶部上下文栏与 Observe Bar**
 
 **Goal:** 让三栏工作台在高信息密度下仍保持清晰层级，并消除 CSS/TS 响应式边界和内联交互样式分叉。
 
@@ -272,7 +272,7 @@ flowchart TB
 - 三档布局在 Sidebar 开/关、Inspector 开/关组合下均可用。
 - 顶部新增文案不再硬编码中英文。
 
-- [ ] U3. **完善左侧工作区、会话列表与 Explorer 视觉层级**
+- [x] U3. **完善左侧工作区、会话列表与 Explorer 视觉层级**
 
 **Goal:** 让工作区切换、新建会话、搜索、会话状态、归档选择与 Explorer 的层级和交互反馈一致。
 

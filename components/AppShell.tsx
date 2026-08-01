@@ -44,6 +44,7 @@ const MAX_RIGHT_PANEL_RATIO = 0.7;
 const MIN_RIGHT_PANEL_WIDTH = 300;
 const MIN_CHAT_WIDTH = 360;
 const DESKTOP_SIDEBAR_WIDTH = 300;
+const MAX_WORKBENCH_GUTTER = 12;
 /** Inline dock needs sidebar + chat min + right min; below this use overlay drawer. */
 const RIGHT_PANEL_INLINE_MIN_VIEWPORT =
   DESKTOP_SIDEBAR_WIDTH + MIN_CHAT_WIDTH + MIN_RIGHT_PANEL_WIDTH; // 960
@@ -94,6 +95,12 @@ function writeStoredRightPanelWidth(width: number): void {
   }
 }
 
+function getWorkbenchInlineChromeWidth(viewportWidth: number): number {
+  const gutter = clampNumber((viewportWidth - RIGHT_PANEL_INLINE_MIN_VIEWPORT) * 0.25, 0, MAX_WORKBENCH_GUTTER);
+  // Two outer paddings plus the two gaps between the three workbench columns.
+  return gutter * 4;
+}
+
 function getRightPanelWidthBounds(sidebarOpen: boolean): { min: number; max: number } {
   if (typeof window === "undefined") {
     return { min: MIN_RIGHT_PANEL_WIDTH, max: MIN_RIGHT_PANEL_WIDTH };
@@ -106,7 +113,7 @@ function getRightPanelWidthBounds(sidebarOpen: boolean): { min: number; max: num
     return { min, max };
   }
   const sidebarWidth = sidebarOpen && isDesktopLayoutViewport() ? DESKTOP_SIDEBAR_WIDTH : 0;
-  const maxByChat = window.innerWidth - sidebarWidth - MIN_CHAT_WIDTH;
+  const maxByChat = window.innerWidth - sidebarWidth - MIN_CHAT_WIDTH - getWorkbenchInlineChromeWidth(window.innerWidth);
   const max = Math.max(MIN_RIGHT_PANEL_WIDTH, Math.min(maxByChat, maxByRatio));
   return { min: MIN_RIGHT_PANEL_WIDTH, max };
 }
@@ -713,8 +720,6 @@ export function AppShell() {
     }
   }, [workflowCwd, selectedSession?.id, handleWorkflowTaskCreated, appDialog, t]);
 
-  const rightEdgePad = 12; /* context strip right padding for inspector-less layout */
-
   useEffect(() => {
     if (!terminalEnabled || (!terminalCwd && !terminalDockCwd)) {
       setTerminalOpen(false);
@@ -841,41 +846,16 @@ export function AppShell() {
     <>
     <div
       className="app-shell-root"
-      style={{
-        display: "flex",
-        height: "100dvh",
-        overflow: "hidden",
-        background: "var(--bg)",
-        ["--right-panel-width" as string]: `${rightPanelWidth}px`,
-      }}
+      style={{ ["--right-panel-width" as string]: `${rightPanelWidth}px` }}
     >
       {/* Mobile overlay backdrop */}
       <div
-        className="sidebar-overlay-backdrop"
+        className={`sidebar-overlay-backdrop${sidebarOpen ? " is-open" : ""}`}
         onClick={() => setSidebarOpen(false)}
-        style={{
-          position: "fixed",
-          inset: 0,
-          zIndex: 199,
-          background: "rgba(0,0,0,0.4)",
-          opacity: sidebarOpen ? 1 : 0,
-          pointerEvents: sidebarOpen ? "auto" : "none",
-          transition: "opacity 0.25s ease",
-        }}
       />
 
       {/* Left sidebar */}
-      <div
-        className={`sidebar-container${sidebarOpen ? " sidebar-open" : " sidebar-closed"}`}
-        style={{
-          background: "var(--bg-panel)",
-          borderRight: "1px solid var(--border)",
-          display: "flex",
-          flexDirection: "column",
-          flexShrink: 0,
-          zIndex: 200,
-        }}
-      >
+      <div className={`sidebar-container${sidebarOpen ? " sidebar-open" : " sidebar-closed"}`}>
         {sidebarContent}
       </div>
 
@@ -885,10 +865,9 @@ export function AppShell() {
         {/* Context strip — merged top bar */}
         <div ref={topBarRef} className="top-context">
           <button
-            className="icon-round"
+            className="icon-round context-icon-compact"
             onClick={() => setSidebarOpen((v) => !v)}
             title={sidebarOpen ? t("app.hideSidebar") : t("app.showSidebar")}
-            style={{ width: 30, height: 30 }}
           >
             {sidebarOpen ? (
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -903,15 +882,15 @@ export function AppShell() {
 
           {/* Breadcrumb: workspace / session */}
           <div className="breadcrumb" title={workspaceCwd ?? undefined}>
-            <span className="workspace-breadcrumb-label">Workspace</span>
-            <span>/</span>
-            <strong style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 180 }}>
+            <span className="workspace-breadcrumb-label">{t("common.workspace")}</span>
+            <span className="breadcrumb-separator">/</span>
+            <strong className="breadcrumb-workspace">
               {formatWorkspaceHeaderTitle(workspaceCwd, activeCwdGit)}
             </strong>
             {showChat && (
               <>
-                <span>/</span>
-                <strong style={{ maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 500, color: "var(--text-2)" }}>
+                <span className="breadcrumb-separator">/</span>
+                <strong className="breadcrumb-session">
                   {selectedSession?.name || selectedSession?.firstMessage?.slice(0, 40) || (selectedSession ? selectedSession.id.slice(0, 8) : t("sidebar.newSession"))}
                 </strong>
               </>
@@ -919,47 +898,15 @@ export function AppShell() {
           </div>
 
           {showChat && (
-            <div className="app-top-actions" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <div className="app-top-actions">
               <button
                 className="icon-round context-action"
                 onClick={handleExportSession}
                 disabled={!selectedSession}
                 title={selectedSession ? t("app.exportHtml") : t("app.exportHtmlDisabled")}
                 aria-label={t("app.exportHtml")}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  background: "var(--bg-card)",
-                  border: "1px solid var(--line)",
-                  color: selectedSession ? "var(--text-muted)" : "var(--text-dim)",
-                  cursor: selectedSession ? "pointer" : "not-allowed",
-                  opacity: selectedSession ? 1 : 0.45,
-                  flexShrink: 0,
-                  fontSize: 11,
-                  whiteSpace: "nowrap",
-                  transition: "color 0.1s, background 0.1s, opacity 0.1s",
-                }}
-                onMouseEnter={(e) => {
-                  if (!selectedSession) return;
-                  e.currentTarget.style.color = "var(--text)";
-                  e.currentTarget.style.background = "var(--bg-hover)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.color = selectedSession ? "var(--text-muted)" : "var(--text-dim)";
-                  e.currentTarget.style.background = "none";
-                }}
               >
-                <span style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  width: 18,
-                  height: 18,
-                  borderRadius: 5,
-                  background: "transparent",
-                  color: selectedSession ? "var(--text-muted)" : "var(--text-dim)",
-                  flexShrink: 0,
-                }}>
+                <span className="context-action-icon">
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
                     <polyline points="7 10 12 15 17 10" />
@@ -979,18 +926,10 @@ export function AppShell() {
               />
               <button
                 ref={systemBtnRef}
-                className={`app-top-aux-tab icon-round context-action${activeTopPanel === "system" ? " on" : ""}`}
+                className={`app-top-aux-tab icon-round context-action${activeTopPanel === "system" ? " on" : ""}${systemPrompt ? " has-content" : ""}`}
                 onClick={() => toggleTopPanel("system")}
-                style={{
-                  display: "grid", alignItems: "center",
-                  cursor: "pointer",
-                  color: activeTopPanel === "system" ? "var(--text)" : "var(--text-muted)",
-                  fontSize: 11, whiteSpace: "nowrap", transition: "color 0.1s, background 0.1s",
-                }}
-                onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text)"; }}
-                onMouseLeave={(e) => { e.currentTarget.style.color = activeTopPanel === "system" ? "var(--text)" : "var(--text-muted)"; }}
               >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: systemPrompt ? "var(--accent)" : "var(--text-dim)", flexShrink: 0 }}>
+                <svg className="context-action-svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                   <polyline points="14 2 14 8 20 8" />
                   <line x1="8" y1="13" x2="16" y2="13" />
@@ -1023,16 +962,8 @@ export function AppShell() {
                 setTerminalCollapsed((collapsed) => !collapsed);
               }}
               title={terminalOpen && terminalDockCwd && terminalDockCwd !== terminalCwd ? t("app.openTerminalForWorkspace") : t("app.openTerminal")}
-              style={{
-                display: "grid", alignItems: "center",
-                cursor: "pointer",
-                color: terminalOpen ? "var(--text)" : "var(--text-muted)",
-                fontSize: 11, whiteSpace: "nowrap", transition: "color 0.1s, background 0.1s",
-              }}
-              onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text)"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.color = terminalOpen ? "var(--text)" : "var(--text-muted)"; }}
             >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+              <svg className="context-action-svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="4 17 10 11 4 5" />
                 <line x1="12" y1="19" x2="20" y2="19" />
               </svg>
@@ -1045,12 +976,12 @@ export function AppShell() {
             const fmt = (n: number) => n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(0)}k` : String(n);
             const costStr = c > 0 ? (c >= 0.01 ? `$${c.toFixed(2)}` : `<$0.01`) : null;
 
-            let ctxColor = "var(--text-muted)";
+            let ctxTone = "";
             let ctxStr: string | null = null;
             if (contextUsage?.contextWindow) {
               const pct = contextUsage.percent;
-              if (pct !== null && pct > 90) ctxColor = "#ef4444";
-              else if (pct !== null && pct > 70) ctxColor = "rgba(234,179,8,0.95)";
+              if (pct !== null && pct > 90) ctxTone = " is-danger";
+              else if (pct !== null && pct > 70) ctxTone = " is-warning";
               ctxStr = pct !== null ? `${pct.toFixed(0)}% / ${fmt(contextUsage.contextWindow)}` : `? / ${fmt(contextUsage.contextWindow)}`;
             }
 
@@ -1069,21 +1000,14 @@ export function AppShell() {
             const tooltip = tooltipParts.join("  |  ");
 
             return (
-              <div
+              <button
+                type="button"
                 className="app-top-stats chip"
                 title={tooltip}
                 onClick={() => setUsageStatsOpen(true)}
-                style={{
-                  marginLeft: "auto",
-                  height: 28,
-                  fontSize: 11, color: "var(--text-muted)",
-                  whiteSpace: "nowrap", cursor: "pointer",
-                  fontVariantNumeric: "tabular-nums",
-                  gap: 8,
-                }}
               >
                 {t && t.input > 0 && (
-                  <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                  <span className="app-top-stat-item">
                     <svg width="12" height="12" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
                       <line x1="5" y1="8.5" x2="5" y2="1.5" /><polyline points="2 4 5 1.5 8 4" />
                     </svg>
@@ -1091,7 +1015,7 @@ export function AppShell() {
                   </span>
                 )}
                 {t && t.output > 0 && (
-                  <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                  <span className="app-top-stat-item">
                     <svg width="12" height="12" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
                       <line x1="5" y1="1.5" x2="5" y2="8.5" /><polyline points="2 6 5 8.5 8 6" />
                     </svg>
@@ -1099,37 +1023,32 @@ export function AppShell() {
                   </span>
                 )}
                 {t && t.cacheRead > 0 && (
-                  <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                  <span className="app-top-stat-item">
                     <svg width="12" height="12" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M8.5 5a3.5 3.5 0 1 1-1-2.45" /><polyline points="6.5 1.5 8.5 2.5 7.5 4.5" />
                     </svg>
                     {fmt(t.cacheRead)}
                   </span>
                 )}
-                {costStr && (
-                  <span style={{ display: "flex", alignItems: "center", color: "var(--text)", fontWeight: 500 }}>
-                    {costStr}
-                  </span>
-                )}
+                {costStr && <span className="app-top-stat-item app-top-stat-cost">{costStr}</span>}
                 {ctxStr && (
-                  <span style={{ display: "flex", alignItems: "center", gap: 4, color: ctxColor }}>
+                  <span className={`app-top-stat-item app-top-stat-context${ctxTone}`}>
                     <svg width="12" height="12" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M1 9 L1 5 Q1 1 5 1 Q9 1 9 5 L9 9" /><line x1="1" y1="9" x2="9" y2="9" />
                     </svg>
                     {ctxStr}
                   </span>
                 )}
-              </div>
+              </button>
             );
           })()}
           <ThemePicker />
           <button
-            className="icon-round"
+            className="icon-round context-icon-compact language-switch"
             type="button"
             onClick={() => setLocale(locale === "zh" ? "en" : "zh")}
             title={t("app.languageSwitch")}
             aria-label={t("app.languageSwitch")}
-            style={{ width: 30, height: 30, fontSize: 11, fontWeight: 700 }}
           >
             {locale === "zh" ? "EN" : "中"}
           </button>
@@ -1149,7 +1068,7 @@ export function AppShell() {
             )}
           </button>
           {(webConfig?.chatgpt.usagePanelEnabled || webConfig?.grok.usagePanelEnabled) && (
-            <div className="app-top-usage-panel" style={{ marginLeft: showChat && (sessionStats || contextUsage) ? 0 : "auto", paddingRight: rightEdgePad, height: "100%", display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+            <div className={`app-top-usage-panel${showChat && (sessionStats || contextUsage) ? "" : " push-right"}`}>
               {webConfig?.chatgpt.usagePanelEnabled && <ChatGptUsagePanel />}
               {webConfig?.grok.usagePanelEnabled && <GrokUsagePanel />}
             </div>
@@ -1157,54 +1076,28 @@ export function AppShell() {
           {/* Top panel dropdown — shared, only one active at a time */}
           {activeTopPanel && activeTopPanel !== "branches" && topPanelPos && typeof document !== "undefined" && createPortal((
             <div className="app-top-aux-panel" style={{
-              position: "fixed",
               top: topPanelPos.top,
               left: topPanelPos.left,
               width: topPanelPos.width,
-              zIndex: 500,
             }}>
               {activeTopPanel === "system" && (
-                <div style={{
-                  background: "var(--bg-panel)",
-                  borderBottom: "1px solid var(--border)",
-                }}>
+                <div className="app-top-aux-surface">
                   {systemPrompt ? (
-                    <div style={{
-                      maxHeight: "min(600px, 75vh)",
-                      overflowY: "auto",
-                      padding: "12px 16px",
-                      color: "var(--text-muted)",
-                      fontSize: 12,
-                      lineHeight: 1.6,
-                      whiteSpace: "pre-wrap",
-                      fontFamily: "var(--font-mono)",
-                    }}>
-                      {systemPrompt}
-                    </div>
-                  ) : systemPrompt === "" ? (
-                    <div style={{ padding: "10px 16px", fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>
-                      System prompt is empty (tools are disabled)
-                    </div>
+                    <div className="app-system-prompt-content">{systemPrompt}</div>
                   ) : (
-                    <div style={{ padding: "10px 16px", fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>
-                      Send a message to load the system prompt
+                    <div className="app-system-prompt-empty">
+                      {systemPrompt === "" ? t("common.workbench.systemPromptEmpty") : t("common.workbench.systemPromptPending")}
                     </div>
                   )}
                 </div>
               )}
               {activeTopPanel === "subagents" && (
-                <div style={{
-                  background: "var(--bg-panel)",
-                  borderBottom: "1px solid var(--border)",
-                }}>
+                <div className="app-top-aux-surface">
                   <StoredSubagentPanel store={subagentStore} />
                 </div>
               )}
               {activeTopPanel === "git" && (
-                <div style={{
-                  background: "var(--bg-panel)",
-                  borderBottom: "1px solid var(--border)",
-                }}>
+                <div className="app-top-aux-surface">
                   <GitPanel cwd={workspaceCwd} refreshKey={gitRefreshKey} onDirtyChange={setGitDirty} />
                 </div>
               )}
@@ -1214,16 +1107,18 @@ export function AppShell() {
         </div>
 
         {/* Observe bar — Changes / Git / Subagents / Todo */}
-        <div className="observe-bar">
+        <div className="observe-bar" aria-label={t("common.workbench.inspector")}>
           <button
             className={`chip${rightPanelOpen && rightPanelMode === "changes" ? " on" : ""}`}
             onClick={() => {
               if (rightPanelOpen && rightPanelMode === "changes") setRightPanelOpen(false);
               else openInspectorTab("changes");
             }}
-            title="本次会话编辑/写入的文件变更"
+            title={t("common.workbench.changesHint")}
+            aria-pressed={rightPanelOpen && rightPanelMode === "changes"}
           >
-            <span className="dot" />Changes
+            <span className={`dot${agentRunning ? " is-running" : ""}`} />
+            {t("common.workbench.changes")}
           </button>
           <button
             className={`chip${rightPanelOpen && rightPanelMode === "git" ? " on" : ""}`}
@@ -1231,11 +1126,11 @@ export function AppShell() {
               if (rightPanelOpen && rightPanelMode === "git") setRightPanelOpen(false);
               else openInspectorTab("git");
             }}
-            title="Git 状态与历史"
+            title={t("common.workbench.gitHint")}
+            aria-pressed={rightPanelOpen && rightPanelMode === "git"}
           >
-            {gitDirty && <span className="dot warn" />}
-            {!gitDirty && <span className="dot" style={{ background: "var(--text-3)" }} />}
-            Git
+            <span className={`dot${gitDirty ? " warn" : " is-idle"}`} />
+            {t("common.workbench.git")}
           </button>
           <button
             className={`chip${rightPanelOpen && rightPanelMode === "agents" ? " on" : ""}`}
@@ -1243,25 +1138,24 @@ export function AppShell() {
               if (rightPanelOpen && rightPanelMode === "agents") setRightPanelOpen(false);
               else openInspectorTab("agents");
             }}
-            title="子代理运行情况"
+            title={t("common.workbench.subagentsHint")}
+            aria-pressed={rightPanelOpen && rightPanelMode === "agents"}
           >
             <SubagentBadgeIndicator store={subagentStore} />
-            Subagents
+            {t("common.workbench.subagents")}
           </button>
           <span
-            className={`chip${todoActive ? " on" : ""}`}
-            title={todoActive ? "Todo List 插件窗口在对话中可用" : "当前无 Todo List 插件窗口"}
-            style={{ cursor: "default" }}
+            className={`chip observe-status${todoActive ? " on" : ""}`}
+            title={todoActive ? t("common.workbench.todoAvailable") : t("common.workbench.todoUnavailable")}
           >
-            {todoActive && <span className="dot" />}
-            {!todoActive && <span className="dot" style={{ background: "var(--text-3)" }} />}
-            Todo
+            <span className={`dot${todoActive ? "" : " is-idle"}`} />
+            {t("common.workbench.todo")}
           </span>
         </div>
 
         {/* Chat content + optional bottom terminal dock */}
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
-          <div style={{ flex: 1, overflow: "hidden", position: "relative", minHeight: 0 }}>
+        <div className="workbench-content-stack">
+          <div className="workbench-chat-region">
           {showChat ? (
             <ChatWindow
               key={sessionKey}
@@ -1281,25 +1175,21 @@ export function AppShell() {
               onTodoActiveChange={handleTodoActiveChange}
             />
           ) : showPlaceholder ? (
-            <div style={{ height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", gap: 10, padding: 40, color: "var(--text-2)" }}>
+            <div className="workbench-empty-state">
               <div className="hero-mark">π</div>
-              <h3 style={{ color: "var(--text)", fontSize: 18, letterSpacing: "-0.02em" }}>{t("app.getStarted")}</h3>
+              <h3>{t("app.getStarted")}</h3>
               {activeCwd ? (
-                <p style={{ maxWidth: 380, lineHeight: 1.6, color: "var(--text-3)", fontSize: 12.5 }}>{t("app.selectSession")}</p>
+                <p>{t("app.selectSession")}</p>
               ) : (
-                <p style={{ maxWidth: 380, lineHeight: 1.6, color: "var(--text-3)", fontSize: 12.5 }}>
-                  <span style={{ color: "var(--text-dim)", marginRight: 6 }}>1.</span>{t("app.getStartedStep1")}<br />
-                  <span style={{ color: "var(--text-dim)", marginRight: 6 }}>2.</span>{t("app.getStartedStep2Before")} <strong style={{ color: "var(--text)" }}>{t("app.getStartedStep2Strong")}</strong> {t("app.getStartedStep2After")}
+                <p>
+                  <span className="workbench-empty-step">1.</span>{t("app.getStartedStep1")}<br />
+                  <span className="workbench-empty-step">2.</span>{t("app.getStartedStep2Before")} <strong>{t("app.getStartedStep2Strong")}</strong> {t("app.getStartedStep2After")}
                 </p>
               )}
-              <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+              <div className="workbench-empty-actions">
                 <button
-                  style={{
-                    height: 32, padding: "0 16px", borderRadius: 999, border: "none",
-                    background: "linear-gradient(135deg, var(--accent), var(--accent-2))",
-                    color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer",
-                    opacity: activeCwd ? 1 : 0.5,
-                  }}
+                  className="workbench-primary-action"
+                  disabled={!activeCwd && !newSessionCwd}
                   onClick={() => {
                     // In this placeholder branch there is no selected session; only cwd candidates remain.
                     const cwd = activeCwd ?? newSessionCwd;
@@ -1344,13 +1234,6 @@ export function AppShell() {
       <div
         ref={rightPanelRef}
         className={`right-panel-container${rightPanelOpen ? " right-panel-open" : " right-panel-closed"}${rightPanelResizing ? " right-panel-resizing" : ""}`}
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          borderLeft: "1px solid var(--line)",
-          background: "var(--bg-panel)",
-          position: "relative",
-        }}
       >
         {rightPanelOpen && rightPanelResizable && (
           <div
@@ -1370,23 +1253,24 @@ export function AppShell() {
         {rightPanelOpen && (
           <>
             <div className="insp-head">
-              <h3>Inspector</h3>
+              <h3>{t("common.workbench.inspector")}</h3>
               <button
-                className="chip"
+                className="chip insp-close"
                 onClick={() => setRightPanelOpen(false)}
                 title={t("app.hidePreview")}
-                style={{ height: 26 }}
               >
                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
                   <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
                 </svg>
               </button>
             </div>
-            <div className="insp-tabs">
-              <button className={rightPanelMode === "changes" ? "on" : ""} onClick={() => openInspectorTab("changes")}>Changes</button>
-              <button className={rightPanelMode === "files" ? "on" : ""} onClick={() => openInspectorTab("files")}>Preview</button>
-              <button className={rightPanelMode === "git" ? "on" : ""} onClick={() => openInspectorTab("git")}>Git</button>
+            <div className="insp-tabs" role="tablist" aria-label={t("common.workbench.inspector")}>
+              <button role="tab" aria-selected={rightPanelMode === "changes"} className={rightPanelMode === "changes" ? "on" : ""} onClick={() => openInspectorTab("changes")}>{t("common.workbench.changes")}</button>
+              <button role="tab" aria-selected={rightPanelMode === "files"} className={rightPanelMode === "files" ? "on" : ""} onClick={() => openInspectorTab("files")}>{t("common.workbench.preview")}</button>
+              <button role="tab" aria-selected={rightPanelMode === "git"} className={rightPanelMode === "git" ? "on" : ""} onClick={() => openInspectorTab("git")}>{t("common.workbench.git")}</button>
               <button
+                role="tab"
+                aria-selected={rightPanelMode === "workflow"}
                 className={rightPanelMode === "workflow" ? "on" : ""}
                 onClick={(e) => {
                   // Alt+click: create SnFlow task from current chat without opening the create form.
@@ -1397,18 +1281,18 @@ export function AppShell() {
                   openInspectorTab("workflow");
                 }}
                 title={selectedSession?.id ? t("app.workflowToggleWithCreate") : undefined}
-              >SnFlow</button>
-              <button className={rightPanelMode === "agents" ? "on" : ""} onClick={() => openInspectorTab("agents")}>Agents</button>
+              >{t("common.workbench.snflow")}</button>
+              <button role="tab" aria-selected={rightPanelMode === "agents"} className={rightPanelMode === "agents" ? "on" : ""} onClick={() => openInspectorTab("agents")}>{t("common.workbench.agents")}</button>
             </div>
             <div className="insp-body">
               {rightPanelMode === "changes" && (
                 <InspectorChangesPanel sessionId={selectedSession?.id ?? null} agentRunning={agentRunning} refreshKey={refreshKey} />
               )}
               {rightPanelMode === "files" && (
-                <div style={{ height: "100%", display: "flex", flexDirection: "column", minHeight: 0 }}>
+                <div className="insp-panel-column">
                   {/* File tabs */}
-                  <div style={{ display: "flex", alignItems: "center", flexShrink: 0, borderBottom: "1px solid var(--line-soft)", height: 36 }}>
-                    <div style={{ flex: 1, overflow: "hidden" }}>
+                  <div className="insp-panel-toolbar">
+                    <div className="insp-panel-toolbar-content">
                       <TabBar
                         tabs={fileTabs}
                         activeTabId={activeFileTabId ?? ""}
@@ -1419,29 +1303,27 @@ export function AppShell() {
                   </div>
 
                   {/* File content */}
-                  <div style={{ flex: 1, overflow: "hidden", minHeight: 0 }}>
+                  <div className="insp-panel-content">
                     {activeFileTab?.filePath ? (
                       <FileViewer filePath={activeFileTab.filePath} cwd={activeCwd ?? undefined} initialLine={activeFileTab.line} editorConfig={webConfig?.editor} onAddChat={handleAddChat} onOpenFile={handleOpenFile} />
                     ) : (
-                      <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-dim)", fontSize: 12 }}>
-                        {t("app.noOpenFile")}
-                      </div>
+                      <div className="insp-empty-state">{t("app.noOpenFile")}</div>
                     )}
                   </div>
                 </div>
               )}
               {rightPanelMode === "git" && (
-                <div style={{ height: "100%", overflowY: "auto", minHeight: 0 }}>
+                <div className="insp-panel-scroll">
                   <GitPanel cwd={workspaceCwd} refreshKey={gitRefreshKey} onDirtyChange={setGitDirty} />
                 </div>
               )}
               {rightPanelMode === "workflow" && (
-                <div style={{ height: "100%", display: "flex", flexDirection: "column", minHeight: 0 }}>
-                  <div style={{ display: "flex", alignItems: "center", flexShrink: 0, borderBottom: "1px solid var(--line-soft)", height: 36, padding: "0 12px", gap: 8 }}>
-                    <span style={{ color: "var(--text)", fontSize: 13, fontWeight: 700 }}>{t("workflow.panelTitle")}</span>
-                    {workflowCwd && <span title={workflowCwd} style={{ color: "var(--text-dim)", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{workflowCwd}</span>}
+                <div className="insp-panel-column">
+                  <div className="insp-panel-toolbar insp-workflow-toolbar">
+                    <span className="insp-panel-title">{t("workflow.panelTitle")}</span>
+                    {workflowCwd && <span className="insp-panel-context" title={workflowCwd}>{workflowCwd}</span>}
                   </div>
-                  <div style={{ flex: 1, overflow: "auto", minHeight: 0 }}>
+                  <div className="insp-panel-scroll">
                     <WorkflowPanel
                       cwd={workflowCwd}
                       includeArchivedDefault={workflowIncludeArchivedDefault}
@@ -1453,7 +1335,7 @@ export function AppShell() {
                 </div>
               )}
               {rightPanelMode === "agents" && (
-                <div style={{ height: "100%", overflowY: "auto", minHeight: 0 }}>
+                <div className="insp-panel-scroll">
                   <StoredSubagentPanel store={subagentStore} />
                 </div>
               )}
@@ -1473,7 +1355,7 @@ export function AppShell() {
         right: 0,
         bottom: 0,
         width: "min(480px, 100vw)",
-        zIndex: 320,
+        zIndex: "var(--z-automation-drawer)",
         background: "var(--bg-panel)",
         borderLeft: "1px solid var(--border)",
         boxShadow: "-8px 0 24px rgba(0,0,0,0.18)",

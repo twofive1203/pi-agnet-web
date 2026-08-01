@@ -49,7 +49,7 @@ depends_on: docs/plans/2026-08-01-002-refactor-theme-foundation-plan.md
 
 ## Implementation Units
 
-- [ ] U1. **收口 AppShell 静态样式与上下文栏信息层级**
+- [x] U1. **收口 AppShell 静态样式与上下文栏信息层级**
 
 **Goal:** 将主框架静态视觉迁移到语义 class，保留真正动态的尺寸和 Portal 坐标。
 
@@ -73,7 +73,7 @@ depends_on: docs/plans/2026-08-01-002-refactor-theme-foundation-plan.md
 - 静态 hover 不再通过事件直接修改元素 style。
 - 新增工作台文案接入 i18n。
 
-- [ ] U2. **统一三档响应式布局和 resize 行为**
+- [x] U2. **统一三档响应式布局和 resize 行为**
 
 **Goal:** 让 CSS 与 TypeScript 对布局边界形成清晰一致的契约。
 
@@ -100,7 +100,7 @@ depends_on: docs/plans/2026-08-01-002-refactor-theme-foundation-plan.md
 - 无页面级横向滚动。
 - 断点说明与 `docs/modules/frontend.md` 一致。
 
-- [ ] U3. **优化 Workspace、Session 与 Explorer 导航层级**
+- [x] U3. **优化 Workspace、Session 与 Explorer 导航层级**
 
 **Goal:** 完成左侧导航高频路径的视觉收口与可发现性补齐。
 
@@ -140,6 +140,8 @@ depends_on: docs/plans/2026-08-01-002-refactor-theme-foundation-plan.md
 - Sidebar/Inspector resize、Drawer、Portal 和 Terminal 组合无明显层级错误。
 - lint、TypeScript 和主题契约 smoke 通过。
 - Chat、Inspector 内容和 Settings 未被顺带迁移。
+
+**Implementation verification:** `npm run lint`、`node_modules/.bin/tsc --noEmit`、`npm run test:ui-theme` 与 `git diff --check` 已通过。当前会话没有绑定浏览器标签页，代表主题与固定视口的人工视觉矩阵仍需在浏览器中执行。
 
 ---
 

@@ -9,26 +9,12 @@ export const WorktreeBadge = memo(function WorktreeBadge({ worktree }: { worktre
   if (!worktree) return null;
   return (
     <span
+      className="worktree-badge"
       title={worktree.branch ? t("sidebar.gitWorktreeNamed", { branch: worktree.branch }) : t("sidebar.gitWorktree")}
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 3,
-        maxWidth: 120,
-        padding: "1px 5px",
-        borderRadius: 999,
-        background: "rgba(37,99,235,0.12)",
-        border: "1px solid rgba(37,99,235,0.22)",
-        color: "var(--accent)",
-        fontSize: 10,
-        fontWeight: 700,
-        lineHeight: 1.35,
-        flexShrink: 0,
-      }}
     >
       <span>WT</span>
       {worktree.branch && (
-        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 500 }}>
+        <span className="worktree-badge-branch">
           {worktree.branch}
         </span>
       )}

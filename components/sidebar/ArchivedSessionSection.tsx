@@ -129,7 +129,6 @@ const ArchivedSessionItem = memo(function ArchivedSessionItem({
   onDelete: (id: string) => void;
 }) {
   const { t } = useI18n();
-  const [hovered, setHovered] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -171,42 +170,35 @@ const ArchivedSessionItem = memo(function ArchivedSessionItem({
 
   return (
     <div
+      role="button"
+      tabIndex={confirmDelete ? -1 : 0}
       onClick={confirmDelete ? undefined : handleSelect}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      style={{
-        height: ITEM_HEIGHT,
-        display: "flex",
-        alignItems: "center",
-        paddingLeft: 14,
-        paddingRight: 8,
-        cursor: confirmDelete ? "default" : "pointer",
-        background: confirmDelete
-          ? "rgba(239,68,68,0.06)"
-          : hovered ? "var(--bg-hover)" : "transparent",
-        borderLeft: confirmDelete ? "2px solid #ef4444" : "2px solid transparent",
-        opacity: deleting ? 0.5 : 1,
-        gap: 6,
-        overflow: "hidden",
+      onKeyDown={(event) => {
+        if (event.target !== event.currentTarget) return;
+        if (confirmDelete || (event.key !== "Enter" && event.key !== " ")) return;
+        event.preventDefault();
+        handleSelect();
       }}
+      className={`archived-session-item${confirmDelete ? " is-confirming" : ""}${deleting ? " is-deleting" : ""}`}
+      style={{ height: ITEM_HEIGHT, cursor: confirmDelete ? "default" : "pointer" }}
     >
       {confirmDelete ? (
         <>
-          <div style={{ flex: 1, minWidth: 0, fontSize: 12, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            Delete <span style={{ fontWeight: 600 }}>&ldquo;{title.slice(0, 22)}{title.length > 22 ? "…" : ""}&rdquo;</span>?
+          <div className="session-delete-copy">
+            {t("sidebar.deleteInlineConfirm", { title: `${title.slice(0, 22)}${title.length > 22 ? "…" : ""}` })}
           </div>
           <div style={{ display: "flex", gap: 5, flexShrink: 0 }}>
-            <button onClick={handleDeleteConfirm} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 4, height: 30, padding: "0 11px", background: "#ef4444", border: "none", borderRadius: 6, color: "#fff", cursor: "pointer", fontSize: 12, fontWeight: 600, whiteSpace: "nowrap" }}>
+            <button className="sidebar-inline-button is-danger" onClick={handleDeleteConfirm}>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="3 6 5 6 21 6" />
                 <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
                 <path d="M10 11v6M14 11v6" />
                 <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
               </svg>
-              Delete
+              {t("common.delete")}
             </button>
-            <button onClick={handleDeleteCancel} style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 30, padding: "0 11px", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text-muted)", cursor: "pointer", fontSize: 12, fontWeight: 500, whiteSpace: "nowrap" }}>
-              Cancel
+            <button className="sidebar-inline-button" onClick={handleDeleteCancel}>
+              {t("common.cancel")}
             </button>
           </div>
         </>
@@ -237,31 +229,14 @@ const ArchivedSessionItem = memo(function ArchivedSessionItem({
             </div>
             <div style={{ marginTop: 2, display: "flex", gap: 8, color: "var(--text-dim)", fontSize: 11 }}>
               <span title={session.modified}>{formatRelativeTime(session.modified, t)}</span>
-              <span>{session.messageCount} msgs</span>
+              <span>{t("sidebar.archivedMessageCount", { count: session.messageCount })}</span>
             </div>
           </div>
-          {hovered && (
-            <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+          <div className="archived-session-actions">
               <button
                 onClick={handleUnarchiveClick}
                 title={t("common.unarchive")}
-                style={{
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  gap: 4, height: 30, padding: "0 10px",
-                  background: "var(--bg-hover)", border: "1px solid var(--border)",
-                  borderRadius: 7, color: "var(--text-muted)",
-                  cursor: "pointer", fontSize: 11, fontWeight: 600, whiteSpace: "nowrap", flexShrink: 0,
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = "rgba(37,99,235,0.08)";
-                  e.currentTarget.style.color = "var(--accent)";
-                  e.currentTarget.style.borderColor = "rgba(37,99,235,0.35)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = "var(--bg-hover)";
-                  e.currentTarget.style.color = "var(--text-muted)";
-                  e.currentTarget.style.borderColor = "var(--border)";
-                }}
+                className="sidebar-row-action sidebar-row-action-text"
               >
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -273,23 +248,7 @@ const ArchivedSessionItem = memo(function ArchivedSessionItem({
               <button
                 onClick={handleDeleteClick}
                 title={t("common.delete")}
-                style={{
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  width: 32, height: 32, padding: 0,
-                  background: "var(--bg-hover)", border: "1px solid var(--border)",
-                  borderRadius: 7, color: "var(--text-muted)",
-                  cursor: "pointer", flexShrink: 0,
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = "rgba(239,68,68,0.08)";
-                  e.currentTarget.style.color = "#ef4444";
-                  e.currentTarget.style.borderColor = "rgba(239,68,68,0.35)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = "var(--bg-hover)";
-                  e.currentTarget.style.color = "var(--text-muted)";
-                  e.currentTarget.style.borderColor = "var(--border)";
-                }}
+                className="sidebar-row-action is-danger"
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <polyline points="3 6 5 6 21 6" />
@@ -298,8 +257,7 @@ const ArchivedSessionItem = memo(function ArchivedSessionItem({
                   <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
                 </svg>
               </button>
-            </div>
-          )}
+          </div>
         </>
       )}
     </div>

@@ -151,45 +151,13 @@ export const WorkspacePicker = memo(function WorkspacePicker({
   const selectedWorktree = activeCwd ? worktreeByCwd.get(activeCwd) : undefined;
 
   return (
-    <div
-      className="workspace-picker"
-      style={{
-        padding: "12px 10px 10px",
-        flexShrink: 0,
-      }}
-    >
-      <div className="session-sidebar-actions workspace-quick-actions" style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+    <div className="workspace-picker">
+      <div className="session-sidebar-actions workspace-quick-actions">
         <button
+          className="workspace-quick-action"
           onClick={() => void onNewWorktree()}
           disabled={!activeCwd || creatingWorktree}
-          style={{
-            display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
-            background: "var(--bg-hover)",
-            border: "1px solid var(--border)",
-            color: activeCwd && !creatingWorktree ? "var(--text-muted)" : "var(--text-dim)",
-            cursor: activeCwd && !creatingWorktree ? "pointer" : "not-allowed",
-            height: 32,
-            paddingLeft: 9,
-            paddingRight: 10,
-            borderRadius: 7,
-            fontSize: 12,
-            fontWeight: 500,
-            letterSpacing: "-0.01em",
-            flexShrink: 0,
-            transition: "background 0.12s, color 0.12s, border-color 0.12s",
-          }}
           title={activeCwd ? t("sidebar.createWorktreeFrom", { cwd: activeCwd }) : t("sidebar.selectProjectFirst")}
-          onMouseEnter={(e) => {
-            if (!activeCwd || creatingWorktree) return;
-            e.currentTarget.style.background = "var(--bg-selected)";
-            e.currentTarget.style.color = "var(--accent)";
-            e.currentTarget.style.borderColor = "rgba(37,99,235,0.35)";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = "var(--bg-hover)";
-            e.currentTarget.style.color = activeCwd && !creatingWorktree ? "var(--text-muted)" : "var(--text-dim)";
-            e.currentTarget.style.borderColor = "var(--border)";
-          }}
         >
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
             <circle cx="6" cy="18" r="3" />
@@ -200,35 +168,12 @@ export const WorkspacePicker = memo(function WorkspacePicker({
           <span className="workspace-action-label">{creatingWorktree ? t("common.creating") : t("sidebar.workTree")}</span>
         </button>
         <button
+          className={`workspace-quick-action${sessionRefreshDone ? " is-success" : ""}`}
           onClick={onRefresh}
-          style={{
-            display: "flex", alignItems: "center", justifyContent: "center",
-            background: sessionRefreshDone ? "rgba(74,222,128,0.18)" : "var(--bg-hover)",
-            border: `1px solid ${sessionRefreshDone ? "rgba(74,222,128,0.4)" : "var(--border)"}`,
-            color: sessionRefreshDone ? "#4ade80" : "var(--text-muted)",
-            cursor: "pointer",
-            width: 32, height: 32,
-            borderRadius: 7,
-            padding: 0,
-            flexShrink: 0,
-            transition: "background 0.3s, color 0.3s, border-color 0.3s",
-          }}
-          onMouseEnter={(e) => {
-            if (sessionRefreshDone) return;
-            e.currentTarget.style.background = "var(--bg-selected)";
-            e.currentTarget.style.color = "var(--accent)";
-            e.currentTarget.style.borderColor = "rgba(37,99,235,0.35)";
-          }}
-          onMouseLeave={(e) => {
-            if (sessionRefreshDone) return;
-            e.currentTarget.style.background = "var(--bg-hover)";
-            e.currentTarget.style.color = "var(--text-muted)";
-            e.currentTarget.style.borderColor = "var(--border)";
-          }}
           title={t("common.refresh")}
         >
           {sessionRefreshDone ? (
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <polyline points="20 6 9 17 4 12" />
             </svg>
           ) : (
@@ -241,19 +186,10 @@ export const WorkspacePicker = memo(function WorkspacePicker({
         {activeCwd && (
           <div ref={workspaceMenuRef} style={{ position: "relative" }}>
             <button
+              className="workspace-quick-action"
               onClick={() => setWorkspaceMenuOpen((v) => !v)}
-              style={{
-                display: "flex", alignItems: "center", justifyContent: "center",
-                background: "var(--bg-hover)",
-                border: "1px solid var(--border)",
-                color: "var(--text-muted)",
-                cursor: "pointer",
-                width: 32, height: 32,
-                borderRadius: 7,
-                padding: 0,
-                flexShrink: 0,
-              }}
               title={t("sidebar.workspaceActions")}
+              aria-expanded={workspaceMenuOpen}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="12" cy="5" r="1" />
@@ -265,40 +201,15 @@ export const WorkspacePicker = memo(function WorkspacePicker({
               <>
                 <div
                   onClick={() => setWorkspaceMenuOpen(false)}
-                  style={{ position: "fixed", inset: 0, zIndex: 999 }}
+                  className="sidebar-menu-dismiss-layer"
                 />
-                <div className="session-sidebar-floating-menu" style={{
-                  position: "absolute",
-                  right: 0,
-                  top: "100%",
-                  marginTop: 4,
-                  background: "var(--bg)",
-                  border: "1px solid var(--border)",
-                  borderRadius: 8,
-                  boxShadow: "0 4px 12px rgba(0,0,0,0.25)",
-                  zIndex: 1000,
-                  minWidth: 180,
-                  padding: "4px 0",
-                  overflow: "hidden",
-                }}>
+                <div className="session-sidebar-floating-menu sidebar-floating-menu">
                   <button
                     onClick={() => {
                       setWorkspaceMenuOpen(false);
                       onRequestArchiveAll();
                     }}
-                    style={{
-                      display: "flex", alignItems: "center", gap: 8,
-                      width: "100%",
-                      padding: "9px 14px",
-                      background: "none",
-                      border: "none",
-                      color: "var(--text)",
-                      cursor: "pointer",
-                      fontSize: 12,
-                      textAlign: "left",
-                    }}
-                    onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-hover)"; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.background = "none"; }}
+                    className="sidebar-menu-item"
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -314,25 +225,11 @@ export const WorkspacePicker = memo(function WorkspacePicker({
         )}
       </div>
 
-      {worktreeError && (
-        <div style={{
-          marginBottom: 8,
-          padding: "6px 8px",
-          borderRadius: 6,
-          background: "rgba(239,68,68,0.08)",
-          border: "1px solid rgba(239,68,68,0.22)",
-          color: "#dc2626",
-          fontSize: 11,
-          lineHeight: 1.35,
-          overflowWrap: "anywhere",
-        }}>
-          {worktreeError}
-        </div>
-      )}
+      {worktreeError && <div className="workspace-error">{worktreeError}</div>}
 
       <div ref={dropdownRef} style={{ position: "relative" }}>
         <button
-          className="workspace-card"
+          className={`workspace-card${activeCwd ? "" : " is-empty"}`}
           onClick={() => {
             if (dropdownOpen) {
               closeCwdPicker();
@@ -350,20 +247,7 @@ export const WorkspacePicker = memo(function WorkspacePicker({
             e.stopPropagation();
             setWorktreeContextMenu({ x: e.clientX, y: e.clientY, cwd: activeCwd, worktree });
           }}
-          style={{
-            width: "100%",
-            display: "flex",
-            alignItems: "center",
-            padding: "6px 10px",
-            background: activeCwd ? "var(--bg-hover)" : "rgba(37,99,235,0.06)",
-            border: activeCwd ? "1px solid var(--border)" : "1px solid rgba(37,99,235,0.4)",
-            borderRadius: 7,
-            cursor: "pointer",
-            fontSize: 12,
-            color: "var(--text)",
-            textAlign: "left",
-            transition: "border-color 0.15s, background 0.15s",
-          }}
+
         >
           <span className="workspace-card-copy">
             <strong>{workspaceTitle}</strong>
@@ -417,10 +301,10 @@ export const WorkspacePicker = memo(function WorkspacePicker({
                       fontWeight: 600,
                     }}
                   >
-                    ← Recent projects
+                    ← {t("sidebar.recentProjects")}
                   </button>
                   <span style={{ color: "var(--text-dim)", fontSize: 10 }}>
-                    {cwdGroups.length} projects
+                    {t("sidebar.projectCount", { count: cwdGroups.length })}
                   </span>
                 </div>
                 <input
@@ -500,8 +384,8 @@ export const WorkspacePicker = memo(function WorkspacePicker({
                     {!selected && !isWorktree && <span style={{ width: 10, flexShrink: 0 }} />}
                     <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                       {shortenCwd(row.cwd, homeDir)}
-                      {row.syntheticParent && <span style={{ color: "var(--text-dim)", marginLeft: 5 }}>(main)</span>}
-                      {archivedOnlyCwds.has(row.cwd) && <span style={{ color: "var(--text-dim)", fontStyle: "italic", marginLeft: 5 }}>(archived)</span>}
+                      {row.syntheticParent && <span style={{ color: "var(--text-dim)", marginLeft: 5 }}>{t("sidebar.mainWorkspaceBadge")}</span>}
+                      {archivedOnlyCwds.has(row.cwd) && <span style={{ color: "var(--text-dim)", fontStyle: "italic", marginLeft: 5 }}>{t("sidebar.archivedWorkspaceBadge")}</span>}
                     </span>
                     <WorktreeBadge worktree={row.worktree} />
                   </button>
@@ -543,9 +427,9 @@ export const WorkspacePicker = memo(function WorkspacePicker({
                   flexShrink: 0,
                 }}
               >
-                <span>View all projects</span>
+                <span>{t("sidebar.viewAllProjects")}</span>
                 <span style={{ color: "var(--text-dim)", fontSize: 10, fontWeight: 500 }}>
-                  {cwdGroups.length} projects
+                  {t("sidebar.projectCount", { count: cwdGroups.length })}
                 </span>
               </button>
             )}
@@ -572,7 +456,7 @@ export const WorkspacePicker = memo(function WorkspacePicker({
                 <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
                   <path d="M1 3A1 1 0 0 1 2 2H4L5 3.5H8.5a.5.5 0 0 1 .5.5v4a.5.5 0 0 1-.5.5h-7A.5.5 0 0 1 1 8V3Z" />
                 </svg>
-                <span>Use default directory</span>
+                <span>{t("sidebar.useDefaultDirectory")}</span>
               </button>
             )}
 
@@ -603,7 +487,7 @@ export const WorkspacePicker = memo(function WorkspacePicker({
                   <line x1="5" y1="1" x2="5" y2="9" />
                   <line x1="1" y1="5" x2="9" y2="5" />
                 </svg>
-                <span>Custom path…</span>
+                <span>{t("sidebar.customPath")}</span>
               </button>
             ) : (
               <div style={{ padding: "6px 8px", borderTop: displayedCwdRows.length > 0 ? "none" : undefined, flexShrink: 0 }}>
@@ -642,7 +526,7 @@ export const WorkspacePicker = memo(function WorkspacePicker({
                 {customPathError && (
                   <div style={{
                     marginTop: 5,
-                    color: "#dc2626",
+                    color: "var(--status-danger-foreground)",
                     fontSize: 11,
                     lineHeight: 1.35,
                     overflowWrap: "anywhere",
@@ -660,14 +544,14 @@ export const WorkspacePicker = memo(function WorkspacePicker({
                       background: "var(--accent)",
                       border: "none",
                       borderRadius: 5,
-                      color: "#fff",
+                      color: "var(--text-inverse)",
                       fontSize: 11,
                       fontWeight: 600,
                       cursor: customPathValidating || !customPathValue.trim() ? "not-allowed" : "pointer",
                       opacity: customPathValidating || !customPathValue.trim() ? 0.65 : 1,
                     }}
                   >
-                    {customPathValidating ? "Checking…" : "Open"}
+                    {customPathValidating ? t("sidebar.checkingPath") : t("sidebar.openPath")}
                   </button>
                   <button
                     onClick={() => { setCustomPathOpen(false); setCustomPathValue(""); setCustomPathError(null); }}
@@ -693,19 +577,9 @@ export const WorkspacePicker = memo(function WorkspacePicker({
 
       {worktreeContextMenu && (
         <div
+          className="sidebar-context-menu sidebar-context-menu-wide"
           onMouseDown={(e) => e.stopPropagation()}
-          style={{
-            position: "fixed",
-            left: worktreeContextMenu.x,
-            top: worktreeContextMenu.y,
-            zIndex: 1000,
-            minWidth: 190,
-            padding: 4,
-            borderRadius: 8,
-            background: "var(--bg)",
-            border: "1px solid var(--border)",
-            boxShadow: "0 10px 28px rgba(0,0,0,0.18)",
-          }}
+          style={{ left: worktreeContextMenu.x, top: worktreeContextMenu.y }}
         >
           <button
             onMouseDown={(e) => {
@@ -713,7 +587,7 @@ export const WorkspacePicker = memo(function WorkspacePicker({
               e.stopPropagation();
               openWorktreeAction("archive", worktreeContextMenu.cwd, worktreeContextMenu.worktree);
             }}
-            style={{ width: "100%", padding: "8px 10px", background: "none", border: "none", color: "var(--text)", textAlign: "left", cursor: "pointer", fontSize: 12, borderRadius: 6 }}
+            className="sidebar-menu-item"
           >
             {t("sidebar.archiveWorktreeMenu")}
           </button>
@@ -723,7 +597,7 @@ export const WorkspacePicker = memo(function WorkspacePicker({
               e.stopPropagation();
               openWorktreeAction("delete", worktreeContextMenu.cwd, worktreeContextMenu.worktree);
             }}
-            style={{ width: "100%", padding: "8px 10px", background: "none", border: "none", color: "#dc2626", textAlign: "left", cursor: "pointer", fontSize: 12, borderRadius: 6 }}
+            className="sidebar-menu-item is-danger"
           >
             {t("sidebar.deleteWorktreeMenu")}
           </button>

@@ -103,6 +103,7 @@ interface ThemeSources {
   layout: string;
   picker: string;
   hook: string;
+  shell: string;
 }
 
 type RuntimeThemeMetadata = Partial<ThemeMetadata>;
@@ -195,6 +196,28 @@ function collectContractProblems(
     problems.push("theme motion: reduced-motion contract is missing");
   }
 
+  const breakpointContracts = [
+    "@media (min-width: 960px)",
+    "@media (min-width: 641px) and (max-width: 959px)",
+    "@media (max-width: 640px)",
+  ];
+  for (const contract of breakpointContracts) {
+    if (!sources.css.includes(contract)) problems.push(`workbench layout: missing ${contract}`);
+  }
+  if (sources.css.includes("@media (max-width: 860px)")) {
+    problems.push("workbench layout: retired 860px breakpoint must not return");
+  }
+  if (!sources.css.includes("--workbench-gutter: clamp(0px, calc((100vw - 960px) * 0.25), 12px)")) {
+    problems.push("workbench layout: responsive inline gutter contract is missing");
+  }
+  if (!sources.shell.includes("DESKTOP_SIDEBAR_WIDTH + MIN_CHAT_WIDTH + MIN_RIGHT_PANEL_WIDTH")
+    || !sources.shell.includes("getWorkbenchInlineChromeWidth")) {
+    problems.push("workbench layout: TypeScript inline threshold or gutter clamp is missing");
+  }
+  if (!sources.shell.includes('const RIGHT_PANEL_WIDTH_STORAGE_KEY = "pi-web-right-panel-width-v2"')) {
+    problems.push("workbench layout: right panel width persistence key changed");
+  }
+
   return problems;
 }
 
@@ -214,6 +237,7 @@ const sources: ThemeSources = {
   layout: readSource("app/layout.tsx"),
   picker: readSource("components/ThemePicker.tsx"),
   hook: readSource("hooks/useTheme.ts"),
+  shell: readSource("components/AppShell.tsx"),
 };
 const runtimeMeta = THEME_META as unknown as RuntimeThemeMeta;
 
@@ -240,6 +264,15 @@ const cssWithoutSurfaceApp = sources.css.replace("--surface-app:", "--missing-su
 assertProblem(
   collectContractProblems({ ...sources, css: cssWithoutSurfaceApp }, runtimeMeta),
   "theme css: missing semantic token --surface-app",
+);
+
+const cssWithoutNarrowWorkbench = sources.css.replaceAll(
+  "@media (min-width: 641px) and (max-width: 959px)",
+  "@media (min-width: 700px) and (max-width: 900px)",
+);
+assertProblem(
+  collectContractProblems({ ...sources, css: cssWithoutNarrowWorkbench }, runtimeMeta),
+  "workbench layout: missing @media (min-width: 641px) and (max-width: 959px)",
 );
 
 assert(THEME_STORAGE_KEY === "pi-theme", "theme storage key must remain backward compatible");

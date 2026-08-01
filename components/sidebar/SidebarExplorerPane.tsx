@@ -158,36 +158,17 @@ export const SidebarExplorerPane = memo(function SidebarExplorerPane({
         />
       )}
       <div
-        className="session-sidebar-explorer"
+        className={`session-sidebar-explorer${open ? " is-open" : ""}`}
         style={{
-          borderTop: "1px solid var(--border)",
-          display: "flex",
-          flexDirection: "column",
           flex: explorerSectionFlex,
           height: sizedExplorerOpen ? explorerHeight : undefined,
-          minHeight: 0,
-          overflow: "hidden",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", flexShrink: 0 }}>
+        <div className="sidebar-explorer-header">
           <button
+            className="sidebar-explorer-toggle"
             onClick={() => onOpenChange(!open)}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              flex: 1,
-              padding: "6px 10px",
-              background: "none",
-              border: "none",
-              color: "var(--text-muted)",
-              cursor: "pointer",
-              fontSize: 11,
-              fontWeight: 600,
-              letterSpacing: "0.05em",
-              textTransform: "uppercase",
-              textAlign: "left",
-            }}
+            aria-expanded={open}
           >
             <svg
               width="9" height="9" viewBox="0 0 10 10" fill="none"
@@ -196,27 +177,15 @@ export const SidebarExplorerPane = memo(function SidebarExplorerPane({
             >
               <polyline points="3 2 7 5 3 8" />
             </svg>
-            Explorer
+            {t("sidebar.explorer")}
           </button>
           <button
+            className={`sidebar-explorer-refresh${refreshDone ? " is-success" : ""}`}
             onClick={onRefresh}
             title={t("sidebar.refreshExplorer")}
-            style={{
-              display: "flex", alignItems: "center", justifyContent: "center",
-              width: 26, height: 26, padding: 0, marginRight: 6,
-              background: refreshDone ? "rgba(74,222,128,0.18)" : "none",
-              border: "none",
-              color: refreshDone ? "#4ade80" : "var(--text-dim)",
-              cursor: "pointer",
-              borderRadius: 5,
-              flexShrink: 0,
-              transition: "color 0.3s, background 0.3s",
-            }}
-            onMouseEnter={(e) => { if (refreshDone) return; e.currentTarget.style.color = "var(--text-muted)"; e.currentTarget.style.background = "var(--bg-hover)"; }}
-            onMouseLeave={(e) => { if (refreshDone) return; e.currentTarget.style.color = "var(--text-dim)"; e.currentTarget.style.background = "none"; }}
           >
             {refreshDone ? (
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="20 6 9 17 4 12" />
               </svg>
             ) : (
@@ -228,7 +197,7 @@ export const SidebarExplorerPane = memo(function SidebarExplorerPane({
           </button>
         </div>
         {open && (
-          <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden", minHeight: 0 }}>
+          <div className="sidebar-explorer-content">
             <FileExplorer
               cwd={cwd}
               onOpenFile={onOpenFile ?? (() => {})}
