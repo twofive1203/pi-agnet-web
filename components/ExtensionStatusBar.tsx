@@ -13,51 +13,13 @@ export function ExtensionStatusBar({ items }: Props) {
   if (items.length === 0) return null;
 
   return (
-    <div
-      aria-label="Extension status"
-      style={{
-        display: "flex",
-        flexWrap: "wrap",
-        gap: 6,
-        padding: "6px 12px 0",
-      }}
-    >
+    <div className="extension-status-bar" aria-label="Extension status">
       {items.map((item) => (
-        <div
-          key={item.key}
-          title={item.key}
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 6,
-            maxWidth: "100%",
-            padding: "3px 8px",
-            borderRadius: 999,
-            border: "1px solid var(--border)",
-            background: "var(--bg-panel)",
-            color: "var(--text-muted)",
-            fontSize: 11,
-            lineHeight: 1.35,
-          }}
-        >
-          <span
-            style={{
-              color: "var(--text-dim)",
-              fontFamily: "var(--font-mono)",
-              flexShrink: 0,
-            }}
-          >
+        <div className="extension-status-chip" key={item.key} title={item.key}>
+          <span className="extension-status-key">
             {item.key}
           </span>
-          <span
-            style={{
-              color: "var(--text)",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-              minWidth: 0,
-            }}
-          >
+          <span className="extension-status-text">
             {item.text}
           </span>
         </div>

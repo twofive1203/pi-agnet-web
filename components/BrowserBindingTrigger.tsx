@@ -92,41 +92,12 @@ export function BrowserBindingTrigger({ sessionId, sessionLabel }: Props) {
           setOpen((value) => !value);
           void refresh();
         }}
-        style={{
-          flexShrink: 0,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: 5,
-          width: 36,
-          height: 32,
-          padding: 0,
-          background: open ? "var(--bg-hover)" : "none",
-          border: "none",
-          borderRadius: 9,
-          color: open ? "var(--text)" : "var(--text-muted)",
-          cursor: "pointer",
-          transition: "background 0.12s, color 0.12s",
-        }}
-        onMouseEnter={(event) => {
-          event.currentTarget.style.background = "var(--bg-hover)";
-          event.currentTarget.style.color = "var(--text)";
-        }}
-        onMouseLeave={(event) => {
-          event.currentTarget.style.background = open ? "var(--bg-hover)" : "none";
-          event.currentTarget.style.color = open ? "var(--text)" : "var(--text-muted)";
-        }}
+        className={open ? "chat-input-icon-button browser-binding-trigger is-open" : "chat-input-icon-button browser-binding-trigger"}
       >
         <span
           aria-hidden="true"
-          style={{
-            width: 7,
-            height: 7,
-            borderRadius: 999,
-            background: browserToneColor(tone),
-            boxShadow: `0 0 0 2px color-mix(in srgb, ${browserToneColor(tone)} 18%, transparent)`,
-            flexShrink: 0,
-          }}
+          className="browser-binding-tone"
+          style={{ background: browserToneColor(tone), boxShadow: `0 0 0 2px color-mix(in srgb, ${browserToneColor(tone)} 18%, transparent)` }}
         />
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <rect x="3" y="4" width="18" height="13" rx="2" />

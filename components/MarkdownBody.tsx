@@ -239,14 +239,14 @@ function CodeBlock({ code, lang, headerAction }: { code: string; lang: string; h
         language={lang || "text"}
         style={isDark ? vscDarkPlus : vs}
         showLineNumbers
-        lineNumberStyle={{ color: "var(--text-dim)", fontStyle: "normal" }}
+        lineNumberStyle={{ color: "var(--text-tertiary)", fontStyle: "normal" }}
         customStyle={{
           margin: 0,
           padding: "11px 13px",
           fontSize: 12.5,
           lineHeight: 1.62,
           borderRadius: 0,
-          background: "color-mix(in srgb, var(--bg) 92%, var(--bg-panel))",
+          background: "color-mix(in srgb, var(--surface-app) 92%, var(--surface-panel))",
         }}
         codeTagProps={{ style: { fontFamily: "var(--font-mono)" } }}
       >

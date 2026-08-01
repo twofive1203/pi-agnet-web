@@ -49,7 +49,7 @@ depends_on: docs/plans/2026-08-01-002-refactor-theme-foundation-plan.md
 
 ## Implementation Units
 
-- [ ] U1. **统一消息与工具调用层级**
+- [x] U1. **统一消息与工具调用层级**
 
 **Goal:** 建立稳定的消息、元信息、工具和操作行视觉规则。
 
@@ -77,7 +77,7 @@ depends_on: docs/plans/2026-08-01-002-refactor-theme-foundation-plan.md
 - 消息操作不再通过 mouse event 直接改颜色。
 - Assistant 内容与嵌套工具卡没有双重重边框。
 
-- [ ] U2. **统一 Composer 与下拉控件**
+- [x] U2. **统一 Composer 与下拉控件**
 
 **Goal:** 让输入区在各种模型、工具和流式状态下保持清晰且紧凑。
 
@@ -106,7 +106,7 @@ depends_on: docs/plans/2026-08-01-002-refactor-theme-foundation-plan.md
 - 静态视觉样式主要由 class/Token 控制。
 - 输入业务与 Portal 定位行为保持不变。
 
-- [ ] U3. **收口 Empty State 与 Extension 周边组件**
+- [x] U3. **收口 Empty State 与 Extension 周边组件**
 
 **Goal:** 避免 AppShell 空态、ChatWindow 新会话空态和 Extension UI 使用不同视觉语言。
 

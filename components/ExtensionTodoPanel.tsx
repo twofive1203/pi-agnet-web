@@ -2,6 +2,7 @@
 
 import { createPortal } from "react-dom";
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
+import { useI18n } from "@/components/I18nProvider";
 import type { ExtensionWidgetItem } from "@/lib/types";
 
 interface Props {
@@ -143,117 +144,69 @@ function useIsMobile(): boolean {
 }
 
 function TodoEntryRow({ entry }: { entry: TodoEntry }) {
-  const color = entry.completed ? "#22c55e" : entry.active ? "var(--accent)" : "var(--text-dim)";
+  const stateClass = entry.completed ? "is-completed" : entry.active ? "is-active" : "";
   return (
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: "18px minmax(0, 1fr)",
-        gap: 8,
-        alignItems: "start",
-        padding: "7px 9px",
-        borderRadius: 7,
-        background: entry.active ? "var(--bg-selected)" : "transparent",
-      }}
-    >
-      <span
-        aria-hidden="true"
-        style={{
-          display: "inline-flex",
-          alignItems: "center",
-          justifyContent: "center",
-          width: 16,
-          height: 16,
-          marginTop: 1,
-          border: `1px solid ${entry.completed ? "#22c55e" : color}`,
-          borderRadius: 4,
-          background: entry.completed ? "rgba(34,197,94,0.13)" : "transparent",
-          color,
-          fontSize: 11,
-          fontWeight: 900,
-          lineHeight: 1,
-        }}
-      >
+    <div className={`extension-todo-entry ${stateClass}`.trim()}>
+      <span className="extension-todo-checkbox" aria-hidden="true">
         {entry.completed ? "\u2713" : entry.active ? "\u2022" : ""}
       </span>
-      <span
-        style={{
-          minWidth: 0,
-          color: entry.completed ? "var(--text-muted)" : "var(--text)",
-          fontSize: 12,
-          lineHeight: 1.45,
-          textDecoration: entry.completed ? "line-through" : undefined,
-          overflowWrap: "anywhere",
-        }}
-      >
-        {entry.label}
-      </span>
+      <span className="extension-todo-entry-label">{entry.label}</span>
     </div>
   );
 }
 
 function TodoProgress({ model }: { model: TodoModel }) {
+  const { t } = useI18n();
   const percent = model.total > 0 ? Math.min(100, Math.max(0, (model.completed / model.total) * 100)) : 0;
+  const complete = percent === 100;
   return (
-    <div style={{ padding: "0 12px 10px" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 7 }}>
-        <span style={{ color: "var(--text-muted)", fontSize: 11 }}>Progress</span>
-        <span style={{ color: percent === 100 ? "#22c55e" : "var(--accent)", fontSize: 11, fontWeight: 800 }}>
-          {model.completed}/{model.total}
-        </span>
+    <div className="extension-todo-progress">
+      <div className="extension-todo-progress-meta">
+        <span>{t("chat.progress")}</span>
+        <span className={complete ? "extension-todo-count is-complete" : "extension-todo-count"}>{model.completed}/{model.total}</span>
       </div>
-      <div style={{ height: 4, borderRadius: 999, background: "var(--border)", overflow: "hidden" }}>
-        <div style={{ width: `${percent}%`, height: "100%", background: percent === 100 ? "#22c55e" : "var(--accent)", transition: "width 180ms ease" }} />
+      <div className="extension-todo-progress-track">
+        <div className={complete ? "extension-todo-progress-value is-complete" : "extension-todo-progress-value"} style={{ width: `${percent}%` }} />
       </div>
     </div>
   );
 }
 
 function TodoPanelBody({ model, onClose, mobile }: { model: TodoModel; onClose: () => void; mobile?: boolean }) {
+  const { t } = useI18n();
+  const complete = model.completed === model.total && model.total > 0;
   return (
     <div
+      className={mobile ? "extension-todo-panel is-mobile" : "extension-todo-panel"}
       role="dialog"
-      aria-label="Todo list"
+      aria-label={t("chat.todoList")}
       aria-modal={mobile ? true : undefined}
-      style={{
-        width: mobile ? "100%" : "min(360px, calc(100vw - 36px))",
-        maxHeight: mobile ? "min(72dvh, 560px)" : "min(62dvh, 520px)",
-        display: "flex",
-        flexDirection: "column",
-        border: "1px solid var(--border)",
-        borderRadius: mobile ? "16px 16px 0 0" : 14,
-        background: "color-mix(in srgb, var(--bg-panel) 97%, transparent)",
-        color: "var(--text)",
-        boxShadow: "0 18px 42px rgba(0,0,0,0.2)",
-        backdropFilter: "blur(12px)",
-        overflow: "hidden",
-      }}
       onClick={(event) => event.stopPropagation()}
     >
-      <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "10px 12px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
-        <span aria-hidden="true" style={{ color: model.completed === model.total && model.total > 0 ? "#22c55e" : "var(--accent)", fontSize: 16, lineHeight: 1 }}>{"\u2611"}</span>
-        <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ fontSize: 13, fontWeight: 800, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{model.title}</div>
-          <div style={{ marginTop: 2, color: "var(--text-dim)", fontSize: 10, fontFamily: "var(--font-mono)" }}>extension widget / todo-list</div>
+      <div className="extension-todo-header">
+        <span className={complete ? "extension-todo-icon is-complete" : "extension-todo-icon"} aria-hidden="true">{"\u2611"}</span>
+        <div className="extension-todo-title-wrap">
+          <div className="extension-todo-title">{model.title}</div>
+          <div className="extension-todo-source">extension widget / todo-list</div>
         </div>
         <button
           type="button"
           onClick={onClose}
-          aria-label="Close todo list"
-          title="Close todo list"
-          style={{ width: 28, height: 28, border: 0, borderRadius: 7, background: "transparent", color: "var(--text-muted)", cursor: "pointer", fontSize: 18, lineHeight: 1 }}
+          aria-label={t("chat.closeTodoList")}
+          title={t("chat.closeTodoList")}
+          className="extension-todo-close"
         >
           {"\u00d7"}
         </button>
       </div>
-      <div style={{ overflowY: "auto", minHeight: 0, padding: "10px 6px 4px" }}>
+      <div className="extension-todo-content">
         <TodoProgress model={model} />
         {model.entries.length > 0 ? (
-          <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+          <div className="extension-todo-list">
             {model.entries.map((entry) => <TodoEntryRow key={entry.id} entry={entry} />)}
           </div>
         ) : (
-          <pre style={{ margin: 0, padding: "0 6px 10px", color: "var(--text-muted)", fontFamily: "var(--font-mono)", fontSize: 11, lineHeight: 1.45, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+          <pre className="extension-todo-empty">
             {model.title}
           </pre>
         )}
@@ -274,6 +227,7 @@ interface TodoCapsuleProps {
 }
 
 function TodoCapsule({ model, open, dragging, onClick, onPointerDown, onPointerMove, onPointerUp, onPointerCancel }: TodoCapsuleProps) {
+  const { t } = useI18n();
   const complete = model.total > 0 && model.completed >= model.total;
   return (
     <button
@@ -284,31 +238,18 @@ function TodoCapsule({ model, open, dragging, onClick, onPointerDown, onPointerM
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerCancel}
       aria-expanded={open}
-      aria-label={open ? "Hide todo list" : "Show todo list"}
-      title={open ? "Hide todo list" : "Show todo list"}
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 7,
-        minHeight: 36,
-        padding: "0 11px",
-        border: "1px solid color-mix(in srgb, var(--border) 80%, transparent)",
-        borderRadius: 999,
-        background: "color-mix(in srgb, var(--bg-panel) 94%, transparent)",
-        color: "var(--text)",
-        boxShadow: "0 10px 26px rgba(0,0,0,0.16)",
-        backdropFilter: "blur(10px)",
-        cursor: dragging ? "grabbing" : "grab",
-        fontSize: 12,
-        fontWeight: 800,
-        touchAction: "none",
-        userSelect: "none",
-      }}
+      aria-label={open ? t("chat.hideTodoList") : t("chat.showTodoList")}
+      title={open ? t("chat.hideTodoList") : t("chat.showTodoList")}
+      className={[
+        "extension-todo-capsule",
+        complete ? "is-complete" : "",
+        dragging ? "is-dragging" : "",
+      ].filter(Boolean).join(" ")}
     >
-      <span aria-hidden="true" style={{ color: complete ? "#22c55e" : "var(--accent)", fontSize: 15, lineHeight: 1 }}>{"\u2611"}</span>
-      <span>Todo</span>
-      <span style={{ color: complete ? "#22c55e" : "var(--text-muted)", fontFamily: "var(--font-mono)", fontSize: 11 }}>{model.completed}/{model.total}</span>
-      <span aria-hidden="true" style={{ color: "var(--text-dim)", fontSize: 12 }}>{open ? "\u2212" : "\u2304"}</span>
+      <span className="extension-todo-capsule-icon" aria-hidden="true">{"\u2611"}</span>
+      <span>{t("chat.todo")}</span>
+      <span className="extension-todo-capsule-count">{model.completed}/{model.total}</span>
+      <span className="extension-todo-capsule-chevron" aria-hidden="true">{open ? "\u2212" : "\u2304"}</span>
     </button>
   );
 }
@@ -461,10 +402,7 @@ export function ExtensionTodoPanel({ item }: Props) {
 
   const mobilePanel = isMobile && open && typeof document !== "undefined"
     ? createPortal(
-      <div
-        style={{ position: "fixed", inset: 0, zIndex: 420, display: "flex", alignItems: "flex-end", background: "rgba(0,0,0,0.32)" }}
-        onClick={close}
-      >
+      <div className="extension-todo-mobile-overlay" onClick={close}>
         <TodoPanelBody model={model} onClose={close} mobile />
       </div>,
       document.body,
@@ -475,15 +413,11 @@ export function ExtensionTodoPanel({ item }: Props) {
     <>
       <div
         ref={wrapperRef}
-        style={{
-          position: "absolute",
-          ...(position ? { left: position.left, top: position.top } : { left: TODO_WIDGET_MARGIN, bottom: TODO_WIDGET_BOTTOM }),
-          zIndex: 140,
-          pointerEvents: "auto",
-        }}
+        className="extension-todo-floating"
+        style={position ? { left: position.left, top: position.top } : { left: TODO_WIDGET_MARGIN, bottom: TODO_WIDGET_BOTTOM }}
       >
         {open && !isMobile && (
-          <div style={{ position: "absolute", left: 0, bottom: "calc(100% + 8px)" }}>
+          <div className="extension-todo-desktop-panel">
             <TodoPanelBody model={model} onClose={close} />
           </div>
         )}

@@ -108,9 +108,9 @@ function Typewriter({ phrases }: { phrases: string[] }) {
   }, [text, deleting, phraseIdx, phrases]);
 
   return (
-    <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>
+    <span className="chat-empty-typewriter">
       {text}
-      <span style={{ opacity: caretOn ? 1 : 0, color: "var(--accent)", marginLeft: 1 }}>▍</span>
+      <span className={caretOn ? "chat-empty-caret is-visible" : "chat-empty-caret"}>▍</span>
     </span>
   );
 }
@@ -235,18 +235,7 @@ export const ChatWindow = memo(function ChatWindow({ session, newSessionCwd, onA
   const isArchived = !!session?.archived;
 
   const archivedBannerElement = isArchived ? (
-    <div style={{
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      gap: 8,
-      padding: "8px 14px",
-      background: "rgba(234,179,8,0.08)",
-      borderBottom: "1px solid rgba(234,179,8,0.2)",
-      color: "var(--text-muted)",
-      fontSize: 12,
-      flexShrink: 0,
-    }}>
+    <div className="chat-archived-banner">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
         <polyline points="7 10 12 15 17 10" />
@@ -257,7 +246,7 @@ export const ChatWindow = memo(function ChatWindow({ session, newSessionCwd, onA
   ) : null;
 
   const chatInputElement = isArchived ? (
-    <div style={{ padding: "12px 14px", textAlign: "center", color: "var(--text-dim)", fontSize: 12, flexShrink: 0 }}>
+    <div className="chat-archived-input">
       {t("chat.archivedInputDisabled")}
     </div>
   ) : (
@@ -295,23 +284,19 @@ export const ChatWindow = memo(function ChatWindow({ session, newSessionCwd, onA
 
   if (loading) {
     return (
-      <div className="flex h-full items-center justify-center text-text-muted">
-        Loading session...
-      </div>
+      <div className="chat-window-state">{t("chat.loadingSession")}</div>
     );
   }
 
   if (error) {
     return (
-      <div className="flex h-full items-center justify-center text-red-400">
-        {error}
-      </div>
+      <div className="chat-window-state is-error">{error}</div>
     );
   }
 
   return (
     <div
-      className="relative flex h-full flex-col overflow-hidden"
+      className="chat-window-root"
       onDragEnter={handleDragEnter}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
@@ -323,24 +308,24 @@ export const ChatWindow = memo(function ChatWindow({ session, newSessionCwd, onA
       )}
       <ExtensionTodoPanel item={todoWidget} />
       {isDragOver && (
-        <div className="pointer-events-none absolute inset-0 z-50 flex animate-[drop-zone-in_0.15s_ease_both] items-center justify-center bg-[rgba(37,99,235,0.06)] backdrop-blur-[1px]">
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+        <div className="chat-drop-zone">
+          <div className="chat-drop-ripples">
             {[0, 0.8, 1.6].map((delay) => (
               <div
                 key={delay}
-                className="absolute h-[720px] w-[720px] rounded-full border-[1.5px] border-solid border-[rgba(37,99,235,0.5)] animate-[drop-ripple_2.4s_ease-out_infinite_backwards]"
-                style={{ transformOrigin: "center", animationDelay: `${delay}s` }}
+                className="chat-drop-ripple"
+                style={{ animationDelay: `${delay}s` }}
               />
             ))}
           </div>
           <svg
             width="280" height="280" viewBox="0 0 140 140" fill="none" xmlns="http://www.w3.org/2000/svg"
-            className="drop-shadow-[0_6px_18px_rgba(37,99,235,0.18)]"
+            className="chat-drop-icon"
           >
-            <rect x="28" y="44" width="84" height="60" rx="8" fill="rgba(37,99,235,0.08)" stroke="rgba(37,99,235,0.50)" strokeWidth="1.8"/>
-            <path d="M36 100 L54 72 L68 88 L80 74 L104 100Z" fill="rgba(37,99,235,0.16)" stroke="rgba(37,99,235,0.40)" strokeWidth="1.4" strokeLinejoin="round"/>
-            <circle cx="96" cy="58" r="8" fill="rgba(37,99,235,0.22)" stroke="rgba(37,99,235,0.55)" strokeWidth="1.6"/>
-            <g stroke="rgba(37,99,235,0.45)" strokeWidth="1.4" strokeLinecap="round">
+            <rect x="28" y="44" width="84" height="60" rx="8" fill="var(--accent-soft)" stroke="var(--accent-border)" strokeWidth="1.8"/>
+            <path d="M36 100 L54 72 L68 88 L80 74 L104 100Z" fill="var(--accent-soft)" stroke="var(--accent-border)" strokeWidth="1.4" strokeLinejoin="round"/>
+            <circle cx="96" cy="58" r="8" fill="var(--accent-soft)" stroke="var(--accent-primary)" strokeWidth="1.6"/>
+            <g stroke="var(--accent-border)" strokeWidth="1.4" strokeLinecap="round">
               <line x1="96" y1="46" x2="96" y2="43"/>
               <line x1="96" y1="70" x2="96" y2="73"/>
               <line x1="84" y1="58" x2="81" y2="58"/>
@@ -355,34 +340,17 @@ export const ChatWindow = memo(function ChatWindow({ session, newSessionCwd, onA
       )}
 
       {isEmptyNew ? (
-        <div className="flex flex-1 flex-col items-center justify-center overflow-y-auto px-4 py-8">
-          <div className="w-full max-w-[820px]">
-            <div
-              className="chat-empty-header mb-3"
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: 12,
-                marginLeft: 16,
-                marginRight: 52,
-                fontFamily: "var(--font-mono)",
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0, flex: 1, lineHeight: 1.4 }}>
-                <Image src="/snail-pi-logo.svg" alt={t("app.productName")} width={42} height={42} style={{ flexShrink: 0 }} priority />
-                <span style={{ fontSize: 22, color: "var(--text)", fontWeight: 800, letterSpacing: "-0.02em" }}>{t("app.productName")}</span>
-                <span style={{ fontSize: 14, minWidth: 0, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>
-                  <Typewriter phrases={TYPEWRITER_PHRASES} />
-                </span>
+        <div className="chat-empty-state">
+          <div className="chat-empty-content">
+            <div className="chat-empty-header">
+              <div className="chat-empty-title-row">
+                <Image className="chat-empty-logo" src="/snail-pi-logo.svg" alt={t("app.productName")} width={42} height={42} priority />
+                <span className="chat-empty-product">{t("app.productName")}</span>
+                <span className="chat-empty-prompt"><Typewriter phrases={TYPEWRITER_PHRASES} /></span>
               </div>
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2, flexShrink: 0 }}>
-                <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                  web <span style={{ color: "var(--text)" }}>v{process.env.NEXT_PUBLIC_APP_VERSION ?? "0.0.0"}</span>
-                </span>
-                <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                  pi <span style={{ color: "var(--text)" }}>v{process.env.NEXT_PUBLIC_PI_VERSION ?? "0.0.0"}</span>
-                </span>
+              <div className="chat-empty-versions">
+                <span>web <strong>v{process.env.NEXT_PUBLIC_APP_VERSION ?? "0.0.0"}</strong></span>
+                <span>pi <strong>v{process.env.NEXT_PUBLIC_PI_VERSION ?? "0.0.0"}</strong></span>
               </div>
             </div>
             <ExtensionStatusBar items={visibleExtensionStatuses} />
@@ -482,7 +450,7 @@ export const ChatWindow = memo(function ChatWindow({ session, newSessionCwd, onA
         </div>
       </div>
 
-      <div className="relative" style={{ flexShrink: 0 }}>
+      <div className="chat-composer-region">
         <ExtensionStatusBar items={visibleExtensionStatuses} />
         <ExtensionWidgetStack
           items={visibleExtensionWidgets.filter((item) => item.placement === "aboveEditor")}

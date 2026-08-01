@@ -50,51 +50,15 @@ export function ToolPanel({ tools, onPreset, onClose }: Props) {
   const currentIndex = PRESETS.findIndex(p => p.id === current);
 
   return (
-    <div
-      ref={panelRef}
-      style={{
-        position: "absolute",
-        bottom: "calc(100% + 8px)",
-        right: 0,
-        zIndex: 200,
-        background: "var(--bg)",
-        border: "1px solid var(--border)",
-        borderRadius: 10,
-        boxShadow: "0 -4px 20px rgba(0,0,0,0.10)",
-        width: 260,
-        padding: "12px 14px",
-        display: "flex",
-        flexDirection: "column",
-        gap: 10,
-      }}
-    >
-      {/* Segmented control */}
-      <div style={{
-        display: "grid",
-        gridTemplateColumns: `repeat(${PRESETS.length}, 1fr)`,
-        background: "var(--bg-panel)",
-        borderRadius: 8,
-        padding: 3,
-        gap: 3,
-      }}>
+    <div ref={panelRef} className="tool-preset-panel">
+      <div className="tool-preset-segments">
         {PRESETS.map((preset) => {
           const isActive = current === preset.id;
           return (
             <button
               key={preset.id}
+              className={isActive ? "tool-preset-segment is-active" : "tool-preset-segment"}
               onClick={() => { onPreset(preset.id); onClose(); }}
-              style={{
-                padding: "5px 0",
-                borderRadius: 6,
-                border: "none",
-                background: isActive ? "var(--bg)" : "transparent",
-                boxShadow: isActive ? "0 1px 3px rgba(0,0,0,0.12)" : "none",
-                color: isActive ? "var(--accent)" : "var(--text-muted)",
-                fontWeight: isActive ? 600 : 400,
-                fontSize: 12,
-                cursor: "pointer",
-                transition: "all 0.12s",
-              }}
             >
               {preset.label}
             </button>
@@ -102,29 +66,18 @@ export function ToolPanel({ tools, onPreset, onClose }: Props) {
         })}
       </div>
 
-      {/* Description of current selection */}
-      <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.5 }}>
+      <div className="tool-preset-description">
         {currentIndex >= 0 ? PRESETS[currentIndex].desc || "No tools enabled" : ""}
         {current === "none" && <span> — agent will not use any tools</span>}
       </div>
 
-      {/* Track bar */}
-      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+      <div className="tool-preset-track">
         {PRESETS.map((_, i) => (
-          <div
-            key={i}
-            style={{
-              flex: 1, height: 3, borderRadius: 2,
-              background: i <= currentIndex ? "var(--accent)" : "var(--border)",
-              transition: "background 0.15s",
-            }}
-          />
+          <div key={i} className={i <= currentIndex ? "tool-preset-track-step is-complete" : "tool-preset-track-step"} />
         ))}
       </div>
 
-      <div style={{ fontSize: 10, color: "var(--text-dim)" }}>
-        takes effect on next turn
-      </div>
+      <div className="tool-preset-footnote">takes effect on next turn</div>
     </div>
   );
 }

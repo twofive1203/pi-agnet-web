@@ -183,106 +183,90 @@ export function BrowserBindingPanel({
   const enabled = status?.featureEnabled === true;
 
   return (
-    <div className={popover ? "browser-binding-panel browser-binding-panel-popover" : "browser-binding-panel"} style={{
-      border: "1px solid var(--border, #333)",
-      borderRadius: 12,
-      padding: popover ? 12 : 10,
-      fontSize: 12,
-      background: "var(--bg-panel)",
-      boxShadow: popover ? "0 18px 42px rgba(0,0,0,0.20)" : "none",
-    }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+    <div className={popover ? "browser-binding-panel browser-binding-panel-popover" : "browser-binding-panel"}>
+      <div className="browser-binding-header">
         <strong>{t("panels.browser.title")}</strong>
         {!popover && (
-          <button type="button" onClick={() => setOpen((v) => !v)} style={{ fontSize: 11 }}>
+          <button className="browser-binding-button" type="button" onClick={() => setOpen((v) => !v)}>
             {open ? t("common.hide") : t("common.show")}
           </button>
         )}
       </div>
       {!open ? (
-        <div style={{ color: "var(--text-dim)", marginTop: 4 }}>
+        <div className="browser-binding-summary">
           {enabled ? `${clients} ext · ${bindings.length} tab(s)` : t("panels.browser.disabled")}
         </div>
       ) : (
-        <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
-          <div style={{ color: "var(--text-dim)" }}>
+        <div className="browser-binding-body">
+          <div className="browser-binding-meta">
             {t("panels.browser.bridge")}: {status?.bridge?.running ? `127.0.0.1:${status.bridge.port}` : t("panels.browser.stopped")}
             {status?.bridge?.startError ? ` (${status.bridge.startError})` : ""}
             {" · "}
             {t("panels.browser.extension")}: {clients > 0 ? t("panels.browser.connected") : t("panels.browser.offline")}
           </div>
 
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-            <button type="button" disabled={busy} onClick={() => void enableAndPair()}>
+          <div className="browser-binding-actions">
+            <button className="browser-binding-button" type="button" disabled={busy} onClick={() => void enableAndPair()}>
               {pairingCode ? t("panels.browser.refreshPairingCode") : t("panels.browser.enableAndPair")}
             </button>
-            <button type="button" disabled={busy || !realSession || !enabled} onClick={() => void requestBind()}>
+            <button className="browser-binding-button" type="button" disabled={busy || !realSession || !enabled} onClick={() => void requestBind()}>
               {t("panels.browser.connectTab")}
             </button>
-            <button type="button" disabled={busy || bindings.length === 0} onClick={() => void revoke()}>
+            <button className="browser-binding-button is-danger" type="button" disabled={busy || bindings.length === 0} onClick={() => void revoke()}>
               {t("panels.browser.revokeAll")}
             </button>
           </div>
 
           {pairingCode && (
-            <div style={{
-              fontFamily: "ui-monospace, monospace",
-              padding: 8,
-              borderRadius: 8,
-              background: "rgba(56,189,248,0.12)",
-            }}>
+            <div className="browser-binding-pairing">
               {t("panels.browser.pairingCode")}: <strong>{pairingCode}</strong>
               {pairingExpiresAt ? ` · ${t("panels.browser.expires")} ${new Date(pairingExpiresAt).toLocaleTimeString()}` : ""}
-              <div style={{ color: "var(--text-dim)", marginTop: 4 }}>
+              <div className="browser-binding-meta browser-binding-pairing-hint">
                 {t("panels.browser.pairingHint")} <code>extensions/chrome-tab-debug</code>
               </div>
             </div>
           )}
 
           {!realSession && (
-            <div style={{ color: "var(--text-dim)" }}>
+            <div className="browser-binding-meta">
               {t("panels.browser.waitingForSession")}
             </div>
           )}
 
           {pending && (
-            <div>
+            <div className="browser-binding-pending">
               {t("panels.browser.pendingRequest", { id: pending.pendingRequestId.slice(0, 10) })}
             </div>
           )}
 
           {bindings.length > 0 && (
-            <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "grid", gap: 6 }}>
+            <ul className="browser-binding-list">
               {bindings.map((binding) => (
-                <li key={binding.bindingId} style={{
-                  border: "1px solid var(--border, #333)",
-                  borderRadius: 8,
-                  padding: 8,
-                }}>
-                  <div style={{ fontWeight: 600 }}>
+                <li key={binding.bindingId} className="browser-binding-item">
+                  <div className="browser-binding-item-title">
                     {binding.primary ? "★ " : ""}{binding.title || binding.origin}
                   </div>
-                  <div style={{ color: "var(--text-dim)", wordBreak: "break-all" }}>
+                  <div className="browser-binding-meta browser-binding-origin">
                     {binding.state} · {binding.origin}
                     {binding.state === "closed" ? ` · ${t("panels.browser.closedState")}` : ""}
                     {binding.capabilities.includes("debug_readonly") ? " · debug" : ""}
                   </div>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
+                  <div className="browser-binding-actions browser-binding-item-actions">
                     {!binding.primary && binding.state !== "closed" && (
-                      <button type="button" disabled={busy} onClick={() => void setPrimary(binding.bindingId)}>
+                      <button className="browser-binding-button" type="button" disabled={busy} onClick={() => void setPrimary(binding.bindingId)}>
                         {t("panels.browser.setPrimary")}
                       </button>
                     )}
                     {binding.capabilities.includes("debug_readonly") ? (
-                      <button type="button" disabled={busy || binding.state === "closed"} onClick={() => void toggleDebug(binding, false)}>
+                      <button className="browser-binding-button" type="button" disabled={busy || binding.state === "closed"} onClick={() => void toggleDebug(binding, false)}>
                         {t("panels.browser.disableDebug")}
                       </button>
                     ) : binding.state !== "closed" ? (
-                      <button type="button" disabled={busy || binding.state === "suspended"} onClick={() => void toggleDebug(binding, true)}>
+                      <button className="browser-binding-button" type="button" disabled={busy || binding.state === "suspended"} onClick={() => void toggleDebug(binding, true)}>
                         {t("panels.browser.enableDebug")}
                       </button>
                     ) : null}
-                    <button type="button" disabled={busy} onClick={() => void revoke(binding.bindingId)}>
+                    <button className="browser-binding-button is-danger" type="button" disabled={busy} onClick={() => void revoke(binding.bindingId)}>
                       {t("panels.browser.revoke")}
                     </button>
                   </div>
@@ -291,7 +275,7 @@ export function BrowserBindingPanel({
             </ul>
           )}
 
-          {error && <div style={{ color: "#fca5a5" }}>{error}</div>}
+          {error && <div className="browser-binding-error">{error}</div>}
         </div>
       )}
     </div>
