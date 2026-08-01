@@ -55,7 +55,7 @@ depends_on:
 
 ## Implementation Units
 
-- [ ] U1. **执行跨视口与组合层级验证**
+- [ ] U1. **执行跨视口与组合层级验证**（静态审计与必要修复已完成；固定浏览器矩阵待执行）
 
 **Goal:** 发现单模块验收无法覆盖的布局、Portal 和滚动组合问题。
 
@@ -83,7 +83,7 @@ depends_on:
 - 每个固定流程在四个视口可完整执行。
 - 阻塞性组合问题已修复或明确回退到责任迭代。
 
-- [ ] U2. **完成键盘、焦点、对比度与动效检查**
+- [ ] U2. **完成键盘、焦点、对比度与动效检查**（键盘/焦点/动效代码契约已完成；代表主题对比度与焦点顺序待浏览器确认）
 
 **Goal:** 统一跨模块可访问性和交互反馈质量。
 
@@ -114,7 +114,7 @@ depends_on:
 - 不存在只能 hover 才能发现的关键操作。
 - 不存在只靠红/绿区分的关键状态。
 
-- [ ] U3. **扩展主题契约并编写视觉验证文档**
+- [x] U3. **扩展主题契约并编写视觉验证文档**
 
 **Goal:** 固化自动契约与人工回归矩阵。
 
@@ -142,7 +142,7 @@ depends_on:
 - 新主题或新 UI 模块有明确接入与验收入口。
 - 文档与实际主题、断点和共享原语一致。
 
-- [ ] U4. **整理剩余问题与后续边界**
+- [x] U4. **整理剩余问题与后续边界**
 
 **Goal:** 防止最终收口演变为无边界“顺手优化”。
 
@@ -162,6 +162,21 @@ depends_on:
 
 **Verification:**
 - 路线图状态真实，遗留项有清晰归属且不伪装成已完成。
+
+---
+
+## Implementation Progress
+
+已完成代码与静态契约收口：
+
+- Inspector Tabs 增加 roving focus、方向键与 Home/End；Composer 的 Model/Thinking/Tools Portal 使用 listbox/option 语义、键盘移动、Escape 关闭与焦点返回。
+- Theme Picker、应用 Dialog、Extension Dialog 补齐 Portal 外部焦点关闭、禁用控件过滤、ARIA 关系、焦点陷阱/返回与视口变化定位。
+- 统一 coarse-pointer 触控目标、移动 safe-area、Portal 层级 Token 和全局 reduced-motion gate；Git dirty 增加非纯颜色的 `!` 标记。
+- `test:ui-theme` 已扩展到稳定 class、层级 Token、断点、safe-area、触控、动效、Composer/Inspector/Dialog 静态契约；人工矩阵已固化到 `docs/operations/ui-visual-validation.md`。
+
+尚未完成的验收门：四个固定视口、四个断点边界、五个代表主题、125%/150% 缩放及真实 Portal 组合的浏览器人工验证。完成该矩阵前，本迭代和总路线图保持 `active/进行中`。
+
+后续独立工作边界：自动截图差异平台、全仓历史内联样式清理、纯偏好型视觉微调；这些工作不纳入本迭代。
 
 ---
 

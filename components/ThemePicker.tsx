@@ -9,6 +9,7 @@ import { useI18n } from "./I18nProvider";
 const OPTIONS = THEME_PREFERENCES.map((id) => ({ id, ...THEME_META[id] }));
 
 const POPOVER_WIDTH = 260;
+const THEME_PICKER_ID = "theme-picker-popover";
 
 export function ThemePicker() {
   const { preference, setTheme, isDark } = useTheme();
@@ -38,19 +39,31 @@ export function ThemePicker() {
       if (buttonRef.current?.contains(target) || popoverRef.current?.contains(target)) return;
       setOpen(false);
     };
+    const handleFocusIn = (event: FocusEvent) => {
+      const target = event.target as Node;
+      if (buttonRef.current?.contains(target) || popoverRef.current?.contains(target)) return;
+      setOpen(false);
+    };
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
+        event.preventDefault();
         setOpen(false);
         buttonRef.current?.focus();
       }
     };
 
     window.addEventListener("resize", updatePosition);
+    window.visualViewport?.addEventListener("resize", updatePosition);
+    window.visualViewport?.addEventListener("scroll", updatePosition);
     document.addEventListener("pointerdown", handlePointerDown, true);
+    document.addEventListener("focusin", handleFocusIn, true);
     document.addEventListener("keydown", handleKeyDown);
     return () => {
       window.removeEventListener("resize", updatePosition);
+      window.visualViewport?.removeEventListener("resize", updatePosition);
+      window.visualViewport?.removeEventListener("scroll", updatePosition);
       document.removeEventListener("pointerdown", handlePointerDown, true);
+      document.removeEventListener("focusin", handleFocusIn, true);
       document.removeEventListener("keydown", handleKeyDown);
     };
   }, [open, updatePosition]);
@@ -86,6 +99,7 @@ export function ThemePicker() {
         aria-label={t("app.openThemePicker")}
         aria-expanded={open}
         aria-haspopup="dialog"
+        aria-controls={THEME_PICKER_ID}
       >
         {isDark ? (
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -104,6 +118,7 @@ export function ThemePicker() {
       {open && position && typeof document !== "undefined" && createPortal(
         <div
           ref={popoverRef}
+          id={THEME_PICKER_ID}
           className="theme-picker-popover"
           role="dialog"
           aria-label={t("app.appearance")}

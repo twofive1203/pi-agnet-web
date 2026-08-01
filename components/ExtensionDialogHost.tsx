@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { SettingsButton, SettingsInput, SettingsState, SettingsTextarea } from "@/components/ui/SettingsPrimitives";
 import type { ExtensionDialogRequest } from "@/lib/types";
@@ -16,6 +16,8 @@ interface Props {
 export function ExtensionDialogHost({ dialog, onRespond }: Props) {
   const [draft, setDraft] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const titleId = useId();
+  const messageId = useId();
   const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
@@ -40,10 +42,12 @@ export function ExtensionDialogHost({ dialog, onRespond }: Props) {
     if (!dialog) return;
     previouslyFocusedRef.current = document.activeElement as HTMLElement | null;
     const frame = requestAnimationFrame(() => {
-      if (inputRef.current) {
+      if (dialog.method === "select") {
+        listRef.current?.querySelector<HTMLElement>('[data-option-index="0"]')?.focus();
+      } else if (inputRef.current) {
         inputRef.current.focus();
       } else {
-        panelRef.current?.querySelector<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')?.focus();
+        panelRef.current?.querySelector<HTMLElement>('button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])')?.focus();
       }
       if (dialog.method === "editor" && inputRef.current instanceof HTMLTextAreaElement) {
         const len = inputRef.current.value.length;
@@ -110,6 +114,7 @@ export function ExtensionDialogHost({ dialog, onRespond }: Props) {
   useEffect(() => {
     if (!dialog) return;
     const onKeyDown = (event: KeyboardEvent) => {
+      if (event.isComposing) return;
       if (event.key === "Escape") {
         event.preventDefault();
         cancel();
@@ -148,6 +153,7 @@ export function ExtensionDialogHost({ dialog, onRespond }: Props) {
   useEffect(() => {
     if (!dialog || dialog.method !== "select") return;
     const active = listRef.current?.querySelector<HTMLElement>(`[data-option-index="${selectedIndex}"]`);
+    active?.focus();
     active?.scrollIntoView({ block: "nearest" });
   }, [dialog, selectedIndex]);
 
@@ -177,6 +183,8 @@ export function ExtensionDialogHost({ dialog, onRespond }: Props) {
       role="dialog"
       aria-modal="true"
       aria-label={ariaLabel}
+      aria-labelledby={titleId}
+      aria-describedby={dialog.method === "confirm" ? messageId : undefined}
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) cancel();
       }}
@@ -184,20 +192,20 @@ export function ExtensionDialogHost({ dialog, onRespond }: Props) {
       <div ref={panelRef} className="pi-modal-panel pi-extension-dialog-panel" tabIndex={-1} onKeyDown={trapFocus}>
         <div className="pi-modal-header">
           <div className="pi-modal-header-copy">
-            <div className="pi-modal-title">{title}</div>
+            <div id={titleId} className="pi-modal-title">{title}</div>
           </div>
           <button type="button" onClick={cancel} className="pi-modal-close" aria-label="Close">×</button>
         </div>
 
         <div className="pi-modal-body">
           {dialog.method === "confirm" && (
-            <div className="pi-modal-message">
+            <div id={messageId} className="pi-modal-message">
               {dialog.message || ""}
             </div>
           )}
 
           {dialog.method === "select" && (
-            <div ref={listRef} className="pi-dialog-options">
+            <div ref={listRef} className="pi-dialog-options" role="listbox" aria-label={title}>
               {options.length === 0 ? (
                 <SettingsState title="No options available." />
               ) : (
@@ -208,8 +216,10 @@ export function ExtensionDialogHost({ dialog, onRespond }: Props) {
                       key={`${index}-${option.slice(0, 24)}`}
                       type="button"
                       data-option-index={index}
+                      role="option"
+                      aria-selected={active}
+                      tabIndex={active ? 0 : -1}
                       onClick={() => onRespond({ id: dialog.id, value: option })}
-                      onMouseEnter={() => setSelectedIndex(index)}
                       className={`pi-dialog-option${active ? " pi-dialog-option-active" : ""}`}
                     >
                       <span className="pi-dialog-option-index">
@@ -229,6 +239,7 @@ export function ExtensionDialogHost({ dialog, onRespond }: Props) {
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
               placeholder={dialog.placeholder || undefined}
+              aria-label={title}
             />
           )}
 
@@ -238,6 +249,7 @@ export function ExtensionDialogHost({ dialog, onRespond }: Props) {
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
               rows={12}
+              aria-label={title}
               className="pi-extension-dialog-editor settings-control-mono"
             />
           )}

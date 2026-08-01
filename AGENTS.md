@@ -154,6 +154,7 @@ Current docs index:
 - `docs/deployment/README.md` — local, production, PM2, proxy, npm package, and data config.
 - `docs/integrations/README.md` — dependency and pi SDK integration entry point.
 - `docs/operations/troubleshooting.md` — runtime and development troubleshooting.
+- `docs/operations/ui-visual-validation.md` — representative-theme, viewport, keyboard, Portal, contrast, motion, and screenshot validation runbook.
 - `docs/research/README.md` — archive location for investigation notes and future research.
 - `docs/SKILL_find_skills.md` — instructions for discovering/installing agent skills.
 

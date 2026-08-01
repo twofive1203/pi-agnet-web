@@ -75,6 +75,9 @@ const TOOL_PRESET_LABEL_KEYS: Record<ToolPreset, string> = {
   none: "chat.toolPresetOff",
 };
 const COMPOSITION_END_ENTER_GRACE_MS = 100;
+const MODEL_DROPDOWN_ID = "chat-input-model-dropdown";
+const THINKING_DROPDOWN_ID = "chat-input-thinking-dropdown";
+const TOOL_DROPDOWN_ID = "chat-input-tool-dropdown";
 
 const THINKING_LEVELS = ["auto", "off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 
@@ -1050,10 +1053,43 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     return () => controller.abort();
   }, [cwd]);
 
-  // Close dropdowns on outside click
+  const handleDropdownOptionKeyDown = useCallback((event: React.KeyboardEvent<HTMLButtonElement>) => {
+    const panel = event.currentTarget.closest(".chat-input-dropdown-panel");
+    if (!panel) return;
+    const options = Array.from(panel.querySelectorAll<HTMLButtonElement>(".chat-input-dropdown-option:not(:disabled)"));
+    const currentIndex = options.indexOf(event.currentTarget);
+    let nextIndex: number | null = null;
+    if (event.key === "ArrowDown" || event.key === "ArrowRight") nextIndex = (currentIndex + 1) % options.length;
+    else if (event.key === "ArrowUp" || event.key === "ArrowLeft") nextIndex = (currentIndex - 1 + options.length) % options.length;
+    else if (event.key === "Home") nextIndex = 0;
+    else if (event.key === "End") nextIndex = options.length - 1;
+    if (nextIndex === null) return;
+    event.preventDefault();
+    options[nextIndex]?.focus();
+  }, []);
+
   useEffect(() => {
-    const handler = (e: PointerEvent) => {
-      const target = e.target as Node;
+    const panel = modelDropdownOpen
+      ? modelDropdownPanelRef.current
+      : thinkingDropdownOpen
+        ? thinkingDropdownPanelRef.current
+        : toolDropdownOpen
+          ? toolDropdownPanelRef.current
+          : null;
+    if (!panel) return;
+    const frame = window.requestAnimationFrame(() => {
+      panel.querySelector<HTMLButtonElement>(".chat-input-dropdown-option.is-active")
+        ?.focus({ preventScroll: true });
+      if (!panel.contains(document.activeElement)) {
+        panel.querySelector<HTMLButtonElement>(".chat-input-dropdown-option")?.focus({ preventScroll: true });
+      }
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [modelDropdownOpen, thinkingDropdownOpen, toolDropdownOpen]);
+
+  // Body-portaled dropdowns close on outside pointer/focus and return focus on Escape.
+  useEffect(() => {
+    const closeOutside = (target: Node) => {
       const insideModelDropdown = Boolean(dropdownRef.current?.contains(target) || modelDropdownPanelRef.current?.contains(target));
       const insideToolDropdown = Boolean(toolDropdownRef.current?.contains(target) || toolDropdownPanelRef.current?.contains(target));
       const insideThinkingDropdown = Boolean(thinkingDropdownRef.current?.contains(target) || thinkingDropdownPanelRef.current?.contains(target));
@@ -1062,11 +1098,38 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       if (!insideToolDropdown) setToolDropdownOpen(false);
       if (!insideThinkingDropdown) setThinkingDropdownOpen(false);
     };
-    document.addEventListener("pointerdown", handler);
-    return () => document.removeEventListener("pointerdown", handler);
+    const handlePointerDown = (event: PointerEvent) => closeOutside(event.target as Node);
+    const handleFocusIn = (event: FocusEvent) => closeOutside(event.target as Node);
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      const target = event.target as Node;
+      const modelOpen = Boolean(dropdownRef.current?.contains(target) || modelDropdownPanelRef.current?.contains(target));
+      const thinkingOpen = Boolean(thinkingDropdownRef.current?.contains(target) || thinkingDropdownPanelRef.current?.contains(target));
+      const toolOpen = Boolean(toolDropdownRef.current?.contains(target) || toolDropdownPanelRef.current?.contains(target));
+      if (!modelOpen && !thinkingOpen && !toolOpen) return;
+      event.preventDefault();
+      if (modelOpen) {
+        setModelDropdownOpen(false);
+        window.requestAnimationFrame(() => dropdownRef.current?.querySelector<HTMLButtonElement>("button")?.focus());
+      }
+      if (thinkingOpen) {
+        setThinkingDropdownOpen(false);
+        window.requestAnimationFrame(() => thinkingDropdownRef.current?.querySelector<HTMLButtonElement>("button")?.focus());
+      }
+      if (toolOpen) {
+        setToolDropdownOpen(false);
+        window.requestAnimationFrame(() => toolDropdownRef.current?.querySelector<HTMLButtonElement>("button")?.focus());
+      }
+    };
+    document.addEventListener("pointerdown", handlePointerDown, true);
+    document.addEventListener("focusin", handleFocusIn, true);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown, true);
+      document.removeEventListener("focusin", handleFocusIn, true);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
   }, []);
-
-
 
   const hasPendingMessage = hasEditorContent || attachedImages.length > 0 || attachedFiles.length > 0;
 
@@ -1415,6 +1478,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                     disabled={isStreaming}
                     className={modelDropdownOpen ? "chat-input-control-button chat-input-model-button is-open" : "chat-input-control-button chat-input-model-button"}
                     aria-expanded={modelDropdownOpen}
+                    aria-haspopup="listbox"
+                    aria-controls={MODEL_DROPDOWN_ID}
                     aria-label={t("chat.model")}
                   >
                     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1430,7 +1495,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   {modelDropdownOpen && modelDropdownRect && typeof document !== "undefined" && (() => {
                     const { bottom, maxHeight } = getDropdownPanelMetrics(modelDropdownRect);
                     return createPortal((
-                    <div ref={modelDropdownPanelRef} className="chat-input-dropdown-panel" style={{
+                    <div ref={modelDropdownPanelRef} id={MODEL_DROPDOWN_ID} className="chat-input-dropdown-panel" role="listbox" aria-label={t("chat.model")} style={{
                       position: "fixed",
                       bottom, left: modelDropdownRect.left,
                       width: "max-content", minWidth: modelDropdownRect.width, maxHeight,
@@ -1447,7 +1512,14 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                             return (
                               <button
                                 key={`${opt.provider}:${opt.modelId}`}
-                                onClick={() => { setModelDropdownOpen(false); if (!isActive) onModelChange(opt.provider, opt.modelId); }}
+                                role="option"
+                                aria-selected={isActive}
+                                onKeyDown={handleDropdownOptionKeyDown}
+                                onClick={() => {
+                                  setModelDropdownOpen(false);
+                                  if (!isActive) onModelChange(opt.provider, opt.modelId);
+                                  window.requestAnimationFrame(() => dropdownRef.current?.querySelector<HTMLButtonElement>("button")?.focus());
+                                }}
                                 className={isActive ? "chat-input-dropdown-option is-active" : "chat-input-dropdown-option"}
                               >
                                 {isActive
@@ -1504,6 +1576,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   title={t("chat.thinkingTitle")}
                   className={thinkingDropdownOpen ? "chat-input-control-button is-open" : "chat-input-control-button"}
                   aria-expanded={thinkingDropdownOpen}
+                  aria-haspopup="listbox"
+                  aria-controls={THINKING_DROPDOWN_ID}
                 >
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M9.5 2A5.5 5.5 0 0 0 4 7.5c0 1.7.78 3.21 2 4.21V14a1 1 0 0 0 1 1h5a1 1 0 0 0 1-1v-2.29c1.22-1 2-2.51 2-4.21A5.5 5.5 0 0 0 9.5 2z" />
@@ -1520,7 +1594,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 {thinkingDropdownOpen && thinkingDropdownRect && typeof document !== "undefined" && (() => {
                   const { bottom, right, maxHeight } = getDropdownPanelMetrics(thinkingDropdownRect);
                   return createPortal((
-                  <div ref={thinkingDropdownPanelRef} className="chat-input-dropdown-panel" style={{
+                  <div ref={thinkingDropdownPanelRef} id={THINKING_DROPDOWN_ID} className="chat-input-dropdown-panel" role="listbox" aria-label={t("chat.thinkingTitle")} style={{
                     position: "fixed", bottom, right,
                     minWidth: 180, maxHeight,
                   }}>
@@ -1537,7 +1611,14 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                       return (
                         <button
                           key={lvl}
-                          onClick={() => { setThinkingDropdownOpen(false); if (!isActive) onThinkingLevelChange(lvl); }}
+                          role="option"
+                          aria-selected={isActive}
+                          onKeyDown={handleDropdownOptionKeyDown}
+                          onClick={() => {
+                            setThinkingDropdownOpen(false);
+                            if (!isActive) onThinkingLevelChange(lvl);
+                            window.requestAnimationFrame(() => thinkingDropdownRef.current?.querySelector<HTMLButtonElement>("button")?.focus());
+                          }}
                           className={isActive ? "chat-input-dropdown-option is-active" : "chat-input-dropdown-option"}
                         >
                           {isActive
@@ -1577,6 +1658,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   title={t("chat.toolsTitle")}
                   className={toolDropdownOpen ? "chat-input-control-button is-open" : "chat-input-control-button"}
                   aria-expanded={toolDropdownOpen}
+                  aria-haspopup="listbox"
+                  aria-controls={TOOL_DROPDOWN_ID}
                 >
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
@@ -1586,7 +1669,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 {toolDropdownOpen && toolDropdownRect && typeof document !== "undefined" && (() => {
                   const { bottom, right, maxHeight } = getDropdownPanelMetrics(toolDropdownRect);
                   return createPortal((
-                  <div ref={toolDropdownPanelRef} className="chat-input-dropdown-panel" style={{
+                  <div ref={toolDropdownPanelRef} id={TOOL_DROPDOWN_ID} className="chat-input-dropdown-panel" role="listbox" aria-label={t("chat.toolsTitle")} style={{
                     position: "fixed", bottom, right,
                     minWidth: 220, maxHeight,
                   }}>
@@ -1595,7 +1678,14 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                       return (
                         <button
                           key={option.preset}
-                          onClick={() => { setToolDropdownOpen(false); if (!isActive) onToolPresetChange(option.preset); }}
+                          role="option"
+                          aria-selected={isActive}
+                          onKeyDown={handleDropdownOptionKeyDown}
+                          onClick={() => {
+                            setToolDropdownOpen(false);
+                            if (!isActive) onToolPresetChange(option.preset);
+                            window.requestAnimationFrame(() => toolDropdownRef.current?.querySelector<HTMLButtonElement>("button")?.focus());
+                          }}
                           className={isActive ? "chat-input-dropdown-option is-active" : "chat-input-dropdown-option"}
                         >
                           {isActive

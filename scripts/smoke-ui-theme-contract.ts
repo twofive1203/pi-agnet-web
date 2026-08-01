@@ -70,6 +70,28 @@ const REQUIRED_SEMANTIC_TOKENS = [
   "motion-ease-emphasized",
 ] as const;
 
+const REQUIRED_LAYER_TOKENS = [
+  "z-workbench-card",
+  "z-sidebar-backdrop",
+  "z-sidebar-drawer",
+  "z-inspector-drawer",
+  "z-automation-drawer",
+  "z-top-portal",
+  "z-terminal-fullscreen",
+  "z-context-menu",
+  "z-dialog",
+] as const;
+
+const REQUIRED_STABLE_CLASSES = [
+  ".app-shell-root",
+  ".top-context",
+  ".observe-bar",
+  ".insp-tabs",
+  ".chat-input-dropdown-panel",
+  ".pi-modal-overlay",
+  ".extension-toast-stack",
+] as const;
+
 const REQUIRED_COMPATIBILITY_ALIASES = {
   bg: "surface-app",
   "bg-panel": "surface-panel",
@@ -104,6 +126,9 @@ interface ThemeSources {
   picker: string;
   hook: string;
   shell: string;
+  chatInput: string;
+  appDialog: string;
+  extensionDialog: string;
 }
 
 type RuntimeThemeMetadata = Partial<ThemeMetadata>;
@@ -174,6 +199,18 @@ function collectContractProblems(
     }
   }
 
+  for (const token of REQUIRED_LAYER_TOKENS) {
+    if (!hasTokenDeclaration(sources.css, token)) {
+      problems.push(`portal layers: missing --${token}`);
+    }
+  }
+
+  for (const stableClass of REQUIRED_STABLE_CLASSES) {
+    if (!sources.css.includes(stableClass)) {
+      problems.push(`stable class: missing ${stableClass}`);
+    }
+  }
+
   for (const [legacy, semantic] of Object.entries(REQUIRED_COMPATIBILITY_ALIASES)) {
     if (!sources.css.includes(`--${legacy}: var(--${semantic});`)) {
       problems.push(`theme css: compatibility alias --${legacy} must map to --${semantic}`);
@@ -194,6 +231,21 @@ function collectContractProblems(
   }
   if (!sources.hook.includes("prefers-reduced-motion: reduce") || !sources.css.includes("@media (prefers-reduced-motion: reduce)")) {
     problems.push("theme motion: reduced-motion contract is missing");
+  }
+  if (!sources.css.includes("animation-duration: 0.001ms !important")
+    || !sources.css.includes("transition-duration: 0.001ms !important")
+    || !sources.css.includes("animation-iteration-count: 1 !important")) {
+    problems.push("ui motion: global reduced-motion gate is missing");
+  }
+  if (!sources.css.includes("@media (hover: none), (pointer: coarse)")
+    || !sources.css.includes(".theme-picker-option,")
+    || !sources.css.includes(".pi-modal-close")) {
+    problems.push("touch input: coarse-pointer target contract is missing");
+  }
+  for (const inset of ["top", "right", "bottom", "left"]) {
+    if (!sources.css.includes(`env(safe-area-inset-${inset})`)) {
+      problems.push(`mobile safe area: missing ${inset} inset`);
+    }
   }
 
   const breakpointContracts = [
@@ -217,6 +269,36 @@ function collectContractProblems(
   if (!sources.shell.includes('const RIGHT_PANEL_WIDTH_STORAGE_KEY = "pi-web-right-panel-width-v2"')) {
     problems.push("workbench layout: right panel width persistence key changed");
   }
+  if (!sources.shell.includes("handleInspectorTabKeyDown")
+    || !sources.shell.includes('event.key === "Home"')
+    || !sources.shell.includes('role="tabpanel"')
+    || !sources.shell.includes("tabIndex={rightPanelMode ===")
+    || !sources.shell.includes("inert={!sidebarOpen}")
+    || !sources.shell.includes("inert={!rightPanelOpen}")) {
+    problems.push("keyboard navigation: Inspector roving-tab contract is missing");
+  }
+  if (!sources.picker.includes('document.addEventListener("focusin"')
+    || !sources.picker.includes("window.visualViewport?.addEventListener")) {
+    problems.push("portal focus: Theme Picker focus/viewport contract is missing");
+  }
+  if (!sources.chatInput.includes('aria-haspopup="listbox"')
+    || !sources.chatInput.includes('role="listbox"')
+    || !sources.chatInput.includes('role="option"')
+    || !sources.chatInput.includes("handleDropdownOptionKeyDown")
+    || !sources.chatInput.includes('event.key !== "Escape"')) {
+    problems.push("keyboard navigation: Composer dropdown contract is missing");
+  }
+  if (!sources.appDialog.includes('aria-modal="true"')
+    || !sources.appDialog.includes("previouslyFocusedRef")
+    || !sources.appDialog.includes("button:not(:disabled)")) {
+    problems.push("dialog focus: application dialog trap/restore contract is missing");
+  }
+  if (!sources.extensionDialog.includes('aria-modal="true"')
+    || !sources.extensionDialog.includes('role="listbox"')
+    || !sources.extensionDialog.includes("previouslyFocusedRef")
+    || !sources.extensionDialog.includes("button:not(:disabled)")) {
+    problems.push("dialog focus: extension dialog keyboard contract is missing");
+  }
 
   return problems;
 }
@@ -238,6 +320,9 @@ const sources: ThemeSources = {
   picker: readSource("components/ThemePicker.tsx"),
   hook: readSource("hooks/useTheme.ts"),
   shell: readSource("components/AppShell.tsx"),
+  chatInput: readSource("components/ChatInput.tsx"),
+  appDialog: readSource("components/AppDialogProvider.tsx"),
+  extensionDialog: readSource("components/ExtensionDialogHost.tsx"),
 };
 const runtimeMeta = THEME_META as unknown as RuntimeThemeMeta;
 
@@ -264,6 +349,30 @@ const cssWithoutSurfaceApp = sources.css.replace("--surface-app:", "--missing-su
 assertProblem(
   collectContractProblems({ ...sources, css: cssWithoutSurfaceApp }, runtimeMeta),
   "theme css: missing semantic token --surface-app",
+);
+
+const cssWithoutReducedMotionGate = sources.css.replaceAll(
+  "animation-duration: 0.001ms !important",
+  "animation-duration: var(--motion-duration-base)",
+);
+assertProblem(
+  collectContractProblems({ ...sources, css: cssWithoutReducedMotionGate }, runtimeMeta),
+  "ui motion: global reduced-motion gate is missing",
+);
+
+const chatInputWithoutListbox = sources.chatInput.replaceAll('role="listbox"', 'role="menu"');
+assertProblem(
+  collectContractProblems({ ...sources, chatInput: chatInputWithoutListbox }, runtimeMeta),
+  "keyboard navigation: Composer dropdown contract is missing",
+);
+
+const shellWithoutInspectorKeyboard = sources.shell.replaceAll(
+  "handleInspectorTabKeyDown",
+  "missingInspectorTabKeyDown",
+);
+assertProblem(
+  collectContractProblems({ ...sources, shell: shellWithoutInspectorKeyboard }, runtimeMeta),
+  "keyboard navigation: Inspector roving-tab contract is missing",
 );
 
 const cssWithoutNarrowWorkbench = sources.css.replaceAll(

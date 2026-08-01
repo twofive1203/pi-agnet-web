@@ -50,6 +50,13 @@ const RIGHT_PANEL_INLINE_MIN_VIEWPORT =
   DESKTOP_SIDEBAR_WIDTH + MIN_CHAT_WIDTH + MIN_RIGHT_PANEL_WIDTH; // 960
 const RIGHT_PANEL_RESIZE_STEP = 10;
 const RIGHT_PANEL_RESIZE_STEP_LARGE = 40;
+const INSPECTOR_PANEL_ID = "workbench-inspector-panel";
+const SYSTEM_PROMPT_PANEL_ID = "workbench-system-prompt-panel";
+const SIDEBAR_ID = "workbench-sidebar";
+
+type InspectorMode = "files" | "workflow" | "changes" | "git" | "agents";
+
+const INSPECTOR_MODES: readonly InspectorMode[] = ["changes", "files", "git", "workflow", "agents"];
 
 function isTopPanelSafeTarget(target: EventTarget | null): boolean {
   if (target instanceof Element) return Boolean(target.closest(TOP_PANEL_SAFE_SELECTOR));
@@ -144,6 +151,7 @@ export function AppShell() {
   const [terminalCollapsed, setTerminalCollapsed] = useState(false);
   const [terminalDockCwd, setTerminalDockCwd] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const sidebarToggleRef = useRef<HTMLButtonElement>(null);
   const chatInputRef = useRef<ChatInputHandle | null>(null);
   const topBarRef = useRef<HTMLDivElement>(null);
   /** Latest selected session — deletion callbacks must not capture a stale snapshot. */
@@ -185,6 +193,7 @@ export function AppShell() {
 
   const [systemPrompt, setSystemPrompt] = useState<string | null>(null);
   const systemBtnRef = useRef<HTMLButtonElement>(null);
+  const systemPanelRef = useRef<HTMLDivElement>(null);
 
   const handleSystemPromptChange = useCallback((prompt: string | null) => {
     setSystemPrompt(prompt);
@@ -249,7 +258,12 @@ export function AppShell() {
       if (!isTopPanelSafeTarget(event.target)) setActiveTopPanel(null);
     };
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setActiveTopPanel(null);
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      setActiveTopPanel(null);
+      if (activeTopPanel === "system") {
+        window.requestAnimationFrame(() => systemBtnRef.current?.focus());
+      }
     };
 
     document.addEventListener("pointerdown", handlePointerDown, true);
@@ -274,12 +288,20 @@ export function AppShell() {
     return () => ro.disconnect();
   }, [activeTopPanel]);
 
+  useEffect(() => {
+    if (activeTopPanel !== "system" || !topPanelPos) return;
+    const frame = window.requestAnimationFrame(() => systemPanelRef.current?.focus());
+    return () => window.cancelAnimationFrame(frame);
+  }, [activeTopPanel, topPanelPos]);
+
   // Right panel — file tabs and optional SnFlow task drawer
   const [fileTabs, setFileTabs] = useState<Tab[]>([]);
   const [activeFileTabId, setActiveFileTabId] = useState<string | null>(null);
   const [rightPanelOpen, setRightPanelOpen] = useState(true);
   /** Inspector tabs: files(Preview) / workflow(SnFlow) / changes / git / agents. */
-  const [rightPanelMode, setRightPanelMode] = useState<"files" | "workflow" | "changes" | "git" | "agents">("changes");
+  const [rightPanelMode, setRightPanelMode] = useState<InspectorMode>("changes");
+  const inspectorTabRefs = useRef<Partial<Record<InspectorMode, HTMLButtonElement | null>>>({});
+  const inspectorTriggerRefs = useRef<Partial<Record<InspectorMode, HTMLButtonElement | null>>>({});
   const [automationOpen, setAutomationOpen] = useState(false);
   const [automationUnread, setAutomationUnread] = useState(0);
   const [rightPanelWidth, setRightPanelWidth] = useState(DEFAULT_RIGHT_PANEL_WIDTH);
@@ -556,10 +578,24 @@ export function AppShell() {
     }
   }, [router]);
 
-  const openInspectorTab = useCallback((mode: "files" | "workflow" | "changes" | "git" | "agents") => {
+  const openInspectorTab = useCallback((mode: InspectorMode) => {
     setRightPanelMode(mode);
     setRightPanelOpen(true);
   }, []);
+
+  const handleInspectorTabKeyDown = useCallback((event: React.KeyboardEvent<HTMLButtonElement>, mode: InspectorMode) => {
+    const currentIndex = INSPECTOR_MODES.indexOf(mode);
+    let nextIndex: number | null = null;
+    if (event.key === "ArrowRight" || event.key === "ArrowDown") nextIndex = (currentIndex + 1) % INSPECTOR_MODES.length;
+    else if (event.key === "ArrowLeft" || event.key === "ArrowUp") nextIndex = (currentIndex - 1 + INSPECTOR_MODES.length) % INSPECTOR_MODES.length;
+    else if (event.key === "Home") nextIndex = 0;
+    else if (event.key === "End") nextIndex = INSPECTOR_MODES.length - 1;
+    if (nextIndex === null) return;
+    event.preventDefault();
+    const nextMode = INSPECTOR_MODES[nextIndex];
+    openInspectorTab(nextMode);
+    window.requestAnimationFrame(() => inspectorTabRefs.current[nextMode]?.focus());
+  }, [openInspectorTab]);
 
   const handleOpenFile = useCallback((filePath: string, fileName: string, line?: number) => {
     const tabId = `file:${filePath}`;
@@ -851,11 +887,14 @@ export function AppShell() {
       {/* Mobile overlay backdrop */}
       <div
         className={`sidebar-overlay-backdrop${sidebarOpen ? " is-open" : ""}`}
-        onClick={() => setSidebarOpen(false)}
+        onClick={() => {
+          setSidebarOpen(false);
+          window.requestAnimationFrame(() => sidebarToggleRef.current?.focus());
+        }}
       />
 
       {/* Left sidebar */}
-      <div className={`sidebar-container${sidebarOpen ? " sidebar-open" : " sidebar-closed"}`}>
+      <div id={SIDEBAR_ID} className={`sidebar-container${sidebarOpen ? " sidebar-open" : " sidebar-closed"}`} aria-hidden={!sidebarOpen} inert={!sidebarOpen}>
         {sidebarContent}
       </div>
 
@@ -865,9 +904,13 @@ export function AppShell() {
         {/* Context strip — merged top bar */}
         <div ref={topBarRef} className="top-context">
           <button
+            ref={sidebarToggleRef}
             className="icon-round context-icon-compact"
             onClick={() => setSidebarOpen((v) => !v)}
             title={sidebarOpen ? t("app.hideSidebar") : t("app.showSidebar")}
+            aria-label={sidebarOpen ? t("app.hideSidebar") : t("app.showSidebar")}
+            aria-controls={SIDEBAR_ID}
+            aria-expanded={sidebarOpen}
           >
             {sidebarOpen ? (
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -928,6 +971,10 @@ export function AppShell() {
                 ref={systemBtnRef}
                 className={`app-top-aux-tab icon-round context-action${activeTopPanel === "system" ? " on" : ""}${systemPrompt ? " has-content" : ""}`}
                 onClick={() => toggleTopPanel("system")}
+                title={t("app.system")}
+                aria-label={t("app.system")}
+                aria-controls={SYSTEM_PROMPT_PANEL_ID}
+                aria-expanded={activeTopPanel === "system"}
               >
                 <svg className="context-action-svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
@@ -962,6 +1009,8 @@ export function AppShell() {
                 setTerminalCollapsed((collapsed) => !collapsed);
               }}
               title={terminalOpen && terminalDockCwd && terminalDockCwd !== terminalCwd ? t("app.openTerminalForWorkspace") : t("app.openTerminal")}
+              aria-label={terminalOpen && terminalDockCwd && terminalDockCwd !== terminalCwd ? t("app.openTerminalForWorkspace") : t("app.openTerminal")}
+              aria-pressed={terminalOpen}
             >
               <svg className="context-action-svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="4 17 10 11 4 5" />
@@ -1058,6 +1107,8 @@ export function AppShell() {
             onClick={() => setAutomationOpen((open) => !open)}
             title={automationOpen ? t("automation.close") : t("automation.open")}
             aria-label={automationOpen ? t("automation.close") : t("automation.open")}
+            aria-expanded={automationOpen}
+            aria-controls="automation-drawer"
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="12" cy="12" r="10" />
@@ -1075,11 +1126,19 @@ export function AppShell() {
           )}
           {/* Top panel dropdown — shared, only one active at a time */}
           {activeTopPanel && activeTopPanel !== "branches" && topPanelPos && typeof document !== "undefined" && createPortal((
-            <div className="app-top-aux-panel" style={{
-              top: topPanelPos.top,
-              left: topPanelPos.left,
-              width: topPanelPos.width,
-            }}>
+            <div
+              ref={activeTopPanel === "system" ? systemPanelRef : undefined}
+              id={activeTopPanel === "system" ? SYSTEM_PROMPT_PANEL_ID : undefined}
+              className="app-top-aux-panel"
+              role="region"
+              aria-label={activeTopPanel === "system" ? t("app.system") : t("common.workbench.inspector")}
+              tabIndex={-1}
+              style={{
+                top: topPanelPos.top,
+                left: topPanelPos.left,
+                width: topPanelPos.width,
+              }}
+            >
               {activeTopPanel === "system" && (
                 <div className="app-top-aux-surface">
                   {systemPrompt ? (
@@ -1109,6 +1168,7 @@ export function AppShell() {
         {/* Observe bar — Changes / Git / Subagents / Todo */}
         <div className="observe-bar" aria-label={t("common.workbench.inspector")}>
           <button
+            ref={(node) => { inspectorTriggerRefs.current.changes = node; }}
             className={`chip${rightPanelOpen && rightPanelMode === "changes" ? " on" : ""}`}
             onClick={() => {
               if (rightPanelOpen && rightPanelMode === "changes") setRightPanelOpen(false);
@@ -1121,6 +1181,7 @@ export function AppShell() {
             {t("common.workbench.changes")}
           </button>
           <button
+            ref={(node) => { inspectorTriggerRefs.current.git = node; }}
             className={`chip${rightPanelOpen && rightPanelMode === "git" ? " on" : ""}`}
             onClick={() => {
               if (rightPanelOpen && rightPanelMode === "git") setRightPanelOpen(false);
@@ -1133,6 +1194,7 @@ export function AppShell() {
             {t("common.workbench.git")}
           </button>
           <button
+            ref={(node) => { inspectorTriggerRefs.current.agents = node; }}
             className={`chip${rightPanelOpen && rightPanelMode === "agents" ? " on" : ""}`}
             onClick={() => {
               if (rightPanelOpen && rightPanelMode === "agents") setRightPanelOpen(false);
@@ -1233,7 +1295,10 @@ export function AppShell() {
       {/* Right panel: file viewer or SnFlow — always mounted, width animated via CSS */}
       <div
         ref={rightPanelRef}
+        id={INSPECTOR_PANEL_ID}
         className={`right-panel-container${rightPanelOpen ? " right-panel-open" : " right-panel-closed"}${rightPanelResizing ? " right-panel-resizing" : ""}`}
+        aria-hidden={!rightPanelOpen}
+        inert={!rightPanelOpen}
       >
         {rightPanelOpen && rightPanelResizable && (
           <div
@@ -1256,8 +1321,14 @@ export function AppShell() {
               <h3>{t("common.workbench.inspector")}</h3>
               <button
                 className="chip insp-close"
-                onClick={() => setRightPanelOpen(false)}
+                onClick={() => {
+                  setRightPanelOpen(false);
+                  window.requestAnimationFrame(() => {
+                    (inspectorTriggerRefs.current[rightPanelMode] ?? sidebarToggleRef.current)?.focus();
+                  });
+                }}
                 title={t("app.hidePreview")}
+                aria-label={t("app.hidePreview")}
               >
                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
                   <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
@@ -1265,13 +1336,18 @@ export function AppShell() {
               </button>
             </div>
             <div className="insp-tabs" role="tablist" aria-label={t("common.workbench.inspector")}>
-              <button role="tab" aria-selected={rightPanelMode === "changes"} className={rightPanelMode === "changes" ? "on" : ""} onClick={() => openInspectorTab("changes")}>{t("common.workbench.changes")}</button>
-              <button role="tab" aria-selected={rightPanelMode === "files"} className={rightPanelMode === "files" ? "on" : ""} onClick={() => openInspectorTab("files")}>{t("common.workbench.preview")}</button>
-              <button role="tab" aria-selected={rightPanelMode === "git"} className={rightPanelMode === "git" ? "on" : ""} onClick={() => openInspectorTab("git")}>{t("common.workbench.git")}</button>
+              <button ref={(node) => { inspectorTabRefs.current.changes = node; }} id="inspector-tab-changes" role="tab" aria-controls="inspector-active-panel" aria-selected={rightPanelMode === "changes"} tabIndex={rightPanelMode === "changes" ? 0 : -1} className={rightPanelMode === "changes" ? "on" : ""} onKeyDown={(event) => handleInspectorTabKeyDown(event, "changes")} onClick={() => openInspectorTab("changes")}>{t("common.workbench.changes")}</button>
+              <button ref={(node) => { inspectorTabRefs.current.files = node; }} id="inspector-tab-files" role="tab" aria-controls="inspector-active-panel" aria-selected={rightPanelMode === "files"} tabIndex={rightPanelMode === "files" ? 0 : -1} className={rightPanelMode === "files" ? "on" : ""} onKeyDown={(event) => handleInspectorTabKeyDown(event, "files")} onClick={() => openInspectorTab("files")}>{t("common.workbench.preview")}</button>
+              <button ref={(node) => { inspectorTabRefs.current.git = node; }} id="inspector-tab-git" role="tab" aria-controls="inspector-active-panel" aria-selected={rightPanelMode === "git"} tabIndex={rightPanelMode === "git" ? 0 : -1} className={rightPanelMode === "git" ? "on" : ""} onKeyDown={(event) => handleInspectorTabKeyDown(event, "git")} onClick={() => openInspectorTab("git")}>{t("common.workbench.git")}</button>
               <button
+                ref={(node) => { inspectorTabRefs.current.workflow = node; }}
+                id="inspector-tab-workflow"
                 role="tab"
+                aria-controls="inspector-active-panel"
                 aria-selected={rightPanelMode === "workflow"}
+                tabIndex={rightPanelMode === "workflow" ? 0 : -1}
                 className={rightPanelMode === "workflow" ? "on" : ""}
+                onKeyDown={(event) => handleInspectorTabKeyDown(event, "workflow")}
                 onClick={(e) => {
                   // Alt+click: create SnFlow task from current chat without opening the create form.
                   if (e.altKey && selectedSession?.id && workflowCwd) {
@@ -1282,9 +1358,9 @@ export function AppShell() {
                 }}
                 title={selectedSession?.id ? t("app.workflowToggleWithCreate") : undefined}
               >{t("common.workbench.snflow")}</button>
-              <button role="tab" aria-selected={rightPanelMode === "agents"} className={rightPanelMode === "agents" ? "on" : ""} onClick={() => openInspectorTab("agents")}>{t("common.workbench.agents")}</button>
+              <button ref={(node) => { inspectorTabRefs.current.agents = node; }} id="inspector-tab-agents" role="tab" aria-controls="inspector-active-panel" aria-selected={rightPanelMode === "agents"} tabIndex={rightPanelMode === "agents" ? 0 : -1} className={rightPanelMode === "agents" ? "on" : ""} onKeyDown={(event) => handleInspectorTabKeyDown(event, "agents")} onClick={() => openInspectorTab("agents")}>{t("common.workbench.agents")}</button>
             </div>
-            <div className="insp-body">
+            <div id="inspector-active-panel" className="insp-body" role="tabpanel" aria-labelledby={`inspector-tab-${rightPanelMode}`} tabIndex={0}>
               {rightPanelMode === "changes" && (
                 <InspectorChangesPanel sessionId={selectedSession?.id ?? null} agentRunning={agentRunning} refreshKey={refreshKey} />
               )}
@@ -1346,6 +1422,7 @@ export function AppShell() {
     </div>
     {/* Keep mounted so unread badge stays live while drawer is closed. */}
     <div
+      id="automation-drawer"
       className="automation-drawer-overlay"
       hidden={!automationOpen}
       style={{

@@ -5,6 +5,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -281,9 +282,10 @@ function DialogOverlay({
   const promptInputRef = useRef<HTMLInputElement>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
 
-  // Ids for ARIA relationships - stable across renders but unique per mount
-  const titleId = "app-dialog-title";
-  const messageId = "app-dialog-message";
+  // Stable ARIA relationships remain unique if another dialog host is mounted.
+  const titleId = useId();
+  const messageId = useId();
+  const inputId = useId();
 
   useEffect(() => {
     setBodyMounted(true);
@@ -308,7 +310,7 @@ function DialogOverlay({
         const panel = panelRef.current;
         if (panel) {
           const firstFocusable = panel.querySelector<HTMLElement>(
-            'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+            'button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
           );
           firstFocusable?.focus();
         }
@@ -324,7 +326,7 @@ function DialogOverlay({
       const panel = panelRef.current;
       if (!panel) return;
       const focusable = panel.querySelectorAll<HTMLElement>(
-        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+        'button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
       );
       if (focusable.length === 0) {
         event.preventDefault();
@@ -398,12 +400,12 @@ function DialogOverlay({
                   {item.options.message}
                 </div>
               )}
-              <label htmlFor="app-dialog-input" style={{ display: "none" }}>
+              <label htmlFor={inputId} style={{ display: "none" }}>
                 {title}
               </label>
               <SettingsInput
                 ref={promptInputRef}
-                id="app-dialog-input"
+                id={inputId}
                 value={draft}
                 onChange={(event) => onDraftChange(event.target.value)}
                 placeholder={item.options.placeholder ?? ""}

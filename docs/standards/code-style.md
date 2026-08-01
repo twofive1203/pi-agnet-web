@@ -11,6 +11,9 @@ This is the project standards entry point. Prefer existing local patterns over b
 - Follow nearby component style for React props, local state, and event handlers.
 - Before changing constants, event kinds, JSONL fields, config fields, or shared helpers, search the repository for existing uses.
 - Settings/configuration UI should reuse `components/ui/SettingsPrimitives.tsx`: Field for associated labels, Badge for compact classification, Notice for status/risk, ActionRow for wrapping actions, and Button variants for hierarchy. Keep resource-specific load/save/dirty/conflict/secret semantics in the owning component rather than adding them to presentation primitives.
+- Static visuals belong in semantic classes and Tokens. Inline styles are reserved for runtime coordinates, measured dimensions, drag/progress geometry, and domain visualization values. Generic status colors must use semantic status Tokens; Git lanes, diffs, quota charts, and similar data visualizations may retain domain colors.
+- Reuse the shared `--z-*` layer Tokens for drawers, portals, context menus, fullscreen surfaces, and dialogs. Do not solve stacking defects with a new arbitrary high z-index.
+- Keyboard and touch are part of component completion: popovers/listboxes need explicit focus entry/exit and Escape behavior, tabs need roving focus, dialogs need trap/restore behavior, hover-only actions need focus/coarse-pointer equivalents, and key state must not rely only on color.
 
 ## Comment Style
 
@@ -47,7 +50,9 @@ npm run test:mcp          # MCP adapter-native config domain/API smokes (secrets
 npm run test:ui-theme     # theme registry/boot/Picker + semantic Token contract smoke
 ```
 
-Extend `test:ui-theme` when changing statically verifiable theme contracts such as registry metadata, semantic Token names, compatibility aliases, boot synchronization, or reduced-motion handling. Color contrast and visual hierarchy remain browser/manual validation concerns; do not encode subjective screenshot expectations in this smoke.
+Extend `test:ui-theme` when changing statically verifiable UI contracts such as registry metadata, semantic/layer Token names, compatibility aliases, boot synchronization, stable shared classes, `960/959/641/640` breakpoints, Portal/listbox/dialog focus hooks, safe-area/coarse-pointer rules, or reduced-motion handling. Color contrast, geometry, focus order, zoom, and visual hierarchy remain browser/manual validation concerns; do not encode subjective screenshot expectations in this smoke.
+
+For shared frontend chrome changes, complete the fixed theme/viewport/keyboard/Portal matrix in `docs/operations/ui-visual-validation.md`. Do not mark a visual iteration complete when that manual matrix has not been run.
 
 For other data-flow changes, use lint + type-check and manually verify the affected browser/API flow. Headed Chrome-only gaps for the tab-debug extension are listed in `docs/operations/troubleshooting.md`.
 

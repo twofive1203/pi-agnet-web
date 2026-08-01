@@ -28,16 +28,16 @@ date: 2026-08-01
 
 ### 迭代路线图
 
-| 迭代 | 交付主题 | 对应总规划单元 | 依赖 | 独立计划 |
-| --- | --- | --- | --- | --- |
-| Iteration 1 | 主题基础与语义 Token | U1 | 无 | [`2026-08-01-002-refactor-theme-foundation-plan.md`](./2026-08-01-002-refactor-theme-foundation-plan.md) |
-| Iteration 2 | 工作台骨架与左侧导航 | U2, U3 | Iteration 1 | [`2026-08-01-003-refactor-workbench-shell-navigation-plan.md`](./2026-08-01-003-refactor-workbench-shell-navigation-plan.md) |
-| Iteration 3 | 聊天消息与 Composer | U4 | Iteration 1；建议在 Iteration 2 后实施 | [`2026-08-01-004-refactor-chat-visual-system-plan.md`](./2026-08-01-004-refactor-chat-visual-system-plan.md) |
-| Iteration 4 | Inspector 与开发工具面板 | U5 | Iteration 2 | [`2026-08-01-005-refactor-inspector-visual-system-plan.md`](./2026-08-01-005-refactor-inspector-visual-system-plan.md) |
-| Iteration 5 | 设置原语、Settings 外壳与共享 Dialog | U6（第一部分） | Iteration 1 | [`2026-08-01-006-refactor-settings-primitives-plan.md`](./2026-08-01-006-refactor-settings-primitives-plan.md) |
-| Iteration 6 | MCP 与 Agents 配置面板迁移 | U6（第二部分） | Iteration 5 | [`2026-08-01-007-refactor-mcp-agents-settings-plan.md`](./2026-08-01-007-refactor-mcp-agents-settings-plan.md) |
-| Iteration 7 | Models、Extensions 与 Skills 复杂面板迁移 | U6（第三部分） | Iteration 5；建议在 Iteration 6 后实施 | [`2026-08-01-008-refactor-resource-config-surfaces-plan.md`](./2026-08-01-008-refactor-resource-config-surfaces-plan.md) |
-| Iteration 8 | 响应式、无障碍与视觉回归收口 | U7, U8 | Iteration 2–7 | [`2026-08-01-009-refactor-ui-quality-regression-plan.md`](./2026-08-01-009-refactor-ui-quality-regression-plan.md) |
+| 迭代 | 交付主题 | 对应总规划单元 | 依赖 | 状态 | 独立计划 |
+| --- | --- | --- | --- | --- | --- |
+| Iteration 1 | 主题基础与语义 Token | U1 | 无 | 已完成 | [`2026-08-01-002-refactor-theme-foundation-plan.md`](./2026-08-01-002-refactor-theme-foundation-plan.md) |
+| Iteration 2 | 工作台骨架与左侧导航 | U2, U3 | Iteration 1 | 已完成 | [`2026-08-01-003-refactor-workbench-shell-navigation-plan.md`](./2026-08-01-003-refactor-workbench-shell-navigation-plan.md) |
+| Iteration 3 | 聊天消息与 Composer | U4 | Iteration 1；建议在 Iteration 2 后实施 | 已完成 | [`2026-08-01-004-refactor-chat-visual-system-plan.md`](./2026-08-01-004-refactor-chat-visual-system-plan.md) |
+| Iteration 4 | Inspector 与开发工具面板 | U5 | Iteration 2 | 已完成 | [`2026-08-01-005-refactor-inspector-visual-system-plan.md`](./2026-08-01-005-refactor-inspector-visual-system-plan.md) |
+| Iteration 5 | 设置原语、Settings 外壳与共享 Dialog | U6（第一部分） | Iteration 1 | 已完成 | [`2026-08-01-006-refactor-settings-primitives-plan.md`](./2026-08-01-006-refactor-settings-primitives-plan.md) |
+| Iteration 6 | MCP 与 Agents 配置面板迁移 | U6（第二部分） | Iteration 5 | 已完成 | [`2026-08-01-007-refactor-mcp-agents-settings-plan.md`](./2026-08-01-007-refactor-mcp-agents-settings-plan.md) |
+| Iteration 7 | Models、Extensions 与 Skills 复杂面板迁移 | U6（第三部分） | Iteration 5；建议在 Iteration 6 后实施 | 已完成 | [`2026-08-01-008-refactor-resource-config-surfaces-plan.md`](./2026-08-01-008-refactor-resource-config-surfaces-plan.md) |
+| Iteration 8 | 响应式、无障碍与视觉回归收口 | U7, U8 | Iteration 2–7 | 进行中（代码/契约/文档已完成，浏览器矩阵待执行） | [`2026-08-01-009-refactor-ui-quality-regression-plan.md`](./2026-08-01-009-refactor-ui-quality-regression-plan.md) |
 
 ### 迭代执行规则
 
@@ -443,7 +443,7 @@ flowchart TB
 - 设置/Models/MCP 的按钮、输入框、Notice 和 Modal 在各主题下保持同一视觉语言。
 - 原有保存、dirty、conflict、secret preserve/replace/clear 行为不变。
 
-- [ ] U7. **完成响应式、键盘、焦点、对比度与动效质量检查**
+- [ ] U7. **完成响应式、键盘、焦点、对比度与动效质量检查**（代码与静态契约已收口；四视口/五主题浏览器矩阵待执行）
 
 **Goal:** 对前六个模块做跨视口和跨输入方式的统一收口，解决局部优化后才会暴露的组合问题。
 
@@ -485,7 +485,7 @@ flowchart TB
 
 ### Phase 4 — P2 回归与维护
 
-- [ ] U8. **建立主题契约、视觉回归清单和维护文档**
+- [x] U8. **建立主题契约、视觉回归清单和维护文档**
 
 **Goal:** 让后续 UI 变更有固定验证入口，避免主题或视口在下一次局部改动中回退。
 
