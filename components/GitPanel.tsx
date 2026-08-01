@@ -12,16 +12,12 @@ interface Props {
   onDirtyChange?: (dirty: boolean) => void;
 }
 
-const gitStatusColors: Record<string, string> = {
-  M: "#22c55e",
-  A: "#22c55e",
-  D: "#ef4444",
-  R: "#22c55e",
-  C: "#22c55e",
-  T: "#f59e0b",
-  U: "#f59e0b",
-  "?": "#9ca3af",
-};
+function gitStatusTone(status: string): string {
+  if (["M", "A", "R", "C"].includes(status)) return "is-success";
+  if (status === "D") return "is-danger";
+  if (["T", "U"].includes(status)) return "is-warning";
+  return "is-muted";
+}
 
 const gitStatusLabels: Record<string, string> = {
   M: "modified",
@@ -36,21 +32,10 @@ const gitStatusLabels: Record<string, string> = {
 
 function FileChangeRow({ change }: { change: GitFileChange }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "1px 0" }}>
-      <span style={{
-        display: "inline-block",
-        width: 6,
-        height: 6,
-        borderRadius: "50%",
-        background: gitStatusColors[change.status] ?? "#9ca3af",
-        flexShrink: 0,
-      }} />
-      <span style={{ fontSize: 11, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-        {change.oldFile ? `${change.oldFile} → ${change.file}` : change.file}
-      </span>
-      <span style={{ fontSize: 9, color: "var(--text-dim)", marginLeft: "auto", flexShrink: 0 }}>
-        {gitStatusLabels[change.status] ?? change.status}
-      </span>
+    <div className="git-file-row">
+      <span className={`git-status-dot ${gitStatusTone(change.status)}`} />
+      <span className="git-file-path">{change.oldFile ? `${change.oldFile} → ${change.file}` : change.file}</span>
+      <span className="git-file-status">{gitStatusLabels[change.status] ?? change.status}</span>
     </div>
   );
 }
@@ -62,46 +47,19 @@ function CommitChangedFileRow({ file, onOpenDiff }: { file: GitCommitChangedFile
       type="button"
       onDoubleClick={() => onOpenDiff(file)}
       title={t("git.doubleClickDiff")}
-      style={{
-        width: "100%",
-        display: "flex",
-        alignItems: "center",
-        gap: 7,
-        padding: "3px 6px",
-        border: "none",
-        borderRadius: 4,
-        background: "transparent",
-        color: "var(--text)",
-        cursor: "default",
-        textAlign: "left",
-      }}
-      onMouseEnter={(event) => { event.currentTarget.style.background = "var(--bg-hover)"; }}
-      onMouseLeave={(event) => { event.currentTarget.style.background = "transparent"; }}
+      className="git-commit-file-row"
     >
-      <span style={{
-        width: 18,
-        flexShrink: 0,
-        fontFamily: "var(--font-mono)",
-        fontSize: 10,
-        fontWeight: 700,
-        color: gitStatusColors[file.status] ?? "var(--text-dim)",
-      }}>
-        {file.status}
-      </span>
-      <span style={{ minWidth: 0, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 11 }}>
-        {file.oldFile ? `${file.oldFile} → ${file.file}` : file.file}
-      </span>
+      <span className={`git-commit-file-code ${gitStatusTone(file.status)}`}>{file.status}</span>
+      <span className="git-file-path">{file.oldFile ? `${file.oldFile} → ${file.file}` : file.file}</span>
       {file.binary ? (
-        <span style={{ fontSize: 10, color: "var(--text-dim)", flexShrink: 0 }}>{t("git.binary")}</span>
+        <span className="git-file-status">{t("git.binary")}</span>
       ) : (typeof file.additions === "number" || typeof file.deletions === "number") ? (
-        <span style={{ display: "flex", gap: 4, fontSize: 10, fontFamily: "var(--font-mono)", flexShrink: 0 }}>
-          {typeof file.additions === "number" && <span style={{ color: "#16a34a" }}>+{file.additions}</span>}
-          {typeof file.deletions === "number" && <span style={{ color: "#dc2626" }}>-{file.deletions}</span>}
+        <span className="git-file-metrics">
+          {typeof file.additions === "number" && <span className="is-success">+{file.additions}</span>}
+          {typeof file.deletions === "number" && <span className="is-danger">-{file.deletions}</span>}
         </span>
       ) : null}
-      <span style={{ fontSize: 9, color: "var(--text-dim)", flexShrink: 0 }}>
-        {gitStatusLabels[file.status] ?? file.status}
-      </span>
+      <span className="git-file-status">{gitStatusLabels[file.status] ?? file.status}</span>
     </button>
   );
 }
@@ -125,65 +83,45 @@ function CommitDetailPanel({
   onOpenDiff: (file: GitCommitChangedFile) => void;
 }) {
   const { t } = useI18n();
-  if (loading) {
-    return <div style={{ padding: "8px 10px", fontSize: 11, color: "var(--text-muted)", fontStyle: "italic" }}>{t("git.loadingCommit")}</div>;
-  }
-  if (error) {
-    return <div style={{ padding: "8px 10px", fontSize: 11, color: "#ef4444", whiteSpace: "pre-wrap" }}>{error}</div>;
-  }
-  if (!detail) {
-    return <div style={{ padding: "8px 10px", fontSize: 11, color: "var(--text-dim)", fontStyle: "italic" }}>{t("git.selectCommit")}</div>;
-  }
+  if (loading) return <div className="inspector-state inspector-state-loading git-detail-state">{t("git.loadingCommit")}</div>;
+  if (error) return <div className="inspector-state inspector-state-error git-detail-state" role="alert">{error}</div>;
+  if (!detail) return <div className="inspector-state inspector-state-empty git-detail-state">{t("git.selectCommit")}</div>;
 
   return (
-    <div style={{ padding: "8px 10px", border: "1px solid var(--border)", borderRadius: 6, background: "var(--bg-subtle)" }}>
-      <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", marginBottom: 6, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-        {detail.subject || "(no subject)"}
-      </div>
-      {detail.body && (
-        <div style={{ fontSize: 11, color: "var(--text-muted)", whiteSpace: "pre-wrap", marginBottom: 8, maxHeight: 96, overflow: "auto" }}>
-          {detail.body}
-        </div>
-      )}
-      <div style={{ display: "grid", gridTemplateColumns: "auto minmax(0, 1fr)", gap: "4px 8px", fontSize: 10.5, color: "var(--text-muted)", marginBottom: 8 }}>
-        <span style={{ color: "var(--text-dim)" }}>{t("git.hash")}</span>
-        <span style={{ fontFamily: "var(--font-mono)", overflow: "hidden", textOverflow: "ellipsis" }}>{detail.hash}</span>
-        <span style={{ color: "var(--text-dim)" }}>{t("git.author")}</span>
+    <div className="git-commit-detail">
+      <div className="git-commit-subject">{detail.subject || "(no subject)"}</div>
+      {detail.body && <div className="git-commit-body">{detail.body}</div>}
+      <div className="git-commit-meta">
+        <span>{t("git.hash")}</span>
+        <code>{detail.hash}</code>
+        <span>{t("git.author")}</span>
         <span>{detail.author.name} &lt;{detail.author.email}&gt; · {detail.author.date}</span>
-        <span style={{ color: "var(--text-dim)" }}>{t("git.committer")}</span>
+        <span>{t("git.committer")}</span>
         <span>{detail.committer.name} &lt;{detail.committer.email}&gt; · {detail.committer.date}</span>
         {detail.parents.length > 0 && (
           <>
-            <span style={{ color: "var(--text-dim)" }}>{t("git.parents")}</span>
-            <span style={{ fontFamily: "var(--font-mono)", overflow: "hidden", textOverflow: "ellipsis" }}>{detail.parents.map((parent) => parent.slice(0, 8)).join(", ")}</span>
+            <span>{t("git.parents")}</span>
+            <code>{detail.parents.map((parent) => parent.slice(0, 8)).join(", ")}</code>
           </>
         )}
       </div>
       {detail.refs.length > 0 && (
-        <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 8 }}>
-          {detail.refs.map((ref) => (
-            <span key={`${ref.type}-${ref.name}`} style={{ fontSize: 9, fontFamily: "var(--font-mono)", color: "var(--text-dim)", border: "1px solid var(--border)", borderRadius: 4, padding: "1px 5px", background: "var(--bg-panel)" }}>
-              {formatRefLabel(ref)}
-            </span>
-          ))}
+        <div className="git-ref-list">
+          {detail.refs.map((ref) => <span key={`${ref.type}-${ref.name}`} className="git-ref-badge">{formatRefLabel(ref)}</span>)}
         </div>
       )}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 4 }}>
-        <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-          Changed Files <span style={{ fontWeight: 400, textTransform: "none" }}>({detail.files.length})</span>
-        </div>
-        <div style={{ fontSize: 9, color: "var(--text-dim)" }}>{t("git.doubleClickHint")}</div>
+      <div className="git-commit-files-header">
+        <div className="inspector-section-title">Changed Files <span>({detail.files.length})</span></div>
+        <div className="git-detail-hint">{t("git.doubleClickHint")}</div>
       </div>
       {detail.files.length > 0 ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: 1, maxHeight: 190, overflow: "auto" }}>
+        <div className="git-commit-files-list">
           {detail.files.map((file) => (
             <CommitChangedFileRow key={`${file.status}-${file.oldFile ?? ""}-${file.file}`} file={file} onOpenDiff={onOpenDiff} />
           ))}
         </div>
       ) : (
-        <div style={{ fontSize: 11, color: "var(--text-dim)", fontStyle: "italic" }}>
-          No first-parent file changes for this commit.
-        </div>
+        <div className="git-empty-inline">No first-parent file changes for this commit.</div>
       )}
     </div>
   );
@@ -354,37 +292,12 @@ export function GitPanel({ cwd, refreshKey, onDirtyChange }: Props) {
     }
   }, [cwd, fetchAll, selectedBranch, status?.isDirty, switching]);
 
-  const sectionTitleStyle: React.CSSProperties = {
-    fontSize: 10,
-    fontWeight: 600,
-    color: "var(--text-dim)",
-    textTransform: "uppercase",
-    letterSpacing: "0.5px",
-    marginBottom: 4,
-  };
-
-  const emptyTextStyle: React.CSSProperties = {
-    fontSize: 11,
-    color: "var(--text-dim)",
-    fontStyle: "italic",
-  };
-
-  // Not a git repo
   if (loaded && status === null && !loading) {
-    return (
-      <div style={{ padding: "10px 16px", fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>
-        Not a Git repository
-      </div>
-    );
+    return <div className="inspector-state inspector-state-empty">Not a Git repository</div>;
   }
 
-  // Loading (not yet loaded)
   if (!loaded && loading) {
-    return (
-      <div style={{ padding: "10px 16px", fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>
-        Loading...
-      </div>
-    );
+    return <div className="inspector-state inspector-state-loading">Loading...</div>;
   }
 
   if (!status) return null;
@@ -402,26 +315,10 @@ export function GitPanel({ cwd, refreshKey, onDirtyChange }: Props) {
         : null;
 
   return (
-    <div className="git-panel-root" style={{ maxHeight: "min(720px, 75vh)", overflowY: "auto" }}>
-      {/* Refresh button */}
-      <div style={{ position: "sticky", top: 0, zIndex: 1, display: "flex", justifyContent: "flex-end", padding: "4px 8px", background: "var(--bg-panel)" }}>
-        <button
-          onClick={() => void fetchAll()}
-          disabled={loading}
-          title={t("git.refreshTitle")}
-          style={{
-            display: "flex", alignItems: "center", justifyContent: "center",
-            width: 24, height: 24, padding: 0,
-            background: "none", border: "none",
-            borderRadius: 4, color: "var(--text-muted)", cursor: "pointer",
-            fontSize: 11,
-            opacity: loading ? 0.5 : 1,
-            transition: "background 0.12s, color 0.12s",
-          }}
-          onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-hover)"; e.currentTarget.style.color = "var(--text)"; }}
-          onMouseLeave={(e) => { e.currentTarget.style.background = "none"; e.currentTarget.style.color = "var(--text-muted)"; }}
-        >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={loading ? { animation: "spin 0.8s linear infinite" } : undefined}>
+    <div className="git-panel-root inspector-content">
+      <div className="git-panel-toolbar">
+        <button type="button" onClick={() => void fetchAll()} disabled={loading} title={t("git.refreshTitle")} className="git-refresh-button">
+          <svg className={loading ? "is-spinning" : undefined} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="23 4 23 10 17 10" />
             <polyline points="1 20 1 14 7 14" />
             <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
@@ -429,60 +326,29 @@ export function GitPanel({ cwd, refreshKey, onDirtyChange }: Props) {
         </button>
       </div>
 
-      {/* Branch Status */}
-      <div style={{ padding: "0 16px 8px 16px" }}>
-        <div style={sectionTitleStyle}>{t("git.branch")}</div>
-        <div style={{
-          display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap",
-          padding: "6px 10px", background: "var(--bg-hover)", borderRadius: 6,
-        }}>
-          {/* Branch name */}
-          <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text)", fontFamily: "var(--font-mono)" }}>
-            {status.isDetached ? "(detached)" : status.branch}
-          </span>
-
-          {/* Dirty indicator */}
-          {status.isDirty && (
-            <span style={{
-              fontSize: 10, color: "#f59e0b", background: "rgba(245,158,11,0.12)",
-              padding: "0 6px", borderRadius: 4, lineHeight: "18px",
-              fontWeight: 500, whiteSpace: "nowrap",
-            }}>
-              dirty
-            </span>
-          )}
-
-          {/* Worktree indicator */}
-          {status.isWorktree && (
-            <span style={{
-              fontSize: 10, color: "#60a5fa", background: "rgba(96,165,250,0.12)",
-              padding: "0 6px", borderRadius: 4, lineHeight: "18px",
-              fontWeight: 500, whiteSpace: "nowrap",
-            }}>
-              worktree
-            </span>
-          )}
-
-          {/* Upstream & ahead/behind */}
+      <section className="inspector-section git-branch-section">
+        <div className="inspector-section-title">{t("git.branch")}</div>
+        <div className="git-branch-summary">
+          <span className="git-branch-name">{status.isDetached ? "(detached)" : status.branch}</span>
+          {status.isDirty && <span className="inspector-badge is-warning">dirty</span>}
+          {status.isWorktree && <span className="inspector-badge is-info">worktree</span>}
           {status.upstream && (
-            <span style={{ fontSize: 10, color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>
+            <span className="git-upstream">
               {status.upstream}
               {(status.ahead > 0 || status.behind > 0) && (
-                <span style={{ marginLeft: 4 }}>
-                  {status.ahead > 0 && <span style={{ color: "#22c55e" }}>+{status.ahead}</span>}
-                  {status.ahead > 0 && status.behind > 0 && <span> </span>}
-                  {status.behind > 0 && <span style={{ color: "#ef4444" }}>-{status.behind}</span>}
+                <span className="git-upstream-counts">
+                  {status.ahead > 0 && <span className="is-success">+{status.ahead}</span>}
+                  {status.ahead > 0 && status.behind > 0 && " "}
+                  {status.behind > 0 && <span className="is-danger">-{status.behind}</span>}
                 </span>
               )}
             </span>
           )}
         </div>
 
-        <div style={{ marginTop: 8, padding: "8px 10px", border: "1px solid var(--border)", borderRadius: 6 }}>
-          <div style={{ fontSize: 10, color: "var(--text-dim)", marginBottom: 6 }}>
-            Preview / switch local branch
-          </div>
-          <div className="git-branch-switch-row" style={{ display: "flex", gap: 6, alignItems: "center" }}>
+        <div className="git-branch-controls">
+          <div className="git-control-label">Preview / switch local branch</div>
+          <div className="git-branch-switch-row">
             <select
               value={selectedBranch}
               onChange={(e) => {
@@ -491,19 +357,7 @@ export function GitPanel({ cwd, refreshKey, onDirtyChange }: Props) {
               }}
               disabled={loading || switching || branchOptions.length === 0}
               aria-label={t("git.selectBranchAria")}
-              style={{
-                flex: 1,
-                minWidth: 0,
-                height: 28,
-                padding: "0 6px",
-                border: "1px solid var(--border)",
-                borderRadius: 4,
-                background: "var(--bg)",
-                color: "var(--text)",
-                fontSize: 11,
-                fontFamily: "var(--font-mono)",
-                opacity: loading || switching || branchOptions.length === 0 ? 0.6 : 1,
-              }}
+              className="git-branch-select"
             >
               {branchOptions.length === 0 ? (
                 <option value="">{t("git.noLocalBranches")}</option>
@@ -518,51 +372,25 @@ export function GitPanel({ cwd, refreshKey, onDirtyChange }: Props) {
               onClick={() => void handleSwitchBranch()}
               disabled={!canSwitchBranch}
               title={switchDisabledReason ?? t("git.switchTo", { branch: selectedBranch })}
-              style={{
-                height: 28,
-                padding: "0 10px",
-                border: "1px solid var(--border)",
-                borderRadius: 4,
-                background: canSwitchBranch ? "var(--accent)" : "var(--bg-hover)",
-                color: canSwitchBranch ? "white" : "var(--text-dim)",
-                cursor: canSwitchBranch ? "pointer" : "not-allowed",
-                fontSize: 11,
-                fontWeight: 600,
-                opacity: switching ? 0.7 : 1,
-              }}
+              className="git-switch-button"
             >
               {switching ? "Switching..." : "Switch"}
             </button>
           </div>
-          <div style={{ marginTop: 5, fontSize: 10, color: "var(--text-dim)" }}>
-            Selecting a branch previews its commit graph. Switch changes the checkout.
-          </div>
-          {switchDisabledReason && (
-            <div style={{ marginTop: 5, fontSize: 10, color: status.isDirty ? "#f59e0b" : "var(--text-dim)" }}>
-              {switchDisabledReason}
-            </div>
-          )}
-          {switchError && (
-            <div style={{ marginTop: 5, fontSize: 10, color: "#ef4444", whiteSpace: "pre-wrap" }}>
-              {switchError}
-            </div>
-          )}
+          <div className="git-control-help">Selecting a branch previews its commit graph. Switch changes the checkout.</div>
+          {switchDisabledReason && <div className={`git-control-message${status.isDirty ? " is-warning" : ""}`}>{switchDisabledReason}</div>}
+          {switchError && <div className="git-control-message is-error" role="alert">{switchError}</div>}
         </div>
-      </div>
+      </section>
 
-      {/* Commit graph and selected commit detail */}
-      <div style={{ padding: "0 16px 8px 16px" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "minmax(360px, 1.15fr) minmax(280px, 0.85fr)", gap: 12, alignItems: "start" }}>
-          <div style={{ minWidth: 0 }}>
-            <div style={{ ...sectionTitleStyle, marginBottom: 6 }}>
+      <section className="inspector-section git-history-section">
+        <div className="git-history-grid">
+          <div className="git-history-column">
+            <div className="inspector-section-title">
               Commit Graph
-              {previewBranch && (
-                <span style={{ marginLeft: 6, fontWeight: 400, color: "var(--text-dim)", textTransform: "none" }}>
-                  preview: {previewBranch}
-                </span>
-              )}
+              {previewBranch && <span className="inspector-section-context">preview: {previewBranch}</span>}
             </div>
-            <div style={{ maxHeight: "min(420px, 48vh)", overflow: "auto", paddingRight: 4 }}>
+            <div className="git-graph-scroll">
               {graphData && graphData.commits && graphData.commits.length > 0 ? (
                 <CommitGraph
                   commits={graphData.commits}
@@ -572,46 +400,28 @@ export function GitPanel({ cwd, refreshKey, onDirtyChange }: Props) {
                   onSelectCommit={handleSelectCommit}
                 />
               ) : status.recentCommits.length > 0 ? (
-                <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                <div className="git-fallback-commits">
                   {status.recentCommits.map((commit) => (
-                    <button key={commit.hash} type="button" onClick={() => setSelectedCommitHash(commit.hash)} style={{
-                      display: "flex", alignItems: "center", gap: 6,
-                      padding: "3px 6px", borderRadius: 4,
-                      border: "none",
-                      background: selectedCommitHash === commit.hash ? "var(--bg-selected)" : "transparent",
-                      fontSize: 11, color: "var(--text-muted)",
-                      cursor: "pointer",
-                      textAlign: "left",
-                    }}>
-                      <span style={{
-                        fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-dim)",
-                        flexShrink: 0, width: 44,
-                      }}>
-                        {commit.hash.slice(0, 7)}
-                      </span>
-                      <span style={{
-                        flex: 1, overflow: "hidden", textOverflow: "ellipsis",
-                        whiteSpace: "nowrap", color: "var(--text)",
-                      }}>
-                        {commit.message}
-                      </span>
-                      <span style={{
-                        flexShrink: 0, fontSize: 10, color: "var(--text-dim)",
-                        whiteSpace: "nowrap",
-                      }}>
-                        {commit.relativeDate}
-                      </span>
+                    <button
+                      key={commit.hash}
+                      type="button"
+                      onClick={() => setSelectedCommitHash(commit.hash)}
+                      className={`git-fallback-commit${selectedCommitHash === commit.hash ? " is-selected" : ""}`}
+                    >
+                      <code>{commit.hash.slice(0, 7)}</code>
+                      <span>{commit.message}</span>
+                      <time>{commit.relativeDate}</time>
                     </button>
                   ))}
                 </div>
               ) : (
-                <div style={emptyTextStyle}>{t("git.noCommits")}</div>
+                <div className="git-empty-inline">{t("git.noCommits")}</div>
               )}
             </div>
           </div>
 
-          <div style={{ minWidth: 0 }}>
-            <div style={sectionTitleStyle}>{t("git.commitDetails")}</div>
+          <div className="git-history-column">
+            <div className="inspector-section-title">{t("git.commitDetails")}</div>
             <CommitDetailPanel
               detail={commitDetail}
               loading={commitDetailLoading}
@@ -620,68 +430,42 @@ export function GitPanel({ cwd, refreshKey, onDirtyChange }: Props) {
             />
           </div>
         </div>
-      </div>
+      </section>
 
-      {/* Staged Changes */}
-      <div style={{ padding: "0 16px 8px 16px" }}>
-        <div style={sectionTitleStyle}>{t("git.staged")} <span style={{ fontWeight: 400, color: "var(--text-dim)", textTransform: "none" }}>({status.staged.length})</span></div>
-        {status.staged.length > 0 ? (
-          <div>
-            {status.staged.map((change, i) => (
-              <FileChangeRow key={`staged-${i}`} change={change} />
-            ))}
-          </div>
-        ) : (
-          <div style={emptyTextStyle}>{t("git.noStaged")}</div>
-        )}
-      </div>
+      <section className="inspector-section">
+        <div className="inspector-section-title">{t("git.staged")} <span>({status.staged.length})</span></div>
+        {status.staged.length > 0
+          ? <div className="git-file-list">{status.staged.map((change, i) => <FileChangeRow key={`staged-${i}`} change={change} />)}</div>
+          : <div className="git-empty-inline">{t("git.noStaged")}</div>}
+      </section>
 
-      {/* Unstaged Changes */}
-      <div style={{ padding: "0 16px 8px 16px" }}>
-        <div style={sectionTitleStyle}>{t("git.unstaged")} <span style={{ fontWeight: 400, color: "var(--text-dim)", textTransform: "none" }}>({status.unstaged.length})</span></div>
-        {status.unstaged.length > 0 ? (
-          <div>
-            {status.unstaged.map((change, i) => (
-              <FileChangeRow key={`unstaged-${i}`} change={change} />
-            ))}
-          </div>
-        ) : (
-          <div style={emptyTextStyle}>{t("git.noUnstaged")}</div>
-        )}
-      </div>
+      <section className="inspector-section">
+        <div className="inspector-section-title">{t("git.unstaged")} <span>({status.unstaged.length})</span></div>
+        {status.unstaged.length > 0
+          ? <div className="git-file-list">{status.unstaged.map((change, i) => <FileChangeRow key={`unstaged-${i}`} change={change} />)}</div>
+          : <div className="git-empty-inline">{t("git.noUnstaged")}</div>}
+      </section>
 
-      {/* Untracked Files */}
-      <div style={{ padding: "0 16px 8px 16px" }}>
-        <div style={sectionTitleStyle}>{t("git.untracked")} <span style={{ fontWeight: 400, color: "var(--text-dim)", textTransform: "none" }}>({status.untracked.length})</span></div>
+      <section className="inspector-section">
+        <div className="inspector-section-title">{t("git.untracked")} <span>({status.untracked.length})</span></div>
         {status.untracked.length > 0 ? (
-          <div>
+          <div className="git-file-list">
             {status.untracked.map((file, i) => (
-              <div key={`untracked-${i}`} style={{ display: "flex", alignItems: "center", gap: 6, padding: "1px 0" }}>
-                <span style={{
-                  display: "inline-block", width: 6, height: 6, borderRadius: "50%",
-                  background: "#9ca3af", flexShrink: 0,
-                }} />
-                <span style={{ fontSize: 11, color: "var(--text-dim)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {file}
-                </span>
+              <div key={`untracked-${i}`} className="git-file-row">
+                <span className="git-status-dot is-muted" />
+                <span className="git-file-path is-muted">{file}</span>
               </div>
             ))}
           </div>
-        ) : (
-          <div style={emptyTextStyle}>{t("git.noUntracked")}</div>
-        )}
-      </div>
+        ) : <div className="git-empty-inline">{t("git.noUntracked")}</div>}
+      </section>
 
-      {/* Stash */}
-      <div style={{ padding: "0 16px 12px 16px" }}>
-        <div style={sectionTitleStyle}>{t("git.stash")}</div>
-        <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
-          {status.stashCount > 0
-            ? <span>{status.stashCount} stash {status.stashCount === 1 ? "entry" : "entries"}</span>
-            : <span style={emptyTextStyle}>{t("git.noStash")}</span>
-          }
-        </div>
-      </div>
+      <section className="inspector-section git-stash-section">
+        <div className="inspector-section-title">{t("git.stash")}</div>
+        {status.stashCount > 0
+          ? <div className="git-stash-count">{status.stashCount} stash {status.stashCount === 1 ? "entry" : "entries"}</div>
+          : <div className="git-empty-inline">{t("git.noStash")}</div>}
+      </section>
 
       {diffFile && cwd && selectedCommitHash && (
         <GitCommitDiffModal

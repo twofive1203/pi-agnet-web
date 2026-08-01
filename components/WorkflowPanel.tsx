@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MarkdownBody } from "./MarkdownBody";
 import { useT } from "./I18nProvider";
 import { sendAgentCommand } from "@/lib/agent-client";
@@ -39,18 +39,14 @@ interface DetailResponse {
   code?: string;
 }
 
-const STATUS_COLORS: Record<string, string> = {
-  planning: "#f59e0b",
-  ready: "#38bdf8",
-  implementing: "#60a5fa",
-  review_ready: "#a78bfa",
-  checking: "#c084fc",
-  changes_requested: "#fb7185",
-  ready_to_commit: "#34d399",
-  completed: "#22c55e",
-  failed: "#ef4444",
-  cancelled: "#94a3b8",
-};
+function workflowStatusTone(status: string): string {
+  if (["completed", "ready_to_commit"].includes(status)) return "is-success";
+  if (["failed", "changes_requested"].includes(status)) return "is-danger";
+  if (status === "planning") return "is-warning";
+  if (["ready", "implementing"].includes(status)) return "is-info";
+  if (["review_ready", "checking"].includes(status)) return "is-accent";
+  return "is-muted";
+}
 
 function shortPath(value: string, max = 48): string {
   return value.length > max ? `…${value.slice(-(max - 1))}` : value;
@@ -657,52 +653,44 @@ export function WorkflowPanel({
 
   if (!cwd) {
     return (
-      <div style={{ padding: 16, color: "var(--text-muted)", fontSize: 13 }}>
-        <div style={{ fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>{t("workflow.noWorkspace")}</div>
-        {t("workflow.selectProjectHint")}
+      <div className="inspector-state inspector-state-empty workflow-no-workspace">
+        <strong>{t("workflow.noWorkspace")}</strong>
+        <span>{t("workflow.selectProjectHint")}</span>
       </div>
     );
   }
 
   return (
-    <div style={{ display: "flex", height: "100%", minHeight: 0 }}>
-      <div
-        style={{
-          width: 260,
-          borderRight: "1px solid var(--border)",
-          display: "flex",
-          flexDirection: "column",
-          minHeight: 0,
-        }}
-      >
-        <div style={{ padding: 10, display: "flex", flexDirection: "column", gap: 8, borderBottom: "1px solid var(--border)" }}>
-          <div style={{ display: "flex", gap: 6 }}>
+    <div className="workflow-panel-root">
+      <div className="workflow-task-pane">
+        <div className="workflow-task-toolbar">
+          <div className="workflow-toolbar-row">
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder={t("workflow.searchTasks")}
-              style={inputStyle}
+              className="workflow-input"
             />
-            <button type="button" onClick={() => void loadTasks()} style={btnStyle} title={t("workflow.refresh")}>
+            <button type="button" onClick={() => void loadTasks()} className="workflow-icon-button" title={t("workflow.refresh")}>
               ↻
             </button>
             {sessionId && (
               <button
                 type="button"
                 onClick={() => void handleCreateFromSession()}
-                style={{ ...btnStyle, color: "var(--accent)" }}
+                className="workflow-icon-button is-accent"
                 title={t("workflow.createFromChat")}
                 disabled={busy}
               >
                 ✦
               </button>
             )}
-            <button type="button" onClick={() => setShowCreate(true)} style={{ ...btnStyle, color: "var(--accent)" }} title={t("workflow.createTask")}>
+            <button type="button" onClick={() => setShowCreate(true)} className="workflow-icon-button is-accent" title={t("workflow.createTask")}>
               +
             </button>
           </div>
-          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={inputStyle}>
+          <div className="workflow-toolbar-row">
+            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="workflow-input">
               <option value="all">{t("workflow.allStatuses")}</option>
               {(
                 [
@@ -724,91 +712,64 @@ export function WorkflowPanel({
               ))}
             </select>
           </div>
-          <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 11, color: "var(--text-muted)" }}>
+          <label className="workflow-checkbox-row">
             <input type="checkbox" checked={includeArchived} onChange={(e) => setIncludeArchived(e.target.checked)} />
             {t("workflow.includeArchived")}
           </label>
           {currentTaskId && (
-            <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
-              {t("workflow.currentTask")}: {shortPath(currentTaskId, 28)}
-            </div>
+            <div className="workflow-toolbar-meta">{t("workflow.currentTask")}: {shortPath(currentTaskId, 28)}</div>
           )}
           {activeCwdRunId && (
-            <div style={{ fontSize: 11, color: "#f59e0b" }}>
-              {t("workflow.activeCwdRun")}: {shortPath(activeCwdRunId, 28)}
-            </div>
+            <div className="workflow-toolbar-meta is-warning">{t("workflow.activeCwdRun")}: {shortPath(activeCwdRunId, 28)}</div>
           )}
         </div>
 
-        <div style={{ flex: 1, overflow: "auto" }}>
-          {listLoading && <div style={emptyStyle}>{t("workflow.loadingTasks")}</div>}
-          {listError && <div style={{ ...emptyStyle, color: "#f87171" }}>{listError}</div>}
+        <div className="workflow-task-list">
+          {listLoading && <div className="inspector-state inspector-state-loading workflow-list-state">{t("workflow.loadingTasks")}</div>}
+          {listError && <div className="inspector-state inspector-state-error workflow-list-state" role="alert">{listError}</div>}
           {!listLoading && resolvedCwd && (
-            <div style={{ padding: "6px 12px", fontSize: 10, color: "var(--text-dim)", fontFamily: "var(--font-mono)", borderBottom: "1px solid var(--border)" }} title={resolvedCwd}>
+            <div className="workflow-cwd-row" title={resolvedCwd}>
               cwd: {shortPath(resolvedCwd, 42)}
             </div>
           )}
           {!listLoading && listDiagnostics.length > 0 && (
-            <div style={{ padding: 10, borderBottom: "1px solid var(--border)", background: "rgba(239,68,68,0.08)" }}>
-              <div style={{ fontSize: 11, fontWeight: 800, color: "#f87171", marginBottom: 6 }}>
+            <div className="workflow-diagnostics" role="alert">
+              <div className="workflow-diagnostics-title">
                 {t("workflow.listDiagnostics", { count: listDiagnostics.length })}
               </div>
               {listDiagnostics.slice(0, 5).map((item, index) => (
-                <div key={`${item.id ?? "err"}-${index}`} style={{ fontSize: 10, color: "#fca5a5", marginBottom: 4, lineHeight: 1.4 }}>
-                  <div style={{ fontFamily: "var(--font-mono)" }}>{item.id || item.pathLabel || "?"}</div>
+                <div key={`${item.id ?? "err"}-${index}`} className="workflow-diagnostic-row">
+                  <div className="workflow-mono">{item.id || item.pathLabel || "?"}</div>
                   <div>{item.message}</div>
                 </div>
               ))}
               {listDiagnostics.length > 5 && (
-                <div style={{ fontSize: 10, color: "var(--text-dim)" }}>+{listDiagnostics.length - 5} more</div>
+                <div className="workflow-diagnostics-more">+{listDiagnostics.length - 5} more</div>
               )}
             </div>
           )}
           {!listLoading && !listError && !exists && (
-            <div style={emptyStyle}>
-              <div style={{ fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>
+            <div className="workflow-empty-card">
+              <div className="workflow-empty-title">
                 {t("workflow.notInitializedTitle")}
               </div>
-              <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.5, marginBottom: 10 }}>
+              <div className="workflow-empty-description">
                 {t("workflow.notInitializedHint")}
               </div>
               <button
                 type="button"
                 disabled={initializing}
                 onClick={() => void handleInitialize()}
-                style={{
-                  border: "1px solid var(--accent)",
-                  borderRadius: 8,
-                  padding: "6px 12px",
-                  background: "rgba(37,99,235,0.10)",
-                  color: "var(--accent)",
-                  fontSize: 12,
-                  fontWeight: 700,
-                  cursor: initializing ? "not-allowed" : "pointer",
-                  opacity: initializing ? 0.6 : 1,
-                }}
+                className="workflow-action-button is-primary"
               >
                 {initializing ? t("workflow.initializing") : t("workflow.initialize")}
               </button>
-              {initError && (
-                <div style={{ marginTop: 8, fontSize: 11, color: "#f87171" }}>{initError}</div>
-              )}
+              {initError && <div className="workflow-inline-message is-error" role="alert">{initError}</div>}
             </div>
           )}
           {!listLoading && !listError && exists && updateAvailable && (
-            <div
-              style={{
-                margin: "0 10px 8px",
-                padding: "8px 10px",
-                borderRadius: 8,
-                border: "1px solid rgba(245,158,11,0.35)",
-                background: "rgba(245,158,11,0.10)",
-                color: "var(--text-muted)",
-                fontSize: 11,
-                lineHeight: 1.45,
-              }}
-            >
-              <div style={{ marginBottom: 8 }}>
+            <div className="workflow-update-card">
+              <div className="workflow-update-copy">
                 {t("workflow.updateAvailableHint", {
                   project: projectVersion ?? t("workflow.versionUnknown"),
                   bundled: bundledVersion ?? t("workflow.versionUnknown"),
@@ -818,32 +779,20 @@ export function WorkflowPanel({
                 type="button"
                 disabled={initializing}
                 onClick={() => void handleUpdateAssets()}
-                style={{
-                  border: "1px solid rgba(245,158,11,0.55)",
-                  borderRadius: 7,
-                  padding: "5px 10px",
-                  background: "rgba(245,158,11,0.16)",
-                  color: "#b45309",
-                  fontSize: 11,
-                  fontWeight: 700,
-                  cursor: initializing ? "not-allowed" : "pointer",
-                  opacity: initializing ? 0.6 : 1,
-                }}
+                className="workflow-action-button is-warning"
               >
                 {initializing ? t("workflow.updatingAssets") : t("workflow.updateAssets")}
               </button>
-              {initError && (
-                <div style={{ marginTop: 8, fontSize: 11, color: "#f87171" }}>{initError}</div>
-              )}
+              {initError && <div className="workflow-inline-message is-error" role="alert">{initError}</div>}
             </div>
           )}
           {!listLoading && !listError && exists && filteredTasks.length === 0 && (
-            <div style={emptyStyle}>
-              <div style={{ marginBottom: 10 }}>
+            <div className="workflow-empty-card">
+              <div className="workflow-empty-title">
                 {listDiagnostics.length > 0 ? t("workflow.noValidTasks") : t("workflow.noTasks")}
               </div>
               {listDiagnostics.length > 0 && (
-                <div style={{ fontSize: 11, color: "var(--text-dim)", marginBottom: 10, lineHeight: 1.45 }}>
+                <div className="workflow-empty-description">
                   {t("workflow.fixTaskFilesHint")}
                 </div>
               )}
@@ -871,37 +820,35 @@ export function WorkflowPanel({
         </div>
       </div>
 
-      <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
-        {detailLoading && <div style={emptyStyle}>{t("workflow.loadingDetail")}</div>}
-        {detailError && <div style={{ ...emptyStyle, color: "#f87171" }}>{detailError}</div>}
-        {!detailLoading && !detail && !detailError && <div style={emptyStyle}>{t("workflow.selectTask")}</div>}
+      <div className="workflow-detail-pane">
+        {detailLoading && <div className="inspector-state inspector-state-loading">{t("workflow.loadingDetail")}</div>}
+        {detailError && <div className="inspector-state inspector-state-error" role="alert">{detailError}</div>}
+        {!detailLoading && !detail && !detailError && <div className="inspector-state inspector-state-empty">{t("workflow.selectTask")}</div>}
 
         {detail && (
           <>
-            <div style={{ padding: 12, borderBottom: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: 8 }}>
-              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                <input value={draftTitle} onChange={(e) => setDraftTitle(e.target.value)} style={{ ...inputStyle, fontWeight: 700, flex: 1, minWidth: 160 }} />
-                <select value={draftPriority} onChange={(e) => setDraftPriority(e.target.value as WorkflowPriority)} style={inputStyle}>
+            <div className="workflow-detail-header">
+              <div className="workflow-detail-title-row">
+                <input value={draftTitle} onChange={(e) => setDraftTitle(e.target.value)} className="workflow-input workflow-title-input" />
+                <select value={draftPriority} onChange={(e) => setDraftPriority(e.target.value as WorkflowPriority)} className="workflow-input workflow-priority-select">
                   {(["P0", "P1", "P2", "P3"] as WorkflowPriority[]).map((p) => (
                     <option key={p} value={p}>{p}</option>
                   ))}
                 </select>
-                <span style={{ fontSize: 11, color: STATUS_COLORS[detail.status] ?? "var(--text-dim)", fontWeight: 700 }}>
-                  {t(`workflow.status.${detail.status}`)}
-                </span>
-                {dirty && <span style={{ fontSize: 11, color: "#f59e0b" }}>{t("workflow.unsaved")}</span>}
+                <span className={`inspector-badge ${workflowStatusTone(detail.status)}`}>{t(`workflow.status.${detail.status}`)}</span>
+                {dirty && <span className="workflow-unsaved">{t("workflow.unsaved")}</span>}
               </div>
               <textarea
                 value={draftDescription}
                 onChange={(e) => setDraftDescription(e.target.value)}
                 rows={2}
                 placeholder={t("workflow.description")}
-                style={{ ...inputStyle, resize: "vertical", minHeight: 48 }}
+                className="workflow-input workflow-description"
               />
-              <div style={{ fontSize: 11, color: "var(--text-dim)", fontFamily: "var(--font-mono)" }} title={cwd}>
+              <div className="workflow-detail-cwd" title={cwd}>
                 {t("workflow.cwd")}: {shortPath(cwd, 64)}
               </div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              <div className="workflow-detail-actions">
                 <ActionButton disabled={busy || detail.archived} onClick={handleCreateChild} label={t("workflow.createChild")} />
                 <ActionButton disabled={busy || !detail.allowedActions.save || !dirty} onClick={() => void handleSave()} label={t("workflow.save")} />
                 <ActionButton disabled={busy || !detail.allowedActions.markReady} title={detail.allowedActions.reasons.markReady} onClick={() => void handleMarkReady()} label={t("workflow.markReady")} />
@@ -912,12 +859,12 @@ export function WorkflowPanel({
                 <ActionButton disabled={busy || !detail.allowedActions.archive} title={detail.allowedActions.reasons.archive} onClick={() => void handleArchive()} label={t("workflow.archive")} />
               </div>
               {(detail.status === "ready_to_commit" || detail.commit) && (
-                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                <div className="workflow-commit-row">
                   <input
                     value={commitHash}
                     onChange={(e) => setCommitHash(e.target.value)}
                     placeholder={t("workflow.commitHash")}
-                    style={{ ...inputStyle, flex: 1, fontFamily: "var(--font-mono)" }}
+                    className="workflow-input workflow-commit-input"
                   />
                   <ActionButton
                     disabled={busy || !detail.allowedActions.recordCommit || !commitHash.trim()}
@@ -927,32 +874,27 @@ export function WorkflowPanel({
                   />
                 </div>
               )}
-              {actionError && <div style={{ color: "#f87171", fontSize: 12 }}>{actionError}</div>}
-              {conflictNote && <div style={{ color: "#f59e0b", fontSize: 12 }}>{conflictNote}</div>}
+              {actionError && <div className="workflow-inline-message is-error" role="alert">{actionError}</div>}
+              {conflictNote && <div className="workflow-inline-message is-warning">{conflictNote}</div>}
             </div>
 
-            <div style={{ display: "flex", gap: 4, padding: "8px 12px", borderBottom: "1px solid var(--border)", alignItems: "center" }}>
+            <div className="workflow-doc-toolbar">
               {(["requirements", "design", "plan", "runs"] as DocTab[]).map((tab) => (
                 <button
                   key={tab}
                   type="button"
                   onClick={() => setDocTab(tab)}
-                  style={{
-                    ...btnStyle,
-                    color: docTab === tab ? "var(--accent)" : "var(--text-muted)",
-                    borderBottom: docTab === tab ? "2px solid var(--accent)" : "2px solid transparent",
-                    borderRadius: 0,
-                  }}
+                  className={`workflow-doc-tab${docTab === tab ? " is-active" : ""}`}
                 >
                   {t(`workflow.tab.${tab}`)}
                 </button>
               ))}
               {docTab !== "runs" && (
-                <div style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
-                  <button type="button" onClick={() => setViewMode("edit")} style={{ ...btnStyle, color: viewMode === "edit" ? "var(--accent)" : "var(--text-muted)" }}>
+                <div className="workflow-doc-actions">
+                  <button type="button" onClick={() => setViewMode("edit")} className={`workflow-icon-button${viewMode === "edit" ? " is-active" : ""}`}>
                     {t("workflow.edit")}
                   </button>
-                  <button type="button" onClick={() => setViewMode("preview")} style={{ ...btnStyle, color: viewMode === "preview" ? "var(--accent)" : "var(--text-muted)" }}>
+                  <button type="button" onClick={() => setViewMode("preview")} className={`workflow-icon-button${viewMode === "preview" ? " is-active" : ""}`}>
                     {t("workflow.preview")}
                   </button>
                   <a
@@ -967,15 +909,7 @@ export function WorkflowPanel({
                     onClick={(event) => {
                       if (dirty) event.preventDefault();
                     }}
-                    style={{
-                      ...btnStyle,
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 4,
-                      color: dirty ? "var(--text-dim)" : "var(--text-muted)",
-                      cursor: dirty ? "not-allowed" : "pointer",
-                      textDecoration: "none",
-                    }}
+                    className={`workflow-icon-button workflow-standalone-link${dirty ? " is-disabled" : ""}`}
                   >
                     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                       <path d="M14 3h7v7" />
@@ -988,30 +922,17 @@ export function WorkflowPanel({
               )}
             </div>
 
-            <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: 12 }}>
+            <div className="workflow-document-body">
               {docTab === "runs" ? (
                 <RunsList runs={detail.runs} />
               ) : viewMode === "edit" ? (
                 <textarea
                   value={currentDoc}
                   onChange={(e) => setCurrentDoc(e.target.value)}
-                  style={{
-                    width: "100%",
-                    minHeight: "100%",
-                    height: "100%",
-                    resize: "vertical",
-                    background: "var(--bg-subtle)",
-                    color: "var(--text)",
-                    border: "1px solid var(--border)",
-                    borderRadius: 8,
-                    padding: 12,
-                    fontFamily: "var(--font-mono)",
-                    fontSize: 12,
-                    lineHeight: 1.5,
-                  }}
+                  className="workflow-document-editor"
                 />
               ) : (
-                <div style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)", borderRadius: 8, padding: 12 }}>
+                <div className="workflow-document-preview">
                   <MarkdownBody>{currentDoc || `_${t("workflow.emptyDoc")}_`}</MarkdownBody>
                 </div>
               )}
@@ -1021,49 +942,25 @@ export function WorkflowPanel({
       </div>
 
       {showCreate && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.45)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 80,
-          }}
-          onClick={() => !busy && setShowCreate(false)}
-        >
-          <div
-            style={{
-              width: 420,
-              maxWidth: "92vw",
-              background: "var(--bg-panel)",
-              border: "1px solid var(--border)",
-              borderRadius: 12,
-              padding: 16,
-              display: "flex",
-              flexDirection: "column",
-              gap: 10,
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div style={{ fontWeight: 800, color: "var(--text)" }}>{t("workflow.createTask")}</div>
-            {createParentTaskId && <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{t("workflow.createChildOf", { id: createParentTaskId })}</div>}
+        <div className="workflow-create-overlay" onClick={() => !busy && setShowCreate(false)}>
+          <div className="workflow-create-panel" onClick={(e) => e.stopPropagation()}>
+            <div className="workflow-create-title">{t("workflow.createTask")}</div>
+            {createParentTaskId && <div className="workflow-create-context">{t("workflow.createChildOf", { id: createParentTaskId })}</div>}
             <input
               autoFocus
               value={createTitle}
               onChange={(e) => setCreateTitle(e.target.value)}
               placeholder={t("workflow.taskTitle")}
-              style={inputStyle}
+              className="workflow-input"
             />
-            <select value={createPriority} onChange={(e) => setCreatePriority(e.target.value as WorkflowPriority)} style={inputStyle}>
+            <select value={createPriority} onChange={(e) => setCreatePriority(e.target.value as WorkflowPriority)} className="workflow-input">
               {(["P0", "P1", "P2", "P3"] as WorkflowPriority[]).map((p) => (
                 <option key={p} value={p}>{p}</option>
               ))}
             </select>
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-              <button type="button" style={btnStyle} disabled={busy} onClick={() => setShowCreate(false)}>{t("common.cancel")}</button>
-              <button type="button" style={{ ...btnStyle, color: "var(--accent)" }} disabled={busy || !createTitle.trim()} onClick={() => void handleCreate()}>
+            <div className="workflow-create-actions">
+              <button type="button" className="workflow-action-button" disabled={busy} onClick={() => setShowCreate(false)}>{t("common.cancel")}</button>
+              <button type="button" className="workflow-action-button is-primary" disabled={busy || !createTitle.trim()} onClick={() => void handleCreate()}>
                 {t("workflow.create")}
               </button>
             </div>
@@ -1087,49 +984,35 @@ function TaskListButton({
 }) {
   const t = useT();
   return (
-    <button type="button" onClick={onSelect} style={{ display: "block", width: "100%", textAlign: "left", border: "none", borderBottom: "1px solid var(--border)", background: selected ? "var(--bg-selected)" : "transparent", padding: indent ? "8px 12px 8px 26px" : "10px 12px", cursor: "pointer", color: "var(--text)" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 4 }}>
-        <span style={{ fontSize: 12, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{indent ? "↳ " : ""}{task.title}</span>
-        <span style={{ fontSize: 10, color: STATUS_COLORS[task.status] ?? "var(--text-dim)", flexShrink: 0 }}>{t(`workflow.status.${task.status}`)}</span>
+    <button type="button" onClick={onSelect} className={`workflow-task-row${selected ? " is-selected" : ""}${indent ? " is-child" : ""}`}>
+      <div className="workflow-task-row-header">
+        <span className="workflow-task-title">{indent ? "↳ " : ""}{task.title}</span>
+        <span className={`inspector-badge ${workflowStatusTone(task.status)}`}>{t(`workflow.status.${task.status}`)}</span>
       </div>
-      <div style={{ fontSize: 10, color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>{task.id}{task.childCount > 0 ? ` · ${task.completedChildCount}/${task.childCount}` : ""}</div>
+      <div className="workflow-task-meta">{task.id}{task.childCount > 0 ? ` · ${task.completedChildCount}/${task.childCount}` : ""}</div>
     </button>
   );
 }
 
 function RunsList({ runs }: { runs: WorkflowRunRecord[] }) {
   const t = useT();
-  if (runs.length === 0) {
-    return <div style={emptyStyle}>{t("workflow.noRuns")}</div>;
-  }
+  if (runs.length === 0) return <div className="inspector-state inspector-state-empty">{t("workflow.noRuns")}</div>;
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+    <div className="workflow-run-list">
       {runs.map((run) => (
-        <div key={run.id} style={{ border: "1px solid var(--border)", borderRadius: 10, padding: 12, background: "var(--bg-subtle)" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 6 }}>
-            <div style={{ fontWeight: 700, fontSize: 12 }}>
-              {run.phase} · {run.agentName} · <span style={{ color: STATUS_COLORS[run.state] ?? "var(--text-dim)" }}>{run.state}</span>
-            </div>
-            <div style={{ fontSize: 11, color: "var(--text-dim)" }}>{formatTime(run.createdAt)}</div>
+        <div key={run.id} className="workflow-run-card">
+          <div className="workflow-run-header">
+            <div>{run.phase} · {run.agentName} · <span className={`workflow-status-text ${workflowStatusTone(run.state)}`}>{run.state}</span></div>
+            <time>{formatTime(run.createdAt)}</time>
           </div>
-          <div style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "var(--font-mono)", marginBottom: 4 }}>{run.id}</div>
-          <div style={{ fontSize: 11, color: "var(--text-dim)" }} title={run.effectiveCwd}>
-            cwd: {shortPath(run.effectiveCwd, 72)}
-          </div>
-          {run.model && <div style={{ fontSize: 11, color: "var(--text-dim)" }}>model: {run.model}</div>}
-          {run.summary && <div style={{ fontSize: 12, color: "var(--text)", marginTop: 6, whiteSpace: "pre-wrap" }}>{run.summary}</div>}
-          {run.error && (
-            <div style={{ fontSize: 12, color: "#f87171", marginTop: 6 }}>
-              {run.error.code}: {run.error.message}
-            </div>
-          )}
-          {run.checkResult && (
-            <div style={{ fontSize: 12, marginTop: 6 }}>
-              verdict: <strong>{run.checkResult.verdict}</strong>
-            </div>
-          )}
+          <div className="workflow-run-id">{run.id}</div>
+          <div className="workflow-run-meta" title={run.effectiveCwd}>cwd: {shortPath(run.effectiveCwd, 72)}</div>
+          {run.model && <div className="workflow-run-meta">model: {run.model}</div>}
+          {run.summary && <div className="workflow-run-summary">{run.summary}</div>}
+          {run.error && <div className="workflow-run-error" role="alert">{run.error.code}: {run.error.message}</div>}
+          {run.checkResult && <div className="workflow-run-summary">verdict: <strong>{run.checkResult.verdict}</strong></div>}
           {run.implementResult?.changedFiles?.length ? (
-            <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}>
+            <div className="workflow-run-files">
               files: {run.implementResult.changedFiles.slice(0, 8).join(", ")}
               {run.implementResult.changedFiles.length > 8 ? "…" : ""}
             </div>
@@ -1157,44 +1040,9 @@ function ActionButton({
       onClick={onClick}
       disabled={disabled}
       title={title}
-      style={{
-        ...btnStyle,
-        opacity: disabled ? 0.45 : 1,
-        cursor: disabled ? "not-allowed" : "pointer",
-        border: "1px solid var(--border)",
-        borderRadius: 8,
-        padding: "4px 8px",
-        background: "var(--bg)",
-      }}
+      className="workflow-action-button"
     >
       {label}
     </button>
   );
 }
-
-const inputStyle: CSSProperties = {
-  width: "100%",
-  background: "var(--bg)",
-  color: "var(--text)",
-  border: "1px solid var(--border)",
-  borderRadius: 8,
-  padding: "6px 8px",
-  fontSize: 12,
-};
-
-const btnStyle: CSSProperties = {
-  background: "none",
-  border: "none",
-  color: "var(--text-muted)",
-  cursor: "pointer",
-  fontSize: 12,
-  fontWeight: 700,
-  padding: "4px 6px",
-};
-
-const emptyStyle: CSSProperties = {
-  padding: 16,
-  color: "var(--text-muted)",
-  fontSize: 13,
-  lineHeight: 1.5,
-};

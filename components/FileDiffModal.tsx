@@ -67,30 +67,14 @@ export function FileDiffModal({ sessionId, file, onClose }: Props) {
       diff={diff}
       fallback={reasonLabel(data?.reason ?? file.reason)}
       onClose={onClose}
-      overlayStyle={{
-        position: "absolute",
-        inset: 0,
-        zIndex: 220,
-        alignItems: "center",
-        padding: 24,
-        background: "rgba(0,0,0,0.28)",
-        borderRadius: 0,
-      }}
-      panelStyle={{
-        width: "min(1180px, 96vw)",
-        height: "auto",
-        maxHeight: "min(760px, 90vh)",
-        boxShadow: "0 24px 60px rgba(0,0,0,0.28)",
-      }}
+      contained
       header={(
         <>
-          <div style={{ fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {file.path}
-          </div>
-          <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 4, fontSize: 12, color: "var(--text-muted)" }}>
+          <div className="diff-modal-path">{file.path}</div>
+          <div className="diff-modal-meta">
             <span>{statusLabel(display.status)}</span>
-            <span style={{ color: "#16a34a" }}>+{display.additions}</span>
-            <span style={{ color: "#dc2626" }}>-{display.deletions}</span>
+            <span className="is-success">+{display.additions}</span>
+            <span className="is-danger">-{display.deletions}</span>
             <span>via {display.toolNames.join(", ")}</span>
           </div>
         </>

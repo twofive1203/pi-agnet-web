@@ -2,7 +2,7 @@
 
 import { useI18n } from "@/components/I18nProvider";
 
-import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { DiffView, type DiffMode } from "./DiffView";
 
 interface Props {
@@ -14,8 +14,7 @@ interface Props {
   fallback: ReactNode;
   onClose: () => void;
   loadingLabel?: string;
-  overlayStyle?: CSSProperties;
-  panelStyle?: CSSProperties;
+  contained?: boolean;
 }
 
 function ModeButton({ mode, selected, onSelect, disabled, label }: { mode: DiffMode; selected: boolean; onSelect: (mode: DiffMode) => void; disabled: boolean; label: string }) {
@@ -25,18 +24,7 @@ function ModeButton({ mode, selected, onSelect, disabled, label }: { mode: DiffM
       onClick={() => onSelect(mode)}
       disabled={disabled}
       aria-pressed={selected}
-      style={{
-        border: "1px solid var(--border)",
-        background: selected ? "var(--accent)" : "var(--bg)",
-        color: selected ? "white" : "var(--text-muted)",
-        borderRadius: 7,
-        padding: "5px 9px",
-        cursor: disabled ? "not-allowed" : "pointer",
-        fontSize: 11,
-        fontWeight: selected ? 700 : 500,
-        opacity: disabled ? 0.55 : 1,
-        whiteSpace: "nowrap",
-      }}
+      className={`diff-modal-mode${selected ? " is-selected" : ""}`}
     >
       {label}
     </button>
@@ -52,8 +40,7 @@ export function DiffModal({
   fallback,
   onClose,
   loadingLabel,
-  overlayStyle,
-  panelStyle,
+  contained = false,
 }: Props) {
   const { t } = useI18n();
   const resolvedLoadingLabel = loadingLabel ?? t("panels.diff.loading");
@@ -72,77 +59,43 @@ export function DiffModal({
   }, [onClose]);
 
   const hasDiff = Boolean(diff);
-  const diffBodyOverflow = mode === "side-by-side" && hasDiff ? "hidden" : "auto";
 
   return (
     <div
       role="dialog"
       aria-modal="true"
       aria-label={ariaLabel}
-      style={{
-        position: "fixed",
-        inset: 16,
-        zIndex: 1000,
-        display: "flex",
-        alignItems: "stretch",
-        justifyContent: "center",
-        background: "rgba(0,0,0,0.42)",
-        borderRadius: 14,
-        ...overlayStyle,
-      }}
+      className={`diff-modal-overlay${contained ? " is-contained" : ""}`}
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <div
-        style={{
-          width: "min(1440px, 100%)",
-          height: "100%",
-          display: "flex",
-          flexDirection: "column",
-          border: "1px solid var(--border)",
-          borderRadius: 14,
-          background: "var(--bg-panel)",
-          color: "var(--text)",
-          boxShadow: "0 24px 80px rgba(0,0,0,0.35)",
-          overflow: "hidden",
-          ...panelStyle,
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "13px 16px", borderBottom: "1px solid var(--border)" }}>
-          <div style={{ minWidth: 0, flex: 1 }}>{header}</div>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
+      <div className="diff-modal-panel">
+        <div className="diff-modal-header">
+          <div className="diff-modal-heading">{header}</div>
+          <div className="diff-modal-actions">
             <ModeButton mode="side-by-side" selected={mode === "side-by-side"} onSelect={setMode} disabled={!hasDiff} label={modeLabels["side-by-side"]} />
             <ModeButton mode="unified" selected={mode === "unified"} onSelect={setMode} disabled={!hasDiff} label={modeLabels.unified} />
             <button
               type="button"
               onClick={onClose}
               aria-label="Close diff"
-              style={{
-                border: "1px solid var(--border)",
-                background: "var(--bg)",
-                color: "var(--text)",
-                borderRadius: 8,
-                padding: "6px 10px",
-                cursor: "pointer",
-              }}
+              className="diff-modal-close"
             >
               Close
             </button>
           </div>
         </div>
 
-        <div style={{ flex: 1, minHeight: 0, overflow: diffBodyOverflow, background: "var(--bg)" }}>
+        <div className={`diff-modal-body${mode === "side-by-side" && hasDiff ? " is-split" : ""}`}>
           {loading ? (
-            <div style={{ padding: 18, color: "var(--text-muted)", fontSize: 13 }}>{resolvedLoadingLabel}</div>
+            <div className="inspector-state inspector-state-loading diff-modal-state">{resolvedLoadingLabel}</div>
           ) : error ? (
-            <div style={{ padding: 18, color: "#dc2626", fontSize: 13 }}>{error}</div>
+            <div className="inspector-state inspector-state-error diff-modal-state" role="alert">{error}</div>
           ) : diff ? (
             <DiffView diff={diff} mode={mode} />
           ) : (
-            <div style={{ padding: 18, color: "var(--text-muted)", fontSize: 13 }}>
-              {fallback}
-            </div>
+            <div className="inspector-state inspector-state-empty diff-modal-state">{fallback}</div>
           )}
         </div>
       </div>

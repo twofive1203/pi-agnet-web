@@ -373,8 +373,8 @@ export function CommitGraph({ commits, currentBranch, maxDisplay = 50, selectedH
   const { rows, layout, laneOrder, laneWidth, paddingL, graphWidth, rowHeight, overlays, hasMore } = MEMO;
 
   return (
-    <div ref={containerRef} style={{ position: "relative" }}>
-      <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+    <div ref={containerRef} className="commit-graph">
+      <div className="commit-graph-list">
         {rows.map((rd) => (
           <CommitRow
             key={rd.commit.hash}
@@ -395,28 +395,14 @@ export function CommitGraph({ commits, currentBranch, maxDisplay = 50, selectedH
             onSelectCommit={onSelectCommit}
           />
         ))}
-        {hasMore && (
-          <div style={{
-            fontSize: 10, color: "var(--text-dim)",
-            textAlign: "center", padding: "2px 0", fontStyle: "italic",
-          }}>
-            +{commits.length - maxDisplay} more
-          </div>
-        )}
+        {hasMore && <div className="commit-graph-more">+{commits.length - maxDisplay} more</div>}
       </div>
 
       {/* Overlay SVG for fork/merge connection lines (direct child of positioned container) */}
       <svg
         width={graphWidth}
         height={rows.length * rowHeight}
-        style={{
-          position: "absolute",
-          top: 0,
-          left: 0,
-          zIndex: 5,
-          pointerEvents: "none",
-          overflow: "visible",
-        }}
+        className="commit-graph-overlay"
       >
         <defs>
           {overlays.map((ol) => (
@@ -458,26 +444,7 @@ export function CommitGraph({ commits, currentBranch, maxDisplay = 50, selectedH
 
       {/* Floating tooltip */}
       {tooltip && (
-        <div style={{
-          position: "absolute",
-          left: tooltip.x,
-          top: tooltip.y,
-          zIndex: 1000,
-          background: "var(--bg-panel)",
-          border: "1px solid var(--border)",
-          borderRadius: 6,
-          padding: "6px 10px",
-          fontSize: 11,
-          lineHeight: 1.5,
-          color: "var(--text)",
-          whiteSpace: "pre",
-          boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
-          pointerEvents: "none",
-          maxWidth: 300,
-          fontFamily: "var(--font-mono)",
-        }}>
-          {tooltip.text}
-        </div>
+        <div className="commit-graph-tooltip" style={{ left: tooltip.x, top: tooltip.y }}>{tooltip.text}</div>
       )}
     </div>
   );
@@ -524,13 +491,12 @@ function CommitRow({
   const tagLabels = commit.refs.filter((r) => r.type === "tag");
 
   const tipText = formatCommitTooltip(commit);
-  const rowBackground = isSelected ? "var(--bg-selected)" : isHovered ? "var(--bg-hover)" : "transparent";
-
   return (
     <div
       role={onSelectCommit ? "button" : undefined}
       tabIndex={onSelectCommit ? 0 : undefined}
       aria-pressed={onSelectCommit ? isSelected : undefined}
+      className={`commit-graph-row${isSelected ? " is-selected" : ""}${isHovered ? " is-hovered" : ""}${onSelectCommit ? " is-interactive" : ""}`}
       onClick={() => onSelectCommit?.(commit)}
       onKeyDown={(event) => {
         if (!onSelectCommit) return;
@@ -541,17 +507,7 @@ function CommitRow({
       }}
       onMouseEnter={() => onRowEnter(idx)}
       onMouseLeave={onRowLeave}
-      style={{
-        display: "flex",
-        alignItems: "stretch",
-        minHeight: rowHeight,
-        height: rowHeight,
-        background: rowBackground,
-        borderRadius: 4,
-        cursor: onSelectCommit ? "pointer" : "default",
-        outline: "none",
-        transition: "background 0.08s",
-      }}
+      style={{ minHeight: rowHeight, height: rowHeight }}
     >
       {/* SVG graph */}
       <div style={{ width: graphWidth, minWidth: graphWidth, flexShrink: 0 }}>
@@ -663,22 +619,8 @@ function CommitRow({
       </div>
 
       {/* Commit info — highlight background when row is hovered */}
-      <div style={{
-        flex: 1, minWidth: 0,
-        display: "flex", alignItems: "center", gap: 3,
-        overflow: "hidden", paddingRight: 4,
-        borderRadius: 4,
-        background: rowBackground,
-        transition: "background 0.08s",
-      }}>
-        <span style={{
-          fontSize: 10.5,
-          color: "var(--text)",
-          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-          flex: 1, minWidth: 0,
-        }}>
-          {commit.message}
-        </span>
+      <div className="commit-graph-row-content">
+        <span className="commit-graph-message">{commit.message}</span>
 
         {branchLabels.map((ref) => (
           <RefBadge
@@ -697,12 +639,7 @@ function CommitRow({
           />
         )}
 
-        <span style={{
-          fontSize: 9, color: "var(--text-dim)",
-          whiteSpace: "nowrap", flexShrink: 0,
-        }}>
-          {commit.relativeDate}
-        </span>
+        <span className="commit-graph-date">{commit.relativeDate}</span>
       </div>
     </div>
   );

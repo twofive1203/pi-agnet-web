@@ -104,20 +104,22 @@ function DownloadLink({ filePath, label = "Download" }: { filePath: string; labe
     <a
       href={`/api/files/${encoded}?type=read`}
       download={getFileName(filePath)}
-      style={{
-        color: "var(--text-muted)",
-        textDecoration: "none",
-        border: "1px solid var(--border)",
-        borderRadius: 5,
-        padding: "2px 8px",
-        fontSize: 11,
-        lineHeight: 1.4,
-        background: "var(--bg-hover)",
-        flexShrink: 0,
-      }}
+      className="file-viewer-action"
     >
       {label}
     </a>
+  );
+}
+
+function LiveIndicator({ watching }: { watching: boolean }) {
+  return (
+    <span
+      className={`file-viewer-live${watching ? " is-live" : ""}`}
+      title={watching ? "Live sync active" : "Not watching"}
+    >
+      <span className="file-viewer-live-dot" />
+      {watching ? "live" : "static"}
+    </span>
   );
 }
 
@@ -405,80 +407,23 @@ function ImageViewer({ filePath, cwd, onAddChat }: { filePath: string; cwd?: str
   const formatSizeStr = size != null ? formatSize(size) : null;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 12,
-          padding: "4px 16px",
-          borderBottom: "1px solid var(--border)",
-          fontSize: 11,
-          color: "var(--text-dim)",
-          background: "var(--bg)",
-          flexShrink: 0,
-        }}
-      >
-        <span style={{ fontFamily: "var(--font-mono)" }} title={filePath}>
-          {getRelativeFilePath(filePath, cwd)}
-        </span>
-        <span style={{ marginLeft: "auto" }}>{ext || "image"}</span>
+    <div className="file-viewer-shell">
+      <div className="file-viewer-status-bar">
+        <span className="file-viewer-path" title={filePath}>{getRelativeFilePath(filePath, cwd)}</span>
+        <span className="file-viewer-meta-spacer">{ext || "image"}</span>
         {naturalSize && <span>{naturalSize.w} × {naturalSize.h}</span>}
         {formatSizeStr && <span>{formatSizeStr}</span>}
         {onAddChat && (
-          <button
-            onClick={() => onAddChat(filePath)}
-            title="Add to chat (⌘1)"
-            style={{
-              padding: "2px 8px", fontSize: 11, cursor: "pointer",
-              background: "var(--bg-hover)",
-              color: "var(--text-muted)",
-              border: "1px solid var(--border)", borderRadius: 5,
-              fontWeight: 400,
-              display: "flex", alignItems: "center", gap: 4,
-              lineHeight: 1.4,
-            }}
-            onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-selected)"; e.currentTarget.style.color = "var(--text)"; }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = "var(--bg-hover)"; e.currentTarget.style.color = "var(--text-muted)"; }}
-          >
+          <button type="button" onClick={() => onAddChat(filePath)} title="Add to chat (⌘1)" className="file-viewer-action">
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
             Chat
           </button>
         )}
-        <span
-          title={watching ? "Live sync active" : "Not watching"}
-          style={{ display: "flex", alignItems: "center", gap: 4, color: watching ? "#4ade80" : "var(--text-dim)" }}
-        >
-          <span
-            style={{
-              width: 7,
-              height: 7,
-              borderRadius: "50%",
-              background: watching ? "#4ade80" : "var(--border)",
-              display: "inline-block",
-              boxShadow: watching ? "0 0 4px #4ade80" : "none",
-            }}
-          />
-          {watching ? "live" : "static"}
-        </span>
+        <LiveIndicator watching={watching} />
       </div>
-      <div
-        style={{
-          flex: 1,
-          overflow: "auto",
-          background: "var(--bg-panel)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          padding: 16,
-          backgroundImage:
-            "linear-gradient(45deg, var(--bg) 25%, transparent 25%), linear-gradient(-45deg, var(--bg) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, var(--bg) 75%), linear-gradient(-45deg, transparent 75%, var(--bg) 75%)",
-          backgroundSize: "16px 16px",
-          backgroundPosition: "0 0, 0 8px, 8px -8px, -8px 0px",
-        }}
-      >
+      <div className="file-viewer-content file-viewer-image-canvas">
         {error ? (
-          <div style={{ color: "#f87171", fontSize: 13 }}>{error}</div>
+          <div className="file-viewer-state is-error" role="alert">{error}</div>
         ) : (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -559,79 +504,23 @@ function AudioViewer({ filePath, cwd, onAddChat }: { filePath: string; cwd?: str
   const src = `/api/files/${encoded}?type=read${bust ? `&v=${bust}` : ""}`;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 12,
-          padding: "4px 16px",
-          borderBottom: "1px solid var(--border)",
-          fontSize: 11,
-          color: "var(--text-dim)",
-          background: "var(--bg)",
-          flexShrink: 0,
-        }}
-      >
-        <span style={{ fontFamily: "var(--font-mono)" }} title={filePath}>
-          {getRelativeFilePath(filePath, cwd)}
-        </span>
-        <span style={{ marginLeft: "auto" }}>{ext || "audio"}</span>
+    <div className="file-viewer-shell">
+      <div className="file-viewer-status-bar">
+        <span className="file-viewer-path" title={filePath}>{getRelativeFilePath(filePath, cwd)}</span>
+        <span className="file-viewer-meta-spacer">{ext || "audio"}</span>
         {duration != null && <span>{formatDuration(duration)}</span>}
         {size != null && <span>{formatSize(size)}</span>}
         {onAddChat && (
-          <button
-            onClick={() => onAddChat(filePath)}
-            title="Add to chat (⌘1)"
-            style={{
-              padding: "2px 8px", fontSize: 11, cursor: "pointer",
-              background: "var(--bg-hover)",
-              color: "var(--text-muted)",
-              border: "1px solid var(--border)", borderRadius: 5,
-              fontWeight: 400,
-              display: "flex", alignItems: "center", gap: 4,
-              lineHeight: 1.4,
-            }}
-            onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-selected)"; e.currentTarget.style.color = "var(--text)"; }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = "var(--bg-hover)"; e.currentTarget.style.color = "var(--text-muted)"; }}
-          >
+          <button type="button" onClick={() => onAddChat(filePath)} title="Add to chat (⌘1)" className="file-viewer-action">
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
             Chat
           </button>
         )}
-        <span
-          title={watching ? "Live sync active" : "Not watching"}
-          style={{ display: "flex", alignItems: "center", gap: 4, color: watching ? "#4ade80" : "var(--text-dim)" }}
-        >
-          <span
-            style={{
-              width: 7,
-              height: 7,
-              borderRadius: "50%",
-              background: watching ? "#4ade80" : "var(--border)",
-              display: "inline-block",
-              boxShadow: watching ? "0 0 4px #4ade80" : "none",
-            }}
-          />
-          {watching ? "live" : "static"}
-        </span>
+        <LiveIndicator watching={watching} />
       </div>
-      <div
-        style={{
-          flex: 1,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          padding: 24,
-          background: "var(--bg-panel)",
-        }}
-      >
-        <div style={{ width: "min(680px, 100%)" }}>
-          {error && (
-            <div style={{ color: "#f87171", fontSize: 13, marginBottom: 12, textAlign: "center" }}>
-              {error}
-            </div>
-          )}
+      <div className="file-viewer-content file-viewer-media-canvas">
+        <div className="file-viewer-audio-frame">
+          {error && <div className="file-viewer-state is-error" role="alert">{error}</div>}
           <audio
             key={src}
             controls
@@ -713,68 +602,23 @@ function DocumentViewer({ filePath, cwd, onAddChat }: { filePath: string; cwd?: 
   }, [encoded, isPdf]);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 12,
-          padding: "4px 16px",
-          borderBottom: "1px solid var(--border)",
-          fontSize: 11,
-          color: "var(--text-dim)",
-          background: "var(--bg)",
-          flexShrink: 0,
-        }}
-      >
-        <span style={{ fontFamily: "var(--font-mono)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={filePath}>
-          {getRelativeFilePath(filePath, cwd)}
-        </span>
-        <span style={{ marginLeft: "auto" }}>{ext === "docx" ? "docx preview" : "pdf"}</span>
+    <div className="file-viewer-shell">
+      <div className="file-viewer-status-bar">
+        <span className="file-viewer-path" title={filePath}>{getRelativeFilePath(filePath, cwd)}</span>
+        <span className="file-viewer-meta-spacer">{ext === "docx" ? "docx preview" : "pdf"}</span>
         {size != null && <span>{formatSize(size)}</span>}
         {onAddChat && (
-          <button
-            onClick={() => onAddChat(filePath)}
-            title="Add to chat (⌘1)"
-            style={{
-              padding: "2px 8px", fontSize: 11, cursor: "pointer",
-              background: "var(--bg-hover)",
-              color: "var(--text-muted)",
-              border: "1px solid var(--border)", borderRadius: 5,
-              fontWeight: 400,
-              display: "flex", alignItems: "center", gap: 4,
-              lineHeight: 1.4,
-            }}
-            onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-selected)"; e.currentTarget.style.color = "var(--text)"; }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = "var(--bg-hover)"; e.currentTarget.style.color = "var(--text-muted)"; }}
-          >
+          <button type="button" onClick={() => onAddChat(filePath)} title="Add to chat (⌘1)" className="file-viewer-action">
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
             Chat
           </button>
         )}
         <DownloadLink filePath={filePath} />
-        <span
-          title={watching ? "Live sync active" : "Not watching"}
-          style={{ display: "flex", alignItems: "center", gap: 4, color: watching ? "#4ade80" : "var(--text-dim)", flexShrink: 0 }}
-        >
-          <span
-            style={{
-              width: 7,
-              height: 7,
-              borderRadius: "50%",
-              background: watching ? "#4ade80" : "var(--border)",
-              display: "inline-block",
-              boxShadow: watching ? "0 0 4px #4ade80" : "none",
-            }}
-          />
-          {watching ? "live" : "static"}
-        </span>
+        <LiveIndicator watching={watching} />
       </div>
-      <div style={{ flex: 1, minHeight: 0, background: "var(--bg-panel)" }}>
+      <div className="file-viewer-content">
         {error ? (
-          <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", padding: 24, color: "#f87171", fontSize: 13, textAlign: "center" }}>
-            {error}
-          </div>
+          <div className="file-viewer-state is-error" role="alert">{error}</div>
         ) : (
           <iframe
             key={previewUrl}
@@ -1056,19 +900,11 @@ function TextFileViewer({ filePath, cwd, initialLine, editorConfig, onAddChat, o
   }, [filePath, fetchContent]);
 
   if (loading) {
-    return (
-      <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", fontSize: 13 }}>
-        Loading...
-      </div>
-    );
+    return <div className="file-viewer-state is-loading">Loading...</div>;
   }
 
   if (error) {
-    return (
-      <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#f87171", fontSize: 13 }}>
-        {error}
-      </div>
-    );
+    return <div className="file-viewer-state is-error" role="alert">{error}</div>;
   }
 
   if (!data) return null;
@@ -1080,82 +916,40 @@ function TextFileViewer({ filePath, cwd, initialLine, editorConfig, onAddChat, o
   const hasDiff = prevContent !== null && prevContent !== data.content;
 
   return (
-    <div className="file-viewer-root" style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
-      {/* Status bar */}
-      <div
-        className="file-viewer-status-bar"
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 12,
-          padding: "4px 16px",
-          borderBottom: "1px solid var(--border)",
-          fontSize: 11,
-          color: "var(--text-dim)",
-          background: "var(--bg)",
-          flexShrink: 0,
-        }}
-      >
-        <span style={{ fontFamily: "var(--font-mono)" }} title={filePath}>
-          {getRelativeFilePath(filePath, cwd)}
-        </span>
-        <span style={{ marginLeft: "auto" }}>{data.language}</span>
+    <div className="file-viewer-root file-viewer-shell">
+      <div className="file-viewer-status-bar">
+        <span className="file-viewer-path" title={filePath}>{getRelativeFilePath(filePath, cwd)}</span>
+        <span className="file-viewer-meta-spacer">{data.language}</span>
         {viewMode === "source" && <span>{lines.length} lines</span>}
         <span>{formatSize(data.size)}</span>
-        {dirty && <span style={{ color: externalChangePending ? "#f59e0b" : "var(--accent)", fontWeight: 600 }}>unsaved</span>}
+        {dirty && <span className={`file-viewer-status${externalChangePending ? " is-warning" : " is-accent"}`}>unsaved</span>}
         {saveError && (
-          <span
-            title={saveError}
-            style={{ color: externalChangePending ? "#f59e0b" : "#f87171", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
-          >
+          <span title={saveError} className={`file-viewer-status file-viewer-status-message${externalChangePending ? " is-warning" : " is-error"}`}>
             {saveError}
           </span>
         )}
         {externalChangePending && (
-          <button
-            onClick={handleReloadFromDisk}
-            title="Discard local edits and reload from disk"
-            style={{
-              padding: "2px 8px", fontSize: 11, cursor: "pointer",
-              background: "rgba(245,158,11,0.10)", color: "#f59e0b",
-              border: "1px solid rgba(245,158,11,0.55)", borderRadius: 5,
-              fontWeight: 600,
-            }}
-          >
+          <button type="button" onClick={handleReloadFromDisk} title="Discard local edits and reload from disk" className="file-viewer-action is-warning">
             Reload disk
           </button>
         )}
         <button
+          type="button"
           onClick={handleSave}
           disabled={!dirty || saving}
           title="Save file (⌘S)"
-          style={{
-            padding: "2px 8px", fontSize: 11,
-            cursor: !dirty || saving ? "default" : "pointer",
-            background: dirty ? "var(--accent)" : "var(--bg-hover)",
-            color: dirty ? "white" : "var(--text-dim)",
-            border: dirty ? "1px solid var(--accent)" : "1px solid var(--border)",
-            borderRadius: 5,
-            fontWeight: dirty ? 700 : 400,
-            opacity: saving ? 0.75 : 1,
-          }}
+          className={`file-viewer-action${dirty ? " is-primary" : ""}`}
         >
           {saving ? "Saving..." : dirty ? "Save" : "Saved"}
         </button>
 
         {viewMode === "source" && !previewMode && (
           <button
+            type="button"
             onClick={handleFindDefinitions}
             disabled={!activeSymbol || implementationLoading}
             title={activeSymbol ? `Go to definition for ${activeSymbol}` : "Place cursor on a symbol"}
-            style={{
-              padding: "2px 8px", fontSize: 11,
-              cursor: !activeSymbol || implementationLoading ? "default" : "pointer",
-              background: "var(--bg-hover)",
-              color: activeSymbol ? "var(--text-muted)" : "var(--text-dim)",
-              border: "1px solid var(--border)", borderRadius: 5,
-              fontWeight: 400,
-            }}
+            className="file-viewer-action"
           >
             Def
           </button>
@@ -1163,17 +957,11 @@ function TextFileViewer({ filePath, cwd, initialLine, editorConfig, onAddChat, o
 
         {viewMode === "source" && !previewMode && (
           <button
+            type="button"
             onClick={handleFindReferences}
             disabled={!activeSymbol || implementationLoading}
             title={activeSymbol ? `Find references for ${activeSymbol} (⇧F12)` : "Place cursor on a symbol"}
-            style={{
-              padding: "2px 8px", fontSize: 11,
-              cursor: !activeSymbol || implementationLoading ? "default" : "pointer",
-              background: "var(--bg-hover)",
-              color: activeSymbol ? "var(--text-muted)" : "var(--text-dim)",
-              border: "1px solid var(--border)", borderRadius: 5,
-              fontWeight: 400,
-            }}
+            className="file-viewer-action"
           >
             {implementationLoading ? "Finding..." : `Refs${activeSymbol ? `: ${activeSymbol}` : ""}`}
           </button>
@@ -1181,17 +969,11 @@ function TextFileViewer({ filePath, cwd, initialLine, editorConfig, onAddChat, o
 
         {isJava && viewMode === "source" && !previewMode && (
           <button
+            type="button"
             onClick={handleFindImplementations}
             disabled={!activeSymbol || implementationLoading}
             title={activeSymbol ? `Find Java implementations for ${activeSymbol} (⌘/Ctrl+F12)` : "Place cursor on a Java symbol"}
-            style={{
-              padding: "2px 8px", fontSize: 11,
-              cursor: !activeSymbol || implementationLoading ? "default" : "pointer",
-              background: "var(--bg-hover)",
-              color: activeSymbol ? "var(--text-muted)" : "var(--text-dim)",
-              border: "1px solid var(--border)", borderRadius: 5,
-              fontWeight: 400,
-            }}
+            className="file-viewer-action"
           >
             {implementationLoading ? "Finding..." : `Impl${activeSymbol ? `: ${activeSymbol}` : ""}`}
           </button>
@@ -1200,72 +982,28 @@ function TextFileViewer({ filePath, cwd, initialLine, editorConfig, onAddChat, o
         {/* Add Chat button */}
         {onAddChat && (
           <button
+            type="button"
             onClick={() => {
               onAddChat(filePath, selectedLines ?? undefined);
               setSelectedLines(null);
               window.getSelection()?.removeAllRanges();
             }}
             title="Add to chat (⌘1)"
-            style={{
-              padding: "2px 8px", fontSize: 11, cursor: "pointer",
-              background: selectedLines ? "rgba(37,99,235,0.10)" : "var(--bg-hover)",
-              color: selectedLines ? "var(--accent)" : "var(--text-muted)",
-              border: selectedLines ? "1px solid var(--accent)" : "1px solid var(--border)",
-              borderRadius: 5,
-              fontWeight: selectedLines ? 600 : 400,
-              display: "flex", alignItems: "center", gap: 4,
-              lineHeight: 1.4,
-            }}
-            onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-selected)"; e.currentTarget.style.color = "var(--text)"; }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = selectedLines ? "rgba(37,99,235,0.10)" : "var(--bg-hover)"; e.currentTarget.style.color = selectedLines ? "var(--accent)" : "var(--text-muted)"; }}
+            className={`file-viewer-action${selectedLines ? " is-selected" : ""}`}
           >
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
             <span>{selectedLines ? `lines ${selectedLines.startLine}-${selectedLines.endLine}` : "Chat"}</span>
           </button>
         )}
 
-        {/* Live watch indicator */}
-        <span
-          title={watching ? "Live sync active" : "Not watching"}
-          style={{ display: "flex", alignItems: "center", gap: 4, color: watching ? "#4ade80" : "var(--text-dim)" }}
-        >
-          <span
-            style={{
-              width: 7,
-              height: 7,
-              borderRadius: "50%",
-              background: watching ? "#4ade80" : "var(--border)",
-              display: "inline-block",
-              boxShadow: watching ? "0 0 4px #4ade80" : "none",
-            }}
-          />
-          {watching ? "live" : "static"}
-        </span>
+        <LiveIndicator watching={watching} />
 
         {/* Diff / Source toggle — shown only when there are changes */}
         {hasDiff && (
-          <div style={{ display: "flex", borderRadius: 5, overflow: "hidden", border: "1px solid var(--border)" }}>
-            <button
-              onClick={() => setViewMode("source")}
-              style={{
-                padding: "2px 8px", fontSize: 11, border: "none", cursor: "pointer",
-                background: viewMode === "source" ? "var(--bg-selected)" : "var(--bg-hover)",
-                color: viewMode === "source" ? "var(--text)" : "var(--text-muted)",
-                fontWeight: viewMode === "source" ? 600 : 400,
-              }}
-            >
-              Source
-            </button>
-            <button
-              onClick={() => setViewMode("diff")}
-              style={{
-                padding: "2px 8px", fontSize: 11, border: "none", borderLeft: "1px solid var(--border)", cursor: "pointer",
-                background: viewMode === "diff" ? "var(--bg-selected)" : "var(--bg-hover)",
-                color: viewMode === "diff" ? "var(--text)" : "var(--text-muted)",
-                fontWeight: viewMode === "diff" ? 600 : 400,
-              }}
-            >
-              Diff {changeCount > 0 && <span style={{ color: "#4ade80", marginLeft: 2 }}>+{changeCount}</span>}
+          <div className="file-viewer-segmented">
+            <button type="button" onClick={() => setViewMode("source")} className={viewMode === "source" ? "is-active" : ""}>Source</button>
+            <button type="button" onClick={() => setViewMode("diff")} className={viewMode === "diff" ? "is-active" : ""}>
+              Diff {changeCount > 0 && <span className="file-viewer-change-count">+{changeCount}</span>}
             </button>
           </div>
         )}
@@ -1273,15 +1011,10 @@ function TextFileViewer({ filePath, cwd, initialLine, editorConfig, onAddChat, o
         {/* Word wrap toggle */}
         {viewMode === "source" && !previewMode && (
           <button
+            type="button"
             onClick={() => setWrapLines((v) => !v)}
             title={wrapLines ? "Disable word wrap" : "Enable word wrap"}
-            style={{
-              padding: "2px 8px", fontSize: 11, cursor: "pointer",
-              background: wrapLines ? "var(--bg-selected)" : "var(--bg-hover)",
-              color: wrapLines ? "var(--text)" : "var(--text-muted)",
-              border: "1px solid var(--border)", borderRadius: 5,
-              fontWeight: wrapLines ? 600 : 400,
-            }}
+            className={`file-viewer-action${wrapLines ? " is-selected" : ""}`}
           >
             wrap
           </button>
@@ -1289,106 +1022,44 @@ function TextFileViewer({ filePath, cwd, initialLine, editorConfig, onAddChat, o
 
         {/* HTML source/preview toggle */}
         {isHtml && viewMode === "source" && (
-          <div style={{ display: "flex", borderRadius: 5, overflow: "hidden", border: "1px solid var(--border)" }}>
-            <button
-              onClick={() => setPreviewMode(false)}
-              style={{
-                padding: "2px 8px", fontSize: 11, border: "none", cursor: "pointer",
-                background: !previewMode ? "var(--bg-selected)" : "var(--bg-hover)",
-                color: !previewMode ? "var(--text)" : "var(--text-muted)",
-                fontWeight: !previewMode ? 600 : 400,
-              }}
-            >
-              Code
-            </button>
-            <button
-              onClick={() => setPreviewMode(true)}
-              style={{
-                padding: "2px 8px", fontSize: 11, border: "none", borderLeft: "1px solid var(--border)", cursor: "pointer",
-                background: previewMode ? "var(--bg-selected)" : "var(--bg-hover)",
-                color: previewMode ? "var(--text)" : "var(--text-muted)",
-                fontWeight: previewMode ? 600 : 400,
-              }}
-            >
-              Preview
-            </button>
+          <div className="file-viewer-segmented">
+            <button type="button" onClick={() => setPreviewMode(false)} className={!previewMode ? "is-active" : ""}>Code</button>
+            <button type="button" onClick={() => setPreviewMode(true)} className={previewMode ? "is-active" : ""}>Preview</button>
           </div>
         )}
 
         {/* Markdown preview/raw toggle */}
         {isMarkdown && viewMode === "source" && (
-          <div style={{ display: "flex", borderRadius: 5, overflow: "hidden", border: "1px solid var(--border)" }}>
-            <button
-              onClick={() => setPreviewMode(true)}
-              style={{
-                padding: "2px 8px", fontSize: 11, border: "none", cursor: "pointer",
-                background: previewMode ? "var(--bg-selected)" : "var(--bg-hover)",
-                color: previewMode ? "var(--text)" : "var(--text-muted)",
-                fontWeight: previewMode ? 600 : 400,
-              }}
-            >
-              Preview
-            </button>
-            <button
-              onClick={() => setPreviewMode(false)}
-              style={{
-                padding: "2px 8px", fontSize: 11, border: "none", borderLeft: "1px solid var(--border)", cursor: "pointer",
-                background: !previewMode ? "var(--bg-selected)" : "var(--bg-hover)",
-                color: !previewMode ? "var(--text)" : "var(--text-muted)",
-                fontWeight: !previewMode ? 600 : 400,
-              }}
-            >
-              Raw
-            </button>
+          <div className="file-viewer-segmented">
+            <button type="button" onClick={() => setPreviewMode(true)} className={previewMode ? "is-active" : ""}>Preview</button>
+            <button type="button" onClick={() => setPreviewMode(false)} className={!previewMode ? "is-active" : ""}>Raw</button>
           </div>
         )}
       </div>
 
       {(implementationError || implementationResults) && (
-        <div
-          style={{
-            flexShrink: 0,
-            maxHeight: 120,
-            overflow: "auto",
-            borderBottom: "1px solid var(--border)",
-            background: "var(--bg-panel)",
-            fontSize: 11,
-          }}
-        >
+        <div className="file-viewer-results">
           {implementationError ? (
-            <div style={{ padding: "8px 16px", color: "#f87171" }}>{implementationError}</div>
+            <div className="file-viewer-results-state is-error">{implementationError}</div>
           ) : implementationResults && implementationResults.length === 0 ? (
-            <div style={{ padding: "8px 16px", color: "var(--text-dim)" }}>No matches for {activeSymbol}</div>
+            <div className="file-viewer-results-state">No matches for {activeSymbol}</div>
           ) : implementationResults?.map((item, index) => (
             <button
+              type="button"
               key={`${item.filePath}:${item.line}:${index}`}
               onClick={() => openResult(item)}
-              style={{
-                display: "flex",
-                gap: 8,
-                width: "100%",
-                padding: "5px 16px",
-                border: "none",
-                borderBottom: "1px solid var(--border)",
-                background: "transparent",
-                color: "var(--text-muted)",
-                textAlign: "left",
-                cursor: onOpenFile ? "pointer" : "default",
-                fontFamily: "var(--font-mono)",
-                fontSize: 11,
-              }}
+              className="file-viewer-result-row"
               title={item.filePath}
             >
-              <span style={{ color: item.kind === "implements" ? "#4ade80" : item.kind === "extends" ? "#60a5fa" : "var(--text-dim)", minWidth: 72 }}>{item.kind}</span>
-              <span style={{ color: "var(--text)", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.relativePath}:{item.line}</span>
-              <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.preview}</span>
+              <span className={`file-viewer-result-kind is-${item.kind}`}>{item.kind}</span>
+              <span className="file-viewer-result-path">{item.relativePath}:{item.line}</span>
+              <span className="file-viewer-result-preview">{item.preview}</span>
             </button>
           ))}
         </div>
       )}
 
-      {/* Content area */}
-      <div style={{ flex: 1, overflow: "hidden", background: "var(--bg)" }}>
+      <div className="file-viewer-content">
         {viewMode === "diff" && hasDiff ? (
           <div style={{ height: "100%", overflow: "auto" }}>
             <DiffView oldContent={prevContent!} newContent={data.content} language={data.language} />
@@ -1401,10 +1072,7 @@ function TextFileViewer({ filePath, cwd, initialLine, editorConfig, onAddChat, o
             title="HTML preview"
           />
         ) : isMarkdown && previewMode ? (
-          <div
-            className="markdown-body markdown-file-preview"
-            style={{ height: "100%", overflow: "auto", boxSizing: "border-box", padding: "24px 32px", maxWidth: 800 }}
-          >
+          <div className="markdown-body markdown-file-preview">
             <ReactMarkdown
               remarkPlugins={markdownPreviewRemarkPlugins}
               rehypePlugins={markdownPreviewRehypePlugins}

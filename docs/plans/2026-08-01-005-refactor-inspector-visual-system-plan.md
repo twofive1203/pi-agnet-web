@@ -1,7 +1,7 @@
 ---
 title: "refactor: Iteration 4 — 统一 Inspector 与开发工具面板"
 type: refactor
-status: active
+status: completed
 date: 2026-08-01
 origin: docs/plans/2026-08-01-001-refactor-frontend-visual-system-plan.md
 iteration: 4
@@ -46,7 +46,7 @@ depends_on: docs/plans/2026-08-01-003-refactor-workbench-shell-navigation-plan.m
 
 ## Implementation Units
 
-- [ ] U1. **统一 Inspector 内容骨架、Changes 与 Preview**
+- [x] U1. **统一 Inspector 内容骨架、Changes 与 Preview**
 
 **Goal:** 先稳定最通用的 Inspector 内容原语和文件查看路径。
 
@@ -73,7 +73,7 @@ depends_on: docs/plans/2026-08-01-003-refactor-workbench-shell-navigation-plan.m
 - Changes/Preview 使用相同内容密度和空态位置。
 - TabBar 不与 Inspector 主 Tab 争夺主层级。
 
-- [ ] U2. **统一 Git、CommitGraph 与 Diff 表面**
+- [x] U2. **统一 Git、CommitGraph 与 Diff 表面**
 
 **Goal:** 让 Git 和 Diff 使用 Inspector 共同语言，同时保留领域数据表达。
 
@@ -102,7 +102,7 @@ depends_on: docs/plans/2026-08-01-003-refactor-workbench-shell-navigation-plan.m
 **Verification:**
 - Git 与 Diff 的领域状态清晰，但不引入主题专属硬编码表面色。
 
-- [ ] U3. **统一 SnFlow 与 Agents 面板外壳**
+- [x] U3. **统一 SnFlow 与 Agents 面板外壳**
 
 **Goal:** 完成剩余 Inspector Tab 的通用视觉迁移。
 

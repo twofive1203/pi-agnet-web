@@ -74,18 +74,14 @@ export function GitCommitDiffModal({ cwd, hash, shortHash, file, onClose }: Prop
       onClose={onClose}
       header={(
         <>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-            <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--text-dim)", flexShrink: 0 }}>
-              {shortHash ?? hash.slice(0, 8)}
-            </span>
-            <span style={{ fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {displayPath}
-            </span>
+          <div className="diff-modal-title-row">
+            <span className="diff-modal-revision">{shortHash ?? hash.slice(0, 8)}</span>
+            <span className="diff-modal-path">{displayPath}</span>
           </div>
-          <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 4, fontSize: 12, color: "var(--text-muted)" }}>
+          <div className="diff-modal-meta">
             <span>{statusLabel(file.status)}</span>
-            {typeof file.additions === "number" && <span style={{ color: "#16a34a" }}>+{file.additions}</span>}
-            {typeof file.deletions === "number" && <span style={{ color: "#dc2626" }}>-{file.deletions}</span>}
+            {typeof file.additions === "number" && <span className="is-success">+{file.additions}</span>}
+            {typeof file.deletions === "number" && <span className="is-danger">-{file.deletions}</span>}
             {file.binary && <span>binary</span>}
           </div>
         </>

@@ -355,7 +355,7 @@ flowchart TB
 - 浅色、深色、Paper、Twilight、Dracula 下消息与工具层级均清楚。
 - 现有消息 memoization、流式状态和输入行为不发生功能回归。
 
-- [ ] U5. **统一 Inspector 与开发工具面板**
+- [x] U5. **统一 Inspector 与开发工具面板**
 
 **Goal:** 让 Changes、Preview、Git、SnFlow、Agents 看起来属于同一个 Inspector，而不是五个独立嵌入页面。
 

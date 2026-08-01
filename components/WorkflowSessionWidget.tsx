@@ -22,17 +22,11 @@ const DEFAULT_MARGIN = 18;
 const DEFAULT_TOP = 64;
 const DRAG_THRESHOLD_PX = 4;
 
-function phaseColor(phase: WorkflowPhaseLabel): string {
-  switch (phase) {
-    case "finish":
-      return "#22c55e";
-    case "execute":
-      return "#60a5fa";
-    case "plan":
-      return "#f59e0b";
-    default:
-      return "var(--text-dim)";
-  }
+function phaseTone(phase: WorkflowPhaseLabel): string {
+  if (phase === "finish") return "is-success";
+  if (phase === "execute") return "is-info";
+  if (phase === "plan") return "is-warning";
+  return "is-muted";
 }
 
 function clampPosition(position: WidgetPosition, parent: HTMLElement, widget: HTMLElement): WidgetPosition {
@@ -181,38 +175,15 @@ export function WorkflowSessionWidget({ task, phase, onClick }: Props) {
       onKeyDown={handleKeyDown}
       title={t("workflow.sessionWidgetTitle")}
       aria-label={t("workflow.sessionWidgetTitle")}
-      style={{
-        position: "absolute",
-        ...(position ? { left: position.left, top: position.top } : { right: DEFAULT_MARGIN, top: DEFAULT_TOP }),
-        zIndex: 120,
-        maxWidth: 280,
-        textAlign: "left",
-        border: "1px solid color-mix(in srgb, var(--border) 78%, transparent)",
-        borderRadius: 14,
-        background: "color-mix(in srgb, var(--bg-panel) 92%, transparent)",
-        boxShadow: "0 10px 30px rgba(0,0,0,0.18)",
-        backdropFilter: "blur(12px)",
-        padding: "10px 12px",
-        cursor: dragging ? "grabbing" : "grab",
-        color: "var(--text)",
-        userSelect: "none",
-        touchAction: "none",
-      }}
+      className={`workflow-session-widget${dragging ? " is-dragging" : ""}`}
+      style={position ? { left: position.left, top: position.top } : { right: DEFAULT_MARGIN, top: DEFAULT_TOP }}
     >
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 4 }}>
-        <span style={{ fontSize: 11, fontWeight: 800, color: phaseColor(phase) }}>
-          SnFlow · {t(`workflow.phase.${phase}`)}
-        </span>
-        {task.activeRunId && (
-          <span style={{ fontSize: 10, color: "#f59e0b", fontWeight: 700 }}>{t("workflow.running")}</span>
-        )}
+      <div className="workflow-session-widget-header">
+        <span className={`workflow-session-widget-phase ${phaseTone(phase)}`}>SnFlow · {t(`workflow.phase.${phase}`)}</span>
+        {task.activeRunId && <span className="workflow-session-widget-running">{t("workflow.running")}</span>}
       </div>
-      <div style={{ fontSize: 12, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-        {task.title}
-      </div>
-      <div style={{ fontSize: 10, color: "var(--text-dim)", marginTop: 2, fontFamily: "var(--font-mono)" }}>
-        {task.id} · {t(`workflow.status.${task.status}`)}
-      </div>
+      <div className="workflow-session-widget-title">{task.title}</div>
+      <div className="workflow-session-widget-meta">{task.id} · {t(`workflow.status.${task.status}`)}</div>
     </button>
   );
 }

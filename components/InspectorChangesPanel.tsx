@@ -11,14 +11,14 @@ interface Props {
   refreshKey?: number;
 }
 
-function statusBadge(file: SessionChangedFileSummary): { label: string; color: string } {
+function statusBadge(file: SessionChangedFileSummary): { label: string; tone: string } {
   switch (file.status) {
-    case "added": return { label: "A", color: "var(--ok)" };
-    case "deleted": return { label: "D", color: "var(--danger)" };
-    case "metadata-only": return { label: "?", color: "var(--text-3)" };
+    case "added": return { label: "A", tone: "is-success" };
+    case "deleted": return { label: "D", tone: "is-danger" };
+    case "metadata-only": return { label: "?", tone: "is-muted" };
     case "modified":
     default:
-      return { label: "M", color: "var(--accent)" };
+      return { label: "M", tone: "is-accent" };
   }
 }
 
@@ -118,37 +118,36 @@ export function InspectorChangesPanel({ sessionId, agentRunning, refreshKey }: P
 
   if (!sessionId) {
     return (
-      <div style={{ padding: "18px 14px", color: "var(--text-3)", fontSize: 12 }}>
+      <div className="inspector-state inspector-state-empty">
         打开一个会话后显示本次会话的编辑/写入文件变更。
       </div>
     );
   }
 
   return (
-    <div style={{ height: "100%", display: "flex", flexDirection: "column", minHeight: 0 }}>
-      {/* Stats row */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, flexShrink: 0, marginBottom: 10 }}>
-        <div className="stat-card">
-          <div className="stat-k">Files</div>
-          <div className="stat-v">{files.length}</div>
+    <div className="inspector-content inspector-changes-content">
+      <div className="inspector-stat-grid">
+        <div className="inspector-stat-card">
+          <div className="inspector-stat-label">Files</div>
+          <div className="inspector-stat-value">{files.length}</div>
         </div>
-        <div className="stat-card">
-          <div className="stat-k">Added</div>
-          <div className="stat-v" style={{ color: "var(--ok)" }}>+{totals.additions}</div>
+        <div className="inspector-stat-card">
+          <div className="inspector-stat-label">Added</div>
+          <div className="inspector-stat-value is-success">+{totals.additions}</div>
         </div>
-        <div className="stat-card">
-          <div className="stat-k">Removed</div>
-          <div className="stat-v" style={{ color: "var(--danger)" }}>-{totals.deletions}</div>
+        <div className="inspector-stat-card">
+          <div className="inspector-stat-label">Removed</div>
+          <div className="inspector-stat-value is-danger">-{totals.deletions}</div>
         </div>
       </div>
 
-      <div style={{ flex: 1, minHeight: 0, overflowY: "auto", paddingRight: 2 }}>
+      <div className="inspector-scroll inspector-file-list">
         {initialLoading && files.length === 0 ? (
-          <div style={{ padding: 10, color: "var(--text-3)", fontSize: 12 }}>加载变更文件…</div>
+          <div className="inspector-state inspector-state-loading">加载变更文件…</div>
         ) : error ? (
-          <div style={{ padding: 10, color: "var(--danger)", fontSize: 12 }}>{error}</div>
+          <div className="inspector-state inspector-state-error" role="alert">{error}</div>
         ) : files.length === 0 ? (
-          <div style={{ padding: 10, color: "var(--text-3)", fontSize: 12 }}>暂无跟踪的编辑/写入变更。</div>
+          <div className="inspector-state inspector-state-empty">暂无跟踪的编辑/写入变更。</div>
         ) : files.map((file) => {
           const badge = statusBadge(file);
           return (
@@ -157,42 +156,21 @@ export function InspectorChangesPanel({ sessionId, agentRunning, refreshKey }: P
               type="button"
               onClick={() => file.diffAvailable ? setSelectedFile(file) : undefined}
               aria-disabled={file.diffAvailable ? undefined : true}
-              title={file.diffAvailable ? undefined : (file.reason ?? "metadata only")}
-              className="insp-file-card"
-              style={{
-                width: "100%",
-                display: "flex",
-                alignItems: "center",
-                gap: 9,
-                padding: "9px 10px",
-                border: "1px solid var(--line)",
-                borderRadius: 12,
-                background: "var(--bg-card)",
-                color: "var(--text)",
-                cursor: file.diffAvailable ? "pointer" : "default",
-                textAlign: "left",
-                marginBottom: 6,
-              }}
+              title={file.diffAvailable ? file.path : (file.reason ?? "metadata only")}
+              className={`inspector-list-row inspector-file-row${file.diffAvailable ? "" : " is-unavailable"}`}
             >
-              <span style={{
-                width: 20, height: 20, borderRadius: 6, display: "inline-flex", alignItems: "center", justifyContent: "center",
-                color: badge.color, background: "var(--bg-subtle)", fontSize: 11, fontWeight: 900, flexShrink: 0,
-              }}>
+              <span className={`inspector-badge inspector-file-badge ${badge.tone}`}>
                 {badge.label}
               </span>
-              <span style={{ minWidth: 0, flex: 1 }}>
-                <span style={{ display: "block", fontFamily: "var(--font-mono)", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {file.path}
-                </span>
+              <span className="inspector-file-main">
+                <span className="inspector-file-path">{file.path}</span>
                 {!file.diffAvailable && (
-                  <span style={{ display: "block", marginTop: 2, fontSize: 10, color: "var(--text-3)" }}>
-                    {file.reason ?? "metadata only"}
-                  </span>
+                  <span className="inspector-file-reason">{file.reason ?? "metadata only"}</span>
                 )}
               </span>
-              <span style={{ flexShrink: 0, fontFamily: "var(--font-mono)", fontSize: 11 }}>
-                <span style={{ color: "var(--ok)" }}>+{file.additions}</span>{" "}
-                <span style={{ color: "var(--danger)" }}>-{file.deletions}</span>
+              <span className="inspector-file-metrics">
+                <span className="is-success">+{file.additions}</span>{" "}
+                <span className="is-danger">-{file.deletions}</span>
               </span>
             </button>
           );

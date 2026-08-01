@@ -16,20 +16,10 @@ export function SubagentBadgeIndicator({ store }: { store: SubagentStore }) {
   );
 
   if (counts.running > 0) {
-    return (
-      <span style={{
-        position: "absolute", top: 4, right: 4,
-        width: 7, height: 7, borderRadius: "50%",
-        background: counts.failed > 0 ? "#ef4444" : "#f59e0b",
-      }} />
-    );
+    return <span className={`subagent-observation-dot${counts.failed > 0 ? " is-danger" : " is-warning"}`} />;
   }
-  if (counts.failed > 0) {
-    return <span style={{ fontSize: 10, color: "#ef4444", marginLeft: 2 }}>!</span>;
-  }
-  if (counts.completed > 0) {
-    return <span style={{ fontSize: 10, color: "#22c55e", marginLeft: 2 }}>✓</span>;
-  }
+  if (counts.failed > 0) return <span className="subagent-observation-mark is-danger">!</span>;
+  if (counts.completed > 0) return <span className="subagent-observation-mark is-success">✓</span>;
   return null;
 }
 

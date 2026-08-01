@@ -77,7 +77,6 @@ function TreeNode({
   const [children, setChildren] = useState<FileNode[]>(node.children ?? []);
   const [loaded, setLoaded] = useState(node.loaded ?? false);
   const [loading, setLoading] = useState(false);
-  const [hovered, setHovered] = useState(false);
 
   const loadChildren = useCallback(async (force = false) => {
     if (loaded && !force) return;
@@ -120,47 +119,34 @@ function TreeNode({
   return (
     <div>
       <div
+        role="treeitem"
+        tabIndex={0}
+        aria-selected={false}
+        aria-expanded={node.isDir ? open : undefined}
         onClick={handleClick}
-        onMouseEnter={() => setHovered(true)}
-        onMouseLeave={() => setHovered(false)}
-        style={{
-          position: "relative",
-          display: "flex",
-          alignItems: "center",
-          gap: 4,
-          paddingLeft: 8 + depth * 14,
-          paddingRight: 8,
-          height: 24,
-          cursor: "pointer",
-          background: hovered ? "var(--bg-hover)" : "transparent",
-          borderRadius: 4,
-          userSelect: "none",
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            handleClick();
+          }
         }}
+        className="file-explorer-row"
+        style={{ paddingLeft: 8 + depth * 14 }}
       >
         {node.isDir && (
           <svg
             width="10" height="10" viewBox="0 0 10 10" fill="none"
             stroke="var(--text-dim)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"
-            style={{ flexShrink: 0, transform: open ? "rotate(90deg)" : "none", transition: "transform 0.1s" }}
+            className={`file-explorer-chevron${open ? " is-open" : ""}`}
           >
             <polyline points="3 2 7 5 3 8" />
           </svg>
         )}
-        {!node.isDir && <span style={{ width: 10, flexShrink: 0 }} />}
-        <span style={{ flexShrink: 0, display: "flex", alignItems: "center" }}>
+        {!node.isDir && <span className="file-explorer-chevron-spacer" />}
+        <span className="file-explorer-icon">
           {node.isDir ? <FolderIcon size={14} open={open} /> : getFileIcon(node.name, 14)}
         </span>
-        <span
-          style={{
-            fontSize: 12,
-            color: "var(--text)",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-            flex: 1,
-          }}
-          title={node.fullPath}
-        >
+        <span className="file-explorer-name" title={node.fullPath}>
           {node.name}
         </span>
         {loading && (
@@ -168,20 +154,8 @@ function TreeNode({
             <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4" />
           </svg>
         )}
-        {hovered && (!node.isDir || onAtMention) && (
-          <div
-            style={{
-              position: "absolute",
-              right: 4,
-              top: "50%",
-              transform: "translateY(-50%)",
-              display: "flex",
-              alignItems: "center",
-              gap: 3,
-              paddingLeft: 4,
-              background: "var(--bg-panel)",
-            }}
-          >
+        {(!node.isDir || onAtMention) && (
+          <div className="file-explorer-row-actions">
             {!node.isDir && (
               <a
                 href={buildStandaloneFileUrl(node.fullPath, { cwd })}
@@ -190,18 +164,7 @@ function TreeNode({
                 onClick={(e) => e.stopPropagation()}
                 title={t("panels.fileExplorer.openStandalone")}
                 aria-label={t("panels.fileExplorer.openStandalone")}
-                style={{
-                  width: 20,
-                  height: 20,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  background: "var(--bg-panel)",
-                  border: "1px solid var(--border)",
-                  borderRadius: 4,
-                  color: "var(--text-muted)",
-                  cursor: "pointer",
-                }}
+                className="file-explorer-row-action"
               >
                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                   <path d="M14 3h7v7" />
@@ -217,22 +180,7 @@ function TreeNode({
                   onAtMention(getRelativeFilePath(node.fullPath, cwd));
                 }}
                 title={t("panels.fileExplorer.insertPath")}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 4,
-                  padding: "0 8px",
-                  height: 20,
-                  background: "var(--bg-panel)",
-                  border: "1px solid var(--border)",
-                  borderRadius: 4,
-                  color: "var(--accent)",
-                  cursor: "pointer",
-                  fontSize: 11,
-                  fontWeight: 600,
-                  whiteSpace: "nowrap",
-                }}
+                className="file-explorer-row-action file-explorer-mention-action"
               >
                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                   <circle cx="12" cy="12" r="4" />
@@ -250,7 +198,7 @@ function TreeNode({
             <TreeNode key={child.fullPath} node={child} depth={depth + 1} cwd={cwd} onOpenFile={onOpenFile} onAtMention={onAtMention} expandedPaths={expandedPaths} onToggleExpanded={onToggleExpanded} refreshKey={refreshKey} />
           ))}
           {children.length === 0 && loaded && (
-            <div style={{ paddingLeft: 8 + (depth + 1) * 14, fontSize: 11, color: "var(--text-dim)", height: 22, display: "flex", alignItems: "center" }}>
+            <div className="file-explorer-empty-branch" style={{ paddingLeft: 8 + (depth + 1) * 14 }}>
               empty
             </div>
           )}
@@ -304,23 +252,15 @@ export function FileExplorer({ cwd, onOpenFile, refreshKey, onAtMention }: Props
   }, [cwd, refreshKey]);
 
   if (loading) {
-    return (
-      <div style={{ padding: "8px 12px", fontSize: 11, color: "var(--text-dim)" }}>
-        Loading files...
-      </div>
-    );
+    return <div className="inspector-state inspector-state-loading file-explorer-state">Loading files...</div>;
   }
 
   if (error) {
-    return (
-      <div style={{ padding: "8px 12px", fontSize: 11, color: "#f87171" }}>
-        {error}
-      </div>
-    );
+    return <div className="inspector-state inspector-state-error file-explorer-state" role="alert">{error}</div>;
   }
 
   return (
-    <div style={{ padding: "2px 4px" }}>
+    <div className="file-explorer-tree" role="tree">
       {roots.map((node) => (
         <TreeNode
           key={node.fullPath}
@@ -335,9 +275,7 @@ export function FileExplorer({ cwd, onOpenFile, refreshKey, onAtMention }: Props
         />
       ))}
       {roots.length === 0 && (
-        <div style={{ padding: "8px 12px", fontSize: 11, color: "var(--text-dim)" }}>
-          No files found
-        </div>
+        <div className="inspector-state inspector-state-empty file-explorer-state">No files found</div>
       )}
     </div>
   );

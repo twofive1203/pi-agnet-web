@@ -128,30 +128,20 @@ export function SubagentPanel({ runs }: Props) {
   ));
 
   if (runs.length === 0) {
-    return (
-      <div style={{ padding: "16px 20px", fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>
-        No subagent activity yet.
-      </div>
-    );
+    return <div className="inspector-state inspector-state-empty">No subagent activity yet.</div>;
   }
 
   return (
-    <div className="subagent-panel-root" style={{
-      maxHeight: "min(500px, 60vh)", overflowY: "auto", padding: "8px 0", fontSize: 12, color: "var(--text)",
-    }}>
+    <div className="subagent-panel-root inspector-content">
       {running.length > 0 && (
         <>
-          <div style={{ padding: "6px 16px 4px", fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--text-dim)" }}>
-            Running ({running.length})
-          </div>
+          <div className="subagent-section-title">Running <span>({running.length})</span></div>
           {renderRuns(running)}
         </>
       )}
       {completed.length > 0 && (
         <>
-          <div style={{ padding: "6px 16px 4px", fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--text-dim)", marginTop: running.length > 0 ? 8 : 0 }}>
-            Completed ({completed.length})
-          </div>
+          <div className={`subagent-section-title${running.length > 0 ? " has-leading-section" : ""}`}>Completed <span>({completed.length})</span></div>
           {renderRuns(completed)}
         </>
       )}
@@ -228,7 +218,7 @@ function RunItem({
   const isRunning = run.status === "running";
   const isFailed = run.status === "failed" || progress?.status === "failed";
   const activityState = progress?.activityState;
-  const statusColor = resolveStatusColor({ isRunning, isFailed, isDetached, activityState });
+  const statusTone = resolveStatusTone({ isRunning, isFailed, isDetached, activityState });
   const statusIcon = isDetached ? "◌" : isRunning ? "○" : isFailed ? "✕" : "✓";
   const statusLabel = isDetached ? "Detached" : isRunning ? "Running" : isFailed ? "Failed" : "Done";
 
@@ -257,110 +247,49 @@ function RunItem({
   return (
     <div>
       <div
+        role="button"
+        tabIndex={0}
+        aria-expanded={isExpanded}
         className="subagent-run-row"
         onClick={onToggle}
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          padding: "5px 16px 5px",
-          paddingLeft: 16 + indent,
-          cursor: "pointer",
-          userSelect: "none",
-          transition: "background 0.08s",
-          minWidth: 0,
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            onToggle();
+          }
         }}
-        onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-hover)"; }}
-        onMouseLeave={(e) => { e.currentTarget.style.background = "none"; }}
+        style={{ paddingLeft: 16 + indent }}
       >
-        <span style={{ color: statusColor, width: 14, textAlign: "center", flexShrink: 0 }}>
-          {statusIcon}
-        </span>
-        <span style={{ fontWeight: 600, color: "var(--text)", flexShrink: 0, maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {run.agent}
-        </span>
-        <span style={{ color: "var(--text-muted)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>
-          {taskDisplay}
-        </span>
+        <span className={`subagent-status-icon ${statusTone}`}>{statusIcon}</span>
+        <span className="subagent-agent-name">{run.agent}</span>
+        <span className="subagent-task-title">{taskDisplay}</span>
         {metadata.length > 0 && (
           <RunMetadataChips items={metadata} title={metadataTitle} />
         )}
         {canLoadDetail && !hasChildren && isExpanded && (
-          <span style={{ color: "var(--text-dim)", fontSize: 9, flexShrink: 0, fontStyle: "italic" }}>
-            {detailState?.status === "loading" ? "loading..." : detailState?.status === "error" ? "detail unavailable" : "no children"}
-          </span>
+          <span className="subagent-inline-state">{detailState?.status === "loading" ? "loading..." : detailState?.status === "error" ? "detail unavailable" : "no children"}</span>
         )}
-        <span style={{ color: statusColor, fontSize: 10, flexShrink: 0 }}>
-          {statusLabel}
-        </span>
-        <span style={{ color: "var(--text-dim)", fontSize: 10, flexShrink: 0, marginLeft: 4 }}>
-          {isExpanded ? "▲" : "▼"}
-        </span>
+        <span className={`subagent-status-label ${statusTone}`}>{statusLabel}</span>
+        <span className="subagent-row-chevron">{isExpanded ? "▲" : "▼"}</span>
       </div>
 
       {progress && (progressSummary || progressStats || activityBadge) && (
-        <div
-          className="subagent-progress-row"
-          style={{
-            display: "flex",
-            flexWrap: "wrap",
-            alignItems: "center",
-            gap: "4px 10px",
-            padding: "0 16px 6px",
-            paddingLeft: 16 + indent + 22,
-            minWidth: 0,
-            fontSize: 10,
-            lineHeight: 1.4,
-            color: "var(--text-muted)",
-          }}
-        >
+        <div className="subagent-progress-row" style={{ paddingLeft: 16 + indent + 22 }}>
           {progressSummary && (
-            <span
-              title={progressSummary.title}
-              style={{
-                minWidth: 0,
-                maxWidth: "100%",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-                color: activityBadge?.color ?? (isDetached ? statusColor : "var(--text-muted)"),
-              }}
-            >
+            <span title={progressSummary.title} className={`subagent-progress-summary${activityBadge ? ` ${activityBadge.tone}` : isDetached ? ` ${statusTone}` : ""}`}>
               {progressSummary.label}
             </span>
           )}
           {progressStats && (
-            <span style={{ color: "var(--text-dim)", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {progressStats}
-            </span>
+            <span className="subagent-progress-stats">{progressStats}</span>
           )}
           {activityBadge && (
-            <span
-              style={{
-                color: activityBadge.color,
-                background: "var(--bg-subtle)",
-                border: `1px solid ${activityBadge.color}`,
-                borderRadius: 999,
-                padding: "0 6px",
-                flexShrink: 0,
-                fontWeight: 600,
-              }}
-            >
+            <span className={`inspector-badge subagent-activity-badge ${activityBadge.tone}`}>
               {activityBadge.label}
             </span>
           )}
           {progress.error && (
-            <span
-              title={progress.error}
-              style={{
-                color: "#ef4444",
-                minWidth: 0,
-                maxWidth: "100%",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
-            >
+            <span title={progress.error} className="subagent-progress-error">
               {progress.failedTool ? `${progress.failedTool}: ` : ""}{truncateText(progress.error, 80)}
             </span>
           )}
@@ -368,43 +297,19 @@ function RunItem({
       )}
 
       {isExpanded && (
-        <div style={{
-          padding: "2px 16px 8px",
-          paddingLeft: 16 + indent + 22,
-          minWidth: 0,
-        }}>
+        <div className="subagent-detail" style={{ paddingLeft: 16 + indent + 22 }}>
           {recentTools.length > 0 && (
-            <div style={{ marginBottom: 6 }}>
-              <div style={{ fontSize: 10, fontWeight: 600, color: "var(--text-dim)", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.04em" }}>
-                Recent tools ({recentTools.length})
-              </div>
-              <div style={{
-                background: "var(--bg-subtle)",
-                borderRadius: 6,
-                padding: "6px 8px",
-                fontSize: 10,
-                fontFamily: "var(--font-mono)",
-                color: "var(--text-muted)",
-                lineHeight: 1.45,
-                maxHeight: 160,
-                overflowY: "auto",
-                minWidth: 0,
-              }}>
+            <div className="subagent-detail-section">
+              <div className="subagent-detail-title">Recent tools <span>({recentTools.length})</span></div>
+              <div className="subagent-tool-list">
                 {recentTools.map((tool, index) => (
                   <div
                     key={`${tool.tool}-${tool.endMs}-${index}`}
                     title={formatRecentToolTitle(tool)}
-                    style={{
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                      minWidth: 0,
-                    }}
+                    className="subagent-tool-row"
                   >
-                    <span style={{ color: "var(--text)" }}>{tool.tool}</span>
-                    {tool.args ? (
-                      <span style={{ color: "var(--text-dim)" }}> {truncateText(tool.args, RECENT_TOOL_ARGS_PREVIEW)}</span>
-                    ) : null}
+                    <span className="subagent-tool-name">{tool.tool}</span>
+                    {tool.args ? <span className="subagent-tool-args"> {truncateText(tool.args, RECENT_TOOL_ARGS_PREVIEW)}</span> : null}
                   </div>
                 ))}
               </div>
@@ -413,10 +318,8 @@ function RunItem({
 
           {/* Load exactly one nested level per expansion. */}
           {hasChildren && (
-            <div style={{ marginBottom: 6 }}>
-              <div style={{ fontSize: 10, fontWeight: 600, color: "var(--text-dim)", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.04em" }}>
-                Subagents ({childrenRuns.length}{detail?.childrenTruncated ? "+" : ""})
-              </div>
+            <div className="subagent-detail-section">
+              <div className="subagent-detail-title">Subagents <span>({childrenRuns.length}{detail?.childrenTruncated ? "+" : ""})</span></div>
               {childrenRuns.map((child) => (
                 <ObservedRunItem
                   key={`${child.sessionFile ?? child.id}-${child.id}`}
@@ -428,42 +331,22 @@ function RunItem({
             </div>
           )}
           {detailState?.status === "loading" && !detail && canLoadDetail && (
-            <div style={{ fontSize: 10, fontStyle: "italic", color: "var(--text-dim)", marginBottom: 4 }}>
-              Loading details...
-            </div>
+            <div className="subagent-detail-state">Loading details...</div>
           )}
           {depth >= MAX_SUBAGENT_DETAIL_DEPTH && hasSessionFile && (
-            <div style={{ fontSize: 10, color: "var(--text-dim)", marginBottom: 4 }}>
-              Nested detail depth limit reached.
-            </div>
+            <div className="subagent-detail-state">Nested detail depth limit reached.</div>
           )}
           {/* Output */}
           {displayOutput && (
-            <div style={{
-              background: "var(--bg-subtle)",
-              borderRadius: 6,
-              padding: "8px 10px",
-              fontSize: 11,
-              fontFamily: "var(--font-mono)",
-              color: "var(--text-muted)",
-              lineHeight: 1.5,
-              whiteSpace: "pre-wrap",
-              wordBreak: "break-word",
-              maxHeight: 300,
-              overflowY: "auto",
-            }}>
+            <div className="subagent-output">
               {displayOutput}
               {outputTruncated && (
-                <div style={{ marginTop: 6, fontStyle: "italic", color: "var(--text-dim)" }}>
-                  Output truncated to the most recent bounded preview.
-                </div>
+                <div className="subagent-output-truncated">Output truncated to the most recent bounded preview.</div>
               )}
             </div>
           )}
           {!displayOutput && !hasChildren && recentTools.length === 0 && (
-            <div style={{ fontStyle: "italic", color: "var(--text-dim)", fontSize: 11 }}>
-              Waiting for output...
-            </div>
+            <div className="subagent-detail-state">Waiting for output...</div>
           )}
         </div>
       )}
@@ -564,26 +447,22 @@ export function formatProgressActivity(
 
 export function formatActivityBadge(
   activityState: SubagentActivityState | undefined,
-): { label: string; color: string } | null {
-  if (activityState === "needs_attention") {
-    return { label: "Needs attention", color: "#ef4444" };
-  }
-  if (activityState === "active_long_running") {
-    return { label: "Long-running", color: "#f59e0b" };
-  }
+): { label: string; tone: string } | null {
+  if (activityState === "needs_attention") return { label: "Needs attention", tone: "is-danger" };
+  if (activityState === "active_long_running") return { label: "Long-running", tone: "is-warning" };
   return null;
 }
 
-function resolveStatusColor(input: {
+function resolveStatusTone(input: {
   isRunning: boolean;
   isFailed: boolean;
   isDetached: boolean;
   activityState?: SubagentActivityState;
 }): string {
-  if (input.activityState === "needs_attention" || input.isFailed) return "#ef4444";
-  if (input.isDetached) return "#8b5cf6";
-  if (input.activityState === "active_long_running" || input.isRunning) return "#f59e0b";
-  return "#22c55e";
+  if (input.activityState === "needs_attention" || input.isFailed) return "is-danger";
+  if (input.isDetached) return "is-accent";
+  if (input.activityState === "active_long_running" || input.isRunning) return "is-warning";
+  return "is-success";
 }
 
 function formatRecentToolTitle(tool: SubagentRecentTool): string {
@@ -593,28 +472,10 @@ function formatRecentToolTitle(tool: SubagentRecentTool): string {
 
 function RunMetadataChips({ items, title }: { items: { label: string; value: string }[]; title?: string | null }) {
   return (
-    <span
-      title={title ?? undefined}
-      style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 1, minWidth: 0, maxWidth: 260 }}
-    >
+    <span title={title ?? undefined} className="subagent-metadata-chips">
       {items.map((item) => (
-        <span
-          key={item.label}
-          style={{
-            color: "var(--text-muted)",
-            background: "var(--bg-subtle)",
-            border: "1px solid var(--border)",
-            borderRadius: 999,
-            padding: "1px 6px",
-            fontSize: 10,
-            lineHeight: 1.4,
-            maxWidth: item.label === "Model" ? 170 : 80,
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
-        >
-          <span style={{ color: "var(--text-dim)" }}>{item.label}: </span>{item.value}
+        <span key={item.label} className={`subagent-metadata-chip${item.label === "Model" ? " is-model" : ""}`}>
+          <span>{item.label}: </span>{item.value}
         </span>
       ))}
     </span>

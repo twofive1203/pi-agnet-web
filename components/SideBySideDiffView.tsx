@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useMemo, useRef, type CSSProperties, type UIEvent } from "react";
+import { Fragment, useCallback, useMemo, useRef, type UIEvent } from "react";
 
 interface Props {
   diff: string;
@@ -128,85 +128,29 @@ function parseSideBySideRows(diff: string): DiffRow[] {
   return rows;
 }
 
-function sideStyle(kind: SideKind): CSSProperties {
-  switch (kind) {
-    case "add":
-      return { color: "#16a34a", background: "rgba(34,197,94,0.10)" };
-    case "delete":
-      return { color: "#dc2626", background: "rgba(239,68,68,0.10)" };
-    case "empty":
-      return { color: "var(--text-dim)", background: "var(--bg-subtle)" };
-    case "context":
-    default:
-      return { color: "var(--text)", background: "var(--bg)" };
-  }
+function sideClass(kind: SideKind): string {
+  return `diff-side-cell is-${kind}`;
 }
 
-function sectionStyle(kind: SectionKind): CSSProperties {
-  if (kind === "hunk") return { color: "var(--accent)", background: "rgba(37,99,235,0.08)" };
-  if (kind === "file") return { color: "var(--text-muted)", background: "var(--bg-subtle)", fontWeight: 700 };
-  if (kind === "note") return { color: "var(--text-dim)", background: "var(--bg-subtle)", fontStyle: "italic" };
-  return { color: "var(--text-muted)", background: "var(--bg-subtle)" };
+function sectionClass(kind: SectionKind): string {
+  return `diff-section-row is-${kind}`;
 }
 
 function LineNumber({ value }: { value: number | null }) {
-  return (
-    <span
-      style={{
-        display: "block",
-        position: "sticky",
-        left: 0,
-        zIndex: 1,
-        padding: "0 10px",
-        color: "var(--text-dim)",
-        textAlign: "right",
-        userSelect: "none",
-        borderRight: "1px solid var(--border)",
-        background: "var(--bg-subtle)",
-      }}
-    >
-      {value ?? ""}
-    </span>
-  );
+  return <span className="diff-line-number">{value ?? ""}</span>;
 }
 
 function DiffCell({ side }: { side: DiffSide }) {
-  return (
-    <span
-      style={{
-        display: "block",
-        padding: "0 12px",
-        whiteSpace: "pre",
-        ...sideStyle(side.kind),
-      }}
-    >
-      {side.content || " "}
-    </span>
-  );
+  return <span className={sideClass(side.kind)}>{side.content || " "}</span>;
 }
 
 function DiffPane({ rows, side }: { rows: DiffRow[]; side: PaneSide }) {
   return (
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: "64px minmax(420px, max-content)",
-        minWidth: "100%",
-        width: "max-content",
-      }}
-    >
+    <div className="diff-side-grid">
       {rows.map((row, index) => {
         if (row.kind === "section") {
           return (
-            <span
-              key={index}
-              style={{
-                gridColumn: "1 / -1",
-                padding: "0 12px",
-                whiteSpace: "pre",
-                ...sectionStyle(row.sectionKind),
-              }}
-            >
+            <span key={index} className={sectionClass(row.sectionKind)}>
               {row.text || " "}
             </span>
           );
@@ -251,38 +195,18 @@ export function SideBySideDiffView({ diff }: Props) {
   }, []);
 
   return (
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
-        height: "100%",
-        minHeight: 0,
-        margin: 0,
-        padding: 0,
-        fontFamily: "var(--font-mono)",
-        fontSize: 12,
-        lineHeight: 1.55,
-        background: "var(--bg)",
-      }}
-    >
+    <div className="diff-side-by-side">
       <div
         ref={oldPaneRef}
         onScroll={(event) => syncScroll(event, "old", newPaneRef, "new")}
-        style={{
-          minWidth: 0,
-          overflow: "auto",
-          borderRight: "1px solid var(--border)",
-        }}
+        className="diff-side-pane is-old"
       >
         <DiffPane rows={rows} side="old" />
       </div>
       <div
         ref={newPaneRef}
         onScroll={(event) => syncScroll(event, "new", oldPaneRef, "old")}
-        style={{
-          minWidth: 0,
-          overflow: "auto",
-        }}
+        className="diff-side-pane"
       >
         <DiffPane rows={rows} side="new" />
       </div>
