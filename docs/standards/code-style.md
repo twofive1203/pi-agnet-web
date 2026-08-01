@@ -43,7 +43,10 @@ npm run test:snflow       # SnFlow setup/store/session-link/spec-review smokes
 npm run test:runtime      # Next server externals + published launcher invariants
 npm run test:automation   # Automation store/schedule/policy/runner/API/security smokes
 npm run test:mcp          # MCP adapter-native config domain/API smokes (secrets, revisions, JSONC)
+npm run test:ui-theme     # theme registry/boot/Picker + semantic Token contract smoke
 ```
+
+Extend `test:ui-theme` when changing statically verifiable theme contracts such as registry metadata, semantic Token names, compatibility aliases, boot synchronization, or reduced-motion handling. Color contrast and visual hierarchy remain browser/manual validation concerns; do not encode subjective screenshot expectations in this smoke.
 
 For other data-flow changes, use lint + type-check and manually verify the affected browser/API flow. Headed Chrome-only gaps for the tab-debug extension are listed in `docs/operations/troubleshooting.md`.
 

@@ -76,15 +76,26 @@
 
 ## Styles
 
-Global CSS lives in `app/globals.css`. Components may reference these CSS variables directly:
+Global CSS lives in `app/globals.css`. New or migrated UI must consume semantic roles rather than palette values or component-specific colors:
 
 ```text
---bg --bg-panel --bg-hover --bg-selected --bg-subtle --border
---text --text-muted --text-dim --accent --accent-hover
---user-bg --assistant-bg --tool-bg --font-mono
+Surface:   --surface-app --surface-panel --surface-raised --surface-subtle
+           --surface-hover --surface-selected --surface-overlay
+Border:    --border-default --border-subtle --border-strong --border-focus
+Text:      --text-primary --text-secondary --text-tertiary --text-inverse --text-accent
+Accent:    --accent-primary --accent-hover --accent-soft --accent-border
+Status:    --status-{success|warning|danger|info}-{foreground|soft|border}
+Shape:     --radius-* --control-height-*
+Elevation: --shadow-sm --shadow-panel --shadow-popover
+Focus:     --focus-ring-color --focus-ring-width --focus-ring-offset
+Motion:    --motion-duration-* --motion-ease-*
 ```
 
-They are also mapped to Tailwind `--color-*` utility aliases. The appearance system stores the selected preference under `localStorage["pi-theme"]`. It toggles `dark` on `document.documentElement` for binary editor/renderer compatibility and sets `data-theme-skin` for curated semantic-token overrides. The opt-in MetaCubeXD family (`twilight`, `night`, `daisy-dark`, and `dracula`) additionally scopes layered shell surfaces, accent-tinted active states, and tactile motion to its own skin selectors, so other skins retain their existing chrome. Night, Daisy Dark, and Dracula preserve the DaisyUI 5.7.0 base/content/primary color relationships without adding DaisyUI as a dependency. The pre-hydration script in `app/layout.tsx` derives its skin list from the registered theme preferences and applies the selected skin before first paint.
+Theme selectors set only `--palette-*` values; the root semantic layer maps those values to component roles. Existing variables remain compatibility aliases during gradual migration: `--bg*` → `--surface-*`, `--border`/`--line*` → `--border-*`, `--text`/`--text-muted`/`--text-dim` and `--text-2`/`--text-3` → semantic text roles, `--accent` → `--accent-primary`, `--ok`/`--warn`/`--danger`/`--info` → semantic status foregrounds, and `--radius*` → semantic radius roles. Do not remove an alias until repository search shows that it has no callers. Tailwind `--color-*` aliases resolve through the same semantic layer.
+
+`lib/theme.ts` is the single theme registry. Each entry owns its resolved mode, skin flag, i18n label key, and three-color Picker preview; `ThemePicker`, `useTheme`, and the pre-hydration script in `app/layout.tsx` derive their options/mode/skin behavior from this metadata. The appearance system stores the selected preference under `localStorage["pi-theme"]`, toggles `dark` on `document.documentElement` for binary editor/renderer compatibility, and sets `data-theme-skin` only for curated skins. Invalid stored values fall back to `system`, and applying a core theme clears stale skin data before first paint. The opt-in MetaCubeXD family (`twilight`, `night`, `daisy-dark`, and `dracula`) retains its existing scoped material effects; Night, Daisy Dark, and Dracula preserve the DaisyUI 5.7.0 base/content/primary relationships without adding DaisyUI as a dependency.
+
+Run `npm run test:ui-theme` whenever changing the theme registry, boot script, Picker metadata, semantic Token names, compatibility aliases, or reduced-motion behavior. The smoke checks synchronization and static contracts; it does not replace representative-theme browser review.
 
 Desktop split sizing uses shared `.panel-resize-handle` styles plus `--right-panel-width` on `.app-shell-root`. Inline resizable right panel applies at `min-width: 960px`, with a 300px desktop sidebar and 380px Inspector baseline. Between `641px` and `959px` the right panel is a fixed overlay drawer (no vertical resize handle) so the chat column is not squeezed below its minimum. At `max-width: 640px`, all resize handles are hidden and mobile drawer/full-width rules continue to override dynamic panel sizes; Explorer still equal-shares remaining sidebar height when expanded.
 

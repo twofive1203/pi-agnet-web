@@ -2,7 +2,11 @@ import type { Metadata } from "next";
 import { Noto_Sans_Mono } from "next/font/google";
 import "katex/dist/katex.min.css";
 import "./globals.css";
-import { THEME_META, THEME_PREFERENCES } from "@/lib/theme";
+import {
+  THEME_MODE_BY_PREFERENCE,
+  THEME_SKIN_PREFERENCES,
+  THEME_STORAGE_KEY,
+} from "@/lib/theme";
 
 const notoSansMono = Noto_Sans_Mono({
   subsets: ["latin", "cyrillic"],
@@ -18,13 +22,7 @@ export const metadata: Metadata = {
   },
 };
 
-const THEME_MODES = Object.fromEntries(
-  THEME_PREFERENCES.map((preference) => [preference, THEME_META[preference].mode]),
-);
-const THEME_SKINS = THEME_PREFERENCES.filter(
-  (preference) => preference !== "system" && preference !== "light" && preference !== "dark",
-);
-const BOOT_SCRIPT = `(function(){try{var r=document.documentElement,m=${JSON.stringify(THEME_MODES)},s=${JSON.stringify(THEME_SKINS)},t=localStorage.getItem("pi-theme");if(!Object.prototype.hasOwnProperty.call(m,t))t="system";var d=t==="system"?window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches:m[t]==="dark";r.dataset.themePreference=t;if(s.indexOf(t)>-1)r.dataset.themeSkin=t;r.classList.toggle("dark",!!d);r.style.colorScheme=d?"dark":"light";var l=localStorage.getItem("pi-locale");if(l!=="zh"&&l!=="en"){var n=(navigator.language||"").toLowerCase();l=n.indexOf("zh")===0?"zh":"en";}r.lang=l==="zh"?"zh-CN":"en";r.dataset.locale=l;}catch(e){}})();`;
+const BOOT_SCRIPT = `(function(){try{var r=document.documentElement,m=${JSON.stringify(THEME_MODE_BY_PREFERENCE)},s=${JSON.stringify(THEME_SKIN_PREFERENCES)},t=localStorage.getItem(${JSON.stringify(THEME_STORAGE_KEY)});if(!Object.prototype.hasOwnProperty.call(m,t))t="system";var d=t==="system"?window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches:m[t]==="dark";r.dataset.themePreference=t;delete r.dataset.themeSkin;if(s.indexOf(t)>-1)r.dataset.themeSkin=t;r.classList.toggle("dark",!!d);r.style.colorScheme=d?"dark":"light";var l=localStorage.getItem("pi-locale");if(l!=="zh"&&l!=="en"){var n=(navigator.language||"").toLowerCase();l=n.indexOf("zh")===0?"zh":"en";}r.lang=l==="zh"?"zh-CN":"en";r.dataset.locale=l;}catch(e){}})();`;
 
 export default function RootLayout({
   children,

@@ -3,12 +3,12 @@
 import { useCallback, useSyncExternalStore } from "react";
 import {
   isThemePreference,
+  isThemeSkinPreference,
   resolveThemePreference,
+  THEME_STORAGE_KEY,
   type ResolvedTheme,
   type ThemePreference,
 } from "@/lib/theme";
-
-const THEME_STORAGE_KEY = "pi-theme";
 const listeners = new Set<() => void>();
 
 type ThemeSnapshot = `${ThemePreference}:${ResolvedTheme}`;
@@ -60,7 +60,7 @@ function applyThemeToDocument(preference: ThemePreference): void {
   const root = document.documentElement;
   const resolved = resolveThemePreference(preference, getSystemIsDark());
   root.dataset.themePreference = preference;
-  if (preference !== "system" && preference !== "light" && preference !== "dark") {
+  if (isThemeSkinPreference(preference)) {
     root.dataset.themeSkin = preference;
   } else {
     delete root.dataset.themeSkin;
@@ -93,11 +93,15 @@ function runThemeTransition(apply: () => void, origin?: ToggleOrigin): void {
   );
   const transition = document.startViewTransition(apply);
   transition.ready.then(() => {
+    const themeStyles = getComputedStyle(document.documentElement);
+    const duration = Number.parseFloat(themeStyles.getPropertyValue("--motion-duration-theme")) || 360;
+    const easing = themeStyles.getPropertyValue("--motion-ease-emphasized").trim()
+      || "cubic-bezier(0.16, 1, 0.3, 1)";
     document.documentElement.animate(
       { clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${endRadius}px at ${x}px ${y}px)`] },
       {
-        duration: 360,
-        easing: "cubic-bezier(0.22, 0.61, 0.36, 1)",
+        duration,
+        easing,
         pseudoElement: "::view-transition-new(root)",
       },
     );

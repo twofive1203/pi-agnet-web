@@ -2,163 +2,259 @@
 @import "@xterm/xterm/css/xterm.css";
 
 @theme {
-  --color-bg: var(--bg);
-  --color-bg-panel: var(--bg-panel);
-  --color-bg-hover: var(--bg-hover);
-  --color-bg-selected: var(--bg-selected);
-  --color-border: var(--border);
-  --color-text: var(--text);
-  --color-text-muted: var(--text-muted);
-  --color-text-dim: var(--text-dim);
-  --color-accent: var(--accent);
+  --color-bg: var(--surface-app);
+  --color-bg-panel: var(--surface-panel);
+  --color-bg-hover: var(--surface-hover);
+  --color-bg-selected: var(--surface-selected);
+  --color-border: var(--border-default);
+  --color-text: var(--text-primary);
+  --color-text-muted: var(--text-secondary);
+  --color-text-dim: var(--text-tertiary);
+  --color-accent: var(--accent-primary);
   --color-accent-hover: var(--accent-hover);
-  --color-user-bg: var(--user-bg);
-  --color-assistant-bg: var(--assistant-bg);
-  --color-tool-bg: var(--tool-bg);
-  --color-bg-subtle: var(--bg-subtle);
+  --color-user-bg: var(--surface-user-message);
+  --color-assistant-bg: var(--surface-assistant-message);
+  --color-tool-bg: var(--surface-tool-message);
+  --color-bg-subtle: var(--surface-subtle);
+  --color-success: var(--status-success-foreground);
+  --color-warning: var(--status-warning-foreground);
+  --color-danger: var(--status-danger-foreground);
+  --color-info: var(--status-info-foreground);
   --font-mono-font: var(--font-mono);
 }
 
+/* Theme selectors only set palette values. Components consume the semantic
+   roles below; legacy variables remain aliases until their callers migrate. */
 :root {
-  --bg: #f4f5f8;
-  --bg-panel: #ffffff;
-  --bg-hover: #eef0f5;
-  --bg-selected: #e7e9f2;
-  --border: #e2e5ee;
-  --text: #171a22;
-  --text-muted: #5c6578;
-  --text-dim: #8b93a5;
-  --accent: #6358e6;
-  --accent-hover: #4f46d0;
-  --user-bg: #f0eefe;
-  --assistant-bg: #ffffff;
-  --tool-bg: #f7f7fb;
-  --bg-subtle: rgba(23,26,34,0.035);
+  --palette-app: #f4f5f8;
+  --palette-panel: #ffffff;
+  --palette-hover: #eef0f5;
+  --palette-selected: #e7e9f2;
+  --palette-border: #e2e5ee;
+  --palette-text: #171a22;
+  --palette-text-muted: #5c6578;
+  --palette-text-dim: #8b93a5;
+  --palette-text-inverse: #ffffff;
+  --palette-accent: #6358e6;
+  --palette-accent-hover: #4f46d0;
+  --palette-user-message: #f0eefe;
+  --palette-assistant-message: #ffffff;
+  --palette-tool-message: #f7f7fb;
+  --palette-subtle: rgba(23, 26, 34, 0.035);
+  --palette-success: #16845b;
+  --palette-warning: #946200;
+  --palette-danger: #c23b49;
+  --palette-info: #2369b4;
 }
 
 html.dark {
-  --bg: #0e0f13;
-  --bg-panel: #14161d;
-  --bg-hover: #1f2430;
-  --bg-selected: #272d3d;
-  --border: #2a2f3c;
-  --text: #eef0f6;
-  --text-muted: #9aa3b5;
-  --text-dim: #6d7689;
-  --accent: #7c6af5;
-  --accent-hover: #9180f9;
-  --user-bg: #221e3a;
-  --assistant-bg: #181b24;
-  --tool-bg: #1c2029;
-  --bg-subtle: rgba(255,255,255,0.04);
+  --palette-app: #0e0f13;
+  --palette-panel: #14161d;
+  --palette-hover: #1f2430;
+  --palette-selected: #272d3d;
+  --palette-border: #2a2f3c;
+  --palette-text: #eef0f6;
+  --palette-text-muted: #9aa3b5;
+  --palette-text-dim: #6d7689;
+  --palette-text-inverse: #171a22;
+  --palette-accent: #7c6af5;
+  --palette-accent-hover: #9180f9;
+  --palette-user-message: #221e3a;
+  --palette-assistant-message: #181b24;
+  --palette-tool-message: #1c2029;
+  --palette-subtle: rgba(255, 255, 255, 0.04);
+  --palette-success: #55d69e;
+  --palette-warning: #f0bd55;
+  --palette-danger: #f07178;
+  --palette-info: #6ec8ff;
 }
 
-/* Concept-B workbench semantic aliases — map the prototype's token roles onto
-   the active theme so every theme/skin keeps a coherent card-panel look. */
 :root {
-  --bg-soft: var(--bg);
-  --bg-card: var(--bg-panel);
-  --line: var(--border);
-  --line-soft: color-mix(in srgb, var(--border) 52%, transparent);
-  --text-2: var(--text-muted);
-  --text-3: var(--text-dim);
-  --accent-soft: color-mix(in srgb, var(--accent) 14%, transparent);
-  --accent-2: color-mix(in srgb, var(--accent) 72%, #5b8cff);
-  --ok: #3ecf8e;
-  --warn: #f0b429;
-  --danger: #f07178;
-  --info: #6ec8ff;
-  --radius: 12px;
+  /* Surface */
+  --surface-app: var(--palette-app);
+  --surface-panel: var(--palette-panel);
+  --surface-raised: var(--palette-panel);
+  --surface-subtle: var(--palette-subtle);
+  --surface-hover: var(--palette-hover);
+  --surface-selected: var(--palette-selected);
+  --surface-overlay: color-mix(in srgb, #080b12 48%, transparent);
+  --surface-user-message: var(--palette-user-message);
+  --surface-assistant-message: var(--palette-assistant-message);
+  --surface-tool-message: var(--palette-tool-message);
+
+  /* Border */
+  --border-default: var(--palette-border);
+  --border-subtle: color-mix(in srgb, var(--palette-border) 52%, transparent);
+  --border-strong: color-mix(in srgb, var(--palette-border) 68%, var(--palette-text-muted));
+  --border-focus: var(--palette-accent);
+
+  /* Text */
+  --text-primary: var(--palette-text);
+  --text-secondary: var(--palette-text-muted);
+  --text-tertiary: var(--palette-text-dim);
+  --text-inverse: var(--palette-text-inverse);
+  --text-accent: var(--palette-accent);
+
+  /* Accent */
+  --accent-primary: var(--palette-accent);
+  --accent-hover: var(--palette-accent-hover);
+  --accent-soft: color-mix(in srgb, var(--palette-accent) 14%, transparent);
+  --accent-border: color-mix(in srgb, var(--palette-accent) 46%, var(--palette-border));
+
+  /* Status */
+  --status-success-foreground: var(--palette-success);
+  --status-success-soft: color-mix(in srgb, var(--palette-success) 13%, transparent);
+  --status-success-border: color-mix(in srgb, var(--palette-success) 42%, var(--palette-border));
+  --status-warning-foreground: var(--palette-warning);
+  --status-warning-soft: color-mix(in srgb, var(--palette-warning) 13%, transparent);
+  --status-warning-border: color-mix(in srgb, var(--palette-warning) 42%, var(--palette-border));
+  --status-danger-foreground: var(--palette-danger);
+  --status-danger-soft: color-mix(in srgb, var(--palette-danger) 13%, transparent);
+  --status-danger-border: color-mix(in srgb, var(--palette-danger) 42%, var(--palette-border));
+  --status-info-foreground: var(--palette-info);
+  --status-info-soft: color-mix(in srgb, var(--palette-info) 13%, transparent);
+  --status-info-border: color-mix(in srgb, var(--palette-info) 42%, var(--palette-border));
+
+  /* Shape and control sizing */
   --radius-sm: 8px;
-  --radius-lg: 18px;
+  --radius-control: 10px;
+  --radius-panel: 18px;
+  --radius-popover: 12px;
+  --radius-pill: 999px;
+  --control-height-sm: 28px;
+  --control-height-md: 36px;
+  --control-height-lg: 42px;
+
+  /* Elevation */
+  --shadow-sm: 0 3px 10px color-mix(in srgb, #0b0d14 10%, transparent);
   --shadow-panel: 0 10px 40px color-mix(in srgb, #0b0d14 16%, transparent);
+  --shadow-popover: 0 14px 36px color-mix(in srgb, #0b0d14 20%, transparent);
+
+  /* Focus and motion */
+  --focus-ring-color: var(--border-focus);
+  --focus-ring-width: 2px;
+  --focus-ring-offset: 2px;
+  --motion-duration-fast: 120ms;
+  --motion-duration-base: 160ms;
+  --motion-duration-slow: 240ms;
+  --motion-duration-theme: 360ms;
+  --motion-ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --motion-ease-emphasized: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Compatibility aliases. Prefer the semantic roles above in new code. */
+  --bg: var(--surface-app);
+  --bg-panel: var(--surface-panel);
+  --bg-hover: var(--surface-hover);
+  --bg-selected: var(--surface-selected);
+  --bg-subtle: var(--surface-subtle);
+  --border: var(--border-default);
+  --text: var(--text-primary);
+  --text-muted: var(--text-secondary);
+  --text-dim: var(--text-tertiary);
+  --accent: var(--accent-primary);
+  --user-bg: var(--surface-user-message);
+  --assistant-bg: var(--surface-assistant-message);
+  --tool-bg: var(--surface-tool-message);
+  --bg-soft: var(--surface-app);
+  --bg-card: var(--surface-panel);
+  --line: var(--border-default);
+  --line-soft: var(--border-subtle);
+  --text-2: var(--text-secondary);
+  --text-3: var(--text-tertiary);
+  --accent-2: color-mix(in srgb, var(--accent-primary) 72%, #5b8cff);
+  --ok: var(--status-success-foreground);
+  --warn: var(--status-warning-foreground);
+  --danger: var(--status-danger-foreground);
+  --info: var(--status-info-foreground);
+  --radius: var(--radius-popover);
+  --radius-lg: var(--radius-panel);
 }
 
 /* Curated themes keep the same semantic token contract as the default modes. */
 html[data-theme-skin="paper"] {
-  --bg: #f7f6f2;
-  --bg-panel: #efede7;
-  --bg-hover: #e6e3db;
-  --bg-selected: #ddd9cf;
-  --border: #d4d0c6;
-  --text: #242522;
-  --text-muted: #62665f;
-  --text-dim: #8a8e87;
-  --accent: #306b5b;
-  --accent-hover: #245447;
-  --user-bg: #e7f0ec;
-  --assistant-bg: #f7f6f2;
-  --tool-bg: #eeece6;
-  --bg-subtle: rgba(36, 37, 34, 0.045);
+  --palette-app: #f7f6f2;
+  --palette-panel: #efede7;
+  --palette-hover: #e6e3db;
+  --palette-selected: #ddd9cf;
+  --palette-border: #d4d0c6;
+  --palette-text: #242522;
+  --palette-text-muted: #62665f;
+  --palette-text-dim: #8a8e87;
+  --palette-accent: #306b5b;
+  --palette-accent-hover: #245447;
+  --palette-user-message: #e7f0ec;
+  --palette-assistant-message: #f7f6f2;
+  --palette-tool-message: #eeece6;
+  --palette-subtle: rgba(36, 37, 34, 0.045);
 }
 
 html[data-theme-skin="graphite"] {
-  --bg: #171918;
-  --bg-panel: #202321;
-  --bg-hover: #292d2a;
-  --bg-selected: #333834;
-  --border: #3b413d;
-  --text: #edf0ec;
-  --text-muted: #adb5ae;
-  --text-dim: #767f78;
-  --accent: #a8c7b5;
-  --accent-hover: #c1d8ca;
-  --user-bg: #26332d;
-  --assistant-bg: #171918;
-  --tool-bg: #1e2521;
-  --bg-subtle: rgba(255, 255, 255, 0.045);
+  --palette-app: #171918;
+  --palette-panel: #202321;
+  --palette-hover: #292d2a;
+  --palette-selected: #333834;
+  --palette-border: #3b413d;
+  --palette-text: #edf0ec;
+  --palette-text-muted: #adb5ae;
+  --palette-text-dim: #767f78;
+  --palette-accent: #a8c7b5;
+  --palette-accent-hover: #c1d8ca;
+  --palette-user-message: #26332d;
+  --palette-assistant-message: #171918;
+  --palette-tool-message: #1e2521;
+  --palette-subtle: rgba(255, 255, 255, 0.045);
 }
 
 html[data-theme-skin="ocean"] {
-  --bg: #f3f8f9;
-  --bg-panel: #e9f1f3;
-  --bg-hover: #dfeaec;
-  --bg-selected: #d3e2e6;
-  --border: #c7d9dd;
-  --text: #183036;
-  --text-muted: #536d74;
-  --text-dim: #7b9399;
-  --accent: #146c7c;
-  --accent-hover: #0e5360;
-  --user-bg: #dfeef1;
-  --assistant-bg: #f3f8f9;
-  --tool-bg: #eaf2f4;
-  --bg-subtle: rgba(20, 108, 124, 0.05);
+  --palette-app: #f3f8f9;
+  --palette-panel: #e9f1f3;
+  --palette-hover: #dfeaec;
+  --palette-selected: #d3e2e6;
+  --palette-border: #c7d9dd;
+  --palette-text: #183036;
+  --palette-text-muted: #536d74;
+  --palette-text-dim: #7b9399;
+  --palette-accent: #146c7c;
+  --palette-accent-hover: #0e5360;
+  --palette-user-message: #dfeef1;
+  --palette-assistant-message: #f3f8f9;
+  --palette-tool-message: #eaf2f4;
+  --palette-subtle: rgba(20, 108, 124, 0.05);
 }
 
 html[data-theme-skin="forest"] {
-  --bg: #17201b;
-  --bg-panel: #202b24;
-  --bg-hover: #29372e;
-  --bg-selected: #334239;
-  --border: #3b4c41;
-  --text: #edf2ed;
-  --text-muted: #abb9ad;
-  --text-dim: #748278;
-  --accent: #9bc5a2;
-  --accent-hover: #b8d7bd;
-  --user-bg: #26392c;
-  --assistant-bg: #17201b;
-  --tool-bg: #1e2b22;
-  --bg-subtle: rgba(197, 224, 202, 0.045);
+  --palette-app: #17201b;
+  --palette-panel: #202b24;
+  --palette-hover: #29372e;
+  --palette-selected: #334239;
+  --palette-border: #3b4c41;
+  --palette-text: #edf2ed;
+  --palette-text-muted: #abb9ad;
+  --palette-text-dim: #748278;
+  --palette-accent: #9bc5a2;
+  --palette-accent-hover: #b8d7bd;
+  --palette-user-message: #26392c;
+  --palette-assistant-message: #17201b;
+  --palette-tool-message: #1e2b22;
+  --palette-subtle: rgba(197, 224, 202, 0.045);
 }
 
 /* MetaCubeXD-inspired skins preserve the source themes' color relationships. */
 html[data-theme-skin="twilight"] {
-  --bg: #17212b;
-  --bg-panel: #202c38;
-  --bg-hover: #2a3947;
-  --bg-selected: #3b3d45;
-  --border: #3a4957;
-  --text: #e8edf1;
-  --text-muted: #aeb9c3;
-  --text-dim: #748391;
-  --accent: #f08a67;
-  --accent-hover: #f6a084;
-  --user-bg: #382d2d;
-  --assistant-bg: #17212b;
-  --tool-bg: #1d2934;
-  --bg-subtle: rgba(240, 138, 103, 0.055);
+  --palette-app: #17212b;
+  --palette-panel: #202c38;
+  --palette-hover: #2a3947;
+  --palette-selected: #3b3d45;
+  --palette-border: #3a4957;
+  --palette-text: #e8edf1;
+  --palette-text-muted: #aeb9c3;
+  --palette-text-dim: #748391;
+  --palette-accent: #f08a67;
+  --palette-accent-hover: #f6a084;
+  --palette-user-message: #382d2d;
+  --palette-assistant-message: #17212b;
+  --palette-tool-message: #1d2934;
+  --palette-subtle: rgba(240, 138, 103, 0.055);
 }
 
 html[data-theme-skin="night"] {
@@ -190,20 +286,20 @@ html:is(
   [data-theme-skin="daisy-dark"],
   [data-theme-skin="dracula"]
 ) {
-  --bg: var(--daisy-base-100);
-  --bg-panel: var(--daisy-base-200);
-  --bg-hover: color-mix(in oklab, var(--daisy-base-content) 7%, var(--daisy-base-200));
-  --bg-selected: color-mix(in oklab, var(--daisy-primary) 16%, var(--daisy-base-200));
-  --border: color-mix(in oklab, var(--daisy-base-content) 13%, var(--daisy-base-300));
-  --text: var(--daisy-base-content);
-  --text-muted: color-mix(in oklab, var(--daisy-base-content) 72%, var(--daisy-base-100));
-  --text-dim: color-mix(in oklab, var(--daisy-base-content) 48%, var(--daisy-base-100));
-  --accent: var(--daisy-primary);
-  --accent-hover: color-mix(in oklab, var(--daisy-primary) 82%, white);
-  --user-bg: color-mix(in oklab, var(--daisy-primary) 13%, var(--daisy-base-100));
-  --assistant-bg: var(--daisy-base-100);
-  --tool-bg: var(--daisy-base-200);
-  --bg-subtle: color-mix(in oklab, var(--daisy-base-content) 4%, transparent);
+  --palette-app: var(--daisy-base-100);
+  --palette-panel: var(--daisy-base-200);
+  --palette-hover: color-mix(in oklab, var(--daisy-base-content) 7%, var(--daisy-base-200));
+  --palette-selected: color-mix(in oklab, var(--daisy-primary) 16%, var(--daisy-base-200));
+  --palette-border: color-mix(in oklab, var(--daisy-base-content) 13%, var(--daisy-base-300));
+  --palette-text: var(--daisy-base-content);
+  --palette-text-muted: color-mix(in oklab, var(--daisy-base-content) 72%, var(--daisy-base-100));
+  --palette-text-dim: color-mix(in oklab, var(--daisy-base-content) 48%, var(--daisy-base-100));
+  --palette-accent: var(--daisy-primary);
+  --palette-accent-hover: color-mix(in oklab, var(--daisy-primary) 82%, white);
+  --palette-user-message: color-mix(in oklab, var(--daisy-primary) 13%, var(--daisy-base-100));
+  --palette-assistant-message: var(--daisy-base-100);
+  --palette-tool-message: var(--daisy-base-200);
+  --palette-subtle: color-mix(in oklab, var(--daisy-base-content) 4%, transparent);
 }
 
 html:is(
@@ -397,8 +493,8 @@ html:is(
 .app-top-pill:focus-visible,
 .theme-picker-option:focus-visible,
 .right-panel-toggle:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
 }
 
 .app-top-actions {
@@ -492,11 +588,11 @@ html:is(
   position: fixed;
   z-index: 800;
   padding: 10px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--bg-panel);
-  box-shadow: 0 14px 36px rgba(15, 23, 42, 0.18);
-  color: var(--text);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-popover);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-popover);
+  color: var(--text-primary);
 }
 
 .theme-picker-header {
@@ -510,7 +606,7 @@ html:is(
 }
 
 .theme-picker-current {
-  color: var(--text-muted);
+  color: var(--text-secondary);
   font-size: 10px;
   font-weight: 500;
 }
@@ -527,29 +623,32 @@ html:is(
 .theme-picker-option {
   display: flex;
   min-width: 0;
+  min-height: var(--control-height-md);
   align-items: center;
   gap: 7px;
-  min-height: 34px;
   padding: 6px 7px;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: transparent;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   cursor: pointer;
   font: inherit;
   text-align: left;
-  transition: background 0.12s, border-color 0.12s, color 0.12s;
+  transition:
+    background var(--motion-duration-fast) var(--motion-ease-standard),
+    border-color var(--motion-duration-fast) var(--motion-ease-standard),
+    color var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
 .theme-picker-option:hover {
-  background: var(--bg-hover);
-  color: var(--text);
+  background: var(--surface-hover);
+  color: var(--text-primary);
 }
 
 .theme-picker-option-selected {
-  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
-  background: var(--bg-selected);
-  color: var(--text);
+  border-color: var(--accent-border);
+  background: var(--surface-selected);
+  color: var(--text-primary);
 }
 
 .theme-picker-swatches {
@@ -558,7 +657,7 @@ html:is(
   height: 18px;
   flex: 0 0 24px;
   overflow: hidden;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-default);
   border-radius: 5px;
 }
 
@@ -578,7 +677,7 @@ html:is(
   width: 12px;
   flex: 0 0 12px;
   margin-left: auto;
-  color: var(--accent);
+  color: var(--text-accent);
   font-size: 12px;
   font-weight: 800;
   text-align: center;
@@ -2295,7 +2394,7 @@ span.linenumber {
   width: 100% !important;
   min-height: 72px;
   display: grid !important;
-  grid-template-columns: 38px minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center !important;
   gap: 10px;
   padding: 10px 12px !important;

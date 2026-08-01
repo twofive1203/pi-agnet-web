@@ -3,26 +3,10 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 import { useTheme } from "@/hooks/useTheme";
-import type { ThemePreference } from "@/lib/theme";
+import { THEME_META, THEME_PREFERENCES } from "@/lib/theme";
 import { useI18n } from "./I18nProvider";
 
-const OPTIONS: Array<{
-  id: ThemePreference;
-  labelKey: `app.${string}`;
-  colors: [string, string, string];
-}> = [
-  { id: "system", labelKey: "app.themeSystem", colors: ["#f5f5f5", "#242424", "#60a5fa"] },
-  { id: "light", labelKey: "app.themeLight", colors: ["#f4f5f8", "#ffffff", "#6358e6"] },
-  { id: "dark", labelKey: "app.themeDark", colors: ["#0e0f13", "#14161d", "#7c6af5"] },
-  { id: "paper", labelKey: "app.themePaper", colors: ["#f7f6f2", "#ddd9cf", "#306b5b"] },
-  { id: "graphite", labelKey: "app.themeGraphite", colors: ["#171918", "#333834", "#a8c7b5"] },
-  { id: "ocean", labelKey: "app.themeOcean", colors: ["#f3f8f9", "#d3e2e6", "#146c7c"] },
-  { id: "forest", labelKey: "app.themeForest", colors: ["#17201b", "#334239", "#9bc5a2"] },
-  { id: "twilight", labelKey: "app.themeTwilight", colors: ["#17212b", "#303d4b", "#f08a67"] },
-  { id: "night", labelKey: "app.themeNight", colors: ["oklch(20.768% 0.039 265.754)", "oklch(27.949% 0.036 260.03)", "oklch(75.351% 0.138 232.661)"] },
-  { id: "daisy-dark", labelKey: "app.themeDaisyDark", colors: ["oklch(25.33% 0.016 252.42)", "oklch(21.15% 0.012 254.09)", "oklch(58% 0.233 277.117)"] },
-  { id: "dracula", labelKey: "app.themeDracula", colors: ["oklch(28.822% 0.022 277.508)", "oklch(39.445% 0.032 275.524)", "oklch(75.461% 0.183 346.812)"] },
-];
+const OPTIONS = THEME_PREFERENCES.map((id) => ({ id, ...THEME_META[id] }));
 
 const POPOVER_WIDTH = 260;
 
@@ -148,7 +132,7 @@ export function ThemePicker() {
                   }}
                 >
                   <span className="theme-picker-swatches" aria-hidden="true">
-                    {option.colors.map((color) => <span key={color} style={{ background: color }} />)}
+                    {option.preview.map((color) => <span key={color} style={{ background: color }} />)}
                   </span>
                   <span className="theme-picker-option-label">{t(option.labelKey)}</span>
                   <span className="theme-picker-check" aria-hidden="true">{selected ? "✓" : ""}</span>

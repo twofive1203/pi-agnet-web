@@ -39,6 +39,7 @@
     "build": "node scripts/build-next.js",
     "start": "next start -p 62666",
     "lint": "eslint .",
+    "test:ui-theme": "npx --yes tsx@4.23.1 scripts/smoke-ui-theme-contract.ts",
     "generate:browser-extension": "tsx scripts/generate-browser-extension-shared.ts",
     "test:browser": "npx --yes tsx@4.23.1 scripts/generate-browser-extension-shared.ts && npx --yes tsx@4.23.1 scripts/smoke-browser-binding.ts && npx --yes tsx@4.23.1 scripts/smoke-chrome-extension-artifacts.ts",
     "test:snflow": "npx --yes tsx@4.23.1 scripts/smoke-snflow-setup.ts && npx --yes tsx@4.23.1 scripts/smoke-workflow-store.ts && npx --yes tsx@4.23.1 scripts/smoke-workflow-session-link.ts && npx --yes tsx@4.23.1 scripts/smoke-workflow-chat-lifecycle.ts && npx --yes tsx@4.23.1 scripts/smoke-snflow-spec-review.ts",

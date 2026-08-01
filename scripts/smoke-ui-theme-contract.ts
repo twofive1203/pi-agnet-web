@@ -1,0 +1,254 @@
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import {
+  isThemePreference,
+  resolveThemePreference,
+  THEME_META,
+  THEME_MODE_BY_PREFERENCE,
+  THEME_PREFERENCES,
+  THEME_SKIN_PREFERENCES,
+  THEME_STORAGE_KEY,
+  type ThemeMetadata,
+} from "../lib/theme";
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+const EXPECTED_THEME_COUNT = 11;
+
+const REQUIRED_SEMANTIC_TOKENS = [
+  "surface-app",
+  "surface-panel",
+  "surface-raised",
+  "surface-subtle",
+  "surface-hover",
+  "surface-selected",
+  "surface-overlay",
+  "border-default",
+  "border-subtle",
+  "border-strong",
+  "border-focus",
+  "text-primary",
+  "text-secondary",
+  "text-tertiary",
+  "text-inverse",
+  "text-accent",
+  "accent-primary",
+  "accent-hover",
+  "accent-soft",
+  "accent-border",
+  "status-success-foreground",
+  "status-success-soft",
+  "status-success-border",
+  "status-warning-foreground",
+  "status-warning-soft",
+  "status-warning-border",
+  "status-danger-foreground",
+  "status-danger-soft",
+  "status-danger-border",
+  "status-info-foreground",
+  "status-info-soft",
+  "status-info-border",
+  "radius-sm",
+  "radius-control",
+  "radius-panel",
+  "radius-popover",
+  "radius-pill",
+  "control-height-sm",
+  "control-height-md",
+  "control-height-lg",
+  "shadow-sm",
+  "shadow-panel",
+  "shadow-popover",
+  "focus-ring-color",
+  "focus-ring-width",
+  "focus-ring-offset",
+  "motion-duration-fast",
+  "motion-duration-base",
+  "motion-duration-slow",
+  "motion-duration-theme",
+  "motion-ease-standard",
+  "motion-ease-emphasized",
+] as const;
+
+const REQUIRED_COMPATIBILITY_ALIASES = {
+  bg: "surface-app",
+  "bg-panel": "surface-panel",
+  "bg-hover": "surface-hover",
+  "bg-selected": "surface-selected",
+  "bg-subtle": "surface-subtle",
+  border: "border-default",
+  text: "text-primary",
+  "text-muted": "text-secondary",
+  "text-dim": "text-tertiary",
+  accent: "accent-primary",
+  "user-bg": "surface-user-message",
+  "assistant-bg": "surface-assistant-message",
+  "tool-bg": "surface-tool-message",
+  "bg-soft": "surface-app",
+  "bg-card": "surface-panel",
+  line: "border-default",
+  "line-soft": "border-subtle",
+  "text-2": "text-secondary",
+  "text-3": "text-tertiary",
+  ok: "status-success-foreground",
+  warn: "status-warning-foreground",
+  danger: "status-danger-foreground",
+  info: "status-info-foreground",
+  radius: "radius-popover",
+  "radius-lg": "radius-panel",
+} as const;
+
+interface ThemeSources {
+  css: string;
+  layout: string;
+  picker: string;
+  hook: string;
+}
+
+type RuntimeThemeMetadata = Partial<ThemeMetadata>;
+type RuntimeThemeMeta = Record<string, RuntimeThemeMetadata | undefined>;
+
+function readSource(relativePath: string): string {
+  return readFileSync(join(ROOT, relativePath), "utf8");
+}
+
+function hasTokenDeclaration(css: string, token: string): boolean {
+  return css.includes(`--${token}:`);
+}
+
+function collectContractProblems(
+  sources: ThemeSources,
+  themeMeta: RuntimeThemeMeta,
+): string[] {
+  const problems: string[] = [];
+  const preferenceSet = new Set<string>(THEME_PREFERENCES);
+
+  if (THEME_PREFERENCES.length !== EXPECTED_THEME_COUNT) {
+    problems.push(`theme registry: expected ${EXPECTED_THEME_COUNT} preferences, found ${THEME_PREFERENCES.length}`);
+  }
+  if (preferenceSet.size !== THEME_PREFERENCES.length) {
+    problems.push("theme registry: duplicate preference ids");
+  }
+
+  for (const preference of THEME_PREFERENCES) {
+    const metadata = themeMeta[preference];
+    if (!metadata) {
+      problems.push(`theme metadata: missing ${preference}`);
+      continue;
+    }
+    if (metadata.mode !== "light" && metadata.mode !== "dark") {
+      problems.push(`theme metadata: ${preference} has invalid mode`);
+    }
+    if (typeof metadata.skin !== "boolean") {
+      problems.push(`theme metadata: ${preference} has invalid skin flag`);
+    }
+    if (typeof metadata.labelKey !== "string" || !metadata.labelKey.startsWith("app.theme")) {
+      problems.push(`theme metadata: ${preference} has invalid label key`);
+    }
+    if (!Array.isArray(metadata.preview) || metadata.preview.length !== 3) {
+      problems.push(`theme metadata: ${preference} must define three preview colors`);
+    }
+  }
+
+  for (const preference of Object.keys(themeMeta)) {
+    if (!preferenceSet.has(preference)) {
+      problems.push(`theme metadata: unregistered entry ${preference}`);
+    }
+  }
+
+  const metadataSkins = THEME_PREFERENCES.filter((preference) => themeMeta[preference]?.skin);
+  if (metadataSkins.join("|") !== THEME_SKIN_PREFERENCES.join("|")) {
+    problems.push("theme registry: derived skin list does not match metadata");
+  }
+
+  for (const skin of THEME_SKIN_PREFERENCES) {
+    if (!sources.css.includes(`[data-theme-skin="${skin}"]`)) {
+      problems.push(`theme css: missing skin ${skin}`);
+    }
+  }
+
+  for (const token of REQUIRED_SEMANTIC_TOKENS) {
+    if (!hasTokenDeclaration(sources.css, token)) {
+      problems.push(`theme css: missing semantic token --${token}`);
+    }
+  }
+
+  for (const [legacy, semantic] of Object.entries(REQUIRED_COMPATIBILITY_ALIASES)) {
+    if (!sources.css.includes(`--${legacy}: var(--${semantic});`)) {
+      problems.push(`theme css: compatibility alias --${legacy} must map to --${semantic}`);
+    }
+  }
+
+  if (!sources.layout.includes("THEME_MODE_BY_PREFERENCE") || !sources.layout.includes("THEME_SKIN_PREFERENCES")) {
+    problems.push("theme boot: layout must derive modes and skins from the registry");
+  }
+  if (!sources.layout.includes("THEME_STORAGE_KEY") || !sources.layout.includes("delete r.dataset.themeSkin")) {
+    problems.push("theme boot: storage key or stale skin cleanup is missing");
+  }
+  if (!sources.picker.includes("THEME_PREFERENCES.map") || !sources.picker.includes("THEME_META[id]")) {
+    problems.push("theme picker: options must derive from the registry metadata");
+  }
+  if (!sources.hook.includes("THEME_STORAGE_KEY") || !sources.hook.includes("isThemeSkinPreference")) {
+    problems.push("theme hook: storage key or skin derivation is not shared");
+  }
+  if (!sources.hook.includes("prefers-reduced-motion: reduce") || !sources.css.includes("@media (prefers-reduced-motion: reduce)")) {
+    problems.push("theme motion: reduced-motion contract is missing");
+  }
+
+  return problems;
+}
+
+function assert(condition: unknown, message: string): asserts condition {
+  if (!condition) throw new Error(message);
+}
+
+function assertProblem(problems: string[], expected: string): void {
+  assert(
+    problems.some((problem) => problem.includes(expected)),
+    `self-test expected a problem containing ${JSON.stringify(expected)}, got ${JSON.stringify(problems)}`,
+  );
+}
+
+const sources: ThemeSources = {
+  css: readSource("app/globals.css"),
+  layout: readSource("app/layout.tsx"),
+  picker: readSource("components/ThemePicker.tsx"),
+  hook: readSource("hooks/useTheme.ts"),
+};
+const runtimeMeta = THEME_META as unknown as RuntimeThemeMeta;
+
+const problems = collectContractProblems(sources, runtimeMeta);
+if (problems.length > 0) {
+  for (const problem of problems) console.error(`THEME_CONTRACT_FAIL ${problem}`);
+  process.exitCode = 1;
+} else {
+  console.log(`THEME_CONTRACT_OK themes=${THEME_PREFERENCES.length} skins=${THEME_SKIN_PREFERENCES.length} tokens=${REQUIRED_SEMANTIC_TOKENS.length}`);
+}
+
+// Negative checks keep diagnostics useful when the contract checker itself changes.
+const metadataWithoutDracula = { ...runtimeMeta };
+delete metadataWithoutDracula.dracula;
+assertProblem(collectContractProblems(sources, metadataWithoutDracula), "theme metadata: missing dracula");
+
+const cssWithoutPaper = sources.css.replaceAll(
+  '[data-theme-skin="paper"]',
+  '[data-theme-skin="missing-paper"]',
+);
+assertProblem(collectContractProblems({ ...sources, css: cssWithoutPaper }, runtimeMeta), "theme css: missing skin paper");
+
+const cssWithoutSurfaceApp = sources.css.replace("--surface-app:", "--missing-surface-app:");
+assertProblem(
+  collectContractProblems({ ...sources, css: cssWithoutSurfaceApp }, runtimeMeta),
+  "theme css: missing semantic token --surface-app",
+);
+
+assert(THEME_STORAGE_KEY === "pi-theme", "theme storage key must remain backward compatible");
+assert(!isThemePreference("retired-theme"), "invalid theme preference must be rejected");
+assert(resolveThemePreference("system", false) === "light", "system light resolution");
+assert(resolveThemePreference("system", true) === "dark", "system dark resolution");
+for (const preference of THEME_PREFERENCES) {
+  assert(
+    THEME_MODE_BY_PREFERENCE[preference] === THEME_META[preference].mode,
+    `mode map drift for ${preference}`,
+  );
+}
