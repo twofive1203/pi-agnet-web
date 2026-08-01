@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
+import { SettingsInput, SettingsSelect, SettingsState } from "@/components/ui/SettingsPrimitives";
 
 interface PricingCatalogItem {
   provider: string;
@@ -94,47 +95,48 @@ export function ModelPricingCatalog({ onClose }: Props) {
   if (typeof document === "undefined") return null;
   return createPortal(
     <div
-      style={{ position: "fixed", inset: 0, zIndex: 1250, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
+      className="pi-modal-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="pricing-catalog-title"
       onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}
     >
-      <div style={{ width: "min(980px, calc(100vw - 32px))", height: "min(760px, calc(100dvh - 32px))", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 8, boxShadow: "0 16px 48px rgba(0,0,0,0.28)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        <div style={{ padding: "13px 16px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexShrink: 0 }}>
-          <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)" }}>Pricing catalog</div>
-            <div style={{ marginTop: 3, fontSize: 11, color: "var(--text-dim)" }}>
+      <div className="pi-modal-panel pi-modal-panel-wide pricing-catalog-panel">
+        <div className="pi-modal-header">
+          <div className="pi-modal-header-copy">
+            <div id="pricing-catalog-title" className="pi-modal-title">Pricing catalog</div>
+            <div className="pi-modal-subtitle">
               {providerCount} providers · {modelCount} models · {formatSyncedAt(syncedAt)}
             </div>
           </div>
-          <button type="button" onClick={onClose} aria-label="Close pricing catalog" style={{ width: 30, height: 30, border: "none", background: "transparent", color: "var(--text-muted)", cursor: "pointer", fontSize: 20, lineHeight: 1 }}>×</button>
+          <button type="button" onClick={onClose} aria-label="Close pricing catalog" className="pi-modal-close">×</button>
         </div>
 
-        <div style={{ padding: "10px 16px", borderBottom: "1px solid var(--border)", display: "grid", gridTemplateColumns: "minmax(180px, 1fr) minmax(160px, 240px)", gap: 8, flexShrink: 0 }}>
-          <input
+        <div className="pricing-catalog-filters">
+          <SettingsInput
             type="search"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search provider or model"
             aria-label="Search pricing catalog"
-            style={{ minWidth: 0, height: 34, padding: "0 10px", border: "1px solid var(--border)", borderRadius: 5, background: "var(--bg-panel)", color: "var(--text)", fontSize: 12, outline: "none" }}
           />
-          <select
+          <SettingsSelect
             value={provider}
             onChange={(event) => setProvider(event.target.value)}
             aria-label="Filter pricing provider"
-            style={{ minWidth: 0, height: 34, padding: "0 9px", border: "1px solid var(--border)", borderRadius: 5, background: "var(--bg-panel)", color: "var(--text)", fontSize: 12 }}
           >
             <option value="">All providers</option>
             {providers.map((name) => <option key={name} value={name}>{name}</option>)}
-          </select>
+          </SettingsSelect>
         </div>
 
         <div style={{ minHeight: 0, flex: 1, overflow: "auto" }}>
           {loading ? (
-            <div style={{ padding: 24, color: "var(--text-muted)", fontSize: 12 }}>Loading…</div>
+            <SettingsState kind="loading" title="Loading…" className="pricing-catalog-state" />
           ) : error ? (
-            <div style={{ padding: 24, color: "#f87171", fontSize: 12 }}>{error}</div>
+            <SettingsState kind="error" title={error} className="pricing-catalog-state" />
           ) : items.length === 0 ? (
-            <div style={{ padding: 24, color: "var(--text-muted)", fontSize: 12 }}>No synced pricing catalog.</div>
+            <SettingsState title="No synced pricing catalog." className="pricing-catalog-state" />
           ) : (
             <table style={{ width: "100%", minWidth: 860, borderCollapse: "collapse", tableLayout: "fixed", fontSize: 11 }}>
               <thead style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--bg-panel)" }}>

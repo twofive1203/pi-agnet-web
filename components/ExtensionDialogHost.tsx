@@ -1,58 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { SettingsButton, SettingsInput, SettingsState, SettingsTextarea } from "@/components/ui/SettingsPrimitives";
 import type { ExtensionDialogRequest } from "@/lib/types";
 
 interface Props {
   dialog: ExtensionDialogRequest | null;
   onRespond: (response: { id: string; value?: string; confirmed?: boolean; cancelled?: true }) => void;
 }
-
-const overlayStyle: CSSProperties = {
-  position: "fixed",
-  inset: 0,
-  zIndex: 1000,
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  padding: 18,
-  background: "rgba(0,0,0,0.44)",
-};
-
-const panelStyle: CSSProperties = {
-  width: "min(520px, 100%)",
-  maxHeight: "min(640px, calc(100dvh - 36px))",
-  display: "flex",
-  flexDirection: "column",
-  background: "var(--bg)",
-  border: "1px solid var(--border)",
-  borderRadius: 10,
-  boxShadow: "0 22px 70px rgba(0,0,0,0.34)",
-  overflow: "hidden",
-};
-
-const primaryBtn: CSSProperties = {
-  border: "1px solid var(--accent)",
-  background: "var(--accent)",
-  color: "#fff",
-  borderRadius: 7,
-  padding: "7px 12px",
-  fontSize: 12,
-  fontWeight: 600,
-  cursor: "pointer",
-};
-
-const secondaryBtn: CSSProperties = {
-  border: "1px solid var(--border)",
-  background: "var(--bg-panel)",
-  color: "var(--text-muted)",
-  borderRadius: 7,
-  padding: "7px 12px",
-  fontSize: 12,
-  fontWeight: 500,
-  cursor: "pointer",
-};
 
 /**
  * Application modal host for blocking Pi extension dialogs (confirm/select/input/editor).
@@ -62,6 +18,8 @@ export function ExtensionDialogHost({ dialog, onRespond }: Props) {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const previouslyFocusedRef = useRef<HTMLElement | null>(null);
 
   const options = useMemo(
     () => (dialog?.method === "select" ? dialog.options ?? [] : []),
@@ -80,15 +38,45 @@ export function ExtensionDialogHost({ dialog, onRespond }: Props) {
 
   useEffect(() => {
     if (!dialog) return;
+    previouslyFocusedRef.current = document.activeElement as HTMLElement | null;
     const frame = requestAnimationFrame(() => {
-      inputRef.current?.focus();
+      if (inputRef.current) {
+        inputRef.current.focus();
+      } else {
+        panelRef.current?.querySelector<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')?.focus();
+      }
       if (dialog.method === "editor" && inputRef.current instanceof HTMLTextAreaElement) {
         const len = inputRef.current.value.length;
         inputRef.current.setSelectionRange(len, len);
       }
     });
-    return () => cancelAnimationFrame(frame);
+    return () => {
+      cancelAnimationFrame(frame);
+      const previous = previouslyFocusedRef.current;
+      previouslyFocusedRef.current = null;
+      if (previous?.isConnected) requestAnimationFrame(() => previous.focus());
+    };
   }, [dialog]);
+
+  const trapFocus = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== "Tab") return;
+    const focusable = panelRef.current?.querySelectorAll<HTMLElement>(
+      'button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])',
+    );
+    if (!focusable || focusable.length === 0) {
+      event.preventDefault();
+      return;
+    }
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }, []);
 
   const cancel = useCallback(() => {
     if (!dialog) return;
@@ -192,38 +180,26 @@ export function ExtensionDialogHost({ dialog, onRespond }: Props) {
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) cancel();
       }}
-      style={overlayStyle}
     >
-      <div className="pi-modal-panel" style={panelStyle}>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
-            padding: "12px 14px",
-            borderBottom: "1px solid var(--border)",
-            background: "var(--bg-panel)",
-          }}
-        >
-          <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)", minWidth: 0, flex: 1 }}>
-            {title}
+      <div ref={panelRef} className="pi-modal-panel pi-extension-dialog-panel" tabIndex={-1} onKeyDown={trapFocus}>
+        <div className="pi-modal-header">
+          <div className="pi-modal-header-copy">
+            <div className="pi-modal-title">{title}</div>
           </div>
-          <button type="button" onClick={cancel} style={{ ...secondaryBtn, padding: "4px 8px" }} aria-label="Close">
-            ×
-          </button>
+          <button type="button" onClick={cancel} className="pi-modal-close" aria-label="Close">×</button>
         </div>
 
-        <div style={{ padding: 14, overflow: "auto", minHeight: 0, flex: 1 }}>
+        <div className="pi-modal-body">
           {dialog.method === "confirm" && (
-            <div style={{ fontSize: 13, lineHeight: 1.55, color: "var(--text)", whiteSpace: "pre-wrap" }}>
+            <div className="pi-modal-message">
               {dialog.message || ""}
             </div>
           )}
 
           {dialog.method === "select" && (
-            <div ref={listRef} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <div ref={listRef} className="pi-dialog-options">
               {options.length === 0 ? (
-                <div style={{ color: "var(--text-muted)", fontSize: 12 }}>No options available.</div>
+                <SettingsState title="No options available." />
               ) : (
                 options.map((option, index) => {
                   const active = index === selectedIndex;
@@ -234,21 +210,9 @@ export function ExtensionDialogHost({ dialog, onRespond }: Props) {
                       data-option-index={index}
                       onClick={() => onRespond({ id: dialog.id, value: option })}
                       onMouseEnter={() => setSelectedIndex(index)}
-                      style={{
-                        textAlign: "left",
-                        border: `1px solid ${active ? "var(--accent)" : "var(--border)"}`,
-                        background: active ? "var(--bg-selected)" : "var(--bg-panel)",
-                        color: "var(--text)",
-                        borderRadius: 8,
-                        padding: "10px 12px",
-                        cursor: "pointer",
-                        fontSize: 12,
-                        lineHeight: 1.45,
-                        whiteSpace: "pre-wrap",
-                        wordBreak: "break-word",
-                      }}
+                      className={`pi-dialog-option${active ? " pi-dialog-option-active" : ""}`}
                     >
-                      <span style={{ color: "var(--text-dim)", fontFamily: "var(--font-mono)", marginRight: 8 }}>
+                      <span className="pi-dialog-option-index">
                         {index + 1}.
                       </span>
                       {option}
@@ -260,72 +224,35 @@ export function ExtensionDialogHost({ dialog, onRespond }: Props) {
           )}
 
           {dialog.method === "input" && (
-            <input
+            <SettingsInput
               ref={(node) => { inputRef.current = node; }}
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
               placeholder={dialog.placeholder || undefined}
-              style={{
-                width: "100%",
-                boxSizing: "border-box",
-                border: "1px solid var(--border)",
-                borderRadius: 8,
-                padding: "9px 11px",
-                background: "var(--bg-panel)",
-                color: "var(--text)",
-                fontSize: 13,
-                outline: "none",
-              }}
             />
           )}
 
           {dialog.method === "editor" && (
-            <textarea
+            <SettingsTextarea
               ref={(node) => { inputRef.current = node; }}
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
               rows={12}
-              style={{
-                width: "100%",
-                boxSizing: "border-box",
-                minHeight: 180,
-                resize: "vertical",
-                border: "1px solid var(--border)",
-                borderRadius: 8,
-                padding: "10px 11px",
-                background: "var(--bg-panel)",
-                color: "var(--text)",
-                fontSize: 12,
-                lineHeight: 1.5,
-                fontFamily: "var(--font-mono)",
-                outline: "none",
-              }}
+              className="pi-extension-dialog-editor settings-control-mono"
             />
           )}
         </div>
 
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "flex-end",
-            gap: 8,
-            padding: "10px 14px",
-            borderTop: "1px solid var(--border)",
-            background: "var(--bg-panel)",
-          }}
-        >
-          <button type="button" onClick={cancel} style={secondaryBtn}>
-            {dialog.method === "confirm" ? "Cancel" : "Cancel"}
-          </button>
+        <div className="pi-modal-footer">
+          <SettingsButton onClick={cancel}>Cancel</SettingsButton>
           {(dialog.method === "confirm" || dialog.method === "input" || dialog.method === "editor" || dialog.method === "select") && (
-            <button
-              type="button"
+            <SettingsButton
+              variant="primary"
               onClick={confirm}
-              style={primaryBtn}
               disabled={dialog.method === "select" && options.length === 0}
             >
               {dialog.method === "confirm" ? "Confirm" : dialog.method === "select" ? "Select" : "OK"}
-            </button>
+            </SettingsButton>
           )}
         </div>
       </div>

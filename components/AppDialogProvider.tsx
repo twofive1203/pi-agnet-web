@@ -12,6 +12,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { useI18n } from "@/components/I18nProvider";
+import { SettingsButton, SettingsInput } from "@/components/ui/SettingsPrimitives";
 
 type ConfirmTone = "default" | "danger";
 
@@ -365,95 +366,27 @@ function DialogOverlay({
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onCancel();
       }}
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 1000,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: 18,
-        background: "rgba(0,0,0,0.44)",
-      }}
     >
       <div
         ref={panelRef}
-        className="pi-modal-panel"
+        className="pi-modal-panel pi-app-dialog-panel"
         tabIndex={-1}
         onKeyDown={handleKeyDown}
-        style={{
-          width: "min(420px, 100%)",
-          display: "flex",
-          flexDirection: "column",
-          background: "var(--bg)",
-          border: "1px solid var(--border)",
-          borderRadius: 10,
-          boxShadow: "0 22px 70px rgba(0,0,0,0.34)",
-          overflow: "hidden",
-          outline: "none",
-        }}
       >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
-            padding: "12px 14px",
-            borderBottom: "1px solid var(--border)",
-            background: "var(--bg-panel)",
-          }}
-        >
-          <div
-            id={titleId}
-            style={{
-              fontSize: 13,
-              fontWeight: 600,
-              color: "var(--text)",
-              minWidth: 0,
-              flex: 1,
-            }}
-          >
-            {title}
+        <div className="pi-modal-header">
+          <div className="pi-modal-header-copy">
+            <div id={titleId} className="pi-modal-title">{title}</div>
           </div>
           {item.mode !== "confirm" && (
-            <button
-              type="button"
-              onClick={onCancel}
-              style={{
-                border: "1px solid var(--border)",
-                background: "var(--bg-panel)",
-                color: "var(--text-muted)",
-                borderRadius: 7,
-                padding: "4px 8px",
-                fontSize: 12,
-                fontWeight: 500,
-                cursor: "pointer",
-              }}
-              aria-label={t("common.close")}
-            >
+            <button type="button" onClick={onCancel} className="pi-modal-close" aria-label={t("common.close")}>
               {"\u00D7"}
             </button>
           )}
         </div>
 
-        <div
-          style={{
-            padding: 14,
-            overflow: "auto",
-            minHeight: 0,
-          }}
-        >
+        <div className="pi-modal-body">
           {(item.mode === "alert" || item.mode === "confirm") && (
-            <div
-              id={messageId}
-              style={{
-                fontSize: 13,
-                lineHeight: 1.55,
-                color: "var(--text)",
-                whiteSpace: "pre-wrap",
-                wordBreak: "break-word",
-              }}
-            >
+            <div id={messageId} className="pi-modal-message">
               {item.options.message}
             </div>
           )}
@@ -461,23 +394,14 @@ function DialogOverlay({
           {item.mode === "prompt" && (
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {item.options.message && (
-                <div
-                  id={messageId}
-                  style={{
-                    fontSize: 13,
-                    lineHeight: 1.55,
-                    color: "var(--text)",
-                    whiteSpace: "pre-wrap",
-                    wordBreak: "break-word",
-                  }}
-                >
+                <div id={messageId} className="pi-modal-message">
                   {item.options.message}
                 </div>
               )}
               <label htmlFor="app-dialog-input" style={{ display: "none" }}>
                 {title}
               </label>
-              <input
+              <SettingsInput
                 ref={promptInputRef}
                 id="app-dialog-input"
                 value={draft}
@@ -485,86 +409,24 @@ function DialogOverlay({
                 placeholder={item.options.placeholder ?? ""}
                 aria-label={title}
                 aria-describedby={item.options.message ? messageId : undefined}
-                style={{
-                  width: "100%",
-                  boxSizing: "border-box",
-                  border: "1px solid var(--border)",
-                  borderRadius: 8,
-                  padding: "9px 11px",
-                  background: "var(--bg-panel)",
-                  color: "var(--text)",
-                  fontSize: 13,
-                  outline: "none",
-                }}
               />
             </div>
           )}
         </div>
 
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "flex-end",
-            gap: 8,
-            padding: "10px 14px",
-            borderTop: "1px solid var(--border)",
-            background: "var(--bg-panel)",
-          }}
-        >
+        <div className="pi-modal-footer">
           {item.mode === "alert" ? (
-            <button
-              type="button"
-              onClick={onConfirm}
-              style={{
-                border: "1px solid var(--accent)",
-                background: "var(--accent)",
-                color: "#fff",
-                borderRadius: 7,
-                padding: "7px 12px",
-                fontSize: 12,
-                fontWeight: 600,
-                cursor: "pointer",
-              }}
-              aria-label={t("common.close")}
-            >
+            <SettingsButton variant="primary" onClick={onConfirm} aria-label={t("common.close")}>
               {t("common.close")}
-            </button>
+            </SettingsButton>
           ) : (
             <>
-              <button
-                type="button"
-                onClick={onCancel}
-                style={{
-                  border: "1px solid var(--border)",
-                  background: "var(--bg-panel)",
-                  color: "var(--text-muted)",
-                  borderRadius: 7,
-                  padding: "7px 12px",
-                  fontSize: 12,
-                  fontWeight: 500,
-                  cursor: "pointer",
-                }}
-              >
-                {t("common.cancel")}
-              </button>
-              <button
-                type="button"
-                onClick={onConfirm}
-                style={{
-                  border: isDanger ? "1px solid #e53e3e" : "1px solid var(--accent)",
-                  background: isDanger ? "#e53e3e" : "var(--accent)",
-                  color: "#fff",
-                  borderRadius: 7,
-                  padding: "7px 12px",
-                  fontSize: 12,
-                  fontWeight: 600,
-                  cursor: "pointer",
-                }}
-              >
+              <SettingsButton onClick={onCancel}>{t("common.cancel")}</SettingsButton>
+              <SettingsButton variant={isDanger ? "danger" : "primary"} onClick={onConfirm}>
                 {item.mode === "prompt"
                   ? (item.options.confirmLabel ?? t("common.confirm"))
                   : t("common.confirm")}
-              </button>
+              </SettingsButton>
             </>
           )}
         </div>

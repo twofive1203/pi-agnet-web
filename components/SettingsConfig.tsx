@@ -17,6 +17,18 @@ import type {
 } from "@/lib/pi-web-config";
 import type { WorkflowSetupCommandResponse, WorkflowSetupStatus } from "@/lib/workflow-setup";
 import { useI18n } from "@/components/I18nProvider";
+import {
+  SettingsButton,
+  SettingsField as Field,
+  SettingsInput,
+  SettingsNotice,
+  SettingsSectionHeader,
+  SettingsSelect,
+  SettingsState,
+  SettingsTextarea,
+  SettingsTextInput as TextInput,
+  SettingsToggle as ToggleField,
+} from "@/components/ui/SettingsPrimitives";
 import type { Locale } from "@/lib/i18n";
 
 interface WebConfigResponse {
@@ -50,18 +62,6 @@ interface ModelsResponse {
   error?: string;
 }
 
-const inputStyle: React.CSSProperties = {
-  padding: "7px 9px",
-  background: "var(--bg)",
-  border: "1px solid var(--border)",
-  borderRadius: 6,
-  color: "var(--text)",
-  fontSize: 12,
-  outline: "none",
-  width: "100%",
-  boxSizing: "border-box",
-};
-
 const TEMPLATE_VARIABLES = [
   { token: "{repoRoot}", descriptionKey: "settings.pathVarsRepoAbs" },
   { token: "{repoParent}", descriptionKey: "settings.pathVarsRepoParent" },
@@ -91,47 +91,6 @@ function parseModelValue(value: string): PiWebSubagentModelRef {
   return { mode: "unset" };
 }
 
-function Field({
-  label,
-  description,
-  children,
-}: {
-  label: string;
-  description?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      <span style={{ fontSize: 12, color: "var(--text)", fontWeight: 600 }}>{label}</span>
-      {children}
-      {description && <span style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.45 }}>{description}</span>}
-    </label>
-  );
-}
-
-function TextInput({
-  value,
-  onChange,
-  placeholder,
-  disabled = false,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-  placeholder?: string;
-  disabled?: boolean;
-}) {
-  return (
-    <input
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      placeholder={placeholder}
-      disabled={disabled}
-      spellCheck={false}
-      style={{ ...inputStyle, fontFamily: "var(--font-mono)", opacity: disabled ? 0.6 : 1, cursor: disabled ? "not-allowed" : "text" }}
-    />
-  );
-}
-
 function ModelPolicySelect({
   value,
   onChange,
@@ -145,11 +104,10 @@ function ModelPolicySelect({
 }) {
   const { t } = useI18n();
   return (
-    <select
+    <SettingsSelect
       value={formatModelValue(value)}
       onChange={(e) => onChange(parseModelValue(e.target.value))}
       disabled={disabled}
-      style={{ ...inputStyle, opacity: disabled ? 0.6 : 1, cursor: disabled ? "not-allowed" : "pointer" }}
     >
       <option value="followMain">{t("settings.followMainModel")}</option>
       <option value="piDefault">{t("settings.piDefaultModel")}</option>
@@ -160,7 +118,7 @@ function ModelPolicySelect({
           {model.name} · {model.provider}/{model.id}
         </option>
       ))}
-    </select>
+    </SettingsSelect>
   );
 }
 
@@ -175,93 +133,22 @@ function ThinkingSelect({
 }) {
   const { t } = useI18n();
   return (
-    <select
+    <SettingsSelect
       value={value}
       onChange={(e) => onChange(e.target.value as SubagentThinkingOption)}
       disabled={disabled}
-      style={{ ...inputStyle, opacity: disabled ? 0.6 : 1, cursor: disabled ? "not-allowed" : "pointer" }}
     >
       {SUBAGENT_THINKING_OPTIONS.map((option) => (
         <option key={option} value={option}>{option === "inherit" ? t("settings.followMainThinking") : option === "off" ? t("settings.thinkingOff") : option}</option>
       ))}
-    </select>
-  );
-}
-
-function ToggleField({
-  label,
-  description,
-  checked,
-  onChange,
-  disabled = false,
-}: {
-  label: string;
-  description: string;
-  checked: boolean;
-  onChange: (checked: boolean) => void;
-  disabled?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={() => {
-        if (!disabled) onChange(!checked);
-      }}
-      style={{
-        width: "100%",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        gap: 16,
-        padding: 12,
-        borderRadius: 10,
-        border: "1px solid var(--border)",
-        background: "var(--bg-subtle)",
-        color: "var(--text)",
-        cursor: disabled ? "not-allowed" : "pointer",
-        opacity: disabled ? 0.65 : 1,
-        textAlign: "left",
-      }}
-    >
-      <span style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 0 }}>
-        <span style={{ fontSize: 13, fontWeight: 700 }}>{label}</span>
-        <span style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.45 }}>{description}</span>
-      </span>
-      <span
-        aria-hidden
-        style={{
-          width: 40,
-          height: 22,
-          borderRadius: 999,
-          background: checked ? "var(--accent)" : "var(--border)",
-          position: "relative",
-          flexShrink: 0,
-          transition: "background 0.12s",
-        }}
-      >
-        <span
-          style={{
-            position: "absolute",
-            top: 3,
-            left: checked ? 21 : 3,
-            width: 16,
-            height: 16,
-            borderRadius: "50%",
-            background: "white",
-            transition: "left 0.12s",
-            boxShadow: "0 1px 4px rgba(0,0,0,0.25)",
-          }}
-        />
-      </span>
-    </button>
+    </SettingsSelect>
   );
 }
 
 function StatusBadge({ ok, label }: { ok: boolean; label?: string }) {
   const { t } = useI18n();
   return (
-    <span style={{ padding: "2px 7px", borderRadius: 999, background: ok ? "rgba(34,197,94,0.14)" : "rgba(239,68,68,0.14)", color: ok ? "#22c55e" : "#f87171", fontSize: 11, fontWeight: 700 }}>
+    <span className={`settings-status-badge ${ok ? "settings-status-badge-success" : "settings-status-badge-danger"}`}>
       {label ?? (ok ? t("settings.passed") : t("settings.needsAttention"))}
     </span>
   );
@@ -269,9 +156,9 @@ function StatusBadge({ ok, label }: { ok: boolean; label?: string }) {
 
 function StatusRow({ label, value, ok, detail }: { label: string; value: string; ok: boolean; detail?: string }) {
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "120px 1fr max-content", gap: 10, alignItems: "center", padding: "7px 0", borderBottom: "1px solid var(--border)" }}>
-      <span style={{ color: "var(--text-dim)", fontSize: 11 }}>{label}</span>
-      <span title={detail} style={{ color: "var(--text)", fontSize: 12, overflowWrap: "anywhere" }}>{value}</span>
+    <div className="settings-status-row">
+      <span className="settings-status-row-label">{label}</span>
+      <span title={detail} className="settings-status-row-value">{value}</span>
       <StatusBadge ok={ok} />
     </div>
   );
@@ -729,19 +616,10 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
     return (
       <button
         key={id}
+        type="button"
         onClick={() => setSection(id)}
-        style={{
-          width: "100%",
-          textAlign: "left",
-          padding: "8px 10px",
-          borderRadius: 8,
-          border: active ? "1px solid rgba(37,99,235,0.25)" : "1px solid transparent",
-          background: active ? "var(--bg-selected)" : "transparent",
-          color: active ? "var(--accent)" : "var(--text-muted)",
-          fontSize: 13,
-          fontWeight: 600,
-          cursor: "pointer",
-        }}
+        className={`settings-section-nav-button${active ? " settings-section-nav-button-active" : ""}`}
+        aria-current={active ? "page" : undefined}
         title={description}
       >
         {label}
@@ -766,51 +644,26 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
 
   return (
     <>
-    <div
-      className="pi-modal-overlay"
-      onClick={onClose}
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 1000,
-        background: "rgba(0,0,0,0.45)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: 20,
-      }}
-    >
+    <div className="pi-modal-overlay" onClick={onClose}>
       <div
         className="pi-modal-panel settings-modal-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="settings-modal-title"
         onClick={(e) => e.stopPropagation()}
-        style={{
-          width: "min(760px, calc(100vw - 40px))",
-          maxHeight: "calc(100vh - 40px)",
-          overflow: "hidden",
-          background: "var(--bg-panel)",
-          border: "1px solid var(--border)",
-          borderRadius: 12,
-          boxShadow: "0 20px 60px rgba(0,0,0,0.35)",
-          display: "flex",
-          flexDirection: "column",
-        }}
       >
-        <div style={{ padding: "16px 18px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-          <div>
-            <h2 style={{ margin: 0, fontSize: 18, color: "var(--text)" }}>{t("settings.title")}</h2>
-            <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--text-muted)" }}>{t("settings.languageHint")}</p>
+        <div className="pi-modal-header">
+          <div className="pi-modal-header-copy">
+            <h2 id="settings-modal-title" className="pi-modal-title">{t("settings.title")}</h2>
+            <p className="pi-modal-subtitle">{t("settings.subtitle")}</p>
           </div>
-          <button
-            onClick={onClose}
-            style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 24, lineHeight: 1, padding: 4 }}
-            title={t("settings.close")}
-          >
+          <button type="button" onClick={onClose} className="pi-modal-close" title={t("settings.close")} aria-label={t("settings.close")}>
             ×
           </button>
         </div>
 
-        <div className="settings-modal-body" style={{ display: "flex", minHeight: 0 }}>
-          <div style={{ width: 150, borderRight: "1px solid var(--border)", padding: 10, background: "var(--bg-subtle)", flexShrink: 0, display: "flex", flexDirection: "column", gap: 6 }}>
+        <div className="settings-modal-body">
+          <nav className="settings-section-nav" aria-label={t("settings.title")}>
             {renderSectionButton("language", t("common.language"), t("settings.languageSection"))}
             {renderSectionButton("worktree", t("settings.sectionWorktree"), t("settings.worktreeSection"))}
             {renderSectionButton("usage", t("settings.sectionUsage"), t("settings.usageSection"))}
@@ -822,72 +675,54 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
             {renderSectionButton("mcp", t("settings.sectionMcp"), t("settings.mcpSection"))}
             {renderSectionButton("workflow", "SnFlow", t("settings.workflowSection"))}
             {renderSectionButton("extensions", "Extensions", t("settings.extensionsSection"))}
-          </div>
+          </nav>
 
-          <div style={{ padding: 18, overflow: "auto", flex: 1 }}>
+          <div className="settings-modal-content">
             {loading ? (
-              <div style={{ color: "var(--text-muted)", fontSize: 13 }}>{t("settings.loadingSettings")}</div>
+              <SettingsState kind="loading" title={t("settings.loadingSettings")} />
             ) : worktree && workflow && usage && terminal && chatgpt && editor ? (
-              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                {error && <div style={{ padding: "8px 10px", borderRadius: 8, background: "rgba(239,68,68,0.12)", color: "#f87171", fontSize: 12, overflowWrap: "anywhere" }}>{error}</div>}
-                {notice && <div style={{ padding: "8px 10px", borderRadius: 8, background: "rgba(37,99,235,0.12)", color: "var(--accent)", fontSize: 12, overflowWrap: "anywhere" }}>{notice}</div>}
+              <div className="settings-section">
+                {error && <SettingsNotice tone="danger">{error}</SettingsNotice>}
+                {notice && <SettingsNotice>{notice}</SettingsNotice>}
 
                 {section === "language" ? (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                    <div>
-                      <h3 style={{ margin: 0, color: "var(--text)", fontSize: 15 }}>{t("settings.languageSection")}</h3>
-                      <p style={{ margin: "5px 0 0", color: "var(--text-muted)", fontSize: 12, lineHeight: 1.5 }}>
-                        {t("settings.languageHint")}
-                      </p>
-                    </div>
+                  <div className="settings-section">
+                    <SettingsSectionHeader title={t("settings.languageSection")} description={t("settings.languageHint")} />
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                       {(["zh", "en"] as Locale[]).map((item) => {
                         const active = locale === item;
                         return (
-                          <button
+                          <SettingsButton
                             key={item}
-                            type="button"
+                            variant={active ? "primary" : "secondary"}
                             onClick={() => setLocale(item)}
-                            style={{
-                              padding: "8px 14px",
-                              borderRadius: 8,
-                              border: active ? "1px solid var(--accent)" : "1px solid var(--border)",
-                              background: active ? "color-mix(in srgb, var(--accent) 14%, var(--bg))" : "var(--bg)",
-                              color: active ? "var(--accent)" : "var(--text)",
-                              cursor: "pointer",
-                              fontSize: 13,
-                              fontWeight: active ? 700 : 500,
-                            }}
+                            aria-pressed={active}
                           >
                             {item === "zh" ? t("common.chinese") : t("common.english")}
-                          </button>
+                          </SettingsButton>
                         );
                       })}
                     </div>
                   </div>
                 ) : section === "worktree" ? (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                    <div>
-                      <h3 style={{ margin: 0, color: "var(--text)", fontSize: 15 }}>{t("settings.worktreeSection")}</h3>
-                      <p style={{ margin: "5px 0 0", color: "var(--text-muted)", fontSize: 12, lineHeight: 1.5 }}>
-                        {t("settings.saveTo")} <code style={{ fontFamily: "var(--font-mono)", color: "var(--text)", overflowWrap: "anywhere" }}>{configPath}</code>
-                        {exists ? "" : t("settings.autoCreateOnSave")}
-                      </p>
-                    </div>
+                  <div className="settings-section">
+                    <SettingsSectionHeader
+                      title={t("settings.worktreeSection")}
+                      description={<>{t("settings.saveTo")} <code className="settings-inline-code">{configPath}</code>{exists ? "" : t("settings.autoCreateOnSave")}</>}
+                    />
 
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+                    <div className="settings-grid">
                       <Field label={t("settings.baseRef")} description={t("settings.baseRefHint")}>
                         <TextInput value={worktree.baseRef} onChange={(baseRef) => updateWorktree({ baseRef })} placeholder="HEAD" />
                       </Field>
                       <Field label={t("settings.sessionDisplay")} description={t("settings.sessionDisplayHint")}>
-                        <select
+                        <SettingsSelect
                           value={worktree.sessionDisplay}
                           onChange={(e) => updateWorktree({ sessionDisplay: e.target.value as PiWebWorktreeConfig["sessionDisplay"] })}
-                          style={inputStyle}
                         >
                           <option value="separate">{t("settings.sessionDisplaySeparate")}</option>
                           <option value="tag">{t("settings.sessionDisplayTag")}</option>
-                        </select>
+                        </SettingsSelect>
                       </Field>
                     </div>
 
@@ -901,9 +736,9 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
                       <TextInput value={worktree.pathTemplate} onChange={(pathTemplate) => updateWorktree({ pathTemplate })} placeholder="{baseDir}/{branchSlug}" />
                     </Field>
 
-                    <div style={{ padding: 12, borderRadius: 8, background: "var(--bg-subtle)", border: "1px solid var(--border)" }}>
+                    <div className="settings-surface">
                       <div style={{ fontSize: 12, color: "var(--text)", fontWeight: 600, marginBottom: 8 }}>{t("settings.templateVariables")}</div>
-                      <div style={{ display: "grid", gridTemplateColumns: "minmax(150px, max-content) 1fr", gap: "7px 12px", alignItems: "baseline" }}>
+                      <div className="settings-grid" style={{ gridTemplateColumns: "minmax(150px, max-content) 1fr", gap: "7px 12px", alignItems: "baseline" }}>
                         {TEMPLATE_VARIABLES.map((variable) => (
                           <div key={variable.token} style={{ display: "contents" }}>
                             <code style={{ fontFamily: "var(--font-mono)", fontSize: 11, padding: "3px 6px", borderRadius: 5, background: "var(--bg)", color: "var(--text-muted)", border: "1px solid var(--border)" }}>
@@ -916,14 +751,11 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
                     </div>
                   </div>
                 ) : section === "usage" ? (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                    <div>
-                      <h3 style={{ margin: 0, color: "var(--text)", fontSize: 15 }}>{t("settings.usageSection")}</h3>
-                      <p style={{ margin: "5px 0 0", color: "var(--text-muted)", fontSize: 12, lineHeight: 1.5 }}>
-                        {t("settings.usageDescription")} {t("settings.saveTo")} <code style={{ fontFamily: "var(--font-mono)", color: "var(--text)", overflowWrap: "anywhere" }}>{configPath}</code>
-                        {exists ? "" : t("settings.autoCreateOnSave")}
-                      </p>
-                    </div>
+                  <div className="settings-section">
+                    <SettingsSectionHeader
+                      title={t("settings.usageSection")}
+                      description={<>{t("settings.usageDescription")} {t("settings.saveTo")} <code className="settings-inline-code">{configPath}</code>{exists ? "" : t("settings.autoCreateOnSave")}</>}
+                    />
                     <ToggleField
                       label={t("settings.includeArchivedSessions")}
                       description={t("settings.includeArchivedSessionsHint")}
@@ -932,26 +764,22 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
                     />
                   </div>
                 ) : section === "terminal" ? (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                    <div>
-                      <h3 style={{ margin: 0, color: "var(--text)", fontSize: 15 }}>{t("settings.terminalSection")}</h3>
-                      <p style={{ margin: "5px 0 0", color: "var(--text-muted)", fontSize: 12, lineHeight: 1.5 }}>
-                        {t("settings.terminalDescription")} <code style={{ fontFamily: "var(--font-mono)", color: "var(--text)", overflowWrap: "anywhere" }}>{configPath}</code>
-                        {exists ? "" : t("settings.autoCreateOnSave")}
-                      </p>
-                    </div>
+                  <div className="settings-section">
+                    <SettingsSectionHeader
+                      title={t("settings.terminalSection")}
+                      description={<>{t("settings.terminalDescription")} <code className="settings-inline-code">{configPath}</code>{exists ? "" : t("settings.autoCreateOnSave")}</>}
+                    />
                     <ToggleField
                       label={t("settings.enableTerminal")}
                       description={t("settings.enableTerminalHint")}
                       checked={terminal.enabled}
                       onChange={(enabled) => updateTerminal({ enabled })}
                     />
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                    <div className="settings-grid">
                       <Field label={t("settings.shellType")} description={t("settings.windowsShellHint")}>
-                        <select
+                        <SettingsSelect
                           value={terminal.shell}
                           onChange={(e) => updateTerminal({ shell: e.target.value as PiWebTerminalConfig["shell"] })}
-                          style={inputStyle}
                         >
                           <option value="zsh">zsh</option>
                           <option value="bash">bash</option>
@@ -960,7 +788,7 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
                           <option value="powershell">Windows PowerShell</option>
                           <option value="pwsh">PowerShell 7</option>
                           <option value="custom">custom path</option>
-                        </select>
+                        </SettingsSelect>
                       </Field>
                       <Field label={t("settings.customShellPath")} description={t("settings.customShellPathHint")}>
                         <TextInput
@@ -971,14 +799,14 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
                         />
                       </Field>
                     </div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: 12, borderRadius: 10, background: "var(--bg-subtle)", border: "1px solid var(--border)" }}>
+                    <div className="settings-surface">
                       <div>
-                        <div style={{ color: "var(--text)", fontSize: 13, fontWeight: 800 }}>{t("settings.envVariables")}</div>
+                        <div className="settings-surface-title">{t("settings.envVariables")}</div>
                         <div style={{ color: "var(--text-muted)", fontSize: 11, marginTop: 3, lineHeight: 1.45 }}>
                           {t("settings.envVariablesHint")}
                         </div>
                       </div>
-                      <div style={{ display: "grid", gridTemplateColumns: "minmax(120px, 0.45fr) minmax(160px, 1fr) 70px", gap: 8, alignItems: "center" }}>
+                      <div className="settings-grid settings-env-grid" style={{ gridTemplateColumns: "minmax(120px, 0.45fr) minmax(160px, 1fr) 70px", gap: 8, alignItems: "center" }}>
                         <span style={{ fontSize: 11, color: "var(--text-dim)", fontWeight: 700 }}>{t("settings.envName")}</span>
                         <span style={{ fontSize: 11, color: "var(--text-dim)", fontWeight: 700 }}>{t("settings.envValue")}</span>
                         <span />
@@ -986,18 +814,15 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
                           <div key={key} style={{ display: "contents" }}>
                             <TextInput value={key} onChange={(nextKey) => updateTerminalEnv(key, nextKey.trim(), value)} placeholder="HTTP_PROXY" />
                             <TextInput value={value} onChange={(nextValue) => updateTerminalEnv(key, key, nextValue)} placeholder="value" />
-                            <button
-                              type="button"
-                              onClick={() => deleteTerminalEnv(key)}
-                              style={{ padding: "7px 10px", borderRadius: 7, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-muted)", cursor: "pointer", fontSize: 12 }}
-                            >
+                            <SettingsButton size="sm" onClick={() => deleteTerminalEnv(key)}>
                               {t("common.delete")}
-                            </button>
+                            </SettingsButton>
                           </div>
                         ))}
                       </div>
-                      <button
-                        type="button"
+                      <SettingsButton
+                        size="sm"
+                        className="settings-align-start"
                         onClick={() => {
                           let index = Object.keys(terminal.env).length + 1;
                           let key = `TERMINAL_ENV_${index}`;
@@ -1007,49 +832,43 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
                           }
                           updateTerminal({ env: { ...terminal.env, [key]: "" } });
                         }}
-                        style={{ alignSelf: "flex-start", padding: "7px 10px", borderRadius: 7, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text)", cursor: "pointer", fontSize: 12 }}
                       >
                         {t("settings.addVariable")}
-                      </button>
+                      </SettingsButton>
                       <Field label={t("settings.rawEnvImport")} description={t("settings.rawEnvHint")}>
-                        <textarea
+                        <SettingsTextarea
                           value={rawEnvImport}
                           onChange={(e) => setRawEnvImport(e.target.value)}
                           placeholder={'export https_proxy=http://127.0.0.1:7897 http_proxy=http://127.0.0.1:7897 all_proxy=socks5://127.0.0.1:7897\nNODE_OPTIONS="--max-old-space-size=4096"'}
                           rows={4}
                           spellCheck={false}
-                          style={{ ...inputStyle, resize: "vertical", fontFamily: "var(--font-mono)", lineHeight: 1.45 }}
+                          className="settings-control-mono"
                         />
                       </Field>
                       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                        <button
-                          type="button"
-                          onClick={importRawEnv}
-                          disabled={!rawEnvImport.trim()}
-                          style={{ padding: "7px 10px", borderRadius: 7, border: "1px solid var(--border)", background: rawEnvImport.trim() ? "var(--bg)" : "var(--border)", color: rawEnvImport.trim() ? "var(--text)" : "var(--text-dim)", cursor: rawEnvImport.trim() ? "pointer" : "not-allowed", fontSize: 12 }}
-                        >
+                        <SettingsButton size="sm" onClick={importRawEnv} disabled={!rawEnvImport.trim()}>
                           {t("settings.parseToTable")}
-                        </button>
-                        <button
-                          type="button"
+                        </SettingsButton>
+                        <SettingsButton
+                          size="sm"
                           onClick={() => void importRawEnvWithAi()}
                           disabled={!cwd || !rawEnvImport.trim() || terminalEnvAssistLoading}
+                          busy={terminalEnvAssistLoading}
                           title={cwd ? t("settings.aiParseEnvHint") : t("settings.selectWorkspaceShort")}
-                          style={{ padding: "7px 10px", borderRadius: 7, border: "1px solid var(--border)", background: cwd && rawEnvImport.trim() && !terminalEnvAssistLoading ? "var(--bg)" : "var(--border)", color: cwd && rawEnvImport.trim() && !terminalEnvAssistLoading ? "var(--text)" : "var(--text-dim)", cursor: cwd && rawEnvImport.trim() && !terminalEnvAssistLoading ? "pointer" : "not-allowed", fontSize: 12 }}
                         >
                           {terminalEnvAssistLoading ? t("settings.aiParsing") : t("settings.aiParse")}
-                        </button>
+                        </SettingsButton>
                       </div>
                     </div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: 12, borderRadius: 10, background: "var(--bg-subtle)", border: "1px solid var(--border)" }}>
+                    <div className="settings-surface">
                       <div>
-                        <div style={{ color: "var(--text)", fontSize: 13, fontWeight: 800 }}>{t("settings.envAssistantTitle")}</div>
+                        <div className="settings-surface-title">{t("settings.envAssistantTitle")}</div>
                         <div style={{ color: "var(--text-muted)", fontSize: 11, marginTop: 3, lineHeight: 1.45 }}>
                           {t("settings.envAssistantDesc")}
                         </div>
                       </div>
-                      {modelsError && <div style={{ padding: "7px 9px", borderRadius: 7, background: "rgba(239,68,68,0.12)", color: "#f87171", fontSize: 11 }}>{modelsError}</div>}
-                      <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 12 }}>
+                      {modelsError && <SettingsNotice tone="danger">{modelsError}</SettingsNotice>}
+                      <div className="settings-grid" style={{ gridTemplateColumns: "1.4fr 1fr" }}>
                         <Field label={t("settings.aiParseModel")} description={t("settings.piDefaultHint")}>
                           <ModelPolicySelect value={terminal.envAssistant.model} onChange={(model) => updateTerminalEnvAssistantPolicy({ model })} models={modelList} />
                         </Field>
@@ -1057,7 +876,7 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
                           <ThinkingSelect value={terminal.envAssistant.thinking} onChange={(thinking) => updateTerminalEnvAssistantPolicy({ thinking })} />
                         </Field>
                       </div>
-                      <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 12 }}>
+                      <div className="settings-grid" style={{ gridTemplateColumns: "1.4fr 1fr" }}>
                         <Field label={t("settings.fallbackModel")} description={t("settings.mainFailFallback")}>
                           <ModelPolicySelect value={terminal.envAssistantFallback.model} onChange={(model) => updateTerminalEnvAssistantFallbackPolicy({ model })} models={modelList} />
                         </Field>
@@ -1068,14 +887,11 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
                     </div>
                   </div>
                 ) : section === "chatgpt" ? (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                    <div>
-                      <h3 style={{ margin: 0, color: "var(--text)", fontSize: 15 }}>ChatGPT</h3>
-                      <p style={{ margin: "5px 0 0", color: "var(--text-muted)", fontSize: 12, lineHeight: 1.5 }}>
-                        {t("settings.chatgptDescription")} <code style={{ fontFamily: "var(--font-mono)", color: "var(--text)", overflowWrap: "anywhere" }}>{configPath}</code>
-                        {exists ? "" : t("settings.autoCreateOnSave")}
-                      </p>
-                    </div>
+                  <div className="settings-section">
+                    <SettingsSectionHeader
+                      title="ChatGPT"
+                      description={<>{t("settings.chatgptDescription")} <code className="settings-inline-code">{configPath}</code>{exists ? "" : t("settings.autoCreateOnSave")}</>}
+                    />
                     <ToggleField
                       label={t("settings.chatgptSection")}
                       description={t("settings.chatgptPanelEnable")}
@@ -1088,55 +904,49 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
                       checked={chatgpt.autoRefreshEnabled}
                       onChange={(autoRefreshEnabled) => updateChatgpt({ autoRefreshEnabled })}
                     />
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                    <div className="settings-grid">
                       <Field label={t("settings.cycleInterval")} description={t("settings.cycleIntervalHint")}>
-                        <input type="number" min={300} step={60} value={chatgpt.refreshCycleIntervalSeconds} onChange={(e) => updateChatgpt({ refreshCycleIntervalSeconds: Number.parseInt(e.target.value || "0", 10) })} style={inputStyle} />
+                        <SettingsInput type="number" min={300} step={60} value={chatgpt.refreshCycleIntervalSeconds} onChange={(e) => updateChatgpt({ refreshCycleIntervalSeconds: Number.parseInt(e.target.value || "0", 10) })} />
                       </Field>
                       <Field label={t("settings.accountInterval")} description={t("settings.accountIntervalHint")}>
-                        <input type="number" min={5} step={1} value={chatgpt.refreshAccountIntervalSeconds} onChange={(e) => updateChatgpt({ refreshAccountIntervalSeconds: Number.parseInt(e.target.value || "0", 10) })} style={inputStyle} />
+                        <SettingsInput type="number" min={5} step={1} value={chatgpt.refreshAccountIntervalSeconds} onChange={(e) => updateChatgpt({ refreshAccountIntervalSeconds: Number.parseInt(e.target.value || "0", 10) })} />
                       </Field>
                     </div>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                    <div className="settings-grid">
                       <Field label={t("settings.cycleSaltMin")} description={t("settings.cycleSaltMinHint")}>
-                        <input type="number" min={0} step={1} value={chatgpt.refreshCycleSaltMinSeconds} onChange={(e) => updateChatgpt({ refreshCycleSaltMinSeconds: Number.parseInt(e.target.value || "0", 10) })} style={inputStyle} />
+                        <SettingsInput type="number" min={0} step={1} value={chatgpt.refreshCycleSaltMinSeconds} onChange={(e) => updateChatgpt({ refreshCycleSaltMinSeconds: Number.parseInt(e.target.value || "0", 10) })} />
                       </Field>
                       <Field label={t("settings.cycleSaltMax")} description={t("settings.cycleSaltMaxHint")}>
-                        <input type="number" min={0} step={1} value={chatgpt.refreshCycleSaltMaxSeconds} onChange={(e) => updateChatgpt({ refreshCycleSaltMaxSeconds: Number.parseInt(e.target.value || "0", 10) })} style={inputStyle} />
+                        <SettingsInput type="number" min={0} step={1} value={chatgpt.refreshCycleSaltMaxSeconds} onChange={(e) => updateChatgpt({ refreshCycleSaltMaxSeconds: Number.parseInt(e.target.value || "0", 10) })} />
                       </Field>
                     </div>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                    <div className="settings-grid">
                       <Field label={t("settings.accountSaltMin")} description={t("settings.accountSaltMinHint")}>
-                        <input type="number" min={0} step={1} value={chatgpt.refreshAccountSaltMinSeconds} onChange={(e) => updateChatgpt({ refreshAccountSaltMinSeconds: Number.parseInt(e.target.value || "0", 10) })} style={inputStyle} />
+                        <SettingsInput type="number" min={0} step={1} value={chatgpt.refreshAccountSaltMinSeconds} onChange={(e) => updateChatgpt({ refreshAccountSaltMinSeconds: Number.parseInt(e.target.value || "0", 10) })} />
                       </Field>
                       <Field label={t("settings.accountSaltMax")} description={t("settings.accountSaltMaxHint")}>
-                        <input type="number" min={0} step={1} value={chatgpt.refreshAccountSaltMaxSeconds} onChange={(e) => updateChatgpt({ refreshAccountSaltMaxSeconds: Number.parseInt(e.target.value || "0", 10) })} style={inputStyle} />
+                        <SettingsInput type="number" min={0} step={1} value={chatgpt.refreshAccountSaltMaxSeconds} onChange={(e) => updateChatgpt({ refreshAccountSaltMaxSeconds: Number.parseInt(e.target.value || "0", 10) })} />
                       </Field>
                     </div>
-                    <div style={{ padding: 10, borderRadius: 8, border: "1px solid var(--border)", background: "var(--bg-subtle)", color: "var(--text-dim)", fontSize: 11, lineHeight: 1.5 }}>
-                      {t("settings.chatgptLockInfo")}
-                    </div>
+                    <SettingsNotice>{t("settings.chatgptLockInfo")}</SettingsNotice>
                   </div>
                 ) : section === "editor" ? (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                    <div>
-                      <h3 style={{ margin: 0, color: "var(--text)", fontSize: 15 }}>{t("settings.editorSection")}</h3>
-                      <p style={{ margin: "5px 0 0", color: "var(--text-muted)", fontSize: 12, lineHeight: 1.5 }}>
-                        {t("settings.editorDescription")} <code style={{ fontFamily: "var(--font-mono)", color: "var(--text)", overflowWrap: "anywhere" }}>{configPath}</code>
-                        {exists ? "" : t("settings.autoCreateOnSave")}
-                      </p>
-                    </div>
+                  <div className="settings-section">
+                    <SettingsSectionHeader
+                      title={t("settings.editorSection")}
+                      description={<>{t("settings.editorDescription")} <code className="settings-inline-code">{configPath}</code>{exists ? "" : t("settings.autoCreateOnSave")}</>}
+                    />
                     <Field label={t("settings.editorImpl")} description={t("settings.editorImplHint")}>
-                      <select
+                      <SettingsSelect
                         value={editor.kind}
                         onChange={(e) => updateEditor({ kind: e.target.value as PiWebEditorConfig["kind"] })}
-                        style={inputStyle}
                       >
                         <option value="monaco">Monaco Editor</option>
-                      </select>
+                      </SettingsSelect>
                     </Field>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: 12, borderRadius: 10, background: "var(--bg-subtle)", border: "1px solid var(--border)" }}>
+                    <div className="settings-surface">
                       <div>
-                        <div style={{ color: "var(--text)", fontSize: 13, fontWeight: 800 }}>{t("settings.customShortcutsTitle")}</div>
+                        <div className="settings-surface-title">{t("settings.customShortcutsTitle")}</div>
                         <div style={{ color: "var(--text-muted)", fontSize: 11, marginTop: 3, lineHeight: 1.45 }}>
                           {t("settings.customShortcutsHint")}
                         </div>
@@ -1178,9 +988,9 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
                         onChange={(shiftClickHierarchy) => updateEditorShortcuts({ shiftClickHierarchy })}
                       />
                     </div>
-                    <div style={{ padding: 12, borderRadius: 10, background: "var(--bg-subtle)", border: "1px solid var(--border)", color: "var(--text-dim)", fontSize: 11, lineHeight: 1.6 }}>
-                      <div style={{ color: "var(--text)", fontSize: 13, fontWeight: 800, marginBottom: 8 }}>{t("settings.builtinShortcutsTitle")}</div>
-                      <div style={{ display: "grid", gridTemplateColumns: "150px 1fr", gap: "6px 12px", alignItems: "baseline" }}>
+                    <div className="settings-surface settings-surface-muted">
+                      <div className="settings-surface-title">{t("settings.builtinShortcutsTitle")}</div>
+                      <div className="settings-grid" style={{ gridTemplateColumns: "150px 1fr", gap: "6px 12px", alignItems: "baseline" }}>
                         {[
                           ["Cmd/Ctrl+F", t("settings.currentFind")],
                           ["Cmd/Ctrl+H", t("settings.currentReplace")],
@@ -1201,14 +1011,11 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
                     </div>
                   </div>
                 ) : section === "grok" ? (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                    <div>
-                      <h3 style={{ margin: 0, color: "var(--text)", fontSize: 15 }}>Grok</h3>
-                      <p style={{ margin: "5px 0 0", color: "var(--text-muted)", fontSize: 12, lineHeight: 1.5 }}>
-                        {t("settings.grokDescription")} <code style={{ fontFamily: "var(--font-mono)", color: "var(--text)", overflowWrap: "anywhere" }}>{configPath}</code>
-                        {exists ? "" : t("settings.autoCreateOnSave")}
-                      </p>
-                    </div>
+                  <div className="settings-section">
+                    <SettingsSectionHeader
+                      title="Grok"
+                      description={<>{t("settings.grokDescription")} <code className="settings-inline-code">{configPath}</code>{exists ? "" : t("settings.autoCreateOnSave")}</>}
+                    />
                     <ToggleField
                       label={t("settings.grokUsagePanel")}
                       description={t("settings.grokPanelEnable")}
@@ -1223,17 +1030,13 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
                 ) : section === "mcp" ? (
                   <McpConfig cwd={cwd} />
                 ) : section === "workflow" ? (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                    <div>
-                      <h3 style={{ margin: 0, color: "var(--text)", fontSize: 15 }}>{t("settings.workflowSection")}</h3>
-                      <p style={{ margin: "5px 0 0", color: "var(--text-muted)", fontSize: 12, lineHeight: 1.5 }}>
-                        {t("settings.workflowDescription")}
-                      </p>
-                      <div style={{ color: "var(--text-dim)", fontSize: 11, overflowWrap: "anywhere", marginTop: 6 }}>
-                        {t("settings.currentWorkspace")}{cwd ? <code style={{ fontFamily: "var(--font-mono)", color: "var(--text-muted)" }}>{cwd}</code> : t("settings.notSelected")}
-                      </div>
-                    </div>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                  <div className="settings-section">
+                    <SettingsSectionHeader
+                      title={t("settings.workflowSection")}
+                      description={t("settings.workflowDescription")}
+                      meta={<>{t("settings.currentWorkspace")}{cwd ? <code className="settings-inline-code">{cwd}</code> : t("settings.notSelected")}</>}
+                    />
+                    <div className="settings-grid">
                       <ToggleField
                         label={t("settings.workflowIncludeArchived")}
                         description={t("settings.workflowIncludeArchivedHint")}
@@ -1254,7 +1057,7 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
                       {t("settings.workflowNativeModelsHint")}
                     </div>
 
-                    <div style={{ padding: 12, borderRadius: 10, background: "var(--bg-subtle)", border: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: 10 }}>
+                    <div className="settings-surface">
                       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
                         <div>
                           <div style={{ color: "var(--text)", fontSize: 13, fontWeight: 800 }}>{t("settings.workflowInspectionTitle")}</div>
@@ -1264,21 +1067,17 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
                               : (cwd ? t("settings.checking") : t("settings.selectWorkspaceToInitWorkflow"))}
                           </div>
                         </div>
-                        <button
-                          type="button"
+                        <SettingsButton
+                          size="sm"
                           onClick={() => void loadWorkflowStatus()}
                           disabled={!cwd || workflowStatusLoading || workflowBusy}
-                          style={{ padding: "6px 10px", borderRadius: 7, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-muted)", cursor: !cwd || workflowStatusLoading || workflowBusy ? "not-allowed" : "pointer", fontSize: 12 }}
+                          busy={workflowStatusLoading}
                         >
                           {workflowStatusLoading ? t("settings.checkingShort") : t("settings.recheck")}
-                        </button>
+                        </SettingsButton>
                       </div>
 
-                      {workflowStatusError && (
-                        <div style={{ padding: "8px 10px", borderRadius: 8, background: "rgba(239,68,68,0.12)", color: "#f87171", fontSize: 12, overflowWrap: "anywhere" }}>
-                          {workflowStatusError}
-                        </div>
-                      )}
+                      {workflowStatusError && <SettingsNotice tone="danger">{workflowStatusError}</SettingsNotice>}
                       {workflowStatus && (
                         <div>
                           <StatusRow
@@ -1332,28 +1131,27 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
                     </div>
 
                     <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-                      <button
-                        type="button"
+                      <SettingsButton
+                        variant="primary"
                         onClick={() => void runWorkflowSetupAction("init")}
                         disabled={!canInitializeWorkflow}
+                        busy={workflowAction === "init"}
                         title={canInitializeWorkflow ? t("settings.initializeWorkflow") : workflowBlockingReason ?? t("settings.workflowAlreadyInitUseUpdate")}
-                        style={{ padding: "8px 12px", borderRadius: 8, border: "none", background: canInitializeWorkflow ? "var(--accent)" : "var(--border)", color: "white", cursor: canInitializeWorkflow ? "pointer" : "not-allowed", fontSize: 12, fontWeight: 700 }}
                       >
                         {workflowAction === "init" ? t("settings.initializing") : t("settings.initializeWorkflow")}
-                      </button>
-                      <button
-                        type="button"
+                      </SettingsButton>
+                      <SettingsButton
                         onClick={() => void runWorkflowSetupAction("update")}
                         disabled={!canUpdateWorkflow}
+                        busy={workflowAction === "update"}
                         title={canUpdateWorkflow ? t("settings.updateWorkflow") : (workflowStatus && !workflowStatus.updateAvailable ? t("settings.workflowUpToDate") : workflowBlockingReason ?? t("settings.noWorkflowInitFirst"))}
-                        style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--bg)", color: canUpdateWorkflow ? "var(--text)" : "var(--text-dim)", cursor: canUpdateWorkflow ? "pointer" : "not-allowed", fontSize: 12, fontWeight: 700 }}
                       >
                         {workflowAction === "update"
                           ? t("settings.updating")
                           : (workflowStatus && workflowStatus.initialized && !workflowStatus.updateAvailable
                             ? t("settings.workflowUpToDate")
                             : t("settings.updateWorkflow"))}
-                      </button>
+                      </SettingsButton>
                       {!canInitializeWorkflow && !canUpdateWorkflow && workflowBlockingReason && (
                         <span style={{ color: "var(--text-dim)", fontSize: 11 }}>{workflowBlockingReason}</span>
                       )}
@@ -1368,48 +1166,35 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
                 ) : null}
               </div>
             ) : (
-              <div style={{ color: "#f87171", fontSize: 13 }}>{error ?? t("settings.loadFailed")}</div>
+              <SettingsState kind="error" title={error ?? t("settings.loadFailed")} />
             )}
           </div>
         </div>
 
-        <div style={{ padding: "12px 18px", borderTop: "1px solid var(--border)", display: "flex", justifyContent: "space-between", gap: 10 }}>
+        <div className="pi-modal-footer settings-modal-footer">
           {section === "agents" || section === "mcp" ? (
             <>
-              <span style={{ color: "var(--text-dim)", fontSize: 12 }}>
+              <span className="settings-modal-footer-note">
                 {section === "mcp" ? t("settings.mcpPanelNote") : t("settings.agentsPanelNote")}
               </span>
-              <button
-                onClick={onClose}
-                style={{ padding: "7px 12px", borderRadius: 7, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-muted)", cursor: "pointer", fontSize: 12 }}
-              >
-                {t("common.close")}
-              </button>
+              <SettingsButton onClick={onClose}>{t("common.close")}</SettingsButton>
             </>
           ) : (
             <>
-              <button
-                onClick={resetToDefaults}
-                disabled={!defaults || loading || saving}
-                style={{ padding: "7px 12px", borderRadius: 7, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-muted)", cursor: !defaults || loading || saving ? "not-allowed" : "pointer", fontSize: 12 }}
-              >
+              <SettingsButton onClick={resetToDefaults} disabled={!defaults || loading || saving}>
                 {t("settings.resetDefaults")}
-              </button>
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                {dirty && <span style={{ fontSize: 12, color: "var(--text-dim)" }}>{t("settings.unsavedChanges")}</span>}
-                <button
-                  onClick={onClose}
-                  style={{ padding: "7px 12px", borderRadius: 7, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-muted)", cursor: "pointer", fontSize: 12 }}
-                >
-                  {t("common.cancel")}
-                </button>
-                <button
+              </SettingsButton>
+              <div className="settings-modal-footer-actions">
+                {dirty && <span className="settings-dirty-note">{t("settings.unsavedChanges")}</span>}
+                <SettingsButton onClick={onClose}>{t("common.cancel")}</SettingsButton>
+                <SettingsButton
+                  variant="primary"
                   onClick={() => void handleSave()}
                   disabled={!worktree || !workflow || !usage || !terminal || !chatgpt || !grok || !editor || loading || saving || !dirty}
-                  style={{ padding: "7px 14px", borderRadius: 7, border: "none", background: !worktree || !workflow || !usage || !terminal || !chatgpt || !grok || !editor || loading || saving || !dirty ? "var(--border)" : "var(--accent)", color: "white", cursor: !worktree || !workflow || !usage || !terminal || !chatgpt || !grok || !editor || loading || saving || !dirty ? "not-allowed" : "pointer", fontSize: 12, fontWeight: 600 }}
+                  busy={saving}
                 >
                   {saving ? t("settings.saving") : t("settings.save")}
-                </button>
+                </SettingsButton>
               </div>
             </>
           )}

@@ -1,7 +1,7 @@
 ---
 title: "refactor: Iteration 5 — 建立设置原语与共享 Dialog"
 type: refactor
-status: active
+status: completed
 date: 2026-08-01
 origin: docs/plans/2026-08-01-001-refactor-frontend-visual-system-plan.md
 iteration: 5
@@ -49,7 +49,7 @@ depends_on: docs/plans/2026-08-01-002-refactor-theme-foundation-plan.md
 
 ## Implementation Units
 
-- [ ] U1. **提取最小 Settings 原语**
+- [x] U1. **提取最小 Settings 原语**
 
 **Goal:** 从现有 `SettingsConfig` 重复模式中提取稳定、可复用的视觉构件。
 
@@ -73,7 +73,7 @@ depends_on: docs/plans/2026-08-01-002-refactor-theme-foundation-plan.md
 - 原语没有引入业务配置类型或 API 依赖。
 - 现有主题 Token 足够，不创建组件专属调色板。
 
-- [ ] U2. **迁移 Settings Modal 与自有 section**
+- [x] U2. **迁移 Settings Modal 与自有 section**
 
 **Goal:** 验证原语可覆盖 Settings 外壳和普通配置场景。
 
@@ -100,7 +100,7 @@ depends_on: docs/plans/2026-08-01-002-refactor-theme-foundation-plan.md
 - Settings 自有 section 不再重复定义基础输入/开关/按钮样式。
 - 保存 payload 与 dirty 逻辑不变。
 
-- [ ] U3. **统一共享 Dialog 与简单 Modal**
+- [x] U3. **统一共享 Dialog 与简单 Modal**
 
 **Goal:** 收口全局阻塞式 Dialog 的视觉和键盘基础。
 

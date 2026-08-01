@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { SettingsButton, SettingsInput, SettingsNotice } from "@/components/ui/SettingsPrimitives";
 import type { UsageStatsResult, UsageTotals } from "@/lib/usage-stats";
 
 interface UsageStatsModalProps {
@@ -127,57 +128,36 @@ export function UsageStatsModal({ cwd, onClose }: UsageStatsModalProps) {
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 900,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: 18,
-        background: "rgba(0,0,0,0.44)",
-      }}
     >
       <div
-        className="pi-modal-panel usage-modal-panel"
-        style={{
-          width: "min(980px, 100%)",
-          maxHeight: "min(760px, calc(100dvh - 36px))",
-          display: "flex",
-          flexDirection: "column",
-          background: "var(--bg)",
-          border: "1px solid var(--border)",
-          borderRadius: 8,
-          boxShadow: "0 22px 70px rgba(0,0,0,0.34)",
-          overflow: "hidden",
-        }}
+        className="pi-modal-panel pi-modal-panel-wide usage-modal-panel"
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", borderBottom: "1px solid var(--border)", background: "var(--bg-panel)" }}>
+        <div className="pi-modal-header usage-modal-header">
           <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
               <line x1="12" y1="1" x2="12" y2="23" />
               <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7H14a3.5 3.5 0 0 1 0 7H6" />
             </svg>
-            <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)", whiteSpace: "nowrap" }}>Usage</div>
+            <div className="pi-modal-title">Usage</div>
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginLeft: "auto", flexWrap: "wrap", justifyContent: "flex-end" }}>
+          <div className="usage-modal-controls">
             <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: "var(--text-muted)" }}>
               From
-              <input
+              <SettingsInput
                 type="date"
                 value={from}
                 onChange={(e) => setFrom(e.target.value)}
-                style={dateInputStyle}
+                className="usage-date-input"
               />
             </label>
             <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: "var(--text-muted)" }}>
               To
-              <input
+              <SettingsInput
                 type="date"
                 value={to}
                 onChange={(e) => setTo(e.target.value)}
-                style={dateInputStyle}
+                className="usage-date-input"
               />
             </label>
             <div style={{ display: "flex", height: 26, border: "1px solid var(--border)", borderRadius: 6, overflow: "hidden" }}>
@@ -206,13 +186,13 @@ export function UsageStatsModal({ cwd, onClose }: UsageStatsModalProps) {
                 );
               })}
             </div>
-            <button type="button" onClick={() => void loadStats()} disabled={loading} style={iconButtonStyle} title="Refresh">
+            <SettingsButton size="icon" onClick={() => void loadStats()} disabled={loading} busy={loading} title="Refresh" aria-label="Refresh usage statistics">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M21 12a9 9 0 1 1-2.64-6.36" />
                 <polyline points="21 3 21 9 15 9" />
               </svg>
-            </button>
-            <button type="button" onClick={onClose} style={iconButtonStyle} title="Close">
+            </SettingsButton>
+            <button type="button" onClick={onClose} className="pi-modal-close" title="Close" aria-label="Close usage statistics">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <line x1="18" y1="6" x2="6" y2="18" />
                 <line x1="6" y1="6" x2="18" y2="18" />
@@ -221,11 +201,9 @@ export function UsageStatsModal({ cwd, onClose }: UsageStatsModalProps) {
           </div>
         </div>
 
-        <div style={{ overflow: "auto", padding: 14 }}>
+        <div className="pi-modal-body usage-modal-body">
           {error ? (
-            <div style={{ color: "#ef4444", fontSize: 12, padding: 12, border: "1px solid rgba(239,68,68,0.35)", borderRadius: 7, background: "rgba(239,68,68,0.06)" }}>
-              {error}
-            </div>
+            <SettingsNotice tone="danger">{error}</SettingsNotice>
           ) : (
             <>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 8, marginBottom: 12 }}>
@@ -252,7 +230,7 @@ export function UsageStatsModal({ cwd, onClose }: UsageStatsModalProps) {
                         <div key={day.date} style={{ display: "grid", gridTemplateColumns: "82px minmax(0, 1fr) 72px", alignItems: "center", gap: 8, fontSize: 11 }}>
                           <span style={{ color: "var(--text-muted)", fontVariantNumeric: "tabular-nums" }}>{day.date.slice(5)}</span>
                           <div style={{ height: 7, background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: 999, overflow: "hidden" }}>
-                            <div style={{ width: `${width}%`, height: "100%", background: "linear-gradient(90deg, var(--accent), #22c55e)" }} />
+                            <div className="usage-daily-bar-fill" style={{ width: `${width}%` }} />
                           </div>
                           <span style={{ color: "var(--text)", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{formatCost(day.totals.cost)}</span>
                         </div>
@@ -307,30 +285,6 @@ export function UsageStatsModal({ cwd, onClose }: UsageStatsModalProps) {
 }
 
 const zeroTotals: UsageTotals = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, calls: 0 };
-
-const dateInputStyle: React.CSSProperties = {
-  height: 26,
-  background: "var(--bg)",
-  border: "1px solid var(--border)",
-  borderRadius: 6,
-  color: "var(--text)",
-  fontSize: 11,
-  padding: "0 6px",
-};
-
-const iconButtonStyle: React.CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  width: 28,
-  height: 26,
-  padding: 0,
-  background: "var(--bg)",
-  border: "1px solid var(--border)",
-  borderRadius: 6,
-  color: "var(--text-muted)",
-  cursor: "pointer",
-};
 
 const panelStyle: React.CSSProperties = {
   border: "1px solid var(--border)",
