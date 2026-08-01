@@ -130,7 +130,7 @@ export function ModelPricingCatalog({ onClose }: Props) {
           </SettingsSelect>
         </div>
 
-        <div style={{ minHeight: 0, flex: 1, overflow: "auto" }}>
+        <div className="pricing-catalog-table-wrap">
           {loading ? (
             <SettingsState kind="loading" title="Loading…" className="pricing-catalog-state" />
           ) : error ? (
@@ -138,24 +138,24 @@ export function ModelPricingCatalog({ onClose }: Props) {
           ) : items.length === 0 ? (
             <SettingsState title="No synced pricing catalog." className="pricing-catalog-state" />
           ) : (
-            <table style={{ width: "100%", minWidth: 860, borderCollapse: "collapse", tableLayout: "fixed", fontSize: 11 }}>
-              <thead style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--bg-panel)" }}>
+            <table className="pricing-catalog-table">
+              <thead>
                 <tr>
                   {[
                     ["Provider", "15%"], ["Model", "29%"], ["Context", "12%"], ["Input", "11%"], ["Output", "11%"], ["Cache read", "11%"], ["Cache write", "11%"],
                   ].map(([label, width]) => (
-                    <th key={label} style={{ width, padding: "8px 10px", borderBottom: "1px solid var(--border)", color: "var(--text-dim)", fontWeight: 600, textAlign: label === "Provider" || label === "Model" ? "left" : "right" }}>{label}</th>
+                    <th key={label} style={{ width }} className={label === "Provider" || label === "Model" ? "pricing-cell-left" : "pricing-cell-number"}>{label}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {filteredItems.map((item) => (
                   <tr key={`${item.provider}:${item.model}`}>
-                    <td style={{ padding: "7px 10px", borderBottom: "1px solid var(--border)", color: "var(--text-muted)", overflowWrap: "anywhere" }}>{item.provider}</td>
-                    <td style={{ padding: "7px 10px", borderBottom: "1px solid var(--border)", color: "var(--text)", fontFamily: "var(--font-mono)", overflowWrap: "anywhere" }}>{item.model}</td>
-                    <td style={{ padding: "7px 10px", borderBottom: "1px solid var(--border)", color: "var(--text)", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{item.contextWindow?.toLocaleString() ?? "—"}</td>
+                    <td className="pricing-cell-provider">{item.provider}</td>
+                    <td className="pricing-cell-model">{item.model}</td>
+                    <td className="pricing-cell-number">{item.contextWindow?.toLocaleString() ?? "—"}</td>
                     {[item.input, item.output, item.cacheRead, item.cacheWrite].map((value, index) => (
-                      <td key={index} style={{ padding: "7px 10px", borderBottom: "1px solid var(--border)", color: "var(--text)", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{formatPrice(value)}</td>
+                      <td key={index} className="pricing-cell-number">{formatPrice(value)}</td>
                     ))}
                   </tr>
                 ))}
@@ -164,7 +164,7 @@ export function ModelPricingCatalog({ onClose }: Props) {
           )}
         </div>
         {!loading && !error && items.length > 0 && (
-          <div style={{ padding: "8px 16px", borderTop: "1px solid var(--border)", color: "var(--text-dim)", fontSize: 11, textAlign: "right", flexShrink: 0 }}>
+          <div className="pricing-catalog-footer">
             {filteredItems.length} / {items.length}
           </div>
         )}

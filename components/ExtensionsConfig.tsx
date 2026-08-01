@@ -1,6 +1,19 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  SettingsActionRow,
+  SettingsBadge,
+  SettingsButton,
+  SettingsInput,
+  SettingsNotice,
+  SettingsSection,
+  SettingsSectionHeader,
+  SettingsState,
+  SettingsSurface,
+  SettingsTab,
+  SettingsTabs,
+} from "@/components/ui/SettingsPrimitives";
 import type {
   ConfiguredPackageInfo,
   ExtensionSettingDefinition,
@@ -9,9 +22,7 @@ import type {
 } from "@/lib/extension-settings";
 
 type TabId = "resources" | "settings";
-
 type ResourceDiagnostic = { type: string; message: string; path?: string };
-
 type ResourcesPayload = {
   cwd?: string;
   agentDir?: string;
@@ -24,7 +35,6 @@ type ResourcesPayload = {
   diagnostics?: ResourceDiagnostic[];
   error?: string;
 };
-
 type SettingsPayload = {
   groups?: ExtensionSettingsGroup[];
   packages?: ConfiguredPackageInfo[];
@@ -33,7 +43,6 @@ type SettingsPayload = {
   diagnostics?: ResourceDiagnostic[];
   error?: string;
 };
-
 type DraftMap = Record<string, string>;
 
 function draftKey(extensionName: string, settingId: string): string {
@@ -50,104 +59,35 @@ function shortenPath(path: string): string {
 function cycleValue(current: string, values: string[]): string {
   if (values.length === 0) return current;
   const index = values.indexOf(current);
-  if (index < 0) return values[0];
-  return values[(index + 1) % values.length];
+  return index < 0 ? values[0] : values[(index + 1) % values.length];
 }
 
 function CountPill({ label, count }: { label: string; count: number }) {
   return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: 2,
-        minWidth: 72,
-        padding: "8px 10px",
-        borderRadius: 8,
-        border: "1px solid var(--border)",
-        background: "var(--bg-panel)",
-      }}
-    >
-      <span style={{ fontSize: 10, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.04em" }}>
-        {label}
-      </span>
-      <span style={{ fontSize: 16, fontWeight: 700, color: "var(--text)", fontVariantNumeric: "tabular-nums" }}>
-        {count}
-      </span>
-    </div>
+    <SettingsSurface className="resource-count-card">
+      <span className="resource-count-label">{label}</span>
+      <span className="resource-count-value">{count}</span>
+    </SettingsSurface>
   );
 }
 
-function Section({
-  title,
-  count,
-  children,
-  empty,
-}: {
-  title: string;
-  count: number;
-  children: ReactNode;
-  empty?: string;
-}) {
+function Section({ title, count, children, empty }: { title: string; count: number; children: ReactNode; empty?: string }) {
   return (
-    <section style={{ marginBottom: 18 }}>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 8 }}>
-        <h3 style={{ margin: 0, fontSize: 12, fontWeight: 700, color: "var(--text)" }}>{title}</h3>
-        <span style={{ fontSize: 11, color: "var(--text-dim)" }}>{count}</span>
-      </div>
-      {count === 0 ? (
-        <div style={{ fontSize: 12, color: "var(--text-muted)", padding: "8px 0" }}>{empty ?? "None"}</div>
-      ) : (
-        children
-      )}
-    </section>
+    <SettingsSection className="resource-section">
+      <SettingsSectionHeader title={title} meta={`${count}`} />
+      {count === 0 ? <SettingsState title={empty ?? "None"} /> : children}
+    </SettingsSection>
   );
 }
 
-function ListRow({
-  title,
-  subtitle,
-  badge,
-}: {
-  title: string;
-  subtitle?: string;
-  badge?: string;
-}) {
+function ListRow({ title, subtitle, badge }: { title: string; subtitle?: string; badge?: string }) {
   return (
-    <div
-      style={{
-        display: "flex",
-        gap: 10,
-        alignItems: "flex-start",
-        padding: "8px 10px",
-        borderBottom: "1px solid var(--border)",
-      }}
-    >
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text)", fontFamily: "var(--font-mono)", wordBreak: "break-word" }}>
-          {title}
-        </div>
-        {subtitle && (
-          <div style={{ marginTop: 3, fontSize: 11, color: "var(--text-muted)", lineHeight: 1.4, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-            {subtitle}
-          </div>
-        )}
+    <div className="resource-list-row">
+      <div className="resource-list-copy">
+        <div className="resource-list-title">{title}</div>
+        {subtitle && <div className="resource-list-subtitle">{subtitle}</div>}
       </div>
-      {badge && (
-        <span
-          style={{
-            flexShrink: 0,
-            fontSize: 10,
-            padding: "2px 6px",
-            borderRadius: 999,
-            border: "1px solid var(--border)",
-            color: "var(--text-dim)",
-            background: "var(--bg)",
-          }}
-        >
-          {badge}
-        </span>
-      )}
+      {badge && <SettingsBadge>{badge}</SettingsBadge>}
     </div>
   );
 }
@@ -166,154 +106,67 @@ function SettingEditor({
   onChange: (next: string) => void;
 }) {
   const label = definition?.label ?? definition?.id ?? value;
-  const description = definition?.description;
   const values = definition?.values;
   const options = definition?.options;
+  const selectedOptions = value.split(",").map((part) => part.trim()).filter(Boolean);
 
   return (
-    <div
-      style={{
-        padding: "12px 12px",
-        borderBottom: "1px solid var(--border)",
-        display: "flex",
-        flexDirection: "column",
-        gap: 8,
-      }}
-    >
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
-        <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text)" }}>
+    <div className="extension-setting-row">
+      <div className="extension-setting-header">
+        <div className="resource-list-copy">
+          <div className="extension-setting-title">
             {label}
-            <span style={{ marginLeft: 8, fontSize: 10, color: "var(--text-dim)", fontFamily: "var(--font-mono)", fontWeight: 500 }}>
-              {groupName}.{definition?.id ?? "?"}
-            </span>
+            <code>{groupName}.{definition?.id ?? "?"}</code>
           </div>
-          {description && (
-            <div style={{ marginTop: 4, fontSize: 11, color: "var(--text-muted)", lineHeight: 1.45 }}>
-              {description}
-            </div>
-          )}
+          {definition?.description && <div className="resource-list-subtitle">{definition.description}</div>}
         </div>
-        <span style={{ fontSize: 10, color: source === "orphan" ? "#eab308" : "var(--text-dim)", flexShrink: 0 }}>
-          {source}
-        </span>
+        <SettingsBadge tone={source === "orphan" ? "warning" : "neutral"}>{source}</SettingsBadge>
       </div>
 
       {values && values.length > 0 ? (
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-          {values.map((item) => {
-            const active = item === value;
-            return (
-              <button
-                key={item}
-                type="button"
-                onClick={() => onChange(item)}
-                style={{
-                  border: `1px solid ${active ? "var(--accent)" : "var(--border)"}`,
-                  background: active ? "var(--bg-selected)" : "var(--bg-panel)",
-                  color: active ? "var(--text)" : "var(--text-muted)",
-                  borderRadius: 7,
-                  padding: "5px 9px",
-                  fontSize: 11,
-                  cursor: "pointer",
-                  fontFamily: "var(--font-mono)",
-                }}
-              >
-                {JSON.stringify(item).slice(1, -1) || "(empty)"}
-              </button>
-            );
-          })}
-          <button
-            type="button"
-            onClick={() => onChange(cycleValue(value, values))}
-            style={{
-              border: "1px solid var(--border)",
-              background: "transparent",
-              color: "var(--text-muted)",
-              borderRadius: 7,
-              padding: "5px 9px",
-              fontSize: 11,
-              cursor: "pointer",
-            }}
-          >
-            Cycle
-          </button>
+        <div className="settings-chip-group">
+          {values.map((item) => (
+            <SettingsButton
+              key={item}
+              size="sm"
+              variant={item === value ? "primary" : "secondary"}
+              className="settings-button-mono"
+              onClick={() => onChange(item)}
+            >
+              {JSON.stringify(item).slice(1, -1) || "(empty)"}
+            </SettingsButton>
+          ))}
+          <SettingsButton size="sm" variant="ghost" onClick={() => onChange(cycleValue(value, values))}>Cycle</SettingsButton>
         </div>
       ) : options && options.length > 0 ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
-            Ordered multi-select (comma-separated ids). Toggle items below; order is left-to-right in the value.
-          </div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+        <div className="extension-setting-options">
+          <div className="settings-surface-muted">Ordered multi-select (comma-separated ids). Toggle items below; order follows the value.</div>
+          <div className="settings-chip-group">
             {options.map((option) => {
-              const selected = value.split(",").map((part) => part.trim()).filter(Boolean);
-              const active = selected.includes(option.id);
+              const active = selectedOptions.includes(option.id);
               return (
-                <button
+                <SettingsButton
                   key={option.id}
-                  type="button"
-                  onClick={() => {
-                    const next = active
-                      ? selected.filter((id) => id !== option.id)
-                      : [...selected, option.id];
-                    onChange(next.join(","));
-                  }}
-                  style={{
-                    border: `1px solid ${active ? "var(--accent)" : "var(--border)"}`,
-                    background: active ? "var(--bg-selected)" : "var(--bg-panel)",
-                    color: active ? "var(--text)" : "var(--text-muted)",
-                    borderRadius: 7,
-                    padding: "5px 9px",
-                    fontSize: 11,
-                    cursor: "pointer",
-                  }}
+                  size="sm"
+                  variant={active ? "primary" : "secondary"}
+                  onClick={() => onChange((active ? selectedOptions.filter((id) => id !== option.id) : [...selectedOptions, option.id]).join(","))}
                   title={option.id}
                 >
                   {option.label}
-                </button>
+                </SettingsButton>
               );
             })}
           </div>
-          <input
-            value={value}
-            onChange={(event) => onChange(event.target.value)}
-            style={{
-              width: "100%",
-              boxSizing: "border-box",
-              border: "1px solid var(--border)",
-              borderRadius: 7,
-              padding: "7px 9px",
-              background: "var(--bg-panel)",
-              color: "var(--text)",
-              fontSize: 12,
-              fontFamily: "var(--font-mono)",
-            }}
-          />
+          <SettingsInput value={value} onChange={(event) => onChange(event.target.value)} className="settings-control-mono" />
         </div>
       ) : (
-        <input
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-          style={{
-            width: "100%",
-            boxSizing: "border-box",
-            border: "1px solid var(--border)",
-            borderRadius: 7,
-            padding: "7px 9px",
-            background: "var(--bg-panel)",
-            color: "var(--text)",
-            fontSize: 12,
-            fontFamily: "var(--font-mono)",
-          }}
-        />
+        <SettingsInput value={value} onChange={(event) => onChange(event.target.value)} className="settings-control-mono" />
       )}
     </div>
   );
 }
 
-/**
- * Modal for inspecting loaded Pi packages/resources and editing extension settings.
- */
+/** Modal for inspecting loaded Pi packages/resources and editing extension settings. */
 export function ExtensionsConfig({ cwd, onClose, embed }: { cwd: string | null; onClose: () => void; embed?: boolean }) {
   const [tab, setTab] = useState<TabId>("resources");
   const [resources, setResources] = useState<ResourcesPayload | null>(null);
@@ -326,7 +179,6 @@ export function ExtensionsConfig({ cwd, onClose, embed }: { cwd: string | null; 
   const [error, setError] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
-
   const effectiveCwd = cwd || ".";
 
   const loadResources = useCallback(async (signal?: AbortSignal) => {
@@ -337,9 +189,8 @@ export function ExtensionsConfig({ cwd, onClose, embed }: { cwd: string | null; 
       const data = (await res.json()) as ResourcesPayload;
       if (!res.ok || data.error) throw new Error(data.error ?? `HTTP ${res.status}`);
       setResources(data);
-    } catch (err) {
-      if (signal?.aborted) return;
-      setError(err instanceof Error ? err.message : String(err));
+    } catch (reason) {
+      if (!signal?.aborted) setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
       if (!signal?.aborted) setLoadingResources(false);
     }
@@ -348,9 +199,7 @@ export function ExtensionsConfig({ cwd, onClose, embed }: { cwd: string | null; 
   const applySettingsPayload = useCallback((data: SettingsPayload) => {
     setSettings(data);
     const nextDraft: DraftMap = {};
-    for (const row of data.values ?? []) {
-      nextDraft[draftKey(row.extensionName, row.settingId)] = row.value;
-    }
+    for (const row of data.values ?? []) nextDraft[draftKey(row.extensionName, row.settingId)] = row.value;
     setDraft(nextDraft);
     setBaseline(nextDraft);
   }, []);
@@ -364,9 +213,8 @@ export function ExtensionsConfig({ cwd, onClose, embed }: { cwd: string | null; 
       const data = (await res.json()) as SettingsPayload;
       if (!res.ok || data.error) throw new Error(data.error ?? `HTTP ${res.status}`);
       applySettingsPayload(data);
-    } catch (err) {
-      if (signal?.aborted) return;
-      setError(err instanceof Error ? err.message : String(err));
+    } catch (reason) {
+      if (!signal?.aborted) setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
       if (!signal?.aborted) setLoadingSettings(false);
     }
@@ -387,53 +235,39 @@ export function ExtensionsConfig({ cwd, onClose, embed }: { cwd: string | null; 
 
   useEffect(() => {
     if (embed) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose, embed]);
+    const handleKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [embed, onClose]);
 
   const dirtyKeys = useMemo(() => {
     const keys = new Set([...Object.keys(draft), ...Object.keys(baseline)]);
-    return Array.from(keys).filter((key) => (draft[key] ?? "") !== (baseline[key] ?? ""));
+    return [...keys].filter((key) => (draft[key] ?? "") !== (baseline[key] ?? ""));
   }, [baseline, draft]);
 
   const definitionMap = useMemo(() => {
     const map = new Map<string, ExtensionSettingDefinition>();
     for (const group of settings?.groups ?? []) {
-      for (const setting of group.settings) {
-        map.set(draftKey(group.name, setting.id), setting);
-      }
+      for (const setting of group.settings) map.set(draftKey(group.name, setting.id), setting);
     }
     return map;
   }, [settings?.groups]);
 
   const filteredValues = useMemo(() => {
-    const q = filter.trim().toLowerCase();
+    const query = filter.trim().toLowerCase();
     const rows = settings?.values ?? [];
-    if (!q) return rows;
+    if (!query) return rows;
     return rows.filter((row) => {
-      const def = definitionMap.get(draftKey(row.extensionName, row.settingId));
-      const hay = [
-        row.extensionName,
-        row.settingId,
-        row.value,
-        def?.label,
-        def?.description,
-      ].filter(Boolean).join(" ").toLowerCase();
-      return hay.includes(q);
+      const definition = definitionMap.get(draftKey(row.extensionName, row.settingId));
+      return [row.extensionName, row.settingId, row.value, definition?.label, definition?.description]
+        .filter(Boolean).join(" ").toLowerCase().includes(query);
     });
   }, [definitionMap, filter, settings?.values]);
 
   const groupedFiltered = useMemo(() => {
     const map = new Map<string, ExtensionSettingValueRow[]>();
-    for (const row of filteredValues) {
-      const list = map.get(row.extensionName) ?? [];
-      list.push(row);
-      map.set(row.extensionName, list);
-    }
-    return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b));
+    for (const row of filteredValues) map.set(row.extensionName, [...(map.get(row.extensionName) ?? []), row]);
+    return [...map.entries()].sort(([left], [right]) => left.localeCompare(right));
   }, [filteredValues]);
 
   const saveSettings = useCallback(async () => {
@@ -444,11 +278,7 @@ export function ExtensionsConfig({ cwd, onClose, embed }: { cwd: string | null; 
     try {
       const patch = dirtyKeys.map((key) => {
         const [extensionName, settingId] = key.split("::");
-        return {
-          extensionName,
-          settingId,
-          value: draft[key] ?? "",
-        };
+        return { extensionName, settingId, value: draft[key] ?? "" };
       });
       const res = await fetch("/api/pi/extension-settings", {
         method: "PUT",
@@ -459,350 +289,105 @@ export function ExtensionsConfig({ cwd, onClose, embed }: { cwd: string | null; 
       if (!res.ok || data.error) throw new Error(data.error ?? `HTTP ${res.status}`);
       applySettingsPayload(data);
       setSaveMessage(`Saved ${patch.length} setting${patch.length === 1 ? "" : "s"}.`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
       setSaving(false);
     }
   }, [applySettingsPayload, dirtyKeys, draft, effectiveCwd]);
 
   const loading = tab === "resources" ? loadingResources : loadingSettings;
-
   const panelContent = (
-    <>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 12,
-            padding: "12px 14px",
-            borderBottom: "1px solid var(--border)",
-            background: "var(--bg-panel)",
-          }}
-        >
-          <div style={{ minWidth: 0, flex: 1 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>Extensions</div>
-            <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              cwd: {shortenPath(effectiveCwd)}
-            </div>
-          </div>
-          <div style={{ display: "flex", height: 28, border: "1px solid var(--border)", borderRadius: 7, overflow: "hidden" }}>
-            {([
-              ["resources", "Resources"],
-              ["settings", "Settings"],
-            ] as const).map(([id, label]) => {
-              const active = tab === id;
-              return (
-                <button
-                  key={id}
-                  type="button"
-                  onClick={() => setTab(id)}
-                  style={{
-                    padding: "0 12px",
-                    border: "none",
-                    borderLeft: id === "settings" ? "1px solid var(--border)" : "none",
-                    background: active ? "var(--bg-selected)" : "transparent",
-                    color: active ? "var(--text)" : "var(--text-muted)",
-                    fontSize: 12,
-                    fontWeight: active ? 600 : 500,
-                    cursor: "pointer",
-                  }}
-                >
-                  {label}
-                </button>
-              );
-            })}
-          </div>
-          <button
-            type="button"
-            onClick={() => {
-              if (tab === "resources") void loadResources();
-              else void loadSettings();
-            }}
-            disabled={loading}
-            style={{
-              border: "1px solid var(--border)",
-              background: "var(--bg)",
-              color: "var(--text-muted)",
-              borderRadius: 7,
-              padding: "6px 10px",
-              fontSize: 12,
-              cursor: loading ? "wait" : "pointer",
-            }}
-          >
-            Refresh
-          </button>
-          {!embed && (
-            <button
-              type="button"
-              onClick={onClose}
-              style={{
-                border: "1px solid var(--border)",
-                background: "var(--bg)",
-                color: "var(--text-muted)",
-                borderRadius: 7,
-                padding: "6px 10px",
-                fontSize: 12,
-                cursor: "pointer",
-              }}
-            >
-              Close
-            </button>
-          )}
+    <div className="resource-config-shell">
+      <div className="resource-config-header">
+        <div className="pi-modal-header-copy">
+          <div className="pi-modal-title">Extensions</div>
+          <div className="pi-modal-subtitle resource-path">cwd: {shortenPath(effectiveCwd)}</div>
         </div>
+        <SettingsTabs aria-label="Extension panel">
+          <SettingsTab active={tab === "resources"} onClick={() => setTab("resources")}>Resources</SettingsTab>
+          <SettingsTab active={tab === "settings"} onClick={() => setTab("settings")}>Settings</SettingsTab>
+        </SettingsTabs>
+        <SettingsButton size="sm" onClick={() => void (tab === "resources" ? loadResources() : loadSettings())} busy={loading}>Refresh</SettingsButton>
+        {!embed && <SettingsButton size="sm" variant="ghost" onClick={onClose}>Close</SettingsButton>}
+      </div>
 
-        {(error || saveMessage) && (
-          <div
-            style={{
-              padding: "8px 14px",
-              borderBottom: "1px solid var(--border)",
-              fontSize: 12,
-              color: error ? "#ef4444" : "var(--accent)",
-              background: error ? "rgba(239,68,68,0.06)" : "rgba(37,99,235,0.06)",
-            }}
-          >
-            {error ?? saveMessage}
-          </div>
+      {(error || saveMessage) && <SettingsNotice tone={error ? "danger" : "success"} className="resource-config-notice">{error ?? saveMessage}</SettingsNotice>}
+
+      <div className="resource-config-content">
+        {loading && tab === "resources" && !resources && <SettingsState kind="loading" title="Loading resources…" />}
+        {loading && tab === "settings" && !settings && <SettingsState kind="loading" title="Discovering extension settings…" />}
+
+        {tab === "resources" && resources && (
+          <>
+            <div className="resource-count-grid">
+              <CountPill label="Packages" count={resources.packages?.length ?? 0} />
+              <CountPill label="Extensions" count={resources.extensions?.length ?? 0} />
+              <CountPill label="Tools" count={resources.tools?.length ?? 0} />
+              <CountPill label="Commands" count={resources.commands?.length ?? 0} />
+              <CountPill label="Skills" count={resources.skills?.length ?? 0} />
+              <CountPill label="Prompts" count={resources.prompts?.length ?? 0} />
+              <CountPill label="Diagnostics" count={resources.diagnostics?.length ?? 0} />
+            </div>
+            {resources.agentDir && <div className="resource-path">agentDir: {shortenPath(resources.agentDir)}</div>}
+
+            <Section title="Packages" count={resources.packages?.length ?? 0} empty="No packages configured in settings.json.">
+              <div className="resource-list">{(resources.packages ?? []).map((pkg) => <ListRow key={`${pkg.scope}:${pkg.source}`} title={pkg.source} subtitle={pkg.installedPath ? shortenPath(pkg.installedPath) : undefined} badge={`${pkg.scope}${pkg.filtered ? " · filtered" : ""}`} />)}</div>
+            </Section>
+            <Section title="Loaded extensions" count={resources.extensions?.length ?? 0}>
+              <div className="resource-list">{(resources.extensions ?? []).map((extension) => <ListRow key={extension.resolvedPath || extension.path} title={shortenPath(extension.resolvedPath || extension.path)} subtitle={extension.path !== extension.resolvedPath ? extension.path : undefined} badge={extension.sourceInfo?.scope || extension.sourceInfo?.source || "ext"} />)}</div>
+            </Section>
+            <Section title="Tools" count={resources.tools?.length ?? 0}><div className="resource-list">{(resources.tools ?? []).map((tool) => <ListRow key={tool.name} title={tool.name} subtitle={tool.description} />)}</div></Section>
+            <Section title="Extension commands" count={resources.commands?.length ?? 0}><div className="resource-list">{(resources.commands ?? []).map((command) => <ListRow key={command.name} title={`/${command.name}`} subtitle={command.description} />)}</div></Section>
+            <Section title="Skills" count={resources.skills?.length ?? 0}><div className="resource-list">{(resources.skills ?? []).map((skill) => <ListRow key={skill.name} title={skill.name} subtitle={skill.description} />)}</div></Section>
+            <Section title="Prompts" count={resources.prompts?.length ?? 0}><div className="resource-list">{(resources.prompts ?? []).map((prompt) => <ListRow key={prompt.name} title={`/${prompt.name}`} subtitle={prompt.description} />)}</div></Section>
+            <Section title="Diagnostics" count={resources.diagnostics?.length ?? 0} empty="No load diagnostics.">
+              <div className="resource-list">{(resources.diagnostics ?? []).map((item, index) => <ListRow key={`${item.type}-${index}-${item.message.slice(0, 24)}`} title={item.message} subtitle={item.path} badge={item.type} />)}</div>
+            </Section>
+          </>
         )}
 
-        <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: 14 }}>
-          {loading && !resources && tab === "resources" && (
-            <div style={{ color: "var(--text-muted)", fontSize: 12 }}>Loading resources…</div>
-          )}
-          {loading && !settings && tab === "settings" && (
-            <div style={{ color: "var(--text-muted)", fontSize: 12 }}>Discovering extension settings…</div>
-          )}
+        {tab === "settings" && settings && (
+          <>
+            <SettingsActionRow className="resource-filter-row">
+              <SettingsInput type="search" value={filter} onChange={(event) => setFilter(event.target.value)} placeholder="Filter settings…" />
+              <SettingsButton variant="primary" onClick={() => void saveSettings()} disabled={dirtyKeys.length === 0} busy={saving}>
+                {saving ? "Saving…" : dirtyKeys.length > 0 ? `Save ${dirtyKeys.length}` : "Saved"}
+              </SettingsButton>
+            </SettingsActionRow>
+            <div className="resource-path">{settings.settingsPath ? shortenPath(settings.settingsPath) : "settings-extensions.json"} · {settings.groups?.length ?? 0} registered groups · {settings.values?.length ?? 0} settings</div>
 
-          {tab === "resources" && resources && (
-            <>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
-                <CountPill label="Packages" count={resources.packages?.length ?? 0} />
-                <CountPill label="Extensions" count={resources.extensions?.length ?? 0} />
-                <CountPill label="Tools" count={resources.tools?.length ?? 0} />
-                <CountPill label="Commands" count={resources.commands?.length ?? 0} />
-                <CountPill label="Skills" count={resources.skills?.length ?? 0} />
-                <CountPill label="Prompts" count={resources.prompts?.length ?? 0} />
-                <CountPill label="Diagnostics" count={resources.diagnostics?.length ?? 0} />
-              </div>
-              {resources.agentDir && (
-                <div style={{ fontSize: 11, color: "var(--text-dim)", marginBottom: 14, fontFamily: "var(--font-mono)" }}>
-                  agentDir: {shortenPath(resources.agentDir)}
-                </div>
-              )}
-
-              <Section title="Packages" count={resources.packages?.length ?? 0} empty="No packages configured in settings.json.">
-                <div style={{ border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}>
-                  {(resources.packages ?? []).map((pkg) => (
-                    <ListRow
-                      key={`${pkg.scope}:${pkg.source}`}
-                      title={pkg.source}
-                      subtitle={pkg.installedPath ? shortenPath(pkg.installedPath) : undefined}
-                      badge={`${pkg.scope}${pkg.filtered ? " · filtered" : ""}`}
-                    />
-                  ))}
-                </div>
+            {(settings.diagnostics?.length ?? 0) > 0 && (
+              <Section title="Discovery diagnostics" count={settings.diagnostics?.length ?? 0}>
+                <div className="resource-list">{(settings.diagnostics ?? []).map((item, index) => <ListRow key={`diag-${index}`} title={item.message} subtitle={item.path} badge={item.type} />)}</div>
               </Section>
+            )}
 
-              <Section title="Loaded extensions" count={resources.extensions?.length ?? 0}>
-                <div style={{ border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}>
-                  {(resources.extensions ?? []).map((extension) => (
-                    <ListRow
-                      key={extension.resolvedPath || extension.path}
-                      title={shortenPath(extension.resolvedPath || extension.path)}
-                      subtitle={extension.path !== extension.resolvedPath ? extension.path : undefined}
-                      badge={extension.sourceInfo?.scope || extension.sourceInfo?.source || "ext"}
-                    />
-                  ))}
+            {(settings.values?.length ?? 0) === 0 ? (
+              <SettingsState title="No extension settings registered." description={<>Ensure <code>pi-extension-settings</code> loads before consumer extensions in <code>settings.json</code> packages.</>} />
+            ) : groupedFiltered.length === 0 ? (
+              <SettingsState title="No settings match the filter." />
+            ) : groupedFiltered.map(([extensionName, rows]) => (
+              <SettingsSection key={extensionName} className="extension-settings-group">
+                <SettingsSectionHeader title={extensionName} meta={`${rows.length} setting${rows.length === 1 ? "" : "s"}`} />
+                <div className="resource-list">
+                  {rows.map((row) => {
+                    const key = draftKey(row.extensionName, row.settingId);
+                    return <SettingEditor key={key} groupName={row.extensionName} definition={definitionMap.get(key)} value={draft[key] ?? row.value} source={row.source} onChange={(next) => { setDraft((prev) => ({ ...prev, [key]: next })); setSaveMessage(null); }} />;
+                  })}
                 </div>
-              </Section>
-
-              <Section title="Tools" count={resources.tools?.length ?? 0}>
-                <div style={{ border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}>
-                  {(resources.tools ?? []).map((tool) => (
-                    <ListRow key={tool.name} title={tool.name} subtitle={tool.description} />
-                  ))}
-                </div>
-              </Section>
-
-              <Section title="Extension commands" count={resources.commands?.length ?? 0}>
-                <div style={{ border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}>
-                  {(resources.commands ?? []).map((command) => (
-                    <ListRow key={command.name} title={`/${command.name}`} subtitle={command.description} />
-                  ))}
-                </div>
-              </Section>
-
-              <Section title="Skills" count={resources.skills?.length ?? 0}>
-                <div style={{ border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}>
-                  {(resources.skills ?? []).map((skill) => (
-                    <ListRow key={skill.name} title={skill.name} subtitle={skill.description} />
-                  ))}
-                </div>
-              </Section>
-
-              <Section title="Prompts" count={resources.prompts?.length ?? 0}>
-                <div style={{ border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}>
-                  {(resources.prompts ?? []).map((prompt) => (
-                    <ListRow key={prompt.name} title={`/${prompt.name}`} subtitle={prompt.description} />
-                  ))}
-                </div>
-              </Section>
-
-              <Section title="Diagnostics" count={resources.diagnostics?.length ?? 0} empty="No load diagnostics.">
-                <div style={{ border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}>
-                  {(resources.diagnostics ?? []).map((item, index) => (
-                    <ListRow
-                      key={`${item.type}-${index}-${item.message.slice(0, 24)}`}
-                      title={item.message}
-                      subtitle={item.path}
-                      badge={item.type}
-                    />
-                  ))}
-                </div>
-              </Section>
-            </>
-          )}
-
-          {tab === "settings" && settings && (
-            <>
-              <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12, flexWrap: "wrap" }}>
-                <input
-                  value={filter}
-                  onChange={(event) => setFilter(event.target.value)}
-                  placeholder="Filter settings…"
-                  style={{
-                    flex: 1,
-                    minWidth: 180,
-                    boxSizing: "border-box",
-                    border: "1px solid var(--border)",
-                    borderRadius: 7,
-                    padding: "7px 10px",
-                    background: "var(--bg-panel)",
-                    color: "var(--text)",
-                    fontSize: 12,
-                  }}
-                />
-                <button
-                  type="button"
-                  onClick={() => void saveSettings()}
-                  disabled={saving || dirtyKeys.length === 0}
-                  style={{
-                    border: "1px solid var(--accent)",
-                    background: dirtyKeys.length === 0 ? "var(--bg-panel)" : "var(--accent)",
-                    color: dirtyKeys.length === 0 ? "var(--text-muted)" : "#fff",
-                    borderRadius: 7,
-                    padding: "7px 12px",
-                    fontSize: 12,
-                    fontWeight: 600,
-                    cursor: dirtyKeys.length === 0 || saving ? "not-allowed" : "pointer",
-                    opacity: saving ? 0.7 : 1,
-                  }}
-                >
-                  {saving ? "Saving…" : dirtyKeys.length > 0 ? `Save ${dirtyKeys.length}` : "Saved"}
-                </button>
-              </div>
-
-              <div style={{ fontSize: 11, color: "var(--text-dim)", marginBottom: 12, fontFamily: "var(--font-mono)" }}>
-                {settings.settingsPath ? shortenPath(settings.settingsPath) : "settings-extensions.json"}
-                {" · "}
-                {(settings.groups?.length ?? 0)} registered group{(settings.groups?.length ?? 0) === 1 ? "" : "s"}
-                {" · "}
-                {(settings.values?.length ?? 0)} setting{(settings.values?.length ?? 0) === 1 ? "" : "s"}
-              </div>
-
-              {(settings.diagnostics?.length ?? 0) > 0 && (
-                <Section title="Discovery diagnostics" count={settings.diagnostics?.length ?? 0}>
-                  <div style={{ border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden", marginBottom: 12 }}>
-                    {(settings.diagnostics ?? []).map((item, index) => (
-                      <ListRow
-                        key={`diag-${index}`}
-                        title={item.message}
-                        subtitle={item.path}
-                        badge={item.type}
-                      />
-                    ))}
-                  </div>
-                </Section>
-              )}
-
-              {(settings.values?.length ?? 0) === 0 ? (
-                <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5 }}>
-                  No extension settings registered and no stored values found.
-                  {" "}
-                  Ensure <code>pi-extension-settings</code> loads before consumer extensions in <code>settings.json</code> packages.
-                </div>
-              ) : (
-                groupedFiltered.map(([extensionName, rows]) => (
-                  <section key={extensionName} style={{ marginBottom: 16 }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>
-                      {extensionName}
-                    </div>
-                    <div style={{ border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden", background: "var(--bg)" }}>
-                      {rows.map((row) => {
-                        const key = draftKey(row.extensionName, row.settingId);
-                        return (
-                          <SettingEditor
-                            key={key}
-                            groupName={row.extensionName}
-                            definition={definitionMap.get(key)}
-                            value={draft[key] ?? row.value}
-                            source={row.source}
-                            onChange={(next) => {
-                              setDraft((prev) => ({ ...prev, [key]: next }));
-                              setSaveMessage(null);
-                            }}
-                          />
-                        );
-                      })}
-                    </div>
-                  </section>
-                ))
-              )}
-            </>
-          )}
-        </div>
-    </>
-      );
-  if (embed) {
-    return panelContent;
-  }
-
-  return (
-    <div
-      className="pi-modal-overlay"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Pi extensions"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 900,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: 18,
-        background: "rgba(0,0,0,0.44)",
-      }}
-    >
-      <div
-        className="pi-modal-panel pi-modal-panel-large"
-        style={{
-          width: "min(980px, 100%)",
-          maxHeight: "min(820px, calc(100dvh - 36px))",
-          display: "flex",
-          flexDirection: "column",
-          background: "var(--bg)",
-          border: "1px solid var(--border)",
-          borderRadius: 10,
-          boxShadow: "0 22px 70px rgba(0,0,0,0.34)",
-          overflow: "hidden",
-        }}
-      >
-        {panelContent}
+              </SettingsSection>
+            ))}
+          </>
+        )}
       </div>
+    </div>
+  );
+
+  if (embed) return panelContent;
+  return (
+    <div className="pi-modal-overlay" role="dialog" aria-modal="true" aria-label="Pi extensions" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <div className="pi-modal-panel pi-modal-panel-large resource-config-panel">{panelContent}</div>
     </div>
   );
 }

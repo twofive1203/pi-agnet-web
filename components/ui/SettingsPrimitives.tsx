@@ -193,6 +193,30 @@ export function SettingsActionRow({ className, ...props }: HTMLAttributes<HTMLDi
   return <div className={classes("settings-action-row", className)} {...props} />;
 }
 
+export function SettingsSurface({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
+  return <div className={classes("settings-surface", className)} {...props} />;
+}
+
+export function SettingsTabs({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
+  return <div className={classes("settings-tabs", className)} role="tablist" {...props} />;
+}
+
+export function SettingsTab({
+  active = false,
+  className,
+  ...props
+}: ButtonHTMLAttributes<HTMLButtonElement> & { active?: boolean }) {
+  return (
+    <button
+      type={props.type ?? "button"}
+      role="tab"
+      aria-selected={active}
+      className={classes("settings-tab", active && "settings-tab-active", className)}
+      {...props}
+    />
+  );
+}
+
 export function SettingsNotice({
   tone = "info",
   children,

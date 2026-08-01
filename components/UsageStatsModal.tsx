@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { SettingsButton, SettingsInput, SettingsNotice } from "@/components/ui/SettingsPrimitives";
+import { SettingsButton, SettingsInput, SettingsNotice, SettingsTab, SettingsTabs } from "@/components/ui/SettingsPrimitives";
 import type { UsageStatsResult, UsageTotals } from "@/lib/usage-stats";
 
 interface UsageStatsModalProps {
@@ -133,7 +133,7 @@ export function UsageStatsModal({ cwd, onClose }: UsageStatsModalProps) {
         className="pi-modal-panel pi-modal-panel-wide usage-modal-panel"
       >
         <div className="pi-modal-header usage-modal-header">
-          <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+          <div className="usage-modal-title-row">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
               <line x1="12" y1="1" x2="12" y2="23" />
               <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7H14a3.5 3.5 0 0 1 0 7H6" />
@@ -142,7 +142,7 @@ export function UsageStatsModal({ cwd, onClose }: UsageStatsModalProps) {
           </div>
 
           <div className="usage-modal-controls">
-            <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: "var(--text-muted)" }}>
+            <label className="usage-filter-label">
               From
               <SettingsInput
                 type="date"
@@ -151,7 +151,7 @@ export function UsageStatsModal({ cwd, onClose }: UsageStatsModalProps) {
                 className="usage-date-input"
               />
             </label>
-            <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: "var(--text-muted)" }}>
+            <label className="usage-filter-label">
               To
               <SettingsInput
                 type="date"
@@ -160,32 +160,9 @@ export function UsageStatsModal({ cwd, onClose }: UsageStatsModalProps) {
                 className="usage-date-input"
               />
             </label>
-            <div style={{ display: "flex", height: 26, border: "1px solid var(--border)", borderRadius: 6, overflow: "hidden" }}>
-              {(["all", "cwd"] as UsageScope[]).map((item) => {
-                const disabled = item === "cwd" && !cwd;
-                const active = scope === item;
-                return (
-                  <button
-                    key={item}
-                    type="button"
-                    disabled={disabled}
-                    onClick={() => setScope(item)}
-                    style={{
-                      padding: "0 9px",
-                      border: "none",
-                      borderLeft: item === "cwd" ? "1px solid var(--border)" : "none",
-                      background: active ? "var(--bg-selected)" : "transparent",
-                      color: active ? "var(--text)" : "var(--text-muted)",
-                      opacity: disabled ? 0.35 : 1,
-                      cursor: disabled ? "not-allowed" : "pointer",
-                      fontSize: 11,
-                    }}
-                  >
-                    {item === "all" ? "All" : "Cwd"}
-                  </button>
-                );
-              })}
-            </div>
+            <SettingsTabs aria-label="Usage scope">
+              {(["all", "cwd"] as UsageScope[]).map((item) => <SettingsTab key={item} active={scope === item} disabled={item === "cwd" && !cwd} onClick={() => setScope(item)}>{item === "all" ? "All" : "Cwd"}</SettingsTab>)}
+            </SettingsTabs>
             <SettingsButton size="icon" onClick={() => void loadStats()} disabled={loading} busy={loading} title="Refresh" aria-label="Refresh usage statistics">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M21 12a9 9 0 1 1-2.64-6.36" />
@@ -206,7 +183,7 @@ export function UsageStatsModal({ cwd, onClose }: UsageStatsModalProps) {
             <SettingsNotice tone="danger">{error}</SettingsNotice>
           ) : (
             <>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 8, marginBottom: 12 }}>
+              <div className="usage-metric-grid">
                 <Metric label="Cost" value={formatCost(stats?.totals.cost ?? 0)} strong />
                 <Metric label="Main cost" value={formatCost(stats?.mainTotals.cost ?? 0)} />
                 <Metric label="Subagent cost" value={formatCost(stats?.subagentTotals.cost ?? 0)} />
@@ -218,8 +195,8 @@ export function UsageStatsModal({ cwd, onClose }: UsageStatsModalProps) {
                 <Metric label="Matched active/archive" value={`${stats?.matchedActiveSessions ?? 0}/${stats?.matchedArchivedSessions ?? 0}`} />
               </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(280px, 100%), 1fr))", gap: 12 }}>
-                <section style={panelStyle}>
+              <div className="usage-content-grid">
+                <section className="usage-stats-card">
                   <SectionTitle title="Daily" right={loading ? "Loading" : stats ? `${stats.from} - ${stats.to} · ${stats.scope.includeArchived ? "with archive" : "active only"}` : ""} />
                   <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
                     {(stats?.byDay ?? []).length === 0 ? (
@@ -239,18 +216,18 @@ export function UsageStatsModal({ cwd, onClose }: UsageStatsModalProps) {
                   </div>
                 </section>
 
-                <section style={panelStyle}>
+                <section className="usage-stats-card">
                   <SectionTitle title="Tokens" />
                   <TokenRows totals={stats?.totals ?? zeroTotals} />
                 </section>
               </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(280px, 100%), 1fr))", gap: 12, marginTop: 12 }}>
+              <div className="usage-content-grid usage-content-grid-spaced">
                 <Breakdown title="Models" rows={(stats?.byModel ?? []).slice(0, 8).map((row) => ({ label: `${row.provider}/${row.model}`, totals: row.totals }))} />
                 <Breakdown title="Providers" rows={(stats?.byProvider ?? []).map((row) => ({ label: row.provider, totals: row.totals }))} />
               </div>
 
-              <section style={{ ...panelStyle, marginTop: 12 }}>
+              <section className="usage-stats-card usage-stats-card-spaced">
                 <SectionTitle title="Sessions" right={`${stats?.skippedEntries ?? 0} skipped`} />
                 <div style={{ display: "flex", flexDirection: "column" }}>
                   {(stats?.bySession ?? []).length === 0 ? (
@@ -286,14 +263,6 @@ export function UsageStatsModal({ cwd, onClose }: UsageStatsModalProps) {
 
 const zeroTotals: UsageTotals = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, calls: 0 };
 
-const panelStyle: React.CSSProperties = {
-  border: "1px solid var(--border)",
-  borderRadius: 7,
-  padding: 10,
-  background: "var(--bg-panel)",
-  minWidth: 0,
-};
-
 /**
  * 渲染统计指标块。
  *
@@ -302,11 +271,9 @@ const panelStyle: React.CSSProperties = {
  */
 function Metric({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
   return (
-    <div style={panelStyle}>
-      <div style={{ fontSize: 10, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0 }}>{label}</div>
-      <div style={{ marginTop: 4, fontSize: strong ? 24 : 18, lineHeight: 1.1, fontWeight: strong ? 700 : 600, color: strong ? "var(--text)" : "var(--text-muted)", fontVariantNumeric: "tabular-nums" }}>
-        {value}
-      </div>
+    <div className="usage-stats-card usage-metric">
+      <div className="usage-metric-label">{label}</div>
+      <div className={`usage-metric-value${strong ? " usage-metric-value-strong" : ""}`}>{value}</div>
     </div>
   );
 }
@@ -319,9 +286,9 @@ function Metric({ label, value, strong }: { label: string; value: string; strong
  */
 function SectionTitle({ title, right }: { title: string; right?: string }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 9 }}>
-      <div style={{ fontSize: 11, color: "var(--text)", fontWeight: 600 }}>{title}</div>
-      {right && <div style={{ fontSize: 10, color: "var(--text-dim)", fontVariantNumeric: "tabular-nums" }}>{right}</div>}
+    <div className="usage-stats-card-header">
+      <div className="usage-stats-card-title">{title}</div>
+      {right && <div className="usage-stats-card-meta">{right}</div>}
     </div>
   );
 }
@@ -360,7 +327,7 @@ function TokenRows({ totals }: { totals: UsageTotals }) {
  */
 function Breakdown({ title, rows }: { title: string; rows: { label: string; totals: UsageTotals }[] }) {
   return (
-    <section style={panelStyle}>
+    <section className="usage-stats-card">
       <SectionTitle title={title} />
       {rows.length === 0 ? (
         <EmptyState />
@@ -385,5 +352,5 @@ function Breakdown({ title, rows }: { title: string; rows: { label: string; tota
  * @returns 空状态 React 节点。
  */
 function EmptyState() {
-  return <div style={{ padding: "14px 0", color: "var(--text-dim)", fontSize: 12 }}>No usage in range</div>;
+  return <div className="usage-stats-empty">No usage in range</div>;
 }

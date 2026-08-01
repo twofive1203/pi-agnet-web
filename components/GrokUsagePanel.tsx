@@ -33,25 +33,9 @@ function UsagePie({ utilization, size = 18 }: { utilization: number | null; size
     : "conic-gradient(rgba(148,163,184,0.25) 0deg, rgba(148,163,184,0.25) 360deg)";
 
   return (
-    <span
-      title={utilization !== null ? `Grok ${Math.round(pct)}% used` : "Unknown usage"}
-      style={{ display: "inline-flex", alignItems: "center", gap: 3 }}
-    >
-      <span
-        style={{
-          width: size, height: size, borderRadius: "50%", background,
-          border: "1px solid rgba(148,163,184,0.35)",
-          display: "inline-flex", alignItems: "center", justifyContent: "center",
-          boxSizing: "border-box",
-        }}
-      >
-        <span
-          style={{
-            width: Math.max(6, Math.floor(size * 0.48)),
-            height: Math.max(6, Math.floor(size * 0.48)),
-            borderRadius: "50%", background: "var(--bg-panel)", opacity: 0.92,
-          }}
-        />
+    <span title={utilization !== null ? `Grok ${Math.round(pct)}% used` : "Unknown usage"} className="usage-pie-wrap">
+      <span className="usage-pie" style={{ width: size, height: size, background }}>
+        <span className="usage-pie-center" style={{ width: Math.max(6, Math.floor(size * 0.48)), height: Math.max(6, Math.floor(size * 0.48)) }} />
       </span>
     </span>
   );
@@ -195,7 +179,7 @@ export function GrokUsagePanel() {
   const compactStatus = loading ? "Loading" : error ? "Error" : refreshText;
 
   return (
-    <div style={{ position: "relative", display: "flex", alignItems: "center", height: "100%" }}>
+    <div className="usage-panel-anchor">
       <button
         ref={triggerRef}
         type="button"
@@ -207,26 +191,11 @@ export function GrokUsagePanel() {
         aria-label="Grok usage"
         aria-expanded={open}
         aria-controls="grok-usage-popover"
-        style={{
-          height: 26,
-          display: "flex",
-          alignItems: "center",
-          gap: 7,
-          padding: "0 9px",
-          borderRadius: 999,
-          border: "1px solid rgba(148,163,184,0.28)",
-          background: "rgba(15,23,42,0.10)",
-          backdropFilter: "blur(10px)",
-          color: "var(--text-muted)",
-          cursor: "pointer",
-          fontSize: 11,
-          fontVariantNumeric: "tabular-nums",
-          whiteSpace: "nowrap",
-        }}
+        className="usage-panel-trigger"
       >
-        <span style={{ fontWeight: 700, color: "var(--text)" }}>Grok</span>
+        <span className="usage-panel-trigger-name">Grok</span>
         <span>{compactStatus}</span>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+        <span className="usage-panel-pies">
           {monthly && <UsagePie utilization={monthlyUtilization} />}
         </span>
       </button>
@@ -235,34 +204,15 @@ export function GrokUsagePanel() {
         <div
           ref={panelRef}
           id="grok-usage-popover"
-          className="grok-usage-popover"
+          className="grok-usage-popover usage-popover"
           role="dialog"
           aria-label="Grok usage details"
-          style={{
-            position: "fixed",
-            top: panelPosition.top,
-            right: panelPosition.right,
-            zIndex: 550,
-            width: 360,
-            maxHeight: `min(650px, calc(100dvh - ${panelPosition.top + 8}px))`,
-            overflow: "auto",
-            border: "1px solid rgba(148,163,184,0.30)",
-            borderRadius: 12,
-            background: "color-mix(in srgb, var(--bg-panel) 86%, transparent)",
-            boxShadow: "0 18px 45px rgba(0,0,0,0.28)",
-            backdropFilter: "blur(14px)",
-            padding: 12,
-            display: "flex",
-            flexDirection: "column",
-            gap: 10,
-          }}
+          style={{ top: panelPosition.top, right: panelPosition.right, maxHeight: `min(650px, calc(100dvh - ${panelPosition.top + 8}px))` }}
         >
-          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ color: "var(--text)", fontSize: 13, fontWeight: 800 }}>Grok usage</div>
-              <div style={{ marginTop: 3, color: "var(--text-dim)", fontSize: 11 }}>
-                {loading ? "Loading…" : `Updated: ${refreshText}`}
-              </div>
+          <div className="usage-popover-header">
+            <div className="resource-list-copy">
+              <div className="usage-popover-title">Grok usage</div>
+              <div className="usage-popover-meta">{loading ? "Loading…" : `Updated: ${refreshText}`}</div>
             </div>
             <button
               type="button"
@@ -270,14 +220,7 @@ export function GrokUsagePanel() {
               disabled={loading}
               title="Refresh Grok usage"
               aria-label="Refresh Grok usage"
-              style={{
-                width: 30, height: 30, border: "1px solid var(--border)", borderRadius: 7,
-                background: "var(--bg)",
-                color: loading ? "var(--text-dim)" : "var(--accent)",
-                cursor: loading ? "default" : "pointer",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                padding: 0, flexShrink: 0,
-              }}
+              className="usage-icon-button"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M21 12a9 9 0 0 1-9 9 8.8 8.8 0 0 1-6.36-2.64" />
@@ -289,15 +232,11 @@ export function GrokUsagePanel() {
           </div>
 
           {error && (
-            <div style={{ color: "#f87171", fontSize: 12, lineHeight: 1.45 }}>{error}</div>
+            <div className="usage-text-danger">{error}</div>
           )}
 
           {!monthly ? (
-            <div style={{
-              display: "flex", alignItems: "center", gap: 10, padding: 10,
-              borderRadius: 9, background: "rgba(148,163,184,0.08)",
-              border: "1px solid var(--border)",
-            }}>
+            <div className="usage-card usage-card-row">
               <UsagePie utilization={null} size={34} />
               <div style={{ color: "var(--text-dim)", fontSize: 12, lineHeight: 1.45 }}>
                 Grok CLI usage not available. Click refresh to query xAI billing.
@@ -307,11 +246,7 @@ export function GrokUsagePanel() {
               </div>
             </div>
           ) : monthly && (
-            <div style={{
-              display: "grid", gridTemplateColumns: "42px 1fr auto", alignItems: "center", gap: 10,
-              padding: 9, borderRadius: 9, border: "1px solid var(--border)",
-              background: "rgba(148,163,184,0.08)",
-            }}>
+            <div className="usage-quota-row">
               <UsagePie utilization={monthlyUtilization} size={30} />
               <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
                 <span style={{ color: "var(--text)", fontSize: 12, fontWeight: 700 }}>Monthly credits</span>
@@ -329,11 +264,7 @@ export function GrokUsagePanel() {
           )}
 
           {weekly && (
-            <div style={{
-              display: "grid", gridTemplateColumns: "42px 1fr auto", alignItems: "center", gap: 10,
-              padding: 9, borderRadius: 9, border: "1px solid var(--border)",
-              background: "rgba(148,163,184,0.08)",
-            }}>
+            <div className="usage-quota-row">
               <UsagePie utilization={weeklyUtilization} size={30} />
               <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
                 <span style={{ color: "var(--text)", fontSize: 12, fontWeight: 700 }}>Weekly credits</span>
@@ -347,13 +278,13 @@ export function GrokUsagePanel() {
             </div>
           )}
 
-          <div style={{ display: "flex", flexDirection: "column", gap: 7, paddingTop: 2 }}>
-            <div style={{ color: "var(--text)", fontSize: 12, fontWeight: 800 }}>Accounts</div>
+          <div className="usage-section">
+            <div className="usage-section-title">Accounts</div>
             {accountsError && <div style={{ color: "#f87171", fontSize: 11, lineHeight: 1.45 }}>{accountsError}</div>}
             {accounts.length === 0 ? (
               <div style={{ color: "var(--text-dim)", fontSize: 12, lineHeight: 1.45 }}>No saved accounts. Add one in Models → Grok CLI / xAI.</div>
             ) : accounts.map((item) => (
-              <div key={`${item.provider}:${item.accountId}`} style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 8, alignItems: "center", padding: 8, borderRadius: 8, border: item.active ? "1px solid rgba(34,197,94,0.45)" : "1px solid var(--border)", background: item.active ? "rgba(34,197,94,0.08)" : "rgba(148,163,184,0.06)" }}>
+              <div key={`${item.provider}:${item.accountId}`} className={`usage-account-row${item.active ? " usage-account-row-active" : ""}`}>
                 <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
                   <span style={{ color: "var(--text)", fontSize: 12, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.displayName}</span>
                   <code style={{ color: "var(--text-dim)", fontSize: 10, fontFamily: "var(--font-mono)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.provider} · {item.maskedAccountId}</code>

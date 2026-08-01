@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { SettingsButton, SettingsNotice, SettingsState, SettingsSurface, SettingsToggle } from "@/components/ui/SettingsPrimitives";
 import { formatQuotaQueriedAt, formatResetCountdown, knownQuotaTiers, QUOTA_TIER_LABELS } from "@/lib/quota-display";
 import type { OAuthAccountSummary } from "@/lib/oauth-accounts";
 import type { OpenAICodexWarmupResponse, OpenAICodexWarmupResult } from "@/lib/openai-codex-warmup";
@@ -54,11 +55,11 @@ function accountQuotaText(account: OAuthAccountSummary): string {
   return `${resetParts.join(" · ")}${queriedAt}`;
 }
 
-function resultText(result: OpenAICodexWarmupResult | undefined): { text: string; color: string } {
-  if (!result) return { text: "Ready", color: "var(--text-dim)" };
-  if (!result.success) return { text: result.error ?? "Warmup failed", color: "#f87171" };
-  if (!result.quotaRefreshSuccess) return { text: result.quotaError ? `Warmed · quota refresh failed: ${result.quotaError}` : "Warmed · quota refresh unavailable", color: "#fb923c" };
-  return { text: `Warmed${result.latencyMs !== null ? ` · ${result.latencyMs}ms` : ""} · quota refreshed`, color: "#34d399" };
+function resultText(result: OpenAICodexWarmupResult | undefined): { text: string; tone: "neutral" | "danger" | "warning" | "success" } {
+  if (!result) return { text: "Ready", tone: "neutral" };
+  if (!result.success) return { text: result.error ?? "Warmup failed", tone: "danger" };
+  if (!result.quotaRefreshSuccess) return { text: result.quotaError ? `Warmed · quota refresh failed: ${result.quotaError}` : "Warmed · quota refresh unavailable", tone: "warning" };
+  return { text: `Warmed${result.latencyMs !== null ? ` · ${result.latencyMs}ms` : ""} · quota refreshed`, tone: "success" };
 }
 
 function schedulesEqual(a: PiWebChatGptWarmupConfig, b: PiWebChatGptWarmupConfig): boolean {
@@ -226,25 +227,19 @@ export function ChatGptWarmupDialog({ accounts, onClose, onComplete }: Props) {
   }, [loadHistory, onComplete, running, selectedIds]);
 
   return (
-    <div
-      className="pi-modal-overlay"
-      style={{ position: "fixed", inset: 0, zIndex: 1200, background: "rgba(0,0,0,0.42)", display: "flex", alignItems: "center", justifyContent: "center" }}
-      onClick={(event) => { if (event.target === event.currentTarget && !running && !scheduleSaving) onClose(); }}
-    >
-      <div className="pi-modal-panel" style={{ width: 760, maxWidth: "calc(100vw - 32px)", maxHeight: "min(88vh, calc(100vh - 32px))", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 10, boxShadow: "0 10px 36px rgba(0,0,0,0.28)", overflow: "hidden", display: "flex", flexDirection: "column" }}>
-        <div style={{ padding: "12px 14px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-          <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 14, fontWeight: 800, color: "var(--text)" }}>ChatGPT account warmup</div>
-            <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 3 }}>Manual warmup now, or save a local daily schedule for selected accounts.</div>
+    <div className="pi-modal-overlay" onClick={(event) => { if (event.target === event.currentTarget && !running && !scheduleSaving) onClose(); }}>
+      <div className="pi-modal-panel warmup-dialog-panel">
+        <div className="pi-modal-header">
+          <div className="pi-modal-header-copy">
+            <div className="pi-modal-title">ChatGPT account warmup</div>
+            <div className="pi-modal-subtitle">Manual warmup now, or save a local daily schedule for selected accounts.</div>
           </div>
-          <button type="button" disabled={running || scheduleSaving} onClick={onClose} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: running || scheduleSaving ? "not-allowed" : "pointer", fontSize: 20, lineHeight: 1, padding: "2px 6px" }}>×</button>
+          <button type="button" disabled={running || scheduleSaving} onClick={onClose} className="pi-modal-close">×</button>
         </div>
 
-        <div className="mobile-stack-grid" style={{ padding: 14, overflow: "auto", display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(280px, 0.85fr)", gap: 14 }}>
+        <div className="mobile-stack-grid warmup-dialog-grid">
           <section style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
-            <div style={{ padding: 10, borderRadius: 8, background: "var(--bg-subtle)", border: "1px solid var(--border)", color: "var(--text-muted)", fontSize: 12, lineHeight: 1.5 }}>
-              Warmup sends a tiny real Codex request using a fixed low-cost model. Tokens stay server-side; this dialog only receives per-account results.
-            </div>
+            <SettingsNotice tone="info">Warmup sends a tiny real Codex request using a fixed low-cost model. Tokens stay server-side; this dialog only receives per-account results.</SettingsNotice>
 
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
               <div style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 700 }}>Manual warmup</div>
@@ -277,7 +272,7 @@ export function ChatGptWarmupDialog({ accounts, onClose, onComplete }: Props) {
                         <code style={{ color: "var(--text-dim)", fontSize: 10, fontFamily: "var(--font-mono)", overflowWrap: "anywhere" }}>{account.maskedAccountId}</code>
                         {account.extraInfo && <span style={{ color: "var(--text-muted)", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{account.extraInfo}</span>}
                         <span style={{ color: account.quotaCache?.error ? "#fb923c" : "var(--text-dim)", fontSize: 11, lineHeight: 1.4 }}>{accountQuotaText(account)}</span>
-                        <span style={{ color: status.color, fontSize: 11, lineHeight: 1.4 }}>{running && checked && !result ? "Warming sequentially…" : status.text}</span>
+                        <span className={`warmup-status warmup-status-${status.tone}`}>{running && checked && !result ? "Warming sequentially…" : status.text}</span>
                       </span>
                     </label>
                   );
@@ -285,11 +280,11 @@ export function ChatGptWarmupDialog({ accounts, onClose, onComplete }: Props) {
               </div>
             )}
 
-            {error && <div style={{ color: "#f87171", fontSize: 12, lineHeight: 1.5 }}>{error}</div>}
+            {error && <SettingsNotice tone="danger">{error}</SettingsNotice>}
           </section>
 
           <section style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
-            <div style={{ padding: 12, border: "1px solid var(--border)", borderRadius: 10, background: "var(--bg-panel)", display: "flex", flexDirection: "column", gap: 10 }}>
+            <SettingsSurface className="warmup-schedule-card">
               <div>
                 <div style={{ fontSize: 12, color: "var(--text)", fontWeight: 800 }}>Scheduled warmup</div>
                 <div style={{ marginTop: 3, fontSize: 11, color: "var(--text-dim)", lineHeight: 1.45 }}>Uses local server time and only runs while Snail Pi Web is running.</div>
@@ -299,20 +294,7 @@ export function ChatGptWarmupDialog({ accounts, onClose, onComplete }: Props) {
                 <div style={{ color: "var(--text-muted)", fontSize: 12 }}>Loading schedule…</div>
               ) : (
                 <>
-                  <button
-                    type="button"
-                    disabled={scheduleSaving}
-                    onClick={() => setSchedule((prev) => ({ ...prev, enabled: !prev.enabled }))}
-                    style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: 10, borderRadius: 8, border: "1px solid var(--border)", background: "var(--bg-subtle)", color: "var(--text)", cursor: scheduleSaving ? "not-allowed" : "pointer", textAlign: "left" }}
-                  >
-                    <span style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                      <span style={{ fontSize: 12, fontWeight: 700 }}>Enable daily scheduled warmup</span>
-                      <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{schedule.enabled ? "Enabled" : "Disabled"}</span>
-                    </span>
-                    <span style={{ width: 38, height: 21, borderRadius: 999, background: schedule.enabled ? "var(--accent)" : "var(--border)", position: "relative", flexShrink: 0 }}>
-                      <span style={{ position: "absolute", top: 3, left: schedule.enabled ? 20 : 3, width: 15, height: 15, borderRadius: "50%", background: "white", transition: "left 0.12s" }} />
-                    </span>
-                  </button>
+                  <SettingsToggle label="Enable daily scheduled warmup" description={schedule.enabled ? "Enabled" : "Disabled"} checked={schedule.enabled} disabled={scheduleSaving} onChange={(enabled) => setSchedule((previous) => ({ ...previous, enabled }))} />
 
                   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                     <div style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 700 }}>Schedule accounts</div>
@@ -346,24 +328,24 @@ export function ChatGptWarmupDialog({ accounts, onClose, onComplete }: Props) {
                     </div>
                   </div>
 
-                  {configError && <div style={{ color: "#f87171", fontSize: 12, lineHeight: 1.45 }}>{configError}</div>}
+                  {configError && <SettingsNotice tone="danger">{configError}</SettingsNotice>}
 
                   <button type="button" disabled={scheduleSaving || !scheduleDirty} onClick={saveSchedule} style={{ padding: "7px 12px", background: !scheduleSaving && scheduleDirty ? "var(--accent)" : "var(--bg-subtle)", border: "none", borderRadius: 7, color: !scheduleSaving && scheduleDirty ? "#fff" : "var(--text-dim)", cursor: !scheduleSaving && scheduleDirty ? "pointer" : "not-allowed", fontSize: 12, fontWeight: 800 }}>{scheduleSaving ? "Saving…" : scheduleDirty ? "Save schedule" : "Schedule saved"}</button>
                 </>
               )}
-            </div>
+            </SettingsSurface>
 
-            <div style={{ padding: 12, border: "1px solid var(--border)", borderRadius: 10, background: "var(--bg-panel)", display: "flex", flexDirection: "column", gap: 8 }}>
+            <SettingsSurface className="warmup-history-card">
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
                 <div style={{ fontSize: 12, color: "var(--text)", fontWeight: 800 }}>Recent runs</div>
                 <button type="button" onClick={() => void loadHistory()} style={{ padding: "4px 7px", background: "none", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text-muted)", cursor: "pointer", fontSize: 11 }}>Refresh</button>
               </div>
               {historyError ? (
-                <div style={{ color: "#f87171", fontSize: 12 }}>{historyError}</div>
+                <SettingsNotice tone="danger">{historyError}</SettingsNotice>
               ) : !history ? (
-                <div style={{ color: "var(--text-muted)", fontSize: 12 }}>Loading history…</div>
+                <SettingsState kind="loading" title="Loading history…" />
               ) : history.runs.length === 0 ? (
-                <div style={{ color: "var(--text-dim)", fontSize: 12 }}>No warmup runs recorded yet.</div>
+                <SettingsState title="No warmup runs recorded yet." />
               ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
                   {history.runs.slice(0, 6).map((run) => (
@@ -378,13 +360,13 @@ export function ChatGptWarmupDialog({ accounts, onClose, onComplete }: Props) {
                   ))}
                 </div>
               )}
-            </div>
+            </SettingsSurface>
           </section>
         </div>
 
-        <div style={{ padding: "10px 14px", borderTop: "1px solid var(--border)", display: "flex", justifyContent: "flex-end", gap: 8 }}>
-          <button type="button" disabled={running || scheduleSaving} onClick={onClose} style={{ padding: "6px 12px", background: "none", border: "1px solid var(--border)", borderRadius: 6, color: running || scheduleSaving ? "var(--text-dim)" : "var(--text-muted)", cursor: running || scheduleSaving ? "not-allowed" : "pointer", fontSize: 12 }}>Close</button>
-          <button type="button" disabled={running || selectedCount === 0} onClick={runWarmup} style={{ padding: "6px 14px", background: !running && selectedCount > 0 ? "var(--accent)" : "var(--bg-panel)", border: "none", borderRadius: 6, color: !running && selectedCount > 0 ? "#fff" : "var(--text-dim)", cursor: !running && selectedCount > 0 ? "pointer" : "not-allowed", fontSize: 12, fontWeight: 800 }}>{running ? "Warming…" : "Warm selected now"}</button>
+        <div className="pi-modal-footer">
+          <SettingsButton disabled={running || scheduleSaving} onClick={onClose}>Close</SettingsButton>
+          <SettingsButton variant="primary" disabled={selectedCount === 0} busy={running} onClick={runWarmup}>{running ? "Warming…" : "Warm selected now"}</SettingsButton>
         </div>
       </div>
     </div>

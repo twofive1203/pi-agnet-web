@@ -1,7 +1,7 @@
 ---
 title: "refactor: Iteration 7 — 迁移 Models 与资源配置面板"
 type: refactor
-status: active
+status: completed
 date: 2026-08-01
 origin: docs/plans/2026-08-01-001-refactor-frontend-visual-system-plan.md
 iteration: 7
@@ -48,7 +48,7 @@ depends_on: docs/plans/2026-08-01-006-refactor-settings-primitives-plan.md
 
 ## Implementation Units
 
-- [ ] U1. **迁移 ModelsConfig 外壳与 Provider/Model 编辑区**
+- [x] U1. **迁移 ModelsConfig 外壳与 Provider/Model 编辑区**
 
 **Goal:** 先统一 Models Modal 骨架和最核心的 provider/model 配置路径。
 
@@ -74,7 +74,7 @@ depends_on: docs/plans/2026-08-01-006-refactor-settings-primitives-plan.md
 - Models 核心编辑路径使用共享原语。
 - provider/model 数据与保存 payload 不变。
 
-- [ ] U2. **迁移账号、Usage、Pricing 与 Warmup 子界面**
+- [x] U2. **迁移账号、Usage、Pricing 与 Warmup 子界面**
 
 **Dependencies:** U1
 
@@ -100,7 +100,7 @@ depends_on: docs/plans/2026-08-01-006-refactor-settings-primitives-plan.md
 **Verification:**
 - 账号与配额功能不变，危险动作具有明确确认层级。
 
-- [ ] U3. **迁移 Extensions 与 Skills 面板**
+- [x] U3. **迁移 Extensions 与 Skills 面板**
 
 **Goal:** 完成剩余资源管理界面的视觉统一。
 
@@ -127,7 +127,7 @@ depends_on: docs/plans/2026-08-01-006-refactor-settings-primitives-plan.md
 - Extensions/Skills 与 Settings/Models 使用同一视觉原语。
 - 资源和安装业务行为不变。
 
-- [ ] U4. **清理迁移范围内的重复基础样式**
+- [x] U4. **清理迁移范围内的重复基础样式**
 
 **Dependencies:** U1, U2, U3
 

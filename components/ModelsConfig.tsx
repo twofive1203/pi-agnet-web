@@ -5,6 +5,17 @@ import { useAppDialog } from "@/components/AppDialogProvider";
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
+import {
+  SettingsActionRow,
+  SettingsBadge,
+  SettingsButton,
+  SettingsField,
+  SettingsInput,
+  SettingsNotice,
+  SettingsSelect,
+  SettingsState,
+  SettingsSurface,
+} from "@/components/ui/SettingsPrimitives";
 import type { DeepSeekBalanceResult } from "@/lib/deepseek-balance";
 import type { GrokUsageResult } from "@/lib/grok-usage";
 import { ACCOUNT_JSON_CONVERTERS, RAW_ACCOUNT_JSON_EXAMPLE, validateRawOAuthCredentialImport, type OAuthAccountImportMode } from "@/lib/oauth-account-converters";
@@ -323,12 +334,7 @@ function defaultUserAgentHint(api: string | undefined, scope: "provider" | "mode
 // ── Form field helpers ────────────────────────────────────────────────────────
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-      <label style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 500 }}>{label}</label>
-      {children}
-    </div>
-  );
+  return <SettingsField label={label}>{children}</SettingsField>;
 }
 
 type HeaderRow = { id: string; key: string; value: string };
@@ -393,103 +399,32 @@ function HeadersEditor({
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+    <SettingsSurface className="models-headers-editor">
+      <SettingsActionRow>
         <SectionTitle>Custom headers</SectionTitle>
-        <button
-          type="button"
-          onClick={addRow}
-          style={{
-            height: 24,
-            padding: "0 9px",
-            background: "none",
-            border: "1px solid var(--border)",
-            borderRadius: 4,
-            color: "var(--text-muted)",
-            cursor: "pointer",
-            fontSize: 11,
-            fontWeight: 600,
-          }}
-        >
-          + Add header
-        </button>
-      </div>
-      {hint && (
-        <div style={{ fontSize: 10, color: "var(--text-dim)", lineHeight: 1.45 }}>{hint}</div>
-      )}
+        <SettingsButton size="sm" onClick={addRow}>+ Add header</SettingsButton>
+      </SettingsActionRow>
+      {hint && <div className="settings-surface-muted">{hint}</div>}
       {rows.length === 0 ? (
-        <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.5 }}>
-          No custom headers. Optional request headers such as <code style={{ fontFamily: "var(--font-mono)" }}>User-Agent</code> go here.
-        </div>
+        <div className="settings-surface-muted">No custom headers. Optional request headers such as <code>User-Agent</code> go here.</div>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        <div className="models-header-list">
           {rows.map((row) => (
-            <div
-              key={row.id}
-              style={{ display: "grid", gridTemplateColumns: "minmax(0, 0.9fr) minmax(0, 1.4fr) 30px", gap: 6, alignItems: "center" }}
-            >
-              <TextInput
-                value={row.key}
-                onChange={(v) => updateRow(row.id, { key: v })}
-                placeholder="Header name"
-                mono
-              />
-              <TextInput
-                value={row.value}
-                onChange={(v) => updateRow(row.id, { value: v })}
-                placeholder="value, $ENV, or !command"
-                mono
-              />
-              <button
-                type="button"
-                onClick={() => removeRow(row.id)}
-                aria-label={`Remove header ${row.key || "row"}`}
-                title="Remove header"
-                style={{
-                  width: 30,
-                  height: 30,
-                  padding: 0,
-                  border: "1px solid var(--border)",
-                  borderRadius: 6,
-                  background: "var(--bg-panel)",
-                  color: "#fb7185",
-                  cursor: "pointer",
-                  fontSize: 16,
-                  fontWeight: 800,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  lineHeight: 1,
-                }}
-              >
-                −
-              </button>
+            <div key={row.id} className="models-header-row">
+              <TextInput value={row.key} onChange={(value) => updateRow(row.id, { key: value })} placeholder="Header name" mono />
+              <TextInput value={row.value} onChange={(value) => updateRow(row.id, { value })} placeholder="value, $ENV, or !command" mono />
+              <SettingsButton variant="ghost" size="icon" onClick={() => removeRow(row.id)} aria-label={`Remove header ${row.key || "row"}`} title="Remove header" className="models-danger-text">−</SettingsButton>
             </div>
           ))}
         </div>
       )}
-      <div style={{ fontSize: 10, color: "var(--text-dim)", lineHeight: 1.45 }}>
-        Values support literals, <code style={{ fontFamily: "var(--font-mono)" }}>$ENV_VAR</code>, or shell commands prefixed with <code style={{ fontFamily: "var(--font-mono)" }}>!</code>.
-      </div>
-    </div>
+      <div className="settings-surface-muted">Values support literals, <code>$ENV_VAR</code>, or shell commands prefixed with <code>!</code>.</div>
+    </SettingsSurface>
   );
 }
 
-const inputStyle = {
-  padding: "6px 9px",
-  background: "var(--bg-panel)",
-  border: "1px solid var(--border)",
-  borderRadius: 5,
-  color: "var(--text)",
-  fontSize: 12,
-  outline: "none",
-  width: "100%",
-  boxSizing: "border-box" as const,
-};
-
 function TextInput({ value, onChange, placeholder, mono }: { value: string; onChange: (v: string) => void; placeholder?: string; mono?: boolean }) {
-  return <input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder}
-    style={{ ...inputStyle, fontFamily: mono ? "var(--font-mono)" : "inherit" }} />;
+  return <SettingsInput value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} className={mono ? "settings-control-mono" : undefined} />;
 }
 
 function SecretTextInput({
@@ -518,39 +453,18 @@ function SecretTextInput({
   }, [value]);
 
   return (
-    <div style={{ position: "relative", width: "100%", ...style }}>
-      <input
+    <div className="models-secret-control" style={style}>
+      <SettingsInput
         type={visible ? "text" : "password"}
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(event) => onChange(event.target.value)}
         onKeyDown={onKeyDown}
         placeholder={placeholder}
-        style={{ ...inputStyle, paddingRight: 34, fontFamily: mono ? "var(--font-mono)" : "inherit" }}
+        className={mono ? "settings-control-mono" : undefined}
         autoComplete={autoComplete}
         spellCheck={spellCheck}
       />
-      <button
-        type="button"
-        onClick={() => setVisible((v) => !v)}
-        aria-label={visible ? "Hide API key" : "Show API key"}
-        title={visible ? "Hide API key" : "Show API key"}
-        style={{
-          position: "absolute",
-          right: 5,
-          top: "50%",
-          transform: "translateY(-50%)",
-          width: 24,
-          height: 24,
-          padding: 0,
-          border: "none",
-          background: "transparent",
-          color: "var(--text-dim)",
-          cursor: "pointer",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
+      <button type="button" onClick={() => setVisible((value) => !value)} aria-label={visible ? "Hide API key" : "Show API key"} title={visible ? "Hide API key" : "Show API key"} className="models-secret-toggle">
         {visible ? (
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M17.94 17.94A10.94 10.94 0 0 1 12 20C7 20 2.73 16.89 1 12a18.45 18.45 0 0 1 5.06-6.94" />
@@ -570,31 +484,24 @@ function SecretTextInput({
 }
 
 function NumInput({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder?: string }) {
-  return <input type="number" value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} style={inputStyle} />;
+  return <SettingsInput type="number" value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} />;
 }
 
 function Select({ value, onChange, options, required }: { value: string; onChange: (v: string) => void; options: readonly string[]; required?: boolean }) {
   return (
-    <select value={value} onChange={(e) => onChange(e.target.value)}
-      style={{ ...inputStyle, color: value ? "var(--text)" : "var(--text-dim)" }}>
+    <SettingsSelect value={value} onChange={(event) => onChange(event.target.value)}>
       {!required && <option value="">— inherit / none —</option>}
-      {options.map((o) => <option key={o} value={o}>{o}</option>)}
-    </select>
+      {options.map((option) => <option key={option} value={option}>{option}</option>)}
+    </SettingsSelect>
   );
 }
 
 function Check({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 12, color: "var(--text-muted)" }}>
-      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)}
-        style={{ width: 13, height: 13, accentColor: "var(--accent)", cursor: "pointer" }} />
-      {label}
-    </label>
-  );
+  return <label className="models-checkbox"><input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />{label}</label>;
 }
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
-  return <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 2 }}>{children}</div>;
+  return <div className="models-section-label">{children}</div>;
 }
 
 function getDiscoveredModelOwner(candidate: DiscoveredModelCandidate): string {
@@ -795,22 +702,16 @@ function ProviderDetail({ name, provider, onChange, onRename, onDelete, onAddDis
   }, []);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+    <div className="models-detail-form">
+      <SettingsActionRow>
         <SectionTitle>Provider</SectionTitle>
-        <button onClick={onDelete}
-          style={{ padding: "3px 8px", background: "none", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 4, color: "#ef4444", cursor: "pointer", fontSize: 11 }}>
-          Delete
-        </button>
-      </div>
+        <SettingsButton size="sm" variant="danger" onClick={onDelete}>Delete</SettingsButton>
+      </SettingsActionRow>
 
       <Field label="Provider name">
         <TextInput value={editingName} onChange={setEditingName} placeholder="provider-name" mono />
         {editingName !== name && editingName.trim() && (
-          <button onClick={() => onRename(editingName.trim())}
-            style={{ marginTop: 4, padding: "3px 10px", background: "var(--accent)", border: "none", borderRadius: 4, color: "#fff", cursor: "pointer", fontSize: 11, alignSelf: "flex-start" }}>
-            Rename
-          </button>
+          <SettingsButton size="sm" variant="primary" className="settings-align-start" onClick={() => onRename(editingName.trim())}>Rename</SettingsButton>
         )}
       </Field>
 
@@ -843,21 +744,11 @@ function ProviderDetail({ name, provider, onChange, onRename, onDelete, onAddDis
           ?? "Merged into every request for this provider. Useful for User-Agent, proxy auth, or gateway-required headers."}
       />
 
-      <div style={{ border: "1px solid var(--border)", borderRadius: 6, background: "var(--bg-panel)", padding: 12, display: "flex", flexDirection: "column", gap: 10 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-            <SectionTitle>Discover models</SectionTitle>
-            <span style={{ fontSize: 11, color: "var(--text-dim)" }}>Fetches the provider&apos;s OpenAI-compatible model list. Additions stay staged until Save.</span>
-          </div>
-          <button
-            type="button"
-            onClick={handleDiscoverModels}
-            disabled={Boolean(discoveryDisabledReason) || discoveryState.phase === "loading"}
-            style={{ padding: "5px 11px", background: !discoveryDisabledReason && discoveryState.phase !== "loading" ? "var(--accent)" : "var(--bg)", border: "1px solid var(--border)", borderRadius: 5, color: !discoveryDisabledReason && discoveryState.phase !== "loading" ? "#fff" : "var(--text-dim)", cursor: !discoveryDisabledReason && discoveryState.phase !== "loading" ? "pointer" : "not-allowed", fontSize: 11, fontWeight: 600, flexShrink: 0 }}
-          >
-            {discoveryState.phase === "loading" ? "Fetching…" : "Fetch models"}
-          </button>
-        </div>
+      <SettingsSurface className="models-discovery">
+        <SettingsActionRow>
+          <div><SectionTitle>Discover models</SectionTitle><div className="settings-surface-muted">Fetches the provider&apos;s OpenAI-compatible model list. Additions stay staged until Save.</div></div>
+          <SettingsButton variant="primary" onClick={handleDiscoverModels} disabled={Boolean(discoveryDisabledReason)} busy={discoveryState.phase === "loading"}>{discoveryState.phase === "loading" ? "Fetching…" : "Fetch models"}</SettingsButton>
+        </SettingsActionRow>
 
         {discoveryDisabledReason && (
           <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.5 }}>{discoveryDisabledReason}</div>
@@ -867,9 +758,7 @@ function ProviderDetail({ name, provider, onChange, onRename, onDelete, onAddDis
           <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5 }}>Fetching remote model list…</div>
         )}
 
-        {discoveryState.phase === "error" && (
-          <div style={{ fontSize: 12, color: "#f87171", lineHeight: 1.5 }}>{discoveryState.message}</div>
-        )}
+        {discoveryState.phase === "error" && <SettingsNotice tone="danger">{discoveryState.message}</SettingsNotice>}
 
         {discoveryState.phase === "success" && (
           <>
@@ -942,7 +831,7 @@ function ProviderDetail({ name, provider, onChange, onRename, onDelete, onAddDis
             )}
           </>
         )}
-      </div>
+      </SettingsSurface>
     </div>
   );
 }
@@ -1326,10 +1215,10 @@ function ModelDetail({
 
   return (
     <>
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+    <div className="models-detail-form">
+      <SettingsActionRow>
         <SectionTitle>Model</SectionTitle>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div className="settings-action-group">
           {testSummary && (
             <span
               title={testSummary}
@@ -1380,14 +1269,11 @@ function ModelDetail({
             )}
             {testState.phase === "testing" ? "Testing…" : testState.phase === "success" ? "OK" : "Test"}
           </button>
-          <button onClick={onDelete}
-            style={{ height: 24, padding: "0 8px", background: "none", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 4, color: "#ef4444", cursor: "pointer", fontSize: 11, boxSizing: "border-box" }}>
-            Remove
-          </button>
+          <SettingsButton size="sm" variant="danger" onClick={onDelete}>Remove</SettingsButton>
         </div>
-      </div>
+      </SettingsActionRow>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+      <div className="settings-grid">
         <Field label="ID *"><TextInput value={model.id} onChange={(v) => set("id", v)} placeholder="model-id" mono /></Field>
         <Field label="Name"><TextInput value={model.name ?? ""} onChange={(v) => set("name", v || undefined)} placeholder="Display name" /></Field>
       </div>
@@ -1440,7 +1326,7 @@ function ModelDetail({
         </>
       )}
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+      <div className="settings-grid">
         <Field label="Context window (tokens)">
           <NumInput value={model.contextWindow !== undefined ? String(model.contextWindow) : ""}
             onChange={(v) => set("contextWindow", v ? parseInt(v) : undefined)} placeholder="128000" />
@@ -1474,7 +1360,7 @@ function ModelDetail({
             Multiple providers have pricing for this model. Choose one to apply it.
           </div>
         )}
-        <div style={{ marginTop: pricingSource || pricingLookup.phase === "ambiguous" ? 4 : 8, display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 8 }}>
+        <div className="models-cost-grid">
           {PRICING_COST_FIELDS.map((k) => (
             <Field key={k} label={k}>
               <NumInput value={costVal(k)} onChange={(v) => setCost(k, v)} placeholder="0" />
@@ -1516,25 +1402,19 @@ function PricingMatchDialog({
 
   if (typeof document === "undefined") return null;
   return createPortal(
-    <div
-      style={{ position: "fixed", inset: 0, zIndex: 1300, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
-      onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}
-    >
-      <div style={{ width: "min(620px, calc(100vw - 32px))", maxHeight: "min(680px, calc(100dvh - 32px))", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 8, boxShadow: "0 16px 48px rgba(0,0,0,0.28)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-          <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>Match pricing</div>
-            <div style={{ marginTop: 3, fontSize: 11, color: "var(--text-dim)", fontFamily: "var(--font-mono)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{modelId}</div>
-          </div>
-          <button type="button" onClick={onClose} aria-label="Close pricing match" style={{ width: 28, height: 28, border: "none", background: "transparent", color: "var(--text-muted)", cursor: "pointer", fontSize: 20, lineHeight: 1 }}>×</button>
+    <div className="pi-modal-overlay" onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <div className="pi-modal-panel models-pricing-match-dialog">
+        <div className="pi-modal-header">
+          <div className="pi-modal-header-copy"><div className="pi-modal-title">Match pricing</div><div className="pi-modal-subtitle resource-path">{modelId}</div></div>
+          <button type="button" onClick={onClose} aria-label="Close pricing match" className="pi-modal-close">×</button>
         </div>
-        <div style={{ minHeight: 0, overflowY: "auto", padding: 10, display: "flex", flexDirection: "column", gap: 6 }}>
+        <div className="pi-modal-body models-pricing-candidates">
           {candidates.map((candidate) => (
             <button
               key={`${candidate.provider}:${candidate.model}`}
               type="button"
               onClick={() => onSelect(candidate)}
-              style={{ width: "100%", padding: "10px 12px", border: "1px solid var(--border)", borderRadius: 6, background: "var(--bg-panel)", color: "var(--text)", cursor: "pointer", textAlign: "left", display: "flex", flexDirection: "column", gap: 8 }}
+              className="models-pricing-candidate"
             >
               <span style={{ minWidth: 0, fontSize: 12, fontWeight: 700, overflowWrap: "anywhere" }}>{candidate.provider}</span>
               <span style={{ width: "100%", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(90px, 1fr))", gap: 8 }}>
@@ -1591,29 +1471,23 @@ function OAuthQuotaView({
   const canReset = Boolean(account) && (resetCreditsAvailableCount ?? 0) > 0;
 
   return (
-    <div style={{ border: "1px solid var(--border)", borderRadius: 6, background: "var(--bg-panel)", padding: 12, display: "flex", flexDirection: "column", gap: 10 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+    <SettingsSurface className="models-account-card">
+      <SettingsActionRow>
         <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
           <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0 }}>Usage</span>
           <span style={{ fontSize: 11, color: "var(--text-dim)" }}>
             {loading ? "Refreshing…" : `Updated ${formatQuotaQueriedAt(displayedQuota?.queriedAt ?? null)}`}
           </span>
         </div>
-        <button
-          onClick={() => onRefresh()}
-          disabled={loading || resetting}
-          title="Refresh usage"
-          aria-label="Refresh usage"
-          style={{ width: 28, height: 28, border: "1px solid var(--border)", borderRadius: 5, background: "var(--bg)", color: loading || resetting ? "var(--text-dim)" : "var(--text-muted)", cursor: loading || resetting ? "default" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}
-        >
+        <SettingsButton size="icon" onClick={() => onRefresh()} disabled={resetting} busy={loading} title="Refresh usage" aria-label="Refresh usage">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M21 12a9 9 0 0 1-9 9 8.8 8.8 0 0 1-6.36-2.64" />
             <path d="M3 12a9 9 0 0 1 9-9 8.8 8.8 0 0 1 6.36 2.64" />
             <path d="M3 4v8h8" />
             <path d="M21 20v-8h-8" />
           </svg>
-        </button>
-      </div>
+        </SettingsButton>
+      </SettingsActionRow>
 
       {account && (
         <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 9px", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 5, minWidth: 0 }}>
@@ -1651,21 +1525,10 @@ function OAuthQuotaView({
         </div>
       )}
 
-      {quota && quota.credentialStatus === "expired" && !quota.success && (
-        <div style={{ fontSize: 12, color: "#fb923c", lineHeight: 1.5 }}>{quota.error ?? "Token expired. Please re-login."}</div>
-      )}
-
-      {quota && quota.credentialStatus === "parse_error" && (
-        <div style={{ fontSize: 12, color: "#f87171", lineHeight: 1.5 }}>{quota.error ?? "Failed to read OAuth credentials."}</div>
-      )}
-
-      {quota && quota.credentialStatus === "not_found" && (
-        <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.5 }}>No OAuth credential found.</div>
-      )}
-
-      {quota && quota.credentialStatus === "valid" && !quota.success && (
-        <div style={{ fontSize: 12, color: "#f87171", lineHeight: 1.5 }}>{quota.error ?? "Usage query failed."}</div>
-      )}
+      {quota && quota.credentialStatus === "expired" && !quota.success && <SettingsNotice tone="warning">{quota.error ?? "Token expired. Please re-login."}</SettingsNotice>}
+      {quota && quota.credentialStatus === "parse_error" && <SettingsNotice tone="danger">{quota.error ?? "Failed to read OAuth credentials."}</SettingsNotice>}
+      {quota && quota.credentialStatus === "not_found" && <SettingsNotice tone="info">No OAuth credential found.</SettingsNotice>}
+      {quota && quota.credentialStatus === "valid" && !quota.success && <SettingsNotice tone="danger">{quota.error ?? "Usage query failed."}</SettingsNotice>}
 
       {quota?.success && knownTiers.length === 0 && (
         <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.5 }}>No quota windows returned.</div>
@@ -1691,7 +1554,7 @@ function OAuthQuotaView({
           })}
         </div>
       )}
-    </div>
+    </SettingsSurface>
   );
 }
 
@@ -1878,8 +1741,8 @@ function OAuthAccountsView({
   onWarmup: () => void;
 }) {
   return (
-    <div style={{ border: "1px solid var(--border)", borderRadius: 6, background: "var(--bg-panel)", padding: 12, display: "flex", flexDirection: "column", gap: 10 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+    <SettingsSurface className="models-account-card">
+      <SettingsActionRow>
         <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
           <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0 }}>Accounts</span>
           <span style={{ fontSize: 11, color: "var(--text-dim)" }}>{loading ? "Loading…" : `${accounts.length} saved`}</span>
@@ -1909,9 +1772,9 @@ function OAuthAccountsView({
             </svg>
           </button>
         </div>
-      </div>
+      </SettingsActionRow>
 
-      {error && <div style={{ fontSize: 12, color: "#f87171", lineHeight: 1.5 }}>{error}</div>}
+      {error && <SettingsNotice tone="danger">{error}</SettingsNotice>}
       {!loading && !error && accounts.length === 0 && (
         <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.5 }}>No saved accounts yet.</div>
       )}
@@ -1922,7 +1785,7 @@ function OAuthAccountsView({
             const quotaRefreshing = refreshingQuotaAccountId === account.accountId;
             const selected = selectedAccountId === account.accountId;
             return (
-              <div key={account.accountId} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 9px", background: selected ? "var(--bg-selected)" : "var(--bg)", border: selected ? "1px solid var(--accent)" : "1px solid var(--border)", borderRadius: 5 }}>
+              <div key={account.accountId} className={`models-account-row${selected ? " models-account-row-selected" : ""}`}>
                 <span style={{ width: 8, height: 8, borderRadius: "50%", background: account.active ? "#4ade80" : "var(--border)", flexShrink: 0 }} />
                 <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
                   <span style={{ fontSize: 12, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{account.displayName}</span>
@@ -2001,7 +1864,7 @@ function OAuthAccountsView({
           })}
         </div>
       )}
-    </div>
+    </SettingsSurface>
   );
 }
 
@@ -2025,35 +1888,18 @@ function ExtraInfoDialog({
   }, [account]);
 
   return (
-    <div
-      className="pi-modal-overlay"
-      style={{ position: "fixed", inset: 0, zIndex: 1200, background: "rgba(0,0,0,0.42)", display: "flex", alignItems: "center", justifyContent: "center" }}
-      onClick={(e) => { if (e.target === e.currentTarget && !saving) onClose(); }}
-    >
-      <div className="pi-modal-panel pi-modal-panel-compact" style={{ width: 520, maxWidth: "calc(100vw - 32px)", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 10, boxShadow: "0 10px 36px rgba(0,0,0,0.28)", overflow: "hidden" }}>
-        <div style={{ padding: "12px 14px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-          <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>Account details</div>
-            <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{account.displayName}</div>
-          </div>
-          <button type="button" disabled={saving} onClick={onClose} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: saving ? "not-allowed" : "pointer", fontSize: 20, lineHeight: 1, padding: "2px 6px" }}>×</button>
+    <div className="pi-modal-overlay" onClick={(event) => { if (event.target === event.currentTarget && !saving) onClose(); }}>
+      <div className="pi-modal-panel">
+        <div className="pi-modal-header">
+          <div className="pi-modal-header-copy"><div className="pi-modal-title">Account details</div><div className="pi-modal-subtitle">{account.displayName}</div></div>
+          <button type="button" disabled={saving} onClick={onClose} className="pi-modal-close">×</button>
         </div>
-        <div style={{ padding: 14, display: "flex", flexDirection: "column", gap: 8 }}>
-          <label style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600 }}>Extra information</label>
-          <textarea
-            ref={textareaRef}
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            disabled={saving}
-            placeholder="Add notes such as subscription owner, renewal notes, usage hints…"
-            style={{ minHeight: 120, resize: "vertical", padding: "9px 10px", background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: 8, color: "var(--text)", fontSize: 12, outline: "none", boxSizing: "border-box", lineHeight: 1.5 }}
-          />
-          <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.5 }}>Leave empty to clear this account&apos;s extra information.</div>
+        <div className="pi-modal-body">
+          <SettingsField label="Extra information" description="Leave empty to clear this account's extra information.">
+            <textarea ref={textareaRef} value={value} onChange={(event) => setValue(event.target.value)} disabled={saving} placeholder="Add notes such as subscription owner, renewal notes, usage hints…" className="settings-control settings-textarea models-account-notes" />
+          </SettingsField>
         </div>
-        <div style={{ padding: "10px 14px", borderTop: "1px solid var(--border)", display: "flex", justifyContent: "flex-end", gap: 8 }}>
-          <button type="button" disabled={saving} onClick={onClose} style={{ padding: "6px 12px", background: "none", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text-muted)", cursor: saving ? "not-allowed" : "pointer", fontSize: 12 }}>Cancel</button>
-          <button type="button" disabled={saving} onClick={() => onSave(account, value)} style={{ padding: "6px 14px", background: saving ? "var(--bg-panel)" : "var(--accent)", border: "none", borderRadius: 6, color: saving ? "var(--text-dim)" : "#fff", cursor: saving ? "not-allowed" : "pointer", fontSize: 12, fontWeight: 700 }}>{saving ? "Saving…" : "Save"}</button>
-        </div>
+        <div className="pi-modal-footer"><SettingsButton disabled={saving} onClick={onClose}>Cancel</SettingsButton><SettingsButton variant="primary" busy={saving} onClick={() => onSave(account, value)}>{saving ? "Saving…" : "Save"}</SettingsButton></div>
       </div>
     </div>
   );
@@ -2186,13 +2032,9 @@ function AddAccountDialog({
   };
 
   return (
-    <div
-      className="pi-modal-overlay"
-      style={{ position: "fixed", inset: 0, zIndex: 1200, background: "rgba(0,0,0,0.42)", display: "flex", alignItems: "center", justifyContent: "center" }}
-      onClick={(e) => { if (e.target === e.currentTarget && !submitting) onClose(); }}
-    >
-      <div className="pi-modal-panel" style={{ width: view === "json" ? 920 : 560, maxWidth: "calc(100vw - 32px)", maxHeight: "min(82vh, calc(100vh - 32px))", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 10, display: "flex", flexDirection: "column", boxShadow: "0 10px 36px rgba(0,0,0,0.28)", overflow: "hidden" }}>
-        <div style={{ padding: "12px 14px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+    <div className="pi-modal-overlay" onClick={(event) => { if (event.target === event.currentTarget && !submitting) onClose(); }}>
+      <div className={`pi-modal-panel models-account-dialog${view === "json" ? " models-account-dialog-wide" : ""}`}>
+        <div className="pi-modal-header">
           <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
             <ProviderIcon id={provider.id} size={18} />
             <div style={{ minWidth: 0 }}>
@@ -2200,7 +2042,7 @@ function AddAccountDialog({
               <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 2 }}>{t("settings.models.addAccountHint")}</div>
             </div>
           </div>
-          <button type="button" disabled={submitting} onClick={onClose} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: submitting ? "not-allowed" : "pointer", fontSize: 20, lineHeight: 1, padding: "2px 6px" }}>×</button>
+          <button type="button" disabled={submitting} onClick={onClose} className="pi-modal-close">×</button>
         </div>
 
         {view === "method" ? (
@@ -3319,60 +3161,28 @@ function AddProviderPicker({
 
   const totalCount = availableOAuth.length + availableApiKey.length + (showCustom ? 1 : 0);
 
-  const cardStyle: React.CSSProperties = {
-    display: "flex", flexDirection: "row", alignItems: "center", gap: 8,
-    padding: "10px 12px",
-    background: "var(--bg-panel)",
-    border: "1px solid var(--border)",
-    borderRadius: 7,
-    boxSizing: "border-box",
-    cursor: "pointer",
-    minWidth: 0,
-    textAlign: "left",
-    transition: "border-color 0.12s, background 0.12s",
-    width: "100%",
-  };
-
-
-
   return (
-    <div
-      className="pi-modal-overlay"
-      style={{ position: "fixed", inset: 0, zIndex: 1100, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center" }}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
-    >
-      <div className="pi-modal-panel" style={{ width: 820, maxWidth: "calc(100vw - 32px)", maxHeight: "min(72vh, calc(100vh - 32px))", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 10, display: "flex", flexDirection: "column", boxShadow: "0 8px 32px rgba(0,0,0,0.22)", overflow: "hidden" }}>
+    <div className="pi-modal-overlay" onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <div className="pi-modal-panel models-provider-picker">
         {/* Search */}
-        <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", flexShrink: 0, display: "flex", alignItems: "center", gap: 8 }}>
+        <div className="models-provider-search">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--text-dim)", flexShrink: 0 }}>
             <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
           </svg>
-          <input
-            ref={inputRef}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Escape") onClose(); }}
-            placeholder="Search providers…"
-            style={{ flex: 1, background: "none", border: "none", outline: "none", color: "var(--text)", fontSize: 13, boxSizing: "border-box" }}
-          />
+          <SettingsInput ref={inputRef} type="search" value={search} onChange={(event) => setSearch(event.target.value)} onKeyDown={(event) => { if (event.key === "Escape") onClose(); }} placeholder="Search providers…" />
         </div>
 
         {/* Card grid */}
-        <div style={{ flex: 1, overflowY: "auto", padding: 14 }}>
+        <div className="models-provider-picker-body">
           {totalCount === 0 ? (
-            <div style={{ padding: "20px 0", fontSize: 12, color: "var(--text-dim)", textAlign: "center" }}>No providers match</div>
+            <SettingsState title="No providers match" />
           ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(240px, 100%), 1fr))", gap: 8 }}>
+            <div className="models-provider-grid">
               {showCustom && (
-                <div style={{ gridColumn: "1 / -1", fontSize: 10, fontWeight: 600, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.07em" }}>Custom</div>
+                <div className="models-provider-group-label">Custom</div>
               )}
               {showCustom && (
-                <button
-                  onClick={() => { onAddCustom(); onClose(); }}
-                  style={cardStyle}
-                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--accent)"; e.currentTarget.style.background = "var(--bg-hover)"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.background = "var(--bg-panel)"; }}
-                >
+                <button onClick={() => { onAddCustom(); onClose(); }} className="models-provider-card">
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text)", lineHeight: 1.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>OpenAI / Anthropic compatible</div>
                     <div style={{ fontSize: 10, color: "var(--text-dim)", marginTop: 2 }}>Custom endpoint format</div>
@@ -3386,14 +3196,10 @@ function AddProviderPicker({
               )}
 
               {availableOAuth.length > 0 && (
-                <div style={{ gridColumn: "1 / -1", paddingTop: showCustom ? 6 : 0, fontSize: 10, fontWeight: 600, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.07em" }}>Subscriptions</div>
+                <div className="models-provider-group-label">Subscriptions</div>
               )}
               {availableOAuth.map((p) => (
-                <button key={p.id} onClick={() => { onSelectOAuth(p.id); onClose(); }}
-                  style={cardStyle}
-                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--accent)"; e.currentTarget.style.background = "var(--bg-hover)"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.background = "var(--bg-panel)"; }}
-                >
+                <button key={p.id} onClick={() => { onSelectOAuth(p.id); onClose(); }} className="models-provider-card">
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text)", lineHeight: 1.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</div>
                     <div style={{ fontSize: 10, color: "var(--text-dim)", marginTop: 2 }}>OAuth</div>
@@ -3403,14 +3209,10 @@ function AddProviderPicker({
               ))}
 
               {availableApiKey.length > 0 && (
-                <div style={{ gridColumn: "1 / -1", paddingTop: availableOAuth.length > 0 ? 6 : 0, fontSize: 10, fontWeight: 600, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.07em" }}>API Key</div>
+                <div className="models-provider-group-label">API Key</div>
               )}
               {availableApiKey.map((p) => (
-                <button key={p.id} onClick={() => { onSelectApiKey(p.id); onClose(); }}
-                  style={cardStyle}
-                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--accent)"; e.currentTarget.style.background = "var(--bg-hover)"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.background = "var(--bg-panel)"; }}
-                >
+                <button key={p.id} onClick={() => { onSelectApiKey(p.id); onClose(); }} className="models-provider-card">
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text)", lineHeight: 1.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.displayName}</div>
                     <div style={{ fontSize: 10, color: "var(--text-dim)", marginTop: 2 }}>{p.modelCount} models</div>
@@ -3470,45 +3272,21 @@ function PricingSyncStatus() {
   })();
 
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 6 }} title={label}>
+    <div className="models-pricing-sync" title={label}>
       {phase.kind === "success" && (
         <span style={{ fontSize: 10, color: "var(--text-dim)", whiteSpace: "nowrap" }}>
           {phase.providerCount}/{phase.modelCount}
         </span>
       )}
-      {phase.kind === "error" && (
-        <span style={{ fontSize: 10, color: "#f87171", maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={phase.message}>
-          {phase.message}
-        </span>
-      )}
-      <button
-        type="button"
-        onClick={handleSync}
-        disabled={phase.kind === "loading"}
-        title={phase.kind === "loading" ? "Syncing…" : "Sync pricing from pi.dev"}
-        aria-label={phase.kind === "loading" ? "Syncing pricing" : "Sync pricing"}
-        style={{
-          width: 24,
-          height: 24,
-          padding: 0,
-          border: "1px solid var(--border)",
-          borderRadius: 4,
-          background: "var(--bg-panel)",
-          color: phase.kind === "loading" ? "var(--text-dim)" : "var(--text-muted)",
-          cursor: phase.kind === "loading" ? "not-allowed" : "pointer",
-          display: "inline-flex",
-          alignItems: "center",
-          justifyContent: "center",
-          flexShrink: 0,
-        }}
-      >
+      {phase.kind === "error" && <SettingsBadge tone="danger">{phase.message}</SettingsBadge>}
+      <SettingsButton size="icon" onClick={handleSync} busy={phase.kind === "loading"} title={phase.kind === "loading" ? "Syncing…" : "Sync pricing from pi.dev"} aria-label={phase.kind === "loading" ? "Syncing pricing" : "Sync pricing"}>
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M21 12a9 9 0 0 1-9 9 8.8 8.8 0 0 1-6.36-2.64" />
           <path d="M3 12a9 9 0 0 1 9-9 8.8 8.8 0 0 1 6.36 2.64" />
           <path d="M3 4v8h8" />
           <path d="M21 20v-8h-8" />
         </svg>
-      </button>
+      </SettingsButton>
     </div>
   );
 }
@@ -3815,206 +3593,72 @@ export function ModelsConfig({ cwd: _cwd, onClose }: { cwd: string | null; onClo
 
   return (
     <>
-    <div className="pi-modal-overlay" style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,0.35)", display: "flex", alignItems: "center", justifyContent: "center" }}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="pi-modal-panel pi-modal-panel-large" style={{ width: 860, height: "78vh", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 10, display: "flex", flexDirection: "column", boxShadow: "0 8px 32px rgba(0,0,0,0.18)", overflow: "hidden" }}>
-
-        {/* Header */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 18px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
-            <span style={{ fontSize: 15, fontWeight: 700, color: "var(--text)" }}>Models</span>
-            <code style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>~/.pi/agent/models.json</code>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <button
-              type="button"
-              onClick={() => setPricingCatalogOpen(true)}
-              title="View pricing catalog"
-              aria-label="View pricing catalog"
-              style={{ width: 24, height: 24, padding: 0, border: "1px solid var(--border)", borderRadius: 4, background: "var(--bg-panel)", color: "var(--text-muted)", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}
-            >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M4 5h16" /><path d="M4 12h16" /><path d="M4 19h16" />
-                <path d="M8 3v18" /><path d="M16 3v18" />
-              </svg>
-            </button>
-            <PricingSyncStatus />
-            <button onClick={onClose} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 20, lineHeight: 1, padding: "2px 6px" }}>×</button>
-          </div>
-        </div>
-
-        {/* Body */}
-        <div className="pi-modal-split-body" style={{ flex: 1, display: "flex", overflow: "hidden" }}>
-
-          {/* Left: tree */}
-          <div style={{ width: 210, borderRight: "1px solid var(--border)", display: "flex", flexDirection: "column", flexShrink: 0, background: "var(--bg-panel)" }}>
-            <div style={{ flex: 1, overflowY: "auto", padding: "8px 6px" }}>
-              {/* Active OAuth subscriptions */}
-              {activeOAuth.map((p) => {
-                const isSelected = selection?.type === "oauth" && selection.providerId === p.id;
-                return (
-                  <div
-                    key={p.id}
-                    onClick={() => setSelection({ type: "oauth", providerId: p.id })}
-                    style={{ display: "flex", alignItems: "center", gap: 7, padding: "5px 8px", borderRadius: 5, cursor: "pointer", background: isSelected ? "var(--bg-selected)" : "none" }}
-                    onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.background = "var(--bg-hover)"; }}
-                    onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.background = "none"; }}
-                  >
-                    <ProviderIcon id={p.id} size={16} />
-                    <span style={{ fontSize: 12, color: "var(--text)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</span>
-                  </div>
-                );
-              })}
-
-              {/* Active API key providers */}
-              {activeApiKey.map((p) => {
-                const isSelected = selection?.type === "apikey" && selection.providerId === p.id;
-                return (
-                  <div
-                    key={p.id}
-                    onClick={() => setSelection({ type: "apikey", providerId: p.id })}
-                    style={{ display: "flex", alignItems: "center", gap: 7, padding: "5px 8px", borderRadius: 5, cursor: "pointer", background: isSelected ? "var(--bg-selected)" : "none" }}
-                    onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.background = "var(--bg-hover)"; }}
-                    onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.background = "none"; }}
-                  >
-                    <ProviderIcon id={p.id} size={16} />
-                    <span style={{ fontSize: 12, color: "var(--text)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.displayName}</span>
-                  </div>
-                );
-              })}
-
-              {/* Divider before custom providers, only when there are active managed providers */}
-              {(activeOAuth.length > 0 || activeApiKey.length > 0) && providers.length > 0 && (
-                <div style={{ margin: "4px 8px", borderTop: "1px solid var(--border)" }} />
-              )}
-
-              {/* Custom providers */}
-              {loading ? (
-                <div style={{ padding: "10px 8px", fontSize: 12, color: "var(--text-muted)" }}>Loading…</div>
-              ) : providers.map(([pName, pData]) => {
-                const isProviderSelected = selection?.type === "provider" && selection.name === pName;
-                const models = pData.models ?? [];
-                return (
-                  <div key={pName} style={{ marginBottom: 2 }}>
-                    {/* Provider row */}
-                    <div
-                      onClick={() => setSelection({ type: "provider", name: pName })}
-                      style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 8px", borderRadius: 5, cursor: "pointer", background: isProviderSelected ? "var(--bg-selected)" : "none" }}
-                      onMouseEnter={(e) => { if (!isProviderSelected) e.currentTarget.style.background = "var(--bg-hover)"; }}
-                      onMouseLeave={(e) => { if (!isProviderSelected) e.currentTarget.style.background = "none"; }}
-                    >
-                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--text-dim)", flexShrink: 0 }}>
-                        <rect x="4" y="4" width="16" height="16" rx="2" /><rect x="9" y="9" width="6" height="6" />
-                        <line x1="9" y1="1" x2="9" y2="4" /><line x1="15" y1="1" x2="15" y2="4" />
-                        <line x1="9" y1="20" x2="9" y2="23" /><line x1="15" y1="20" x2="15" y2="23" />
-                        <line x1="20" y1="9" x2="23" y2="9" /><line x1="20" y1="14" x2="23" y2="14" />
-                        <line x1="1" y1="9" x2="4" y2="9" /><line x1="1" y1="14" x2="4" y2="14" />
-                      </svg>
-                      <span style={{ fontSize: 12, fontWeight: isProviderSelected ? 600 : 400, color: "var(--text)", fontFamily: "var(--font-mono)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {pName}
-                      </span>
-                    </div>
-
-                    {/* Model rows */}
-                    {models.map((m, i) => {
-                      const isModelSelected = selection?.type === "model" && selection.providerName === pName && selection.index === i;
-                      return (
-                        <div
-                          key={i}
-                          onClick={() => setSelection({ type: "model", providerName: pName, index: i })}
-                          style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 8px 5px 26px", borderRadius: 5, cursor: "pointer", background: isModelSelected ? "var(--bg-selected)" : "none" }}
-                          onMouseEnter={(e) => { if (!isModelSelected) e.currentTarget.style.background = "var(--bg-hover)"; }}
-                          onMouseLeave={(e) => { if (!isModelSelected) e.currentTarget.style.background = "none"; }}
-                        >
-                          <span style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: m.id ? "var(--text-muted)" : "var(--text-dim)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                            {m.id || "new model"}
-                          </span>
-                          {m.reasoning && (
-                            <span style={{ fontSize: 9, padding: "1px 4px", background: "rgba(99,102,241,0.12)", color: "rgba(99,102,241,0.8)", borderRadius: 3, flexShrink: 0 }}>T</span>
-                          )}
-                        </div>
-                      );
-                    })}
-
-                    {/* Add model button */}
-                    <div
-                      onClick={(e) => { e.stopPropagation(); addModel(pName); }}
-                      style={{ display: "flex", alignItems: "center", gap: 4, padding: "4px 8px 4px 26px", borderRadius: 5, cursor: "pointer", color: "var(--text-dim)" }}
-                      onMouseEnter={(e) => { e.currentTarget.style.color = "var(--accent)"; e.currentTarget.style.background = "var(--bg-hover)"; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-dim)"; e.currentTarget.style.background = "none"; }}
-                    >
-                      <span style={{ fontSize: 11 }}>+ model</span>
-                    </div>
-                  </div>
-                );
-              })}
+      <div className="pi-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="models-config-title" onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+        <div className="pi-modal-panel pi-modal-panel-large resource-split-panel models-config-panel">
+          <div className="pi-modal-header">
+            <div className="pi-modal-header-copy">
+              <div id="models-config-title" className="pi-modal-title">Models</div>
+              <div className="pi-modal-subtitle resource-path">~/.pi/agent/models.json</div>
             </div>
-
-            {/* Add provider */}
-            <div style={{ borderTop: "1px solid var(--border)", padding: "8px 6px" }}>
-              <button onClick={() => setPickerOpen(true)} style={{
-                display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
-                width: "100%", padding: "6px 0", background: "none", border: "1px dashed var(--border)", borderRadius: 5,
-                color: "var(--text-muted)", cursor: "pointer", fontSize: 12,
-              }}
-                onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--accent)"; e.currentTarget.style.color = "var(--accent)"; }}
-                onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.color = "var(--text-muted)"; }}
-              >
-                + Add provider
-              </button>
-            </div>
+            <SettingsActionRow className="models-header-actions">
+              <SettingsButton size="icon" onClick={() => setPricingCatalogOpen(true)} title="View pricing catalog" aria-label="View pricing catalog">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 5h16" /><path d="M4 12h16" /><path d="M4 19h16" /><path d="M8 3v18" /><path d="M16 3v18" /></svg>
+              </SettingsButton>
+              <PricingSyncStatus />
+              <button type="button" onClick={onClose} className="pi-modal-close" aria-label="Close models">×</button>
+            </SettingsActionRow>
           </div>
 
-          {/* Right: detail */}
-          <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
-            {loading ? null : detailContent ?? (
-              <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-dim)", fontSize: 13 }}>
-                Select a provider or model
+          <div className="pi-modal-split-body resource-split-body">
+            <aside className="resource-split-nav models-tree" aria-label="Model providers">
+              <div className="resource-split-list">
+                {activeOAuth.map((provider) => {
+                  const active = selection?.type === "oauth" && selection.providerId === provider.id;
+                  return <button key={provider.id} type="button" className={`resource-nav-row${active ? " resource-nav-row-active" : ""}`} onClick={() => setSelection({ type: "oauth", providerId: provider.id })}><ProviderIcon id={provider.id} size={16} /><span>{provider.name}</span></button>;
+                })}
+                {activeApiKey.map((provider) => {
+                  const active = selection?.type === "apikey" && selection.providerId === provider.id;
+                  return <button key={provider.id} type="button" className={`resource-nav-row${active ? " resource-nav-row-active" : ""}`} onClick={() => setSelection({ type: "apikey", providerId: provider.id })}><ProviderIcon id={provider.id} size={16} /><span>{provider.displayName}</span></button>;
+                })}
+                {(activeOAuth.length > 0 || activeApiKey.length > 0) && providers.length > 0 && <div className="models-tree-divider" />}
+                {loading ? <SettingsState kind="loading" title="Loading models…" /> : providers.length === 0 ? <SettingsState title="No custom providers" /> : providers.map(([providerName, providerData]) => {
+                  const providerActive = selection?.type === "provider" && selection.name === providerName;
+                  return (
+                    <div key={providerName} className="resource-nav-group models-provider-group">
+                      <button type="button" className={`resource-nav-row${providerActive ? " resource-nav-row-active" : ""}`} onClick={() => setSelection({ type: "provider", name: providerName })}>
+                        <span className="resource-status-dot" aria-hidden="true" /><span>{providerName}</span>
+                      </button>
+                      {(providerData.models ?? []).map((model, index) => {
+                        const modelActive = selection?.type === "model" && selection.providerName === providerName && selection.index === index;
+                        return (
+                          <button key={`${model.id}-${index}`} type="button" className={`resource-nav-row models-tree-model${modelActive ? " resource-nav-row-active" : ""}`} onClick={() => setSelection({ type: "model", providerName, index })}>
+                            <span>{model.id || "new model"}</span>{model.reasoning && <SettingsBadge tone="accent">T</SettingsBadge>}
+                          </button>
+                        );
+                      })}
+                      <button type="button" className="resource-nav-row models-tree-model models-tree-add" onClick={() => addModel(providerName)}>+ model</button>
+                    </div>
+                  );
+                })}
               </div>
-            )}
-          </div>
-        </div>
+              <div className="resource-split-nav-footer"><SettingsButton onClick={() => setPickerOpen(true)}>+ Add provider</SettingsButton></div>
+            </aside>
 
-        {/* Footer */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 10, padding: "10px 18px", borderTop: "1px solid var(--border)", flexShrink: 0 }}>
-          {saveError && <span style={{ fontSize: 12, color: "#f87171", flex: 1 }}>{saveError}</span>}
-          <button onClick={onClose} style={{ padding: "6px 14px", background: "none", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text-muted)", cursor: "pointer", fontSize: 13 }}>
-            Cancel
-          </button>
-          <button onClick={handleSave} disabled={saving || savedOk} style={{
-            position: "relative",
-            padding: "6px 16px",
-            minWidth: 92,
-            background: savedOk ? "#16a34a" : saving ? "var(--bg-panel)" : "var(--accent)",
-            border: "none", borderRadius: 6,
-            color: savedOk ? "#fff" : saving ? "var(--text-muted)" : "#fff",
-            cursor: (saving || savedOk) ? "default" : "pointer", fontSize: 13, fontWeight: 600,
-            display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6,
-            transition: "background-color 0.2s ease, color 0.2s ease",
-            animation: savedOk ? "saved-pop 0.45s ease" : undefined,
-          }}>
-            {savedOk && (
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"
-                style={{ strokeDasharray: 18, animation: "saved-check-draw 0.35s ease forwards", flexShrink: 0 }}>
-                <polyline points="20 6 9 17 4 12" />
-              </svg>
-            )}
-            <span>{savedOk ? "Saved" : saving ? "Saving…" : "Save"}</span>
-          </button>
+            <main className="resource-split-detail models-detail">
+              {loading ? <SettingsState kind="loading" title="Loading models…" /> : detailContent ?? <SettingsState title="Select a provider or model" />}
+            </main>
+          </div>
+
+          <div className="pi-modal-footer models-footer">
+            {saveError && <SettingsNotice tone="danger" className="models-save-error">{saveError}</SettingsNotice>}
+            {savedOk && <SettingsBadge tone="success">Saved</SettingsBadge>}
+            <SettingsButton onClick={onClose}>Cancel</SettingsButton>
+            <SettingsButton variant="primary" onClick={handleSave} disabled={savedOk} busy={saving}>{savedOk ? "Saved" : saving ? "Saving…" : "Save"}</SettingsButton>
+          </div>
         </div>
       </div>
-    </div>
-    {pricingCatalogOpen && <ModelPricingCatalog onClose={() => setPricingCatalogOpen(false)} />}
-    {pickerOpen && (
-      <AddProviderPicker
-        oauthProviders={oauthProviders}
-        apiKeyProviders={apiKeyProviders}
-        onSelectOAuth={(id) => setSelection({ type: "oauth", providerId: id })}
-        onSelectApiKey={(id) => setSelection({ type: "apikey", providerId: id })}
-        onAddCustom={addCustomProvider}
-        onClose={() => setPickerOpen(false)}
-      />
-    )}
+      {pricingCatalogOpen && <ModelPricingCatalog onClose={() => setPricingCatalogOpen(false)} />}
+      {pickerOpen && <AddProviderPicker oauthProviders={oauthProviders} apiKeyProviders={apiKeyProviders} onSelectOAuth={(id) => setSelection({ type: "oauth", providerId: id })} onSelectApiKey={(id) => setSelection({ type: "apikey", providerId: id })} onAddCustom={addCustomProvider} onClose={() => setPickerOpen(false)} />}
     </>
   );
 }

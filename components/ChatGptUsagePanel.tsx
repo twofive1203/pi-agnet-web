@@ -80,11 +80,11 @@ function UsagePie({ tier, label, size = 18 }: { tier: QuotaDisplayTier | null; l
     : "conic-gradient(rgba(148,163,184,0.25) 0deg, rgba(148,163,184,0.25) 360deg)";
 
   return (
-    <span title={tier ? `${label ?? tier.name} ${Math.round(utilization)}% used` : "Unknown usage"} style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
-      <span style={{ width: size, height: size, borderRadius: "50%", background, border: "1px solid rgba(148,163,184,0.35)", display: "inline-flex", alignItems: "center", justifyContent: "center", boxSizing: "border-box" }}>
-        <span style={{ width: Math.max(6, Math.floor(size * 0.48)), height: Math.max(6, Math.floor(size * 0.48)), borderRadius: "50%", background: "var(--bg-panel)", opacity: 0.92 }} />
+    <span title={tier ? `${label ?? tier.name} ${Math.round(utilization)}% used` : "Unknown usage"} className="usage-pie-wrap">
+      <span className="usage-pie" style={{ width: size, height: size, background }}>
+        <span className="usage-pie-center" style={{ width: Math.max(6, Math.floor(size * 0.48)), height: Math.max(6, Math.floor(size * 0.48)) }} />
       </span>
-      {label && <span style={{ fontSize: 9, color: "var(--text-dim)", fontWeight: 700 }}>{label}</span>}
+      {label && <span className="usage-pie-label">{label}</span>}
     </span>
   );
 }
@@ -362,7 +362,7 @@ export function ChatGptUsagePanel() {
   const resetExpiresCountdown = formatResetCountdown(resetExpiresAt);
 
   return (
-    <div style={{ position: "relative", display: "flex", alignItems: "center", height: "100%" }}>
+    <div className="usage-panel-anchor">
       <button
         ref={triggerRef}
         type="button"
@@ -374,26 +374,11 @@ export function ChatGptUsagePanel() {
         aria-label="ChatGPT usage"
         aria-expanded={open}
         aria-controls="chatgpt-usage-popover"
-        style={{
-          height: 26,
-          display: "flex",
-          alignItems: "center",
-          gap: 7,
-          padding: "0 9px",
-          borderRadius: 999,
-          border: "1px solid rgba(148,163,184,0.28)",
-          background: "rgba(15,23,42,0.10)",
-          backdropFilter: "blur(10px)",
-          color: "var(--text-muted)",
-          cursor: "pointer",
-          fontSize: 11,
-          fontVariantNumeric: "tabular-nums",
-          whiteSpace: "nowrap",
-        }}
+        className="usage-panel-trigger"
       >
-        <span style={{ fontWeight: 700, color: "var(--text)" }}>GPT</span>
+        <span className="usage-panel-trigger-name">GPT</span>
         <span>{compactStatus}</span>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+        <span className="usage-panel-pies">
           {knownTiers.length > 0 ? knownTiers.map((tier) => (
             <UsagePie key={tier.name} tier={tier} label={QUOTA_TIER_LABELS[tier.name]} />
           )) : <UsagePie tier={null} />}
@@ -404,49 +389,32 @@ export function ChatGptUsagePanel() {
         <div
           ref={panelRef}
           id="chatgpt-usage-popover"
-          className="chatgpt-usage-popover"
+          className="chatgpt-usage-popover usage-popover"
           role="dialog"
           aria-label="ChatGPT usage details"
-          style={{
-            position: "fixed",
-            top: panelPosition.top,
-            right: panelPosition.right,
-            zIndex: 550,
-            width: 380,
-            maxHeight: `min(680px, calc(100dvh - ${panelPosition.top + 8}px))`,
-            overflow: "auto",
-            border: "1px solid rgba(148,163,184,0.30)",
-            borderRadius: 12,
-            background: "color-mix(in srgb, var(--bg-panel) 86%, transparent)",
-            boxShadow: "0 18px 45px rgba(0,0,0,0.28)",
-            backdropFilter: "blur(14px)",
-            padding: 12,
-            display: "flex",
-            flexDirection: "column",
-            gap: 10,
-          }}
+          style={{ top: panelPosition.top, right: panelPosition.right, maxHeight: `min(680px, calc(100dvh - ${panelPosition.top + 8}px))` }}
         >
-          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ color: "var(--text)", fontSize: 13, fontWeight: 800 }}>ChatGPT usage</div>
-              <div style={{ marginTop: 3, color: "var(--text-dim)", fontSize: 11 }}>Updated: {refreshText}</div>
+          <div className="usage-popover-header">
+            <div className="resource-list-copy">
+              <div className="usage-popover-title">ChatGPT usage</div>
+              <div className="usage-popover-meta">Updated: {refreshText}</div>
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <div className="settings-action-group">
               {account && (resetCreditsAvailableCount ?? 0) > 0 && (
                 <button type="button" onClick={resetQuota} disabled={refreshing || resetting} title={resetExpiresCountdown ? `Consumes one reset credit. Earliest expires in ${resetExpiresCountdown}` : "Consumes one Codex reset credit"} style={{ height: 30, padding: "0 9px", border: "1px solid rgba(34,197,94,0.45)", borderRadius: 7, background: "var(--bg)", color: refreshing || resetting ? "var(--text-dim)" : "#22c55e", cursor: refreshing || resetting ? "default" : "pointer", fontSize: 11, fontWeight: 800, flexShrink: 0 }}>
                   {resetting ? "Resetting…" : "Reset limit"}
                 </button>
               )}
-              <button type="button" onClick={refreshQuota} disabled={refreshing || resetting} title="Refresh active account usage" aria-label="Refresh active account usage" style={{ width: 30, height: 30, border: "1px solid var(--border)", borderRadius: 7, background: "var(--bg)", color: refreshing || resetting ? "var(--text-dim)" : "var(--accent)", cursor: refreshing || resetting ? "default" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, flexShrink: 0 }}>
+              <button type="button" onClick={refreshQuota} disabled={refreshing || resetting} title="Refresh active account usage" aria-label="Refresh active account usage" className="usage-icon-button">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 0 1-9 9 8.8 8.8 0 0 1-6.36-2.64" /><path d="M3 12a9 9 0 0 1 9-9 8.8 8.8 0 0 1 6.36 2.64" /><path d="M3 4v8h8" /><path d="M21 20v-8h-8" /></svg>
               </button>
             </div>
           </div>
 
-          {accountsLoading ? <div style={{ color: "var(--text-muted)", fontSize: 12 }}>Loading cached accounts…</div> : accountsError ? <div style={{ color: "#f87171", fontSize: 12, lineHeight: 1.45 }}>{accountsError}</div> : !account ? <div style={{ color: "var(--text-dim)", fontSize: 12, lineHeight: 1.45 }}>No active ChatGPT/Codex saved account. Add or activate one in Models.</div> : (
+          {accountsLoading ? <div className="usage-popover-meta">Loading cached accounts…</div> : accountsError ? <div className="usage-text-danger">{accountsError}</div> : !account ? <div className="usage-popover-empty">No active ChatGPT/Codex saved account. Add or activate one in Models.</div> : (
             <>
-              <div style={{ padding: 9, borderRadius: 9, border: "1px solid var(--border)", background: "rgba(148,163,184,0.08)", display: "flex", flexDirection: "column", gap: 5 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "baseline" }}>
+              <div className="usage-card">
+                <div className="usage-card-header">
                   <span style={{ color: "var(--text)", fontSize: 12, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{account.displayName}</span>
                   <span style={{ color: "#22c55e", fontSize: 10, fontWeight: 800, flexShrink: 0 }}>Active</span>
                 </div>
@@ -467,18 +435,18 @@ export function ChatGptUsagePanel() {
               )}
 
               {knownTiers.length === 0 ? (
-                <div style={{ display: "flex", alignItems: "center", gap: 10, padding: 10, borderRadius: 9, background: "rgba(148,163,184,0.08)", border: "1px solid var(--border)" }}>
+                <div className="usage-card usage-card-row">
                   <UsagePie tier={null} size={34} />
                   <div style={{ color: "var(--text-dim)", fontSize: 12, lineHeight: 1.45 }}>Usage unknown. Click refresh to query the active account.</div>
                 </div>
               ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <div className="usage-card-list">
                   {knownTiers.map((tier) => {
                     const utilization = Math.min(Math.max(tier.utilization, 0), 100);
                     const color = quotaColor(utilization);
                     const countdown = formatResetCountdown(tier.resetsAt);
                     return (
-                      <div key={tier.name} style={{ display: "grid", gridTemplateColumns: "42px 1fr auto", alignItems: "center", gap: 10, padding: 9, borderRadius: 9, border: "1px solid var(--border)", background: "rgba(148,163,184,0.08)" }}>
+                      <div key={tier.name} className="usage-quota-row">
                         <UsagePie tier={tier} label={QUOTA_TIER_LABELS[tier.name]} size={30} />
                         <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
                           <span style={{ color: "var(--text)", fontSize: 12, fontWeight: 700 }}>{QUOTA_TIER_LABELS[tier.name]} window</span>
@@ -493,10 +461,10 @@ export function ChatGptUsagePanel() {
             </>
           )}
 
-          <div style={{ display: "flex", flexDirection: "column", gap: 7, paddingTop: 2 }}>
-            <div style={{ color: "var(--text)", fontSize: 12, fontWeight: 800 }}>Accounts</div>
+          <div className="usage-section">
+            <div className="usage-section-title">Accounts</div>
             {accounts.length === 0 && !accountsLoading ? <div style={{ color: "var(--text-dim)", fontSize: 12 }}>No saved accounts.</div> : accounts.map((item) => (
-              <div key={item.accountId} style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 8, alignItems: "center", padding: 8, borderRadius: 8, border: item.active ? "1px solid rgba(34,197,94,0.45)" : "1px solid var(--border)", background: item.active ? "rgba(34,197,94,0.08)" : "rgba(148,163,184,0.06)" }}>
+              <div key={item.accountId} className={`usage-account-row${item.active ? " usage-account-row-active" : ""}`}>
                 <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
                   <span style={{ color: "var(--text)", fontSize: 12, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.displayName}</span>
                   <code style={{ color: "var(--text-dim)", fontSize: 10, fontFamily: "var(--font-mono)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.maskedAccountId}</code>
