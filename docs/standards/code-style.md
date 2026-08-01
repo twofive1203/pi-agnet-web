@@ -10,6 +10,7 @@ This is the project standards entry point. Prefer existing local patterns over b
 - Keep UI state orchestration in hooks, especially `hooks/useAgentSession.ts` for chat/session behavior.
 - Follow nearby component style for React props, local state, and event handlers.
 - Before changing constants, event kinds, JSONL fields, config fields, or shared helpers, search the repository for existing uses.
+- Settings/configuration UI should reuse `components/ui/SettingsPrimitives.tsx`: Field for associated labels, Badge for compact classification, Notice for status/risk, ActionRow for wrapping actions, and Button variants for hierarchy. Keep resource-specific load/save/dirty/conflict/secret semantics in the owning component rather than adding them to presentation primitives.
 
 ## Comment Style
 

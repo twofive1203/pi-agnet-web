@@ -1,6 +1,17 @@
 "use client";
 
 import { useI18n } from "@/components/I18nProvider";
+import {
+  SettingsActionRow,
+  SettingsBadge,
+  SettingsButton,
+  SettingsField,
+  SettingsNotice,
+  SettingsSection,
+  SettingsSectionHeader,
+  SettingsSelect,
+  SettingsState,
+} from "@/components/ui/SettingsPrimitives";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -82,24 +93,12 @@ const SOURCE_LABEL_KEYS: Record<string, string> = {
   "settings-only": "settings.agents.settingsResidue",
 };
 
-const SOURCE_BADGE_COLORS: Record<string, string> = {
-  builtin: "rgba(37,99,235,0.14)",
-  package: "rgba(147,51,234,0.14)",
-  user: "rgba(34,197,94,0.14)",
-  project: "rgba(249,115,22,0.14)",
-  "settings-only": "rgba(107,114,128,0.14)",
-};
-
-const inputStyle: React.CSSProperties = {
-  padding: "7px 9px",
-  background: "var(--bg)",
-  border: "1px solid var(--border)",
-  borderRadius: 6,
-  color: "var(--text)",
-  fontSize: 12,
-  outline: "none",
-  width: "100%",
-  boxSizing: "border-box",
+const SOURCE_BADGE_TONES: Record<DiscoveredAgent["source"], "neutral" | "accent" | "success" | "warning"> = {
+  builtin: "accent",
+  package: "neutral",
+  user: "success",
+  project: "warning",
+  "settings-only": "neutral",
 };
 
 // ---------------------------------------------------------------------------
@@ -128,33 +127,11 @@ function isThinkingValue(value: unknown): value is "off" | "minimal" | "low" | "
 }
 
 // ---------------------------------------------------------------------------
-// Field Component
-// ---------------------------------------------------------------------------
-
-function Field({
-  label,
-  description,
-  children,
-}: {
-  label: string;
-  description?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      <span style={{ fontSize: 12, color: "var(--text)", fontWeight: 600 }}>{label}</span>
-      {children}
-      {description && <span style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.45 }}>{description}</span>}
-    </label>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // AgentsConfig Component
 // ---------------------------------------------------------------------------
 
 export function AgentsConfig({ cwd }: { cwd: string | null }) {
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   const [scope, setScope] = useState<"user" | "project">("user");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -667,288 +644,148 @@ export function AgentsConfig({ cwd }: { cwd: string | null }) {
   // -----------------------------------------------------------------------
 
   if (loading) {
-    return <div style={{ color: "var(--text-muted)", fontSize: 13, padding: 12 }}>{t("settings.agents.loading")}</div>;
+    return <SettingsState kind="loading" title={t("settings.agents.loading")} />;
   }
 
-  const effectiveAgentList = agents;
-
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      {/* Header */}
-      <div>
-        <h3 style={{ margin: 0, color: "var(--text)", fontSize: 15 }}>{t("settings.agents.title")}</h3>
-        <p style={{ margin: "5px 0 0", color: "var(--text-muted)", fontSize: 12, lineHeight: 1.5 }}>
-          {t("settings.agents.titleHint")}
-        </p>
-      </div>
+    <SettingsSection className="agents-config">
+      <SettingsSectionHeader
+        title={t("settings.agents.title")}
+        description={t("settings.agents.titleHint")}
+        meta={configPath ? <><span>{t("settings.agents.targetFile")}</span> <code className="settings-inline-code">{configPath}</code>{configExists ? null : t("settings.autoCreateOnSaveLong")}</> : undefined}
+      />
 
-      {/* Error / Notice */}
-      {error && <div style={{ padding: "8px 10px", borderRadius: 8, background: "rgba(239,68,68,0.12)", color: "#f87171", fontSize: 12, overflowWrap: "anywhere" }}>{error}</div>}
-      {notice && <div style={{ padding: "8px 10px", borderRadius: 8, background: "rgba(37,99,235,0.12)", color: "var(--accent)", fontSize: 12, overflowWrap: "anywhere" }}>{notice}</div>}
-
-      {/* Parse/validation error banner */}
+      {error && <SettingsNotice tone="danger">{error}</SettingsNotice>}
+      {notice && <SettingsNotice tone="success">{notice}</SettingsNotice>}
       {parseError && (
-        <div style={{ padding: "8px 10px", borderRadius: 8, background: "rgba(239,68,68,0.12)", color: "#f87171", fontSize: 12, overflowWrap: "anywhere" }}>
-          {t("settings.agents.parseError", { error: parseError })}
-          <button onClick={handleReload} style={{ marginLeft: 8, background: "none", border: "none", color: "var(--accent)", cursor: "pointer", fontSize: 12, textDecoration: "underline" }}>
-            {t("settings.agents.reload")}
-          </button>
-        </div>
+        <SettingsNotice tone="danger">
+          <SettingsActionRow>
+            <span>{t("settings.agents.parseError", { error: parseError })}</span>
+            <SettingsButton size="sm" onClick={handleReload}>{t("settings.agents.reload")}</SettingsButton>
+          </SettingsActionRow>
+        </SettingsNotice>
       )}
       {validationError && (
-        <div style={{ padding: "8px 10px", borderRadius: 8, background: "rgba(239,68,68,0.12)", color: "#f87171", fontSize: 12, overflowWrap: "anywhere" }}>
-          {t("settings.agents.validationError", { error: validationError })}
-          <button onClick={handleReload} style={{ marginLeft: 8, background: "none", border: "none", color: "var(--accent)", cursor: "pointer", fontSize: 12, textDecoration: "underline" }}>
-            {t("settings.agents.reload")}
-          </button>
-        </div>
+        <SettingsNotice tone="danger">
+          <SettingsActionRow>
+            <span>{t("settings.agents.validationError", { error: validationError })}</span>
+            <SettingsButton size="sm" onClick={handleReload}>{t("settings.agents.reload")}</SettingsButton>
+          </SettingsActionRow>
+        </SettingsNotice>
       )}
-      {scope === "project" && (userParseError || userValidationError) && (
-        <div style={{ padding: "8px 10px", borderRadius: 8, background: "rgba(234,179,8,0.1)", border: "1px solid rgba(234,179,8,0.2)", color: "var(--text-dim)", fontSize: 12, overflowWrap: "anywhere" }}>
-          {t("settings.agents.userInheritWarn", { error: userParseError ?? userValidationError })}
-        </div>
-      )}
+      {scope === "project" && (userParseError || userValidationError) && <SettingsNotice tone="warning">{t("settings.agents.userInheritWarn", { error: userParseError ?? userValidationError })}</SettingsNotice>}
 
-      {/* Scope selector */}
-      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-        <span style={{ fontSize: 12, color: "var(--text-dim)", fontWeight: 600 }}>{t("settings.agents.scope")}</span>
-        <select
-          value={scope}
-          onChange={(e) => setScope(e.target.value as "user" | "project")}
-          style={{ ...inputStyle, width: "auto", minWidth: 140, cursor: "pointer" }}
-        >
-          <option value="user">{t("settings.agents.userGlobal")}</option>
-          <option value="project" disabled={!cwd}>{cwd ? t("settings.agents.currentProject") : t("settings.agents.currentProjectNeedWorkspace")}</option>
-        </select>
+      <div className="settings-surface">
+        <div className="agents-scope-row">
+          <span className="settings-field-label">{t("settings.agents.scope")}</span>
+          <SettingsSelect value={scope} onChange={(event) => setScope(event.target.value as "user" | "project")}>
+            <option value="user">{t("settings.agents.userGlobal")}</option>
+            <option value="project" disabled={!cwd}>{cwd ? t("settings.agents.currentProject") : t("settings.agents.currentProjectNeedWorkspace")}</option>
+          </SettingsSelect>
+          <SettingsBadge tone={scope === "project" ? "warning" : "accent"}>{scope === "project" ? t("settings.agents.currentProject") : t("settings.agents.userGlobal")}</SettingsBadge>
+        </div>
+        {scope === "project" && <div className="agents-config-path">{t("settings.agents.precedence")}</div>}
       </div>
 
-      {/* Path and precedence info */}
-      <div style={{ padding: "8px 10px", borderRadius: 8, background: "var(--bg-subtle)", border: "1px solid var(--border)", fontSize: 11, color: "var(--text-dim)", lineHeight: 1.5, overflowWrap: "anywhere" }}>
-        <div><strong>{t("settings.agents.targetFile")}</strong><code style={{ fontFamily: "var(--font-mono)", color: "var(--text)" }}>{configPath}</code>{configExists ? "" : t("settings.autoCreateOnSaveLong")}</div>
-        {scope === "project" && (
-          <div style={{ marginTop: 4 }}>{t("settings.agents.precedence")}</div>
-        )}
-      </div>
+      {discoveryDiagnostic && <SettingsNotice tone="warning">{discoveryDiagnostic}</SettingsNotice>}
 
-      {/* Extension status */}
-      {discoveryDiagnostic && (
-        <div style={{ padding: "8px 10px", borderRadius: 8, background: "rgba(234,179,8,0.1)", border: "1px solid rgba(234,179,8,0.2)", fontSize: 11, color: "var(--text-dim)" }}>
-          {discoveryDiagnostic}
-        </div>
-      )}
-
-      {/* Default model */}
-      <div style={{ padding: 12, borderRadius: 10, background: "var(--bg-subtle)", border: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: 8 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+      <div className="settings-surface">
+        <SettingsActionRow>
           <div>
-            <div style={{ color: "var(--text)", fontSize: 13, fontWeight: 800 }}>{t("settings.defaultSubagentModel")}</div>
-            <div style={{ color: "var(--text-muted)", fontSize: 11, marginTop: 3, lineHeight: 1.45 }}>
+            <div className="settings-surface-title">{t("settings.defaultSubagentModel")}</div>
+            <div className="mcp-guidance-copy">
               {t("settings.agents.defaultSubagentHint")}
               {scope === "project" && userManaged?.defaultModel ? t("settings.agents.userGlobalValue", { value: userManaged.defaultModel }) : ""}
             </div>
           </div>
-          <button
-            onClick={clearDefaultModel}
-            disabled={!draftManaged.defaultModel}
-            style={{
-              padding: "5px 10px",
-              borderRadius: 6,
-              border: "1px solid var(--border)",
-              background: "var(--bg)",
-              color: draftManaged.defaultModel ? "var(--text)" : "var(--text-dim)",
-              cursor: draftManaged.defaultModel ? "pointer" : "not-allowed",
-              fontSize: 11,
-              whiteSpace: "nowrap",
-            }}
-          >
-            {t("settings.agents.clear")}
-          </button>
-        </div>
-        {modelsError && <div style={{ padding: "6px 8px", borderRadius: 6, background: "rgba(239,68,68,0.12)", color: "#f87171", fontSize: 11 }}>{modelsError}</div>}
-        <select
-          value={draftManaged.defaultModel ?? ""}
-          onChange={(e) => updateDefaultModel(e.target.value)}
-          style={{ ...inputStyle, cursor: "pointer" }}
-        >
+          <SettingsButton size="sm" disabled={!draftManaged.defaultModel} onClick={clearDefaultModel}>{t("settings.agents.clear")}</SettingsButton>
+        </SettingsActionRow>
+        {modelsError && <SettingsNotice tone="danger">{modelsError}</SettingsNotice>}
+        <SettingsSelect value={draftManaged.defaultModel ?? ""} onChange={(event) => updateDefaultModel(event.target.value)}>
           <option value="">{t("settings.agents.inheritOption")}</option>
-          {modelOptions.map((opt) => (
-            <option key={opt.value} value={opt.value}>{opt.label}</option>
-          ))}
-        </select>
+          {modelOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+        </SettingsSelect>
       </div>
 
-      {/* Agent overrides */}
-      <div style={{ padding: 12, borderRadius: 10, background: "var(--bg-subtle)", border: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: 8 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+      <div className="settings-surface">
+        <SettingsActionRow>
           <div>
-            <div style={{ color: "var(--text)", fontSize: 13, fontWeight: 800 }}>{t("settings.agents.agentOverrides")}</div>
-            <div style={{ color: "var(--text-muted)", fontSize: 11, marginTop: 3, lineHeight: 1.45 }}>
-              {locale === "zh" ? "为特定 Agent 指定模型、思考强度或回退模型。留空表示继承上级设置。" : "Override model, thinking, or fallbacks for a specific agent. Leave empty to inherit."}
-            </div>
+            <div className="settings-surface-title">{t("settings.agents.agentOverrides")}</div>
+            <div className="mcp-guidance-copy">{t("settings.agents.overrideHint")}</div>
           </div>
-          {revision && <span style={{ fontSize: 10, color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>rev:{revision.slice(0, 8)}</span>}
-        </div>
+          {revision && <span className="agents-revision settings-control-mono">rev:{revision.slice(0, 8)}</span>}
+        </SettingsActionRow>
 
-        {effectiveAgentList.length === 0 ? (
-          <div style={{ color: "var(--text-dim)", fontSize: 12, padding: "8px 0" }}>{t("settings.agents.noAgents")}{extensionAvailable ? "" : t("settings.agents.installExtension")}</div>
+        {agents.length === 0 ? (
+          <SettingsState title={t("settings.agents.noAgents")} description={extensionAvailable ? undefined : t("settings.agents.installExtension")} />
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            {effectiveAgentList.map((agent) => {
+          <div className="agents-agent-list">
+            {agents.map((agent) => {
               const draft = draftManaged.agentOverrides[agent.name];
-              const userVal = scope === "project" ? userManaged?.agentOverrides[agent.name] : undefined;
-              const inheritedModel = formatInheritedValue(userVal?.model, t);
-              const inheritedThinking = formatInheritedValue(userVal?.thinking, t);
-              const inheritedFallbacks = formatInheritedValue(userVal?.fallbackModels, t);
+              const userValue = scope === "project" ? userManaged?.agentOverrides[agent.name] : undefined;
+              const inheritedModel = formatInheritedValue(userValue?.model, t);
+              const inheritedThinking = formatInheritedValue(userValue?.thinking, t);
+              const inheritedFallbacks = formatInheritedValue(userValue?.fallbackModels, t);
+              const fallbackModels = Array.isArray(draft?.fallbackModels) ? draft.fallbackModels : [];
 
               return (
-                <div
-                  key={agent.name}
-                  style={{
-                    padding: "10px 12px",
-                    borderRadius: 8,
-                    background: "var(--bg)",
-                    border: "1px solid var(--border)",
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 8,
-                  }}
-                >
-                  {/* Agent identity row */}
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                    <code style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--text)", fontWeight: 700 }}>
-                      {agent.name}
-                    </code>
-                    <span style={{
-                      padding: "2px 6px",
-                      borderRadius: 4,
-                      background: SOURCE_BADGE_COLORS[agent.source] ?? "rgba(107,114,128,0.14)",
-                      color: "var(--text)",
-                      fontSize: 10,
-                      fontWeight: 600,
-                    }}>
-                      {SOURCE_LABEL_KEYS[agent.source] ? t(SOURCE_LABEL_KEYS[agent.source]) : agent.source}
-                    </span>
-                    <span style={{ fontSize: 11, color: "var(--text-dim)", flex: 1 }}>{agent.description}</span>
+                <div key={agent.name} className="agents-agent-card">
+                  <div className="agents-agent-identity">
+                    <code className="agents-agent-name settings-control-mono">{agent.name}</code>
+                    <SettingsBadge tone={SOURCE_BADGE_TONES[agent.source]}>{SOURCE_LABEL_KEYS[agent.source] ? t(SOURCE_LABEL_KEYS[agent.source]) : agent.source}</SettingsBadge>
+                    <span className="agents-agent-description">{agent.description}</span>
                   </div>
 
-                  {/* Model row */}
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                    <Field label={inheritedModel ? t("settings.agents.modelWithGlobal", { value: inheritedModel }) : t("settings.agents.model")} description={draft?.model === false ? t("settings.agents.legacyFalseModel") : undefined}>
-                      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                        <select
-                          value={ov(draft?.model)}
-                          onChange={(e) => updateAgentModel(agent.name, e.target.value)}
-                          style={{ ...inputStyle, cursor: "pointer", flex: 1 }}
-                        >
+                  <div className="agents-agent-grid">
+                    <SettingsField
+                      label={inheritedModel ? t("settings.agents.modelWithGlobal", { value: inheritedModel }) : t("settings.agents.model")}
+                      description={draft?.model === false ? t("settings.agents.legacyFalseModel") : undefined}
+                    >
+                      <div className="agents-control-row">
+                        <SettingsSelect value={ov(draft?.model)} onChange={(event) => updateAgentModel(agent.name, event.target.value)}>
                           <option value="">{t("settings.agents.inheritOption")}</option>
-                          {modelOptions.map((opt) => (
-                            <option key={opt.value} value={opt.value}>{opt.label}</option>
-                          ))}
-                        </select>
-                        {hasConfiguredField(draft?.model) && (
-                          <button
-                            onClick={() => clearAgentModel(agent.name)}
-                            style={{ padding: "5px 8px", borderRadius: 4, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-dim)", cursor: "pointer", fontSize: 10, whiteSpace: "nowrap" }}
-                          >
-                            {t("settings.agents.clear")}
-                          </button>
-                        )}
+                          {modelOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                        </SettingsSelect>
+                        {hasConfiguredField(draft?.model) && <SettingsButton size="sm" onClick={() => clearAgentModel(agent.name)}>{t("settings.agents.clear")}</SettingsButton>}
                       </div>
-                    </Field>
+                    </SettingsField>
 
-                    <Field label={inheritedThinking ? t("settings.agents.thinkingWithGlobal", { value: inheritedThinking }) : t("settings.thinkingLevel")} description={draft?.thinking === false ? t("settings.agents.legacyFalseThinking") : undefined}>
-                      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                        <select
-                          value={ov(draft?.thinking)}
-                          onChange={(e) => updateAgentThinking(agent.name, e.target.value)}
-                          style={{ ...inputStyle, cursor: "pointer", flex: 1 }}
-                        >
-                          {THINKING_OPTIONS.map((opt) => (
-                            <option key={opt.value} value={opt.value}>{opt.labelKey.startsWith("settings.") ? t(opt.labelKey) : opt.labelKey}</option>
-                          ))}
-                        </select>
-                        {hasConfiguredField(draft?.thinking) && (
-                          <button
-                            onClick={() => clearAgentThinking(agent.name)}
-                            style={{ padding: "5px 8px", borderRadius: 4, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-dim)", cursor: "pointer", fontSize: 10, whiteSpace: "nowrap" }}
-                          >
-                            {t("settings.agents.clear")}
-                          </button>
-                        )}
+                    <SettingsField
+                      label={inheritedThinking ? t("settings.agents.thinkingWithGlobal", { value: inheritedThinking }) : t("settings.thinkingLevel")}
+                      description={draft?.thinking === false ? t("settings.agents.legacyFalseThinking") : undefined}
+                    >
+                      <div className="agents-control-row">
+                        <SettingsSelect value={ov(draft?.thinking)} onChange={(event) => updateAgentThinking(agent.name, event.target.value)}>
+                          {THINKING_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.labelKey.startsWith("settings.") ? t(option.labelKey) : option.labelKey}</option>)}
+                        </SettingsSelect>
+                        {hasConfiguredField(draft?.thinking) && <SettingsButton size="sm" onClick={() => clearAgentThinking(agent.name)}>{t("settings.agents.clear")}</SettingsButton>}
                       </div>
-                    </Field>
+                    </SettingsField>
                   </div>
 
-                  {/* Fallback models */}
-                  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "space-between" }}>
-                      <span style={{ fontSize: 11, color: "var(--text-dim)" }}>
-                        {t("settings.fallbackModel")}{inheritedFallbacks ? t("settings.agents.fallbackWithGlobal", { value: inheritedFallbacks }) : ""}
-                      </span>
-                      <div style={{ display: "flex", gap: 6 }}>
-                        <button
-                          onClick={() => addFallbackModel(agent.name)}
-                          style={{ padding: "3px 8px", borderRadius: 4, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text)", cursor: "pointer", fontSize: 10 }}
-                        >
-                          {t("settings.agents.add")}
-                        </button>
-                        {hasConfiguredField(draft?.fallbackModels) && (
-                          <button
-                            onClick={() => clearAgentFallbacks(agent.name)}
-                            style={{ padding: "3px 8px", borderRadius: 4, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-dim)", cursor: "pointer", fontSize: 10 }}
-                          >
-                            {t("settings.agents.clearAll")}
-                          </button>
-                        )}
+                  <div className="agents-fallbacks">
+                    <div className="agents-fallback-header">
+                      <span className="agents-inherit-note">{t("settings.fallbackModel")}{inheritedFallbacks ? t("settings.agents.fallbackWithGlobal", { value: inheritedFallbacks }) : ""}</span>
+                      <div className="agents-fallback-actions">
+                        <SettingsButton size="sm" onClick={() => addFallbackModel(agent.name)}>{t("settings.agents.add")}</SettingsButton>
+                        {hasConfiguredField(draft?.fallbackModels) && <SettingsButton size="sm" onClick={() => clearAgentFallbacks(agent.name)}>{t("settings.agents.clearAll")}</SettingsButton>}
                       </div>
                     </div>
-
-                    {draft?.fallbackModels === false && (
-                      <div style={{ color: "var(--text-dim)", fontSize: 10 }}>{t("settings.agents.fallbackLegacyFalse")}</div>
-                    )}
-                    {Array.isArray(draft?.fallbackModels) && (draft.fallbackModels as string[]).length > 0 && (
-                      <div style={{ display: "flex", flexDirection: "column", gap: 4, paddingLeft: 8, borderLeft: "2px solid var(--border)" }}>
-                        {(draft.fallbackModels as string[]).map((fb, i) => {
-                          const fbArr = draft!.fallbackModels as string[];
-                          return (
-                          <div key={i} style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                            <span style={{ fontSize: 10, color: "var(--text-dim)", minWidth: 16 }}>{i + 1}.</span>
-                            <select
-                              value={fb}
-                              onChange={(e) => updateFallbackModel(agent.name, i, e.target.value)}
-                              style={{ ...inputStyle, cursor: "pointer", flex: 1 }}
-                            >
+                    {draft?.fallbackModels === false && <SettingsNotice tone="warning">{t("settings.agents.fallbackLegacyFalse")}</SettingsNotice>}
+                    {fallbackModels.length > 0 && (
+                      <div className="agents-fallback-list">
+                        {fallbackModels.map((fallbackModel, index) => (
+                          <div key={`${fallbackModel}-${index}`} className="agents-fallback-row">
+                            <span className="agents-fallback-index">{index + 1}.</span>
+                            <SettingsSelect value={fallbackModel} aria-label={t("settings.agents.fallbackModelOf", { agent: agent.name })} onChange={(event) => updateFallbackModel(agent.name, index, event.target.value)}>
                               <option value="">{t("settings.agents.selectModel")}</option>
-                              {modelOptions.map((opt) => (
-                                <option key={opt.value} value={opt.value}>{opt.label}</option>
-                              ))}
-                            </select>
-                            <button
-                              onClick={() => moveFallbackModel(agent.name, i, Math.max(0, i - 1))}
-                              disabled={i === 0}
-                              style={{ padding: "3px 6px", borderRadius: 4, border: "1px solid var(--border)", background: "var(--bg)", color: i === 0 ? "var(--text-dim)" : "var(--text)", cursor: i === 0 ? "not-allowed" : "pointer", fontSize: 10 }}
-                              title={t("settings.agents.moveUp")}
-                            >
-                              ↑
-                            </button>
-                            <button
-                              onClick={() => moveFallbackModel(agent.name, i, Math.min(fbArr.length - 1, i + 1))}
-                              disabled={i === fbArr.length - 1}
-                              style={{ padding: "3px 6px", borderRadius: 4, border: "1px solid var(--border)", background: "var(--bg)", color: i === fbArr.length - 1 ? "var(--text-dim)" : "var(--text)", cursor: i === fbArr.length - 1 ? "not-allowed" : "pointer", fontSize: 10 }}
-                              title={t("settings.agents.moveDown")}
-                            >
-                              ↓
-                            </button>
-                            <button
-                              onClick={() => removeFallbackModel(agent.name, i)}
-                              style={{ padding: "3px 6px", borderRadius: 4, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-dim)", cursor: "pointer", fontSize: 10 }}
-                              title={t("settings.agents.delete")}
-                            >
-                              ×
-                            </button>
+                              {modelOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                            </SettingsSelect>
+                            <SettingsButton size="icon" variant="ghost" onClick={() => moveFallbackModel(agent.name, index, Math.max(0, index - 1))} disabled={index === 0} aria-label={t("settings.agents.moveUp")}>↑</SettingsButton>
+                            <SettingsButton size="icon" variant="ghost" onClick={() => moveFallbackModel(agent.name, index, Math.min(fallbackModels.length - 1, index + 1))} disabled={index === fallbackModels.length - 1} aria-label={t("settings.agents.moveDown")}>↓</SettingsButton>
+                            <SettingsButton size="icon" variant="ghost" onClick={() => removeFallbackModel(agent.name, index)} aria-label={t("settings.agents.delete")}>×</SettingsButton>
                           </div>
-                          );
-                        })}
+                        ))}
                       </div>
                     )}
                   </div>
@@ -959,45 +796,22 @@ export function AgentsConfig({ cwd }: { cwd: string | null }) {
         )}
       </div>
 
-      {/* Save button */}
-      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-        <button
-          onClick={handleReload}
-          disabled={saving || loading}
-          style={{
-            padding: "7px 12px",
-            borderRadius: 7,
-            border: "1px solid var(--border)",
-            background: "var(--bg)",
-            color: "var(--text-muted)",
-            cursor: saving || loading ? "not-allowed" : "pointer",
-            fontSize: 12,
-          }}
-        >
-          {t("settings.agents.reload")}
-        </button>
-        <button
-          onClick={() => void handleSave()}
-          disabled={!dirty || saving || loading || !!parseError || !!validationError || !revision}
-          style={{
-            padding: "7px 14px",
-            borderRadius: 7,
-            border: "none",
-            background: dirty && !saving && !parseError && !validationError ? "var(--accent)" : "var(--border)",
-            color: "white",
-            cursor: dirty && !saving && !parseError && !validationError && revision ? "pointer" : "not-allowed",
-            fontSize: 12,
-            fontWeight: 600,
-          }}
-        >
-          {saving ? t("settings.saving") : dirty ? t("settings.saveSettings") : t("settings.saved")}
-        </button>
-      </div>
+      <SettingsActionRow>
+        <SettingsButton onClick={handleReload} disabled={saving || loading}>{t("settings.agents.reload")}</SettingsButton>
+        <div className="settings-action-group">
+          {dirty && <span className="settings-dirty-note">{t("settings.unsavedChanges")}</span>}
+          <SettingsButton
+            variant="primary"
+            busy={saving}
+            disabled={!dirty || loading || Boolean(parseError) || Boolean(validationError) || !revision}
+            onClick={() => void handleSave()}
+          >
+            {saving ? t("settings.saving") : dirty ? t("settings.saveSettings") : t("settings.saved")}
+          </SettingsButton>
+        </div>
+      </SettingsActionRow>
 
-      {/* Persistence note */}
-      <div style={{ padding: 8, borderRadius: 6, background: "var(--bg-subtle)", border: "1px solid var(--border)", fontSize: 10, color: "var(--text-dim)", lineHeight: 1.45 }}>
-        {t("settings.agents.persistNote")}
-      </div>
-    </div>
+      <SettingsNotice tone="info">{t("settings.agents.persistNote")}</SettingsNotice>
+    </SettingsSection>
   );
 }

@@ -3,6 +3,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAppDialog } from "@/components/AppDialogProvider";
 import { useI18n } from "@/components/I18nProvider";
+import {
+  SettingsActionRow,
+  SettingsBadge,
+  SettingsButton,
+  SettingsField,
+  SettingsInput,
+  SettingsNotice,
+  SettingsSection,
+  SettingsSectionHeader,
+  SettingsSelect,
+  SettingsState,
+  SettingsTextarea,
+} from "@/components/ui/SettingsPrimitives";
 
 // ---------------------------------------------------------------------------
 // Wire types (kept in sync with lib/mcp-config.ts + /api/mcp/config)
@@ -209,18 +222,6 @@ interface SettingsDraft {
 // Helpers
 // ---------------------------------------------------------------------------
 
-const inputStyle: React.CSSProperties = {
-  padding: "7px 9px",
-  background: "var(--bg)",
-  border: "1px solid var(--border)",
-  borderRadius: 6,
-  color: "var(--text)",
-  fontSize: 12,
-  outline: "none",
-  width: "100%",
-  boxSizing: "border-box",
-};
-
 const TARGETS: Array<{ id: McpWritableTargetId; scope: McpScope; labelKey: string }> = [
   { id: "user-shared", scope: "user", labelKey: "settings.mcp.targetUserShared" },
   { id: "user-pi", scope: "user", labelKey: "settings.mcp.targetUserPi" },
@@ -405,26 +406,6 @@ function secretOps(list: SecretDraft[]): Record<string, { op: SecretMode; value?
   return any ? ops : undefined;
 }
 
-function Field({
-  label,
-  description,
-  children,
-}: {
-  label: string;
-  description?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      <span style={{ fontSize: 12, color: "var(--text)", fontWeight: 600 }}>{label}</span>
-      {children}
-      {description && (
-        <span style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.45 }}>{description}</span>
-      )}
-    </label>
-  );
-}
-
 function SecretRow({
   item,
   onChange,
@@ -438,39 +419,35 @@ function SecretRow({
 }) {
   const { t } = useI18n();
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 120px 1fr auto", gap: 6, alignItems: "center" }}>
-      <input
-        style={inputStyle}
+    <div className="mcp-secret-row">
+      <SettingsInput
         value={item.key}
         placeholder={label ?? t("settings.mcp.secretKey")}
-        onChange={(e) => onChange({ ...item, key: e.target.value })}
+        aria-label={label ?? t("settings.mcp.secretKey")}
+        onChange={(event) => onChange({ ...item, key: event.target.value })}
       />
-      <select
-        style={inputStyle}
+      <SettingsSelect
         value={item.mode}
-        onChange={(e) => onChange({ ...item, mode: e.target.value as SecretMode })}
+        aria-label={t("settings.mcp.secretMode")}
+        onChange={(event) => onChange({ ...item, mode: event.target.value as SecretMode })}
       >
-        <option value="preserve">{t("settings.mcp.secretPreserve")}{item.configured ? " ●" : ""}</option>
+        <option value="preserve">{t("settings.mcp.secretPreserve")}{item.configured ? ` · ${t("settings.mcp.secretConfigured")}` : ""}</option>
         <option value="replace">{t("settings.mcp.secretReplace")}</option>
         <option value="clear">{t("settings.mcp.secretClear")}</option>
-      </select>
-      <input
-        style={inputStyle}
+      </SettingsSelect>
+      <SettingsInput
         type="password"
         autoComplete="new-password"
         disabled={item.mode !== "replace"}
         value={item.mode === "replace" ? item.value : ""}
         placeholder={item.configured ? "••••••••" : t("settings.mcp.secretValue")}
-        onChange={(e) => onChange({ ...item, value: e.target.value })}
+        aria-label={t("settings.mcp.secretValue")}
+        onChange={(event) => onChange({ ...item, value: event.target.value })}
       />
       {onRemove ? (
-        <button
-          type="button"
-          onClick={onRemove}
-          style={{ padding: "6px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-muted)", cursor: "pointer", fontSize: 11 }}
-        >
+        <SettingsButton type="button" size="icon" variant="ghost" onClick={onRemove} aria-label={t("settings.mcp.removeSecret")}>
           ×
-        </button>
+        </SettingsButton>
       ) : (
         <span />
       )}
@@ -901,173 +878,106 @@ export function McpConfig({ cwd }: { cwd: string | null }) {
   }, [t]);
 
   if (loading && !selected) {
-    return <div style={{ color: "var(--text-muted)", fontSize: 13 }}>{t("settings.mcp.loading")}</div>;
+    return <SettingsState kind="loading" title={t("settings.mcp.loading")} />;
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <div>
-        <h3 style={{ margin: 0, color: "var(--text)", fontSize: 15 }}>{t("settings.mcp.title")}</h3>
-        <p style={{ margin: "5px 0 0", color: "var(--text-muted)", fontSize: 12, lineHeight: 1.5 }}>
-          {t("settings.mcp.description")}
-        </p>
-      </div>
+    <SettingsSection className="mcp-config">
+      <SettingsSectionHeader
+        title={t("settings.mcp.title")}
+        description={t("settings.mcp.description")}
+        meta={selected ? <><span>{t("settings.mcp.editingPath")}: </span><code className="settings-inline-code">{selected.displayPath || selected.path}</code>{selected.exists ? null : ` (${t("settings.mcp.willCreate")})`}</> : undefined}
+      />
 
       {error && (
-        <div style={{ padding: "8px 10px", borderRadius: 8, background: "rgba(239,68,68,0.12)", color: "#f87171", fontSize: 12, overflowWrap: "anywhere" }}>
-          {error}
+        <SettingsNotice tone="danger">
+          <div>{error}</div>
           {conflict && (
-            <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
-              <button type="button" onClick={handleReload} style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text)", cursor: "pointer", fontSize: 12 }}>
-                {t("settings.mcp.reloadDisk")}
-              </button>
-              <button type="button" onClick={() => void handleReapply()} style={{ padding: "6px 10px", borderRadius: 6, border: "none", background: "var(--accent)", color: "white", cursor: "pointer", fontSize: 12 }}>
-                {t("settings.mcp.reapply")}
-              </button>
+            <div className="settings-action-group">
+              <SettingsButton size="sm" onClick={handleReload}>{t("settings.mcp.reloadDisk")}</SettingsButton>
+              <SettingsButton size="sm" variant="primary" onClick={() => void handleReapply()}>{t("settings.mcp.reapply")}</SettingsButton>
             </div>
           )}
-        </div>
+        </SettingsNotice>
       )}
-      {notice && (
-        <div style={{ padding: "8px 10px", borderRadius: 8, background: "rgba(37,99,235,0.12)", color: "var(--accent)", fontSize: 12, overflowWrap: "anywhere" }}>
-          {notice}
-        </div>
-      )}
+      {notice && <SettingsNotice tone="success">{notice}</SettingsNotice>}
 
-      {/* Package status */}
-      <div style={{ padding: 12, borderRadius: 10, border: "1px solid var(--border)", background: "var(--bg-subtle)", display: "flex", flexDirection: "column", gap: 8 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>{t("settings.mcp.adapterStatus")}</div>
-        <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5 }}>
+      <div className="settings-surface">
+        <div className="settings-surface-title">{t("settings.mcp.adapterStatus")}</div>
+        <SettingsNotice tone={adapter?.configured ? "success" : "warning"}>
           {adapter?.configured
-            ? t("settings.mcp.adapterConfigured", {
-              version: adapter.version ?? t("settings.mcp.versionUnknown"),
-            })
+            ? t("settings.mcp.adapterConfigured", { version: adapter.version ?? t("settings.mcp.versionUnknown") })
             : t("settings.mcp.adapterMissing")}
-        </div>
-        {adapter?.diagnostic && (
-          <div style={{ fontSize: 11, color: "var(--text-dim)" }}>{adapter.diagnostic}</div>
-        )}
+        </SettingsNotice>
+        {adapter?.diagnostic && <div className="mcp-guidance-detail">{adapter.diagnostic}</div>}
         {!adapter?.configured && (
-          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-            <code style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--text)" }}>{adapter?.installCommand}</code>
-            <button type="button" onClick={() => void copyText(adapter?.installCommand ?? "pi install npm:pi-mcp-adapter")} style={{ padding: "4px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-muted)", cursor: "pointer", fontSize: 11 }}>
-              {t("settings.mcp.copy")}
-            </button>
+          <div className="settings-action-group">
+            <code className="settings-inline-code">{adapter?.installCommand}</code>
+            <SettingsButton size="sm" onClick={() => void copyText(adapter?.installCommand ?? "pi install npm:pi-mcp-adapter")}>{t("settings.mcp.copy")}</SettingsButton>
           </div>
         )}
-        <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.45 }}>
-          {t("settings.mcp.runtimeUnknown")}
-        </div>
+        <div className="mcp-guidance-detail">{t("settings.mcp.runtimeUnknown")}</div>
       </div>
 
-      {/* Target switcher */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text)" }}>{t("settings.mcp.target")}</div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+      <div className="settings-surface">
+        <div className="settings-surface-title">{t("settings.mcp.target")}</div>
+        <div className="mcp-target-tabs" role="group" aria-label={t("settings.mcp.target")}>
           {TARGETS.map((target) => {
             const disabled = target.scope === "project" && !cwd;
             const active = target.id === targetId;
             return (
-              <button
+              <SettingsButton
                 key={target.id}
-                type="button"
+                size="sm"
                 disabled={disabled}
+                aria-pressed={active}
+                className={active ? "mcp-target-tab-active" : undefined}
                 onClick={() => void requestTargetChange(target.id)}
-                style={{
-                  padding: "6px 10px",
-                  borderRadius: 7,
-                  border: active ? "1px solid var(--accent)" : "1px solid var(--border)",
-                  background: active ? "rgba(37,99,235,0.12)" : "var(--bg)",
-                  color: disabled ? "var(--text-dim)" : "var(--text)",
-                  cursor: disabled ? "not-allowed" : "pointer",
-                  fontSize: 12,
-                  fontWeight: active ? 700 : 500,
-                }}
               >
                 {t(target.labelKey)}
-              </button>
+              </SettingsButton>
             );
           })}
         </div>
-        <div style={{ fontSize: 11, color: "var(--text-dim)", overflowWrap: "anywhere" }}>
-          {t("settings.mcp.editingPath")}: <code style={{ fontFamily: "var(--font-mono)" }}>{selected?.displayPath ?? selected?.path}</code>
-          {selected?.exists ? "" : ` (${t("settings.mcp.willCreate")})`}
-        </div>
       </div>
 
-      {/* Precedence sources */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text)" }}>{t("settings.mcp.sources")}</div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <div className="settings-surface">
+        <div className="settings-surface-title">{t("settings.mcp.sources")}</div>
+        <div className="mcp-source-list">
           {sources.map((source) => (
-            <div
-              key={source.id}
-              style={{
-                padding: "8px 10px",
-                borderRadius: 8,
-                border: source.id === targetId ? "1px solid var(--accent)" : "1px solid var(--border)",
-                background: "var(--bg)",
-                display: "flex",
-                flexDirection: "column",
-                gap: 3,
-              }}
-            >
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
-                <span style={{ fontSize: 12, color: "var(--text)", fontWeight: 600 }}>
-                  #{source.precedence} {source.label}
-                </span>
-                <span style={{ fontSize: 11, color: "var(--text-dim)" }}>
-                  {source.exists ? t("settings.mcp.exists") : t("settings.mcp.missing")}
-                  {" · "}
-                  {source.serverCount} {t("settings.mcp.serversCount")}
-                  {" · "}
-                  {source.writable ? t("settings.mcp.writable") : t("settings.mcp.readOnly")}
-                </span>
+            <div key={source.id} className={`mcp-source-row${source.id === targetId ? " mcp-source-row-active" : ""}`}>
+              <div className="mcp-source-header">
+                <span className="mcp-source-title">#{source.precedence} {source.label}</span>
+                <div className="settings-action-group">
+                  <SettingsBadge tone={source.exists ? "success" : "neutral"}>{source.exists ? t("settings.mcp.exists") : t("settings.mcp.missing")}</SettingsBadge>
+                  <SettingsBadge>{source.serverCount} {t("settings.mcp.serversCount")}</SettingsBadge>
+                  <SettingsBadge tone={source.writable ? "accent" : "warning"}>{source.writable ? t("settings.mcp.writable") : t("settings.mcp.readOnly")}</SettingsBadge>
+                </div>
               </div>
-              <code style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "var(--font-mono)", overflowWrap: "anywhere" }}>
-                {source.displayPath || source.path}
-              </code>
-              {source.parseError && (
-                <span style={{ fontSize: 11, color: "#f87171" }}>{source.parseError}</span>
-              )}
+              <code className="mcp-source-path">{source.displayPath || source.path}</code>
+              {source.parseError && <SettingsNotice tone="danger">{source.parseError}</SettingsNotice>}
             </div>
           ))}
         </div>
       </div>
 
-      {parseError && (
-        <div style={{ padding: "8px 10px", borderRadius: 8, background: "rgba(239,68,68,0.12)", color: "#f87171", fontSize: 12 }}>
-          {t("settings.mcp.parseErrorLock")}: {parseError}
-        </div>
-      )}
+      {parseError && <SettingsNotice tone="danger">{t("settings.mcp.parseErrorLock")}: {parseError}</SettingsNotice>}
 
-      {/* Global settings */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 10, opacity: readOnly ? 0.6 : 1 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>{t("settings.mcp.globalSettings")}</div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10 }}>
-          <Field label={t("settings.mcp.toolPrefix")}>
-            <select style={inputStyle} disabled={readOnly} value={settingsDraft.toolPrefix} onChange={(e) => setSettingsDraft((s) => ({ ...s, toolPrefix: e.target.value as SettingsDraft["toolPrefix"] }))}>
-              <option value="">{t("settings.mcp.unset")}</option>
-              <option value="server">server</option>
-              <option value="short">short</option>
-              <option value="none">none</option>
-              <option value="mcp">mcp</option>
-            </select>
-          </Field>
-          <Field label={t("settings.mcp.hostDiscovery")} description={t("settings.mcp.hostDiscoveryHint")}>
-            <select style={inputStyle} disabled={readOnly} value={settingsDraft.hostConfigDiscovery} onChange={(e) => setSettingsDraft((s) => ({ ...s, hostConfigDiscovery: e.target.value as SettingsDraft["hostConfigDiscovery"] }))}>
-              <option value="">{t("settings.mcp.unset")}</option>
-              <option value="off">off</option>
-              <option value="prompt">prompt</option>
-              <option value="on">on</option>
-            </select>
-          </Field>
-          <Field label={t("settings.mcp.idleTimeout")}>
-            <input style={inputStyle} disabled={readOnly} value={settingsDraft.idleTimeout} onChange={(e) => setSettingsDraft((s) => ({ ...s, idleTimeout: e.target.value }))} />
-          </Field>
-          <Field label={t("settings.mcp.requestTimeoutMs")}>
-            <input style={inputStyle} disabled={readOnly} value={settingsDraft.requestTimeoutMs} onChange={(e) => setSettingsDraft((s) => ({ ...s, requestTimeoutMs: e.target.value }))} />
-          </Field>
+      <div className="settings-surface" aria-disabled={readOnly}>
+        <div className="settings-surface-title">{t("settings.mcp.globalSettings")}</div>
+        <div className="mcp-form-grid mcp-form-grid-compact">
+          <SettingsField label={t("settings.mcp.toolPrefix")}>
+            <SettingsSelect disabled={readOnly} value={settingsDraft.toolPrefix} onChange={(event) => setSettingsDraft((current) => ({ ...current, toolPrefix: event.target.value as SettingsDraft["toolPrefix"] }))}>
+              <option value="">{t("settings.mcp.unset")}</option><option value="server">server</option><option value="short">short</option><option value="none">none</option><option value="mcp">mcp</option>
+            </SettingsSelect>
+          </SettingsField>
+          <SettingsField label={t("settings.mcp.hostDiscovery")} description={t("settings.mcp.hostDiscoveryHint")}>
+            <SettingsSelect disabled={readOnly} value={settingsDraft.hostConfigDiscovery} onChange={(event) => setSettingsDraft((current) => ({ ...current, hostConfigDiscovery: event.target.value as SettingsDraft["hostConfigDiscovery"] }))}>
+              <option value="">{t("settings.mcp.unset")}</option><option value="off">off</option><option value="prompt">prompt</option><option value="on">on</option>
+            </SettingsSelect>
+          </SettingsField>
+          <SettingsField label={t("settings.mcp.idleTimeout")}><SettingsInput disabled={readOnly} value={settingsDraft.idleTimeout} onChange={(event) => setSettingsDraft((current) => ({ ...current, idleTimeout: event.target.value }))} /></SettingsField>
+          <SettingsField label={t("settings.mcp.requestTimeoutMs")}><SettingsInput disabled={readOnly} value={settingsDraft.requestTimeoutMs} onChange={(event) => setSettingsDraft((current) => ({ ...current, requestTimeoutMs: event.target.value }))} /></SettingsField>
           {([
             ["samplingAutoApprove", "settings.mcp.samplingAutoApprove", "settings.mcp.samplingAutoApproveHint"],
             ["outputGuard", "settings.mcp.outputGuard", "settings.mcp.outputGuardHint"],
@@ -1078,416 +988,153 @@ export function McpConfig({ cwd }: { cwd: string | null }) {
             ["elicitation", "settings.mcp.elicitation", ""],
             ["showStatusIcon", "settings.mcp.showStatusIcon", ""],
           ] as const).map(([key, labelKey, hintKey]) => (
-            <Field key={key} label={t(labelKey)} description={hintKey ? t(hintKey) : undefined}>
-              <select
-                style={inputStyle}
-                disabled={readOnly}
-                value={settingsDraft[key]}
-                onChange={(e) => setSettingsDraft((s) => ({ ...s, [key]: e.target.value as "" | "true" | "false" }))}
-              >
-                <option value="">{t("settings.mcp.unset")}</option>
-                <option value="true">true</option>
-                <option value="false">false</option>
-              </select>
-            </Field>
+            <SettingsField key={key} label={t(labelKey)} description={hintKey ? t(hintKey) : undefined}>
+              <SettingsSelect disabled={readOnly} value={settingsDraft[key]} onChange={(event) => setSettingsDraft((current) => ({ ...current, [key]: event.target.value as "" | "true" | "false" }))}>
+                <option value="">{t("settings.mcp.unset")}</option><option value="true">true</option><option value="false">false</option>
+              </SettingsSelect>
+            </SettingsField>
           ))}
         </div>
 
         {settingsDraft.outputGuard === "true" && (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10 }}>
-            <Field label={t("settings.mcp.outputGuardMaxBytes")} description={t("settings.mcp.outputGuardLimitsHint")}>
-              <input
-                style={inputStyle}
-                disabled={readOnly}
-                value={settingsDraft.outputGuardMaxBytes}
-                onChange={(e) => setSettingsDraft((s) => ({ ...s, outputGuardMaxBytes: e.target.value }))}
-              />
-            </Field>
-            <Field label={t("settings.mcp.outputGuardMaxLines")}>
-              <input
-                style={inputStyle}
-                disabled={readOnly}
-                value={settingsDraft.outputGuardMaxLines}
-                onChange={(e) => setSettingsDraft((s) => ({ ...s, outputGuardMaxLines: e.target.value }))}
-              />
-            </Field>
-            <Field label={t("settings.mcp.outputGuardDetailsMaxBytes")}>
-              <input
-                style={inputStyle}
-                disabled={readOnly}
-                value={settingsDraft.outputGuardDetailsMaxBytes}
-                onChange={(e) => setSettingsDraft((s) => ({ ...s, outputGuardDetailsMaxBytes: e.target.value }))}
-              />
-            </Field>
+          <div className="mcp-form-grid mcp-form-grid-compact">
+            <SettingsField label={t("settings.mcp.outputGuardMaxBytes")} description={t("settings.mcp.outputGuardLimitsHint")}><SettingsInput disabled={readOnly} value={settingsDraft.outputGuardMaxBytes} onChange={(event) => setSettingsDraft((current) => ({ ...current, outputGuardMaxBytes: event.target.value }))} /></SettingsField>
+            <SettingsField label={t("settings.mcp.outputGuardMaxLines")}><SettingsInput disabled={readOnly} value={settingsDraft.outputGuardMaxLines} onChange={(event) => setSettingsDraft((current) => ({ ...current, outputGuardMaxLines: event.target.value }))} /></SettingsField>
+            <SettingsField label={t("settings.mcp.outputGuardDetailsMaxBytes")}><SettingsInput disabled={readOnly} value={settingsDraft.outputGuardDetailsMaxBytes} onChange={(event) => setSettingsDraft((current) => ({ ...current, outputGuardDetailsMaxBytes: event.target.value }))} /></SettingsField>
           </div>
         )}
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10 }}>
-          <Field label={t("settings.mcp.traceEnabled")} description={t("settings.mcp.traceHint")}>
-            <select
-              style={inputStyle}
-              disabled={readOnly}
-              value={settingsDraft.traceEnabled}
-              onChange={(e) => setSettingsDraft((s) => ({ ...s, traceEnabled: e.target.value as "" | "true" | "false" }))}
-            >
-              <option value="">{t("settings.mcp.unset")}</option>
-              <option value="true">true</option>
-              <option value="false">false</option>
-            </select>
-          </Field>
-          <Field label={t("settings.mcp.traceFile")}>
-            <input
-              style={inputStyle}
-              disabled={readOnly}
-              value={settingsDraft.traceFile}
-              onChange={(e) => setSettingsDraft((s) => ({ ...s, traceFile: e.target.value }))}
-            />
-          </Field>
-          <Field label={t("settings.mcp.traceMaxBytes")}>
-            <input
-              style={inputStyle}
-              disabled={readOnly}
-              value={settingsDraft.traceMaxBytes}
-              onChange={(e) => setSettingsDraft((s) => ({ ...s, traceMaxBytes: e.target.value }))}
-            />
-          </Field>
-          <Field label={t("settings.mcp.traceMaxEvents")}>
-            <input
-              style={inputStyle}
-              disabled={readOnly}
-              value={settingsDraft.traceMaxEvents}
-              onChange={(e) => setSettingsDraft((s) => ({ ...s, traceMaxEvents: e.target.value }))}
-            />
-          </Field>
-          <Field label={t("settings.mcp.authRequiredMessage")}>
-            <input
-              style={inputStyle}
-              disabled={readOnly}
-              value={settingsDraft.authRequiredMessage}
-              onChange={(e) => setSettingsDraft((s) => ({ ...s, authRequiredMessage: e.target.value }))}
-            />
-          </Field>
-          <Field label={t("settings.mcp.oauthDir")} description={t("settings.mcp.oauthDirHint")}>
-            <input
-              style={inputStyle}
-              disabled={readOnly}
-              value={settingsDraft.oauthDir}
-              onChange={(e) => setSettingsDraft((s) => ({ ...s, oauthDir: e.target.value }))}
-            />
-          </Field>
+        <div className="mcp-form-grid mcp-form-grid-compact">
+          <SettingsField label={t("settings.mcp.traceEnabled")} description={t("settings.mcp.traceHint")}>
+            <SettingsSelect disabled={readOnly} value={settingsDraft.traceEnabled} onChange={(event) => setSettingsDraft((current) => ({ ...current, traceEnabled: event.target.value as "" | "true" | "false" }))}>
+              <option value="">{t("settings.mcp.unset")}</option><option value="true">true</option><option value="false">false</option>
+            </SettingsSelect>
+          </SettingsField>
+          <SettingsField label={t("settings.mcp.traceFile")}><SettingsInput disabled={readOnly} value={settingsDraft.traceFile} onChange={(event) => setSettingsDraft((current) => ({ ...current, traceFile: event.target.value }))} /></SettingsField>
+          <SettingsField label={t("settings.mcp.traceMaxBytes")}><SettingsInput disabled={readOnly} value={settingsDraft.traceMaxBytes} onChange={(event) => setSettingsDraft((current) => ({ ...current, traceMaxBytes: event.target.value }))} /></SettingsField>
+          <SettingsField label={t("settings.mcp.traceMaxEvents")}><SettingsInput disabled={readOnly} value={settingsDraft.traceMaxEvents} onChange={(event) => setSettingsDraft((current) => ({ ...current, traceMaxEvents: event.target.value }))} /></SettingsField>
+          <SettingsField label={t("settings.mcp.authRequiredMessage")}><SettingsInput disabled={readOnly} value={settingsDraft.authRequiredMessage} onChange={(event) => setSettingsDraft((current) => ({ ...current, authRequiredMessage: event.target.value }))} /></SettingsField>
+          <SettingsField label={t("settings.mcp.oauthDir")} description={t("settings.mcp.oauthDirHint")}><SettingsInput disabled={readOnly} value={settingsDraft.oauthDir} onChange={(event) => setSettingsDraft((current) => ({ ...current, oauthDir: event.target.value }))} /></SettingsField>
         </div>
-
-        <Field label={t("settings.mcp.imports")} description={t("settings.mcp.importsHint")}>
-          <textarea
-            style={{ ...inputStyle, minHeight: 64, resize: "vertical", fontFamily: "var(--font-mono)" }}
-            disabled={readOnly}
-            value={settingsDraft.importsText}
-            onChange={(e) => setSettingsDraft((s) => ({ ...s, importsText: e.target.value }))}
-            placeholder={"cursor\nclaude-code"}
-          />
-        </Field>
+        <SettingsField label={t("settings.mcp.imports")} description={t("settings.mcp.importsHint")}>
+          <SettingsTextarea className="settings-control-mono" disabled={readOnly} value={settingsDraft.importsText} onChange={(event) => setSettingsDraft((current) => ({ ...current, importsText: event.target.value }))} placeholder={"cursor\nclaude-code"} rows={3} />
+        </SettingsField>
       </div>
 
-      {/* Servers */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>{t("settings.mcp.servers")}</div>
-          <button
-            type="button"
-            disabled={readOnly}
-            onClick={addServer}
-            style={{ padding: "6px 10px", borderRadius: 7, border: "none", background: readOnly ? "var(--border)" : "var(--accent)", color: "white", cursor: readOnly ? "not-allowed" : "pointer", fontSize: 12, fontWeight: 700 }}
-          >
-            {t("settings.mcp.addServer")}
-          </button>
-        </div>
-
-        {servers.length === 0 && (
-          <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{t("settings.mcp.noServers")}</div>
-        )}
-
-        {servers.map((server, index) => (
-          <div key={`${server.originalName}-${index}`} style={{ border: "1px solid var(--border)", borderRadius: 10, padding: 12, background: "var(--bg)", display: "flex", flexDirection: "column", gap: 10, opacity: readOnly ? 0.6 : 1 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", flex: 1 }}>
-                <input
-                  style={{ ...inputStyle, maxWidth: 220, fontWeight: 700 }}
-                  disabled={readOnly}
-                  value={server.name}
-                  onChange={(e) => updateServer(index, { name: e.target.value })}
-                />
-                <select
-                  style={{ ...inputStyle, maxWidth: 140 }}
-                  disabled={readOnly}
-                  value={server.transport}
-                  onChange={(e) => updateServer(index, { transport: e.target.value as McpTransportKind })}
-                >
-                  <option value="stdio">stdio</option>
-                  <option value="http">http</option>
-                  <option value="socket">socket</option>
-                </select>
-                <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12, color: "var(--text-muted)" }}>
-                  <input type="checkbox" disabled={readOnly} checked={server.disabled} onChange={(e) => updateServer(index, { disabled: e.target.checked })} />
-                  {t("settings.mcp.disabled")}
-                </label>
-              </div>
-              <div style={{ display: "flex", gap: 6 }}>
-                <button type="button" onClick={() => updateServer(index, { expanded: !server.expanded })} style={{ padding: "6px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-muted)", cursor: "pointer", fontSize: 11 }}>
-                  {server.expanded ? t("settings.mcp.collapse") : t("settings.mcp.expand")}
-                </button>
-                <button type="button" disabled={readOnly} onClick={() => removeServer(index)} style={{ padding: "6px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg)", color: "#f87171", cursor: readOnly ? "not-allowed" : "pointer", fontSize: 11 }}>
-                  {t("settings.mcp.delete")}
-                </button>
-              </div>
-            </div>
-
-            {(server.risks.hasExecutableSecret || server.env.some((e) => e.executableSecret) || server.headers.some((h) => h.executableSecret)) && (
-              <div style={{ fontSize: 11, color: "#fbbf24" }}>{t("settings.mcp.executableSecretWarn")}</div>
-            )}
-            {(server.lifecycle === "eager" || server.lifecycle === "keep-alive" || server.lifecycle === "lazy-keep-alive") && (
-              <div style={{ fontSize: 11, color: "#fbbf24" }}>{t("settings.mcp.eagerWarn")}</div>
-            )}
-
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 8 }}>
-              {server.transport === "stdio" && (
-                <>
-                  <Field label="command">
-                    <input style={inputStyle} disabled={readOnly} value={server.command} onChange={(e) => updateServer(index, { command: e.target.value })} />
-                  </Field>
-                  <Field label="args" description={t("settings.mcp.onePerLine")}>
-                    <textarea style={{ ...inputStyle, minHeight: 54, fontFamily: "var(--font-mono)" }} disabled={readOnly} value={server.argsText} onChange={(e) => updateServer(index, { argsText: e.target.value })} />
-                  </Field>
-                  <Field label="cwd">
-                    <input style={inputStyle} disabled={readOnly} value={server.cwd} onChange={(e) => updateServer(index, { cwd: e.target.value })} />
-                  </Field>
-                </>
-              )}
-              {server.transport === "http" && (
-                <>
-                  <Field label="url">
-                    <input style={inputStyle} disabled={readOnly} value={server.url} onChange={(e) => updateServer(index, { url: e.target.value, confirmUrlAuthClear: true })} />
-                  </Field>
-                  <Field label="auth">
-                    <select style={inputStyle} disabled={readOnly} value={server.auth} onChange={(e) => updateServer(index, { auth: e.target.value as ServerDraft["auth"] })}>
-                      <option value="">{t("settings.mcp.unset")}</option>
-                      <option value="bearer">bearer</option>
-                      <option value="oauth">oauth</option>
-                      <option value="false">false</option>
-                    </select>
-                  </Field>
-                  <Field label="bearerTokenEnv">
-                    <input style={inputStyle} disabled={readOnly} value={server.bearerTokenEnv} onChange={(e) => updateServer(index, { bearerTokenEnv: e.target.value })} />
-                  </Field>
-                </>
-              )}
-              {server.transport === "socket" && (
-                <Field label="socket" description={t("settings.mcp.socketHint")}>
-                  <input style={inputStyle} disabled={readOnly} value={server.socket} onChange={(e) => updateServer(index, { socket: e.target.value })} />
-                </Field>
-              )}
-              <Field label="lifecycle">
-                <select style={inputStyle} disabled={readOnly} value={server.lifecycle} onChange={(e) => updateServer(index, { lifecycle: e.target.value as ServerDraft["lifecycle"] })}>
-                  <option value="">{t("settings.mcp.unset")}</option>
-                  <option value="lazy">lazy</option>
-                  <option value="eager">eager</option>
-                  <option value="keep-alive">keep-alive</option>
-                  <option value="lazy-keep-alive">lazy-keep-alive</option>
-                </select>
-              </Field>
-            </div>
-
-            {server.expanded && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 10, paddingTop: 4, borderTop: "1px dashed var(--border)" }}>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 8 }}>
-                  <Field label="idleTimeout">
-                    <input style={inputStyle} disabled={readOnly} value={server.idleTimeout} onChange={(e) => updateServer(index, { idleTimeout: e.target.value })} />
-                  </Field>
-                  <Field label="requestTimeoutMs">
-                    <input style={inputStyle} disabled={readOnly} value={server.requestTimeoutMs} onChange={(e) => updateServer(index, { requestTimeoutMs: e.target.value })} />
-                  </Field>
-                  <Field label="exposeResources">
-                    <select style={inputStyle} disabled={readOnly} value={server.exposeResources} onChange={(e) => updateServer(index, { exposeResources: e.target.value as ServerDraft["exposeResources"] })}>
-                      <option value="">{t("settings.mcp.unset")}</option>
-                      <option value="true">true</option>
-                      <option value="false">false</option>
-                    </select>
-                  </Field>
-                  <Field label="directTools" description={t("settings.mcp.directToolsHint")}>
-                    <textarea style={{ ...inputStyle, minHeight: 48, fontFamily: "var(--font-mono)" }} disabled={readOnly} value={server.directToolsText} onChange={(e) => updateServer(index, { directToolsText: e.target.value })} />
-                  </Field>
-                  <Field label="includeTools">
-                    <textarea style={{ ...inputStyle, minHeight: 48, fontFamily: "var(--font-mono)" }} disabled={readOnly} value={server.includeToolsText} onChange={(e) => updateServer(index, { includeToolsText: e.target.value })} />
-                  </Field>
-                  <Field label="excludeTools">
-                    <textarea style={{ ...inputStyle, minHeight: 48, fontFamily: "var(--font-mono)" }} disabled={readOnly} value={server.excludeToolsText} onChange={(e) => updateServer(index, { excludeToolsText: e.target.value })} />
-                  </Field>
-                </div>
-                <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
-                  <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12, color: "var(--text-muted)" }}>
-                    <input type="checkbox" disabled={readOnly} checked={server.debug} onChange={(e) => updateServer(index, { debug: e.target.checked })} />
-                    debug
-                  </label>
-                  <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12, color: "var(--text-muted)" }}>
-                    <input type="checkbox" disabled={readOnly} checked={server.trace} onChange={(e) => updateServer(index, { trace: e.target.checked })} />
-                    trace
-                  </label>
-                </div>
-
-                {server.transport === "stdio" && (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text)" }}>env</div>
-                    <div style={{ fontSize: 11, color: "var(--text-dim)" }}>{t("settings.mcp.secretMapHint")}</div>
-                    {server.env.map((item, envIndex) => (
-                      <SecretRow
-                        key={`env-${envIndex}`}
-                        item={item}
-                        onChange={(next) => {
-                          const env = [...server.env];
-                          env[envIndex] = next;
-                          updateServer(index, { env });
-                        }}
-                        onRemove={() => updateServer(index, { env: server.env.filter((_, i) => i !== envIndex) })}
-                      />
-                    ))}
-                    <button type="button" disabled={readOnly} onClick={() => updateServer(index, { env: [...server.env, emptySecret()] })} style={{ alignSelf: "flex-start", padding: "5px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-muted)", cursor: readOnly ? "not-allowed" : "pointer", fontSize: 11 }}>
-                      {t("settings.mcp.addSecret")}
-                    </button>
+      <div className="settings-surface">
+        <SettingsActionRow>
+          <div className="settings-surface-title">{t("settings.mcp.servers")}</div>
+          <SettingsButton variant="primary" size="sm" disabled={readOnly} onClick={addServer}>{t("settings.mcp.addServer")}</SettingsButton>
+        </SettingsActionRow>
+        {servers.length === 0 ? (
+          <SettingsState title={t("settings.mcp.noServers")} />
+        ) : (
+          <div className="mcp-server-list">
+            {servers.map((server, index) => (
+              <div key={`${server.originalName}-${index}`} className={`mcp-server-card${readOnly ? " mcp-server-card-readonly" : ""}`}>
+                <div className="mcp-server-header">
+                  <div className="mcp-server-identity">
+                    <SettingsInput className="mcp-server-name settings-control-mono" disabled={readOnly} value={server.name} aria-label={t("settings.mcp.serverName")} onChange={(event) => updateServer(index, { name: event.target.value })} />
+                    <SettingsSelect className="mcp-transport-select" disabled={readOnly} value={server.transport} aria-label={t("settings.mcp.transport")} onChange={(event) => updateServer(index, { transport: event.target.value as McpTransportKind })}>
+                      <option value="stdio">stdio</option><option value="http">http</option><option value="socket">socket</option>
+                    </SettingsSelect>
+                    <label className="mcp-checkbox"><input type="checkbox" disabled={readOnly} checked={server.disabled} onChange={(event) => updateServer(index, { disabled: event.target.checked })} />{t("settings.mcp.disabled")}</label>
                   </div>
-                )}
+                  <div className="mcp-server-actions">
+                    <SettingsButton size="sm" onClick={() => updateServer(index, { expanded: !server.expanded })}>{server.expanded ? t("settings.mcp.collapse") : t("settings.mcp.expand")}</SettingsButton>
+                    <SettingsButton size="sm" variant="danger" disabled={readOnly} onClick={() => removeServer(index)}>{t("settings.mcp.delete")}</SettingsButton>
+                  </div>
+                </div>
 
-                {server.transport === "http" && (
-                  <>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                      <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text)" }}>headers</div>
-                      {server.headers.map((item, headerIndex) => (
-                        <SecretRow
-                          key={`header-${headerIndex}`}
-                          item={item}
-                          onChange={(next) => {
-                            const headers = [...server.headers];
-                            headers[headerIndex] = next;
-                            updateServer(index, { headers });
-                          }}
-                          onRemove={() => updateServer(index, { headers: server.headers.filter((_, i) => i !== headerIndex) })}
-                        />
-                      ))}
-                      <button type="button" disabled={readOnly} onClick={() => updateServer(index, { headers: [...server.headers, emptySecret()] })} style={{ alignSelf: "flex-start", padding: "5px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-muted)", cursor: readOnly ? "not-allowed" : "pointer", fontSize: 11 }}>
-                        {t("settings.mcp.addSecret")}
-                      </button>
+                {(server.risks.hasExecutableSecret || server.env.some((entry) => entry.executableSecret) || server.headers.some((entry) => entry.executableSecret)) && <SettingsNotice tone="warning">{t("settings.mcp.executableSecretWarn")}</SettingsNotice>}
+                {(server.lifecycle === "eager" || server.lifecycle === "keep-alive" || server.lifecycle === "lazy-keep-alive") && <SettingsNotice tone="warning">{t("settings.mcp.eagerWarn")}</SettingsNotice>}
+
+                <div className="mcp-form-grid">
+                  {server.transport === "stdio" && <>
+                    <SettingsField label="command"><SettingsInput className="settings-control-mono" disabled={readOnly} value={server.command} onChange={(event) => updateServer(index, { command: event.target.value })} /></SettingsField>
+                    <SettingsField label="args" description={t("settings.mcp.onePerLine")}><SettingsTextarea className="settings-control-mono" disabled={readOnly} value={server.argsText} onChange={(event) => updateServer(index, { argsText: event.target.value })} rows={2} /></SettingsField>
+                    <SettingsField label="cwd"><SettingsInput className="settings-control-mono" disabled={readOnly} value={server.cwd} onChange={(event) => updateServer(index, { cwd: event.target.value })} /></SettingsField>
+                  </>}
+                  {server.transport === "http" && <>
+                    <SettingsField label="url"><SettingsInput className="settings-control-mono" disabled={readOnly} value={server.url} onChange={(event) => updateServer(index, { url: event.target.value, confirmUrlAuthClear: true })} /></SettingsField>
+                    <SettingsField label="auth"><SettingsSelect disabled={readOnly} value={server.auth} onChange={(event) => updateServer(index, { auth: event.target.value as ServerDraft["auth"] })}><option value="">{t("settings.mcp.unset")}</option><option value="bearer">bearer</option><option value="oauth">oauth</option><option value="false">false</option></SettingsSelect></SettingsField>
+                    <SettingsField label="bearerTokenEnv"><SettingsInput className="settings-control-mono" disabled={readOnly} value={server.bearerTokenEnv} onChange={(event) => updateServer(index, { bearerTokenEnv: event.target.value })} /></SettingsField>
+                  </>}
+                  {server.transport === "socket" && <SettingsField label="socket" description={t("settings.mcp.socketHint")}><SettingsInput className="settings-control-mono" disabled={readOnly} value={server.socket} onChange={(event) => updateServer(index, { socket: event.target.value })} /></SettingsField>}
+                  <SettingsField label="lifecycle"><SettingsSelect disabled={readOnly} value={server.lifecycle} onChange={(event) => updateServer(index, { lifecycle: event.target.value as ServerDraft["lifecycle"] })}><option value="">{t("settings.mcp.unset")}</option><option value="lazy">lazy</option><option value="eager">eager</option><option value="keep-alive">keep-alive</option><option value="lazy-keep-alive">lazy-keep-alive</option></SettingsSelect></SettingsField>
+                </div>
+
+                {server.expanded && (
+                  <div className="mcp-advanced">
+                    <div className="mcp-form-grid mcp-form-grid-compact">
+                      <SettingsField label="idleTimeout"><SettingsInput disabled={readOnly} value={server.idleTimeout} onChange={(event) => updateServer(index, { idleTimeout: event.target.value })} /></SettingsField>
+                      <SettingsField label="requestTimeoutMs"><SettingsInput disabled={readOnly} value={server.requestTimeoutMs} onChange={(event) => updateServer(index, { requestTimeoutMs: event.target.value })} /></SettingsField>
+                      <SettingsField label="exposeResources"><SettingsSelect disabled={readOnly} value={server.exposeResources} onChange={(event) => updateServer(index, { exposeResources: event.target.value as ServerDraft["exposeResources"] })}><option value="">{t("settings.mcp.unset")}</option><option value="true">true</option><option value="false">false</option></SettingsSelect></SettingsField>
+                      <SettingsField label="directTools" description={t("settings.mcp.directToolsHint")}><SettingsTextarea className="settings-control-mono" disabled={readOnly} value={server.directToolsText} onChange={(event) => updateServer(index, { directToolsText: event.target.value })} rows={2} /></SettingsField>
+                      <SettingsField label="includeTools"><SettingsTextarea className="settings-control-mono" disabled={readOnly} value={server.includeToolsText} onChange={(event) => updateServer(index, { includeToolsText: event.target.value })} rows={2} /></SettingsField>
+                      <SettingsField label="excludeTools"><SettingsTextarea className="settings-control-mono" disabled={readOnly} value={server.excludeToolsText} onChange={(event) => updateServer(index, { excludeToolsText: event.target.value })} rows={2} /></SettingsField>
                     </div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                      <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text)" }}>bearerToken</div>
-                      <SecretRow item={server.bearerToken} onChange={(next) => updateServer(index, { bearerToken: next })} />
+                    <div className="mcp-checkbox-group">
+                      <label className="mcp-checkbox"><input type="checkbox" disabled={readOnly} checked={server.debug} onChange={(event) => updateServer(index, { debug: event.target.checked })} />debug</label>
+                      <label className="mcp-checkbox"><input type="checkbox" disabled={readOnly} checked={server.trace} onChange={(event) => updateServer(index, { trace: event.target.checked })} />trace</label>
                     </div>
-                    <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12, color: "var(--text-muted)" }}>
-                      <input type="checkbox" disabled={readOnly} checked={server.oauthEnabled} onChange={(e) => updateServer(index, { oauthEnabled: e.target.checked })} />
-                      OAuth
-                    </label>
-                    {server.oauthEnabled && (
-                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 8 }}>
-                        <Field label="grantType">
-                          <select style={inputStyle} disabled={readOnly} value={server.oauthGrantType} onChange={(e) => updateServer(index, { oauthGrantType: e.target.value as ServerDraft["oauthGrantType"] })}>
-                            <option value="">{t("settings.mcp.unset")}</option>
-                            <option value="authorization_code">authorization_code</option>
-                            <option value="client_credentials">client_credentials</option>
-                          </select>
-                        </Field>
-                        <Field label="clientId">
-                          <input style={inputStyle} disabled={readOnly} value={server.oauthClientId} onChange={(e) => updateServer(index, { oauthClientId: e.target.value })} />
-                        </Field>
-                        <Field label="scope">
-                          <input style={inputStyle} disabled={readOnly} value={server.oauthScope} onChange={(e) => updateServer(index, { oauthScope: e.target.value })} />
-                        </Field>
-                        <Field label="redirectUri">
-                          <input style={inputStyle} disabled={readOnly} value={server.oauthRedirectUri} onChange={(e) => updateServer(index, { oauthRedirectUri: e.target.value })} />
-                        </Field>
-                        <Field label="clientName">
-                          <input style={inputStyle} disabled={readOnly} value={server.oauthClientName} onChange={(e) => updateServer(index, { oauthClientName: e.target.value })} />
-                        </Field>
-                        <Field label="clientUri">
-                          <input style={inputStyle} disabled={readOnly} value={server.oauthClientUri} onChange={(e) => updateServer(index, { oauthClientUri: e.target.value })} />
-                        </Field>
-                        <div style={{ gridColumn: "1 / -1" }}>
-                          <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text)", marginBottom: 6 }}>clientSecret</div>
-                          <SecretRow item={server.oauthClientSecret} onChange={(next) => updateServer(index, { oauthClientSecret: next })} />
-                        </div>
+
+                    {server.transport === "stdio" && (
+                      <div className="mcp-secret-section">
+                        <div className="mcp-secret-title">env</div>
+                        <div className="mcp-guidance-detail">{t("settings.mcp.secretMapHint")}</div>
+                        {server.env.map((item, envIndex) => <SecretRow key={`env-${envIndex}`} item={item} onChange={(next) => { const env = [...server.env]; env[envIndex] = next; updateServer(index, { env }); }} onRemove={() => updateServer(index, { env: server.env.filter((_, itemIndex) => itemIndex !== envIndex) })} />)}
+                        <SettingsButton className="settings-align-start" size="sm" disabled={readOnly} onClick={() => updateServer(index, { env: [...server.env, emptySecret()] })}>{t("settings.mcp.addSecret")}</SettingsButton>
                       </div>
                     )}
-                  </>
-                )}
 
-                {server.unknownFieldKeys.length > 0 && (
-                  <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
-                    {t("settings.mcp.unknownFields")}: {server.unknownFieldKeys.join(", ")}
+                    {server.transport === "http" && <>
+                      <div className="mcp-secret-section">
+                        <div className="mcp-secret-title">headers</div>
+                        <div className="mcp-guidance-detail">{t("settings.mcp.secretMapHint")}</div>
+                        {server.headers.map((item, headerIndex) => <SecretRow key={`header-${headerIndex}`} item={item} onChange={(next) => { const headers = [...server.headers]; headers[headerIndex] = next; updateServer(index, { headers }); }} onRemove={() => updateServer(index, { headers: server.headers.filter((_, itemIndex) => itemIndex !== headerIndex) })} />)}
+                        <SettingsButton className="settings-align-start" size="sm" disabled={readOnly} onClick={() => updateServer(index, { headers: [...server.headers, emptySecret()] })}>{t("settings.mcp.addSecret")}</SettingsButton>
+                      </div>
+                      <div className="mcp-secret-section"><div className="mcp-secret-title">bearerToken</div><SecretRow item={server.bearerToken} onChange={(next) => updateServer(index, { bearerToken: next })} /></div>
+                      <label className="mcp-checkbox"><input type="checkbox" disabled={readOnly} checked={server.oauthEnabled} onChange={(event) => updateServer(index, { oauthEnabled: event.target.checked })} />OAuth</label>
+                      {server.oauthEnabled && (
+                        <div className="mcp-form-grid mcp-form-grid-compact">
+                          <SettingsField label="grantType"><SettingsSelect disabled={readOnly} value={server.oauthGrantType} onChange={(event) => updateServer(index, { oauthGrantType: event.target.value as ServerDraft["oauthGrantType"] })}><option value="">{t("settings.mcp.unset")}</option><option value="authorization_code">authorization_code</option><option value="client_credentials">client_credentials</option></SettingsSelect></SettingsField>
+                          <SettingsField label="clientId"><SettingsInput disabled={readOnly} value={server.oauthClientId} onChange={(event) => updateServer(index, { oauthClientId: event.target.value })} /></SettingsField>
+                          <SettingsField label="scope"><SettingsInput disabled={readOnly} value={server.oauthScope} onChange={(event) => updateServer(index, { oauthScope: event.target.value })} /></SettingsField>
+                          <SettingsField label="redirectUri"><SettingsInput disabled={readOnly} value={server.oauthRedirectUri} onChange={(event) => updateServer(index, { oauthRedirectUri: event.target.value })} /></SettingsField>
+                          <SettingsField label="clientName"><SettingsInput disabled={readOnly} value={server.oauthClientName} onChange={(event) => updateServer(index, { oauthClientName: event.target.value })} /></SettingsField>
+                          <SettingsField label="clientUri"><SettingsInput disabled={readOnly} value={server.oauthClientUri} onChange={(event) => updateServer(index, { oauthClientUri: event.target.value })} /></SettingsField>
+                          <div className="mcp-secret-section"><div className="mcp-secret-title">clientSecret</div><SecretRow item={server.oauthClientSecret} onChange={(next) => updateServer(index, { oauthClientSecret: next })} /></div>
+                        </div>
+                      )}
+                    </>}
+                    {server.unknownFieldKeys.length > 0 && <SettingsNotice tone="info">{t("settings.mcp.unknownFields")}: {server.unknownFieldKeys.join(", ")}</SettingsNotice>}
                   </div>
                 )}
               </div>
-            )}
+            ))}
           </div>
-        ))}
+        )}
       </div>
 
-      {/* Guidance */}
-      <div style={{ padding: 12, borderRadius: 10, border: "1px solid var(--border)", background: "var(--bg-subtle)", display: "flex", flexDirection: "column", gap: 8 }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text)" }}>{t("settings.mcp.activation")}</div>
-        <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5 }}>
-          {reloadHint || t("settings.mcp.reloadHint")}
+      <div className="settings-surface">
+        <div className="settings-surface-title">{t("settings.mcp.activation")}</div>
+        <div className="mcp-guidance-copy">{reloadHint || t("settings.mcp.reloadHint")}</div>
+        <div className="mcp-command-list">
+          {["/reload", "mcp({})", 'mcp({ connect: "server" })'].map((command) => <SettingsButton key={command} size="sm" className="settings-control-mono" onClick={() => void copyText(command)}>{command}</SettingsButton>)}
         </div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-          {[
-            "/reload",
-            "mcp({})",
-            'mcp({ connect: "server" })',
-          ].map((cmd) => (
-            <button
-              key={cmd}
-              type="button"
-              onClick={() => void copyText(cmd)}
-              style={{ padding: "5px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-muted)", cursor: "pointer", fontSize: 11, fontFamily: "var(--font-mono)" }}
-            >
-              {cmd}
-            </button>
-          ))}
-        </div>
-        <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.45 }}>
-          {t("settings.mcp.secretLimitation")}
-        </div>
-        <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.45 }}>
-          {t("settings.mcp.automationBoundary")}
-        </div>
+        <div className="mcp-guidance-detail">{t("settings.mcp.secretLimitation")}</div>
+        <div className="mcp-guidance-detail">{t("settings.mcp.automationBoundary")}</div>
       </div>
 
-      {/* Actions */}
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-        <button
-          type="button"
-          onClick={handleReload}
-          disabled={loading || saving}
-          style={{ padding: "7px 12px", borderRadius: 7, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-muted)", cursor: loading || saving ? "not-allowed" : "pointer", fontSize: 12 }}
-        >
-          {t("settings.mcp.reload")}
-        </button>
-        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-          {dirty && <span style={{ fontSize: 12, color: "var(--text-dim)" }}>{t("settings.unsavedChanges")}</span>}
-          <button
-            type="button"
-            disabled={!dirty || saving || loading || readOnly || !revision}
-            onClick={() => void handleSave()}
-            style={{
-              padding: "7px 14px",
-              borderRadius: 7,
-              border: "none",
-              background: !dirty || saving || loading || readOnly || !revision ? "var(--border)" : "var(--accent)",
-              color: "white",
-              cursor: !dirty || saving || loading || readOnly || !revision ? "not-allowed" : "pointer",
-              fontSize: 12,
-              fontWeight: 600,
-            }}
-          >
-            {saving ? t("settings.saving") : t("settings.save")}
-          </button>
+      <SettingsActionRow>
+        <SettingsButton onClick={handleReload} disabled={loading || saving}>{t("settings.mcp.reload")}</SettingsButton>
+        <div className="settings-action-group">
+          {dirty && <span className="settings-dirty-note">{t("settings.unsavedChanges")}</span>}
+          <SettingsButton variant="primary" busy={saving} disabled={!dirty || loading || readOnly || !revision} onClick={() => void handleSave()}>{saving ? t("settings.saving") : t("settings.save")}</SettingsButton>
         </div>
-      </div>
-    </div>
+      </SettingsActionRow>
+    </SettingsSection>
   );
 }

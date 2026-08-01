@@ -1808,6 +1808,62 @@ span.linenumber {
   color: var(--status-danger-foreground);
 }
 
+.settings-badge {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 2px 7px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-pill);
+  background: var(--surface-raised);
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.settings-badge-accent {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--text-accent);
+}
+
+.settings-badge-success {
+  border-color: var(--status-success-border);
+  background: var(--status-success-soft);
+  color: var(--status-success-foreground);
+}
+
+.settings-badge-warning {
+  border-color: var(--status-warning-border);
+  background: var(--status-warning-soft);
+  color: var(--status-warning-foreground);
+}
+
+.settings-badge-danger {
+  border-color: var(--status-danger-border);
+  background: var(--status-danger-soft);
+  color: var(--status-danger-foreground);
+}
+
+.settings-action-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.settings-action-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
 .settings-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1835,6 +1891,241 @@ span.linenumber {
   color: var(--text-tertiary);
   font-size: 11px;
   line-height: 1.6;
+}
+
+/* MCP and native Agents keep their own save boundaries inside Settings. */
+.mcp-config,
+.agents-config {
+  gap: 16px;
+}
+
+.mcp-target-tabs,
+.mcp-command-list,
+.agents-scope-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.mcp-target-tab-active {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--text-accent);
+}
+
+.mcp-path,
+.agents-config-path,
+.mcp-source-path {
+  color: var(--text-tertiary);
+  font-size: 11px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.mcp-source-list,
+.mcp-server-list,
+.agents-agent-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.mcp-source-row,
+.mcp-server-card,
+.agents-agent-card {
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  background: var(--surface-app);
+}
+
+.mcp-source-row-active {
+  border-color: var(--accent-border);
+  box-shadow: inset 3px 0 0 var(--accent-primary);
+}
+
+.mcp-source-header,
+.mcp-server-header,
+.agents-agent-identity,
+.agents-fallback-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.mcp-source-title,
+.agents-agent-name {
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.mcp-source-meta,
+.agents-revision,
+.agents-inherit-note {
+  color: var(--text-tertiary);
+  font-size: 11px;
+}
+
+.mcp-form-grid,
+.agents-agent-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  min-width: 0;
+}
+
+.mcp-form-grid-compact {
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
+.mcp-server-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.mcp-server-card-readonly {
+  opacity: 0.62;
+}
+
+.mcp-server-identity,
+.mcp-server-actions,
+.mcp-checkbox-group,
+.agents-control-row,
+.agents-fallback-actions,
+.agents-fallback-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.mcp-server-identity {
+  flex: 1 1 320px;
+  flex-wrap: wrap;
+}
+
+.mcp-server-name {
+  max-width: 240px;
+  font-weight: 700;
+}
+
+.mcp-transport-select {
+  max-width: 140px;
+}
+
+.mcp-checkbox-group {
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.mcp-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.mcp-advanced {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border-default);
+}
+
+.mcp-secret-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.mcp-secret-title {
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.mcp-secret-row {
+  display: grid;
+  grid-template-columns: minmax(110px, 1fr) 120px minmax(130px, 1fr) auto;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+}
+
+.mcp-guidance-copy,
+.agents-agent-description {
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.mcp-guidance-detail {
+  color: var(--text-tertiary);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.agents-scope-row .settings-control {
+  width: auto;
+  min-width: 180px;
+}
+
+.agents-agent-list {
+  gap: 12px;
+}
+
+.agents-agent-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.agents-agent-description {
+  flex: 1 1 220px;
+}
+
+.agents-agent-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.agents-control-row > .settings-control {
+  flex: 1 1 auto;
+}
+
+.agents-fallbacks {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.agents-fallback-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding-left: 9px;
+  border-left: 2px solid var(--border-default);
+}
+
+.agents-fallback-index {
+  min-width: 16px;
+  color: var(--text-tertiary);
+  font-size: 10px;
+}
+
+.agents-fallback-row .settings-control {
+  flex: 1 1 auto;
 }
 
 .settings-modal-panel {
@@ -2235,8 +2526,23 @@ span.linenumber {
   }
 
   .settings-grid,
-  .mobile-stack-grid {
+  .mobile-stack-grid,
+  .mcp-form-grid,
+  .agents-agent-grid {
     grid-template-columns: 1fr !important;
+  }
+
+  .mcp-secret-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .mcp-secret-row .settings-button {
+    justify-self: start;
+  }
+
+  .agents-control-row,
+  .agents-fallback-row {
+    align-items: stretch;
   }
 
   .pi-modal-header,

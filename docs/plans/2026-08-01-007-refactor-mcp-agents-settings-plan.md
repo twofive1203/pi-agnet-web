@@ -1,7 +1,7 @@
 ---
 title: "refactor: Iteration 6 — 迁移 MCP 与 Agents 配置面板"
 type: refactor
-status: active
+status: completed
 date: 2026-08-01
 origin: docs/plans/2026-08-01-001-refactor-frontend-visual-system-plan.md
 iteration: 6
@@ -47,7 +47,7 @@ depends_on: docs/plans/2026-08-01-006-refactor-settings-primitives-plan.md
 
 ## Implementation Units
 
-- [ ] U1. **迁移 MCP 配置面板**
+- [x] U1. **迁移 MCP 配置面板**
 
 **Goal:** 统一 MCP 的高密度表单和状态表达，同时保持 adapter-native 配置契约。
 
@@ -75,7 +75,7 @@ depends_on: docs/plans/2026-08-01-006-refactor-settings-primitives-plan.md
 - `test:mcp` 覆盖的数据契约保持通过。
 - MCP 独立 dirty/error/conflict 状态未并入 `pi-web.json` 保存。
 
-- [ ] U2. **迁移 Agents 配置面板**
+- [x] U2. **迁移 Agents 配置面板**
 
 **Goal:** 统一 native subagent 设置视觉，并保持 scope 与 inherit 语义。
 
@@ -103,7 +103,7 @@ depends_on: docs/plans/2026-08-01-006-refactor-settings-primitives-plan.md
 - 配置 payload、scope 和 fallback 语义不变。
 - Agents 与 MCP 共享相同表单和 Notice 视觉。
 
-- [ ] U3. **回补原语契约与文档**
+- [x] U3. **回补原语契约与文档**
 
 **Goal:** 将复杂面板验证出的通用需求沉淀回共享层，而不是留在局部。
 

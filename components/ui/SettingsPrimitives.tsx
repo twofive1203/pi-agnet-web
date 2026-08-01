@@ -149,6 +149,7 @@ export function SettingsToggle({
 
 type SettingsButtonVariant = "primary" | "secondary" | "ghost" | "danger";
 type SettingsButtonSize = "sm" | "md" | "icon";
+type SettingsTone = "neutral" | "accent" | "success" | "warning" | "danger";
 
 export function SettingsButton({
   variant = "secondary",
@@ -174,6 +175,22 @@ export function SettingsButton({
       {children}
     </button>
   );
+}
+
+export function SettingsBadge({
+  tone = "neutral",
+  children,
+  className,
+}: {
+  tone?: SettingsTone;
+  children: ReactNode;
+  className?: string;
+}) {
+  return <span className={classes("settings-badge", `settings-badge-${tone}`, className)}>{children}</span>;
+}
+
+export function SettingsActionRow({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
+  return <div className={classes("settings-action-row", className)} {...props} />;
 }
 
 export function SettingsNotice({
