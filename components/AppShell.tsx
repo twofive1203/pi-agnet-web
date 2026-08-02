@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, useLayoutEffect } from "react";
 import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
 import { SessionSidebar } from "./SessionSidebar";
@@ -70,6 +70,10 @@ function clampNumber(value: number, min: number, max: number): number {
 
 function isDesktopLayoutViewport(): boolean {
   return typeof window !== "undefined" && window.matchMedia("(min-width: 641px)").matches;
+}
+
+function isMobileLayoutViewport(): boolean {
+  return typeof window !== "undefined" && window.matchMedia("(max-width: 640px)").matches;
 }
 
 function isRightPanelInlineViewport(): boolean {
@@ -332,12 +336,17 @@ export function AppShell() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only restore
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const desktopMedia = window.matchMedia("(min-width: 641px)");
     const inlineMedia = window.matchMedia(`(min-width: ${RIGHT_PANEL_INLINE_MIN_VIEWPORT}px)`);
     const sync = () => {
       setIsDesktopLayout(desktopMedia.matches);
       setRightPanelInline(inlineMedia.matches);
+      if (!desktopMedia.matches) {
+        // Mobile drawers overlay the chat, so neither should cover it on load or after resize.
+        setSidebarOpen(false);
+        setRightPanelOpen(false);
+      }
     };
     sync();
     desktopMedia.addEventListener("change", sync);
@@ -579,6 +588,7 @@ export function AppShell() {
   }, [router]);
 
   const openInspectorTab = useCallback((mode: InspectorMode) => {
+    if (isMobileLayoutViewport()) setSidebarOpen(false);
     setRightPanelMode(mode);
     setRightPanelOpen(true);
   }, []);
@@ -605,9 +615,8 @@ export function AppShell() {
       return [...prev, { id: tabId, label: fileName, filePath, line }];
     });
     setActiveFileTabId(tabId);
-    setRightPanelMode("files");
-    setRightPanelOpen(true);
-  }, []);
+    openInspectorTab("files");
+  }, [openInspectorTab]);
 
   const handleCloseFileTab = useCallback((tabId: string) => {
     setFileTabs((prev) => {
@@ -671,8 +680,7 @@ export function AppShell() {
 
   const handleWorkflowTaskCreated = useCallback((task: WorkflowTaskDetail) => {
     setFocusedWorkflowTaskId(task.id);
-    setRightPanelMode("workflow");
-    setRightPanelOpen(true);
+    openInspectorTab("workflow");
     setPendingWorkflowTaskContext(workflowTaskToChatContext(task));
     if (!selectedSession || selectedSession.archived) {
       setWorkflowCurrentTask(null);
@@ -687,7 +695,7 @@ export function AppShell() {
       },
       phase: task.status === "planning" ? "plan" : task.status === "ready_to_commit" || task.status === "completed" || task.status === "cancelled" ? "finish" : "execute",
     });
-  }, [selectedSession]);
+  }, [openInspectorTab, selectedSession]);
 
   const loadWorkflowSessionTask = useCallback(async (signal?: AbortSignal) => {
     // Only session-scoped: the widget must show a task tied to the
@@ -906,7 +914,10 @@ export function AppShell() {
           <button
             ref={sidebarToggleRef}
             className="icon-round context-icon-compact"
-            onClick={() => setSidebarOpen((v) => !v)}
+            onClick={() => {
+              if (!sidebarOpen && isMobileLayoutViewport()) setRightPanelOpen(false);
+              setSidebarOpen((open) => !open);
+            }}
             title={sidebarOpen ? t("app.hideSidebar") : t("app.showSidebar")}
             aria-label={sidebarOpen ? t("app.hideSidebar") : t("app.showSidebar")}
             aria-controls={SIDEBAR_ID}
@@ -1270,8 +1281,7 @@ export function AppShell() {
               phase={workflowCurrentTask.phase}
               onClick={() => {
                 setFocusedWorkflowTaskId(workflowCurrentTask.task.id);
-                setRightPanelMode("workflow");
-                setRightPanelOpen(true);
+                openInspectorTab("workflow");
               }}
             />
           )}

@@ -269,6 +269,11 @@ function collectContractProblems(
   if (!sources.shell.includes('const RIGHT_PANEL_WIDTH_STORAGE_KEY = "pi-web-right-panel-width-v2"')) {
     problems.push("workbench layout: right panel width persistence key changed");
   }
+  if (!sources.shell.includes("function isMobileLayoutViewport")
+    || !sources.shell.includes("if (!desktopMedia.matches) {")
+    || !sources.shell.includes("if (isMobileLayoutViewport()) setSidebarOpen(false);")) {
+    problems.push("workbench layout: mobile drawers must start closed and open mutually exclusively");
+  }
   if (!sources.shell.includes("handleInspectorTabKeyDown")
     || !sources.shell.includes('event.key === "Home"')
     || !sources.shell.includes('role="tabpanel"')
