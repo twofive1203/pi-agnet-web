@@ -1568,6 +1568,14 @@ span.linenumber {
   cursor: pointer;
 }
 
+/* Some platforms (Windows Chrome/Firefox) render the native select popup with
+   light-scheme colors even in dark mode, which makes inherited light text
+   unreadable on the white popup; pin option colors to the theme surface. */
+.settings-select option {
+  background: var(--surface-panel);
+  color: var(--text-primary);
+}
+
 .settings-textarea {
   resize: vertical;
   line-height: 1.5;
