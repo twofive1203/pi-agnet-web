@@ -45,11 +45,12 @@ await build({
 
 const bytes = readFileSync(outFile);
 const sha256 = createHash("sha256").update(bytes).digest("hex");
+// Keep meta deterministic: it only changes when the artifact bytes change,
+// so routine rebuilds do not dirty the working tree.
 writeFileSync(
   metaFile,
   `${JSON.stringify(
     {
-      builtAt: new Date().toISOString(),
       entry: "lib/automation-worker-host.ts",
       outfile: "lib/automation-worker-runtime.cjs",
       size: bytes.length,
