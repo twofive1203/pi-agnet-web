@@ -301,7 +301,8 @@ export function AppShell() {
   // Right panel — file tabs and optional SnFlow task drawer
   const [fileTabs, setFileTabs] = useState<Tab[]>([]);
   const [activeFileTabId, setActiveFileTabId] = useState<string | null>(null);
-  const [rightPanelOpen, setRightPanelOpen] = useState(true);
+  // Inspector starts collapsed by default; users open it via the Observe chips.
+  const [rightPanelOpen, setRightPanelOpen] = useState(false);
   /** Inspector tabs: files(Preview) / workflow(SnFlow) / changes / git / agents. */
   const [rightPanelMode, setRightPanelMode] = useState<InspectorMode>("changes");
   const inspectorTabRefs = useRef<Partial<Record<InspectorMode, HTMLButtonElement | null>>>({});
