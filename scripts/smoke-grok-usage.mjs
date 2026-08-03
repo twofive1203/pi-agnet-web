@@ -1,8 +1,16 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { performance } from "node:perf_hooks";
 import { fetchGrokBillingPayloads } from "../lib/grok-billing-fetch.ts";
 
 async function main() {
+  const panelSource = await readFile(new URL("../components/GrokUsagePanel.tsx", import.meta.url), "utf8");
+  assert.match(
+    panelSource,
+    /if \(!open\) return;\s+void loadUsage\(false\);\s+void loadAccounts\(\);/,
+    "opening the top-bar Grok panel must reload the latest cached usage before rendering quotas",
+  );
+
   const originalFetch = globalThis.fetch;
   try {
     const starts = [];

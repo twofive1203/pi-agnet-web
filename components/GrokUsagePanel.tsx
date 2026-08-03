@@ -130,8 +130,11 @@ export function GrokUsagePanel() {
   }, [loadAccounts, loadUsage]);
 
   useEffect(() => {
-    if (open) void loadAccounts();
-  }, [open, loadAccounts]);
+    // Models can refresh the shared cache while this long-lived top-bar component stays mounted.
+    if (!open) return;
+    void loadUsage(false);
+    void loadAccounts();
+  }, [open, loadAccounts, loadUsage]);
 
   useEffect(() => {
     if (!open) return;
