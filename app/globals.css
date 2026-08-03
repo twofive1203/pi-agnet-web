@@ -2109,7 +2109,7 @@ span.linenumber {
   width: 100%;
 }
 
-.resource-split-panel {
+.pi-modal-panel.resource-split-panel {
   width: min(900px, 100%);
   height: min(78dvh, 760px);
 }
@@ -2252,7 +2252,7 @@ span.linenumber {
   font-size: 11px;
 }
 
-.models-config-panel {
+.pi-modal-panel.models-config-panel {
   width: min(980px, 100%);
   height: min(82dvh, 820px);
 }
@@ -3040,7 +3040,7 @@ span.linenumber {
   flex: 1 1 auto;
 }
 
-.settings-modal-panel {
+.pi-modal-panel.settings-modal-panel {
   width: min(780px, calc(100vw - 40px));
   max-height: calc(100dvh - 40px);
 }

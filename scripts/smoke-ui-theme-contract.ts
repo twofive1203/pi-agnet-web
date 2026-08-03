@@ -92,6 +92,12 @@ const REQUIRED_STABLE_CLASSES = [
   ".extension-toast-stack",
 ] as const;
 
+const REQUIRED_MODAL_WIDTH_CONTRACTS = [
+  ".pi-modal-panel.resource-split-panel {",
+  ".pi-modal-panel.models-config-panel {",
+  ".pi-modal-panel.settings-modal-panel {",
+] as const;
+
 const REQUIRED_COMPATIBILITY_ALIASES = {
   bg: "surface-app",
   "bg-panel": "surface-panel",
@@ -208,6 +214,12 @@ function collectContractProblems(
   for (const stableClass of REQUIRED_STABLE_CLASSES) {
     if (!sources.css.includes(stableClass)) {
       problems.push(`stable class: missing ${stableClass}`);
+    }
+  }
+
+  for (const modalWidthContract of REQUIRED_MODAL_WIDTH_CONTRACTS) {
+    if (!sources.css.includes(modalWidthContract)) {
+      problems.push(`modal width: missing higher-specificity contract ${modalWidthContract}`);
     }
   }
 
