@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { SessionChangedFileSummary, SessionChangesSummaryResponse } from "@/lib/types";
 import { FileDiffModal } from "./FileDiffModal";
 
@@ -177,12 +178,16 @@ export function InspectorChangesPanel({ sessionId, agentRunning, refreshKey }: P
         })}
       </div>
 
-      {selectedFile && (
+      {/* Portal to body so the diff modal uses the full-viewport layout (same as the
+          Git panel) instead of being clipped inside the narrow inspector panel. */}
+      {selectedFile && typeof document !== "undefined" && createPortal(
         <FileDiffModal
           sessionId={sessionId}
           file={selectedFile}
           onClose={() => setSelectedFile(null)}
-        />
+          contained={false}
+        />,
+        document.body,
       )}
     </div>
   );
