@@ -29,6 +29,7 @@ Shared logic lives under `lib/`. Prefer adding behavior here when it is used by 
 | `lib/file-paths.ts` | Path normalization utilities for file viewer APIs. |
 | `lib/file-viewer-url.ts` | Parse historical/local agent file links (including trailing line/column), reject ordinary web links, and build canonical standalone `/file` URLs shared by chat, Explorer, SnFlow, and compatibility routing. |
 | `lib/cwd.ts` | Cwd validation and normalization helpers. |
+| `lib/open-path.ts` | Cross-platform helper to open a local path in the OS file manager (Windows `explorer.exe`, macOS `open`, Linux `xdg-open`). Treats spawn success as success because Windows explorer often exits non-zero after opening a folder. |
 | `lib/git-worktree.ts` | Git worktree creation, status, archive, and removal helpers. Every Git subprocess has a 120-second termination deadline and returns actionable timeout guidance; timed-out partial state is left for explicit inspection rather than destructive automatic cleanup. |
 | `lib/deepseek-balance.ts` | Query DeepSeek account balance. |
 | `lib/pi-auth.ts` | pi 0.80.10+ (pinned `0.83.0`) auth/model facade helpers around `ModelRuntime`/`ModelRegistry`, OAuth provider listing, API-key write/delete, and request-auth mapping. |

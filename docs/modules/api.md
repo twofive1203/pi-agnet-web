@@ -34,6 +34,7 @@ API routes live under `app/api/`. When adding, removing, or changing routes, upd
 | `pi/resources/` | GET | Inspect Pi SDK resource discovery for a cwd: configured packages, loaded extensions, tools, extension commands, skills, prompts, agent dir, and diagnostics. |
 | `pi/extension-settings/` | GET/PUT | Discover registered `pi-extension-settings` definitions for a cwd, read current `settings-extensions.json` values (including orphan keys), and apply patch/replace writes. |
 | `cwd/validate/` | POST | Validate a candidate workspace path. |
+| `cwd/open/` | POST | Open an authorized workspace directory in the host OS file manager (Windows `explorer.exe`, macOS `open`, Linux `xdg-open`). Body `{ cwd }`; rejects paths outside allowed roots. Opens on the WebUI server machine, not the browser client. |
 | `git/worktrees/` | GET/POST/DELETE | Inspect, create, and remove Git worktrees from the selected cwd; removal also deletes sessions for that worktree cwd. Git subprocesses have a 120-second kill timeout so hooks/locks/filesystems cannot hold the API indefinitely. |
 | `sessions/archive/` | POST | Archive one or more sessions (moves to `sessions-archive/`). |
 | `sessions/unarchive/` | POST | Unarchive one or more sessions (moves back to `sessions/`). |
