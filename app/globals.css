@@ -3791,7 +3791,6 @@ span.linenumber {
   }
   .markdown-file-preview {
     padding: 16px !important;
-    max-width: none !important;
   }
 
   .git-panel-root,
@@ -7437,7 +7436,6 @@ button.inspector-list-row { cursor: pointer; }
 .markdown-file-preview {
   box-sizing: border-box;
   height: 100%;
-  max-width: 800px;
   padding: 24px 32px;
   overflow: auto;
 }
