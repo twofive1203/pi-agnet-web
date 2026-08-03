@@ -37,8 +37,6 @@ interface Props {
   onOpenFile?: (filePath: string, fileName: string) => void;
   explorerRefreshKey?: number;
   onAtMention?: (relativePath: string) => void;
-  /** Bump to expand the archived sessions section (nav pill). */
-  archivePill?: number;
 }
 
 export function SessionSidebar({
@@ -54,7 +52,6 @@ export function SessionSidebar({
   onOpenFile,
   explorerRefreshKey,
   onAtMention,
-  archivePill,
 }: Props) {
   const { t } = useI18n();
   const appDialog = useAppDialog();
@@ -501,13 +498,6 @@ export function SessionSidebar({
     setSessionContextMenu({ x: event.clientX, y: event.clientY, session });
   }, []);
 
-  useEffect(() => {
-    if (archivePill && activeCwd) {
-      setArchivedExpanded(true);
-      void loadArchivedSessions(activeCwd, true);
-    }
-  }, [archivePill, activeCwd, loadArchivedSessions]);
-
   const handleSessionDeletedFromList = useCallback((id: string) => {
     onSessionDeleted?.(id);
     void loadSessions();
@@ -590,32 +580,6 @@ export function SessionSidebar({
             <line x1="6" y1="1" x2="6" y2="11" /><line x1="1" y1="6" x2="11" y2="6" />
           </svg>
           {t("sidebar.newSession")}
-        </button>
-      </div>
-
-      {/* Nav pills: Sessions / Archive */}
-      <div className="sidebar-nav-pills">
-        <button
-          className={!explorerOpen && !archivedExpanded ? "on" : ""}
-          onClick={() => {
-            setExplorerOpen(false);
-            setArchivedExpanded(false);
-          }}
-          title={t("sidebar.sessions")}
-        >
-          {t("sidebar.sessions")}
-        </button>
-        <button
-          className={archivedExpanded ? "on" : ""}
-          onClick={() => {
-            if (activeCwd) {
-              setArchivedExpanded(true);
-              void loadArchivedSessions(activeCwd, true);
-            }
-          }}
-          title={t("sidebar.archive")}
-        >
-          {t("sidebar.archive")}
         </button>
       </div>
 

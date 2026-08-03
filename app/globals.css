@@ -4902,18 +4902,6 @@ span.linenumber {
   background: var(--surface-selected) !important;
   color: var(--text-accent);
 }
-.workspace-quick-action.is-success {
-  border-color: var(--status-success-border);
-  background: var(--status-success-soft) !important;
-  color: var(--status-success-foreground);
-}
-.workspace-quick-action:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-.workspace-action-label {
-  display: none;
-}
 
 /* Sidebar top: New session */
 .sidebar-new-session-row {
@@ -4939,30 +4927,7 @@ span.linenumber {
 .sidebar-new-session-row .new-session-btn:hover:not(:disabled) { filter: brightness(1.06); }
 .sidebar-new-session-row .new-session-btn:disabled { opacity: 0.45; cursor: default; }
 
-/* Sidebar nav pills + search */
-.sidebar-nav-pills {
-  display: flex;
-  gap: 4px;
-  padding: 8px 10px 2px;
-  flex-shrink: 0;
-}
-.sidebar-nav-pills button {
-  flex: 1;
-  height: 30px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 600;
-  border: 1px solid transparent;
-  color: var(--text-2);
-  cursor: pointer;
-  transition: background 0.12s, color 0.12s, border-color 0.12s;
-}
-.sidebar-nav-pills button:hover { background: var(--bg-hover); color: var(--text); }
-.sidebar-nav-pills button.on {
-  background: var(--accent-soft);
-  color: var(--text);
-  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
-}
+/* Sidebar session search */
 .sidebar-search-row {
   padding: 6px 10px 2px;
   flex-shrink: 0;
@@ -5013,6 +4978,21 @@ span.linenumber {
   line-height: 1.35;
   overflow-wrap: anywhere;
 }
+.workspace-action-status {
+  margin-bottom: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  background: var(--surface-sunken);
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.workspace-action-status.is-pending {
+  border-color: var(--border-strong, var(--border-default));
+  color: var(--text-primary);
+}
 
 .session-sidebar-root {
   height: 100%;
@@ -5050,8 +5030,12 @@ span.linenumber {
   font-size: 12px;
   text-align: left;
 }
-.sidebar-menu-item:hover,
+.sidebar-menu-item:hover:not(:disabled),
 .sidebar-menu-item:focus-visible { background: var(--surface-hover); }
+.sidebar-menu-item:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
 .sidebar-menu-item.is-danger { color: var(--status-danger-foreground); }
 .sidebar-menu-item.is-danger:hover,
 .sidebar-menu-item.is-danger:focus-visible { background: var(--status-danger-soft); }
