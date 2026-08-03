@@ -233,6 +233,58 @@ html[data-theme-skin="ocean"] {
   --palette-subtle: rgba(20, 108, 124, 0.05);
 }
 
+/* Eye-care light skins adapted from huyan-html prototypes. */
+html[data-theme-skin="warm-paper"] {
+  --palette-app: #f0eadc;
+  --palette-panel: #f8f3e7;
+  --palette-hover: #efe8d6;
+  --palette-selected: #eae0c9;
+  --palette-border: #e2dac5;
+  --palette-text: #3b3528;
+  --palette-text-muted: #6f6753;
+  --palette-text-dim: #9c947e;
+  --palette-accent: #b45309;
+  --palette-accent-hover: #92400e;
+  --palette-user-message: #f3e3ce;
+  --palette-assistant-message: #fcf9f0;
+  --palette-tool-message: #f8f3e7;
+  --palette-subtle: rgba(59, 53, 40, 0.05);
+}
+
+html[data-theme-skin="sage"] {
+  --palette-app: #e6ede2;
+  --palette-panel: #f0f5ec;
+  --palette-hover: #e7eee1;
+  --palette-selected: #dde7d4;
+  --palette-border: #d8e1cf;
+  --palette-text: #2d362b;
+  --palette-text-muted: #5d6b58;
+  --palette-text-dim: #8c9a85;
+  --palette-accent: #2f7d5b;
+  --palette-accent-hover: #276a4c;
+  --palette-user-message: #d9eae0;
+  --palette-assistant-message: #f6f9f2;
+  --palette-tool-message: #f0f5ec;
+  --palette-subtle: rgba(45, 54, 43, 0.05);
+}
+
+html[data-theme-skin="mist-blue"] {
+  --palette-app: #e9eef4;
+  --palette-panel: #f2f6fa;
+  --palette-hover: #e9eff5;
+  --palette-selected: #dfe8f1;
+  --palette-border: #dae2eb;
+  --palette-text: #2b3442;
+  --palette-text-muted: #5b6879;
+  --palette-text-dim: #8c98a8;
+  --palette-accent: #3a6ea5;
+  --palette-accent-hover: #2f5c8a;
+  --palette-user-message: #dee9f4;
+  --palette-assistant-message: #f7fafc;
+  --palette-tool-message: #f2f6fa;
+  --palette-subtle: rgba(43, 52, 66, 0.05);
+}
+
 html[data-theme-skin="forest"] {
   --palette-app: #17201b;
   --palette-panel: #202b24;
@@ -620,6 +672,16 @@ html:is(
   color: var(--text-secondary);
   font-size: 10px;
   font-weight: 500;
+}
+
+.theme-picker-section-label {
+  grid-column: 1 / -1;
+  padding: 8px 4px 0;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text-tertiary);
+  border-top: 1px solid var(--border-subtle);
 }
 
 .theme-picker-grid {

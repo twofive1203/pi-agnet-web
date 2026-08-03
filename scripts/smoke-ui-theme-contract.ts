@@ -13,7 +13,7 @@ import {
 } from "../lib/theme";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-const EXPECTED_THEME_COUNT = 11;
+const EXPECTED_THEME_COUNT = 14;
 
 const REQUIRED_SEMANTIC_TOKENS = [
   "surface-app",

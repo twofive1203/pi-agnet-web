@@ -1,12 +1,23 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 import { useTheme } from "@/hooks/useTheme";
 import { THEME_META, THEME_PREFERENCES } from "@/lib/theme";
 import { useI18n } from "./I18nProvider";
 
 const OPTIONS = THEME_PREFERENCES.map((id) => ({ id, ...THEME_META[id] }));
+
+// Group options by resolved mode so the picker shows light themes first, then dark themes.
+const SYSTEM_OPTIONS = OPTIONS.filter((option) => option.id === "system");
+const LIGHT_OPTIONS = OPTIONS.filter((option) => option.id !== "system" && option.mode === "light");
+const DARK_OPTIONS = OPTIONS.filter((option) => option.mode === "dark");
+const ORDERED_OPTIONS = [...SYSTEM_OPTIONS, ...LIGHT_OPTIONS, ...DARK_OPTIONS];
+const SECTIONS = [
+  { labelKey: null, options: SYSTEM_OPTIONS },
+  { labelKey: "app.themeGroupLight", options: LIGHT_OPTIONS },
+  { labelKey: "app.themeGroupDark", options: DARK_OPTIONS },
+] as const;
 
 const POPOVER_WIDTH = 260;
 const THEME_PICKER_ID = "theme-picker-popover";
@@ -70,23 +81,49 @@ export function ThemePicker() {
 
   useEffect(() => {
     if (!open || !position) return;
-    const selectedIndex = Math.max(0, OPTIONS.findIndex((option) => option.id === preference));
+    const selectedIndex = Math.max(0, ORDERED_OPTIONS.findIndex((option) => option.id === preference));
     const frame = window.requestAnimationFrame(() => optionRefs.current[selectedIndex]?.focus());
     return () => window.cancelAnimationFrame(frame);
   }, [open, position, preference]);
 
   const handleOptionKeyDown = useCallback((event: ReactKeyboardEvent<HTMLButtonElement>, index: number) => {
     let nextIndex: number | null = null;
-    if (event.key === "ArrowRight" || event.key === "ArrowDown") nextIndex = (index + 1) % OPTIONS.length;
-    else if (event.key === "ArrowLeft" || event.key === "ArrowUp") nextIndex = (index - 1 + OPTIONS.length) % OPTIONS.length;
+    if (event.key === "ArrowRight" || event.key === "ArrowDown") nextIndex = (index + 1) % ORDERED_OPTIONS.length;
+    else if (event.key === "ArrowLeft" || event.key === "ArrowUp") nextIndex = (index - 1 + ORDERED_OPTIONS.length) % ORDERED_OPTIONS.length;
     else if (event.key === "Home") nextIndex = 0;
-    else if (event.key === "End") nextIndex = OPTIONS.length - 1;
+    else if (event.key === "End") nextIndex = ORDERED_OPTIONS.length - 1;
     if (nextIndex == null) return;
     event.preventDefault();
-    const option = OPTIONS[nextIndex];
+    const option = ORDERED_OPTIONS[nextIndex];
     setTheme(option.id);
     window.requestAnimationFrame(() => optionRefs.current[nextIndex]?.focus());
   }, [setTheme]);
+
+  const renderOption = (option: (typeof OPTIONS)[number], index: number) => {
+    const selected = preference === option.id;
+    return (
+      <button
+        key={option.id}
+        ref={(element) => { optionRefs.current[index] = element; }}
+        type="button"
+        className={`theme-picker-option${selected ? " theme-picker-option-selected" : ""}`}
+        role="radio"
+        aria-checked={selected}
+        tabIndex={selected ? 0 : -1}
+        onKeyDown={(event) => handleOptionKeyDown(event, index)}
+        onClick={(event) => {
+          const rect = event.currentTarget.getBoundingClientRect();
+          setTheme(option.id, { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
+        }}
+      >
+        <span className="theme-picker-swatches" aria-hidden="true">
+          {option.preview.map((color) => <span key={color} style={{ background: color }} />)}
+        </span>
+        <span className="theme-picker-option-label">{t(option.labelKey)}</span>
+        <span className="theme-picker-check" aria-hidden="true">{selected ? "✓" : ""}</span>
+      </button>
+    );
+  };
 
   return (
     <>
@@ -126,34 +163,17 @@ export function ThemePicker() {
         >
           <div className="theme-picker-header">
             <span>{t("app.appearance")}</span>
-            <span className="theme-picker-current">{t(OPTIONS.find((option) => option.id === preference)?.labelKey ?? "app.themeSystem")}</span>
+            <span className="theme-picker-current">{t(ORDERED_OPTIONS.find((option) => option.id === preference)?.labelKey ?? "app.themeSystem")}</span>
           </div>
           <div className="theme-picker-grid" role="radiogroup" aria-label={t("app.themePickerLabel")}>
-            {OPTIONS.map((option, index) => {
-              const selected = preference === option.id;
-              return (
-                <button
-                  key={option.id}
-                  ref={(element) => { optionRefs.current[index] = element; }}
-                  type="button"
-                  className={`theme-picker-option${selected ? " theme-picker-option-selected" : ""}`}
-                  role="radio"
-                  aria-checked={selected}
-                  tabIndex={selected ? 0 : -1}
-                  onKeyDown={(event) => handleOptionKeyDown(event, index)}
-                  onClick={(event) => {
-                    const rect = event.currentTarget.getBoundingClientRect();
-                    setTheme(option.id, { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
-                  }}
-                >
-                  <span className="theme-picker-swatches" aria-hidden="true">
-                    {option.preview.map((color) => <span key={color} style={{ background: color }} />)}
-                  </span>
-                  <span className="theme-picker-option-label">{t(option.labelKey)}</span>
-                  <span className="theme-picker-check" aria-hidden="true">{selected ? "✓" : ""}</span>
-                </button>
-              );
-            })}
+            {SECTIONS.map((section) => (
+              <Fragment key={section.labelKey ?? "base"}>
+                {section.labelKey ? (
+                  <div className="theme-picker-section-label">{t(section.labelKey)}</div>
+                ) : null}
+                {section.options.map((option) => renderOption(option, ORDERED_OPTIONS.indexOf(option)))}
+              </Fragment>
+            ))}
           </div>
         </div>,
         document.body,
