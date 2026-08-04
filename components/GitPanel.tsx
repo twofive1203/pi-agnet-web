@@ -79,15 +79,28 @@ function CommitDetailPanel({
   loading,
   error,
   onOpenDiff,
+  onRetry,
 }: {
   detail: GitCommitDetail | null;
   loading: boolean;
   error: string | null;
   onOpenDiff: (file: GitCommitChangedFile) => void;
+  onRetry?: () => void;
 }) {
   const { t } = useI18n();
   if (loading) return <div className="inspector-state inspector-state-loading git-detail-state">{t("git.loadingCommit")}</div>;
-  if (error) return <div className="inspector-state inspector-state-error git-detail-state" role="alert">{error}</div>;
+  if (error) {
+    return (
+      <div className="inspector-state inspector-state-error git-detail-state" role="alert">
+        <div>{error}</div>
+        {onRetry && (
+          <button type="button" onClick={onRetry} className="git-switch-button" style={{ marginTop: 8 }}>
+            {t("git.retry")}
+          </button>
+        )}
+      </div>
+    );
+  }
   if (!detail) return <div className="inspector-state inspector-state-empty git-detail-state">{t("git.selectCommit")}</div>;
 
   return (
@@ -114,7 +127,7 @@ function CommitDetailPanel({
         </div>
       )}
       <div className="git-commit-files-header">
-        <div className="inspector-section-title">Changed Files <span>({detail.files.length})</span></div>
+        <div className="inspector-section-title">{t("git.changedFiles")} <span>({detail.files.length})</span></div>
         <div className="git-detail-hint">{t("git.doubleClickHint")}</div>
       </div>
       {detail.files.length > 0 ? (
@@ -124,7 +137,7 @@ function CommitDetailPanel({
           ))}
         </div>
       ) : (
-        <div className="git-empty-inline">No first-parent file changes for this commit.</div>
+        <div className="git-empty-inline">{t("git.noFirstParentChanges")}</div>
       )}
     </div>
   );
@@ -148,6 +161,7 @@ export function GitPanel({ cwd, refreshKey, onDirtyChange }: Props) {
   const [commitDetail, setCommitDetail] = useState<GitCommitDetail | null>(null);
   const [commitDetailLoading, setCommitDetailLoading] = useState(false);
   const [commitDetailError, setCommitDetailError] = useState<string | null>(null);
+  const [commitDetailRetryKey, setCommitDetailRetryKey] = useState(0);
   const [diffFile, setDiffFile] = useState<GitCommitChangedFile | null>(null);
   const fetchIdRef = useRef(0);
   const commitDetailFetchIdRef = useRef(0);
@@ -294,7 +308,11 @@ export function GitPanel({ cwd, refreshKey, onDirtyChange }: Props) {
       .finally(() => {
         if (id === commitDetailFetchIdRef.current) setCommitDetailLoading(false);
       });
-  }, [cwd, selectedCommitHash]);
+  }, [cwd, selectedCommitHash, commitDetailRetryKey]);
+
+  const handleRetryCommitDetail = useCallback(() => {
+    setCommitDetailRetryKey((k) => k + 1);
+  }, []);
 
   const handleSelectCommit = useCallback((commit: GitGraphCommit) => {
     setSelectedCommitHash(commit.hash);
@@ -352,18 +370,18 @@ export function GitPanel({ cwd, refreshKey, onDirtyChange }: Props) {
       <div className="inspector-state inspector-state-error" role="alert">
         <div>{loadError}</div>
         <button type="button" onClick={() => void fetchAll()} className="git-switch-button" style={{ marginTop: 8 }}>
-          Retry
+          {t("git.retry")}
         </button>
       </div>
     );
   }
 
   if (loaded && status === null && !loading) {
-    return <div className="inspector-state inspector-state-empty">Not a Git repository</div>;
+    return <div className="inspector-state inspector-state-empty">{t("git.notARepo")}</div>;
   }
 
   if (!loaded && loading) {
-    return <div className="inspector-state inspector-state-loading">Loading...</div>;
+    return <div className="inspector-state inspector-state-loading">{t("git.loading")}</div>;
   }
 
   if (!status) return null;
@@ -373,11 +391,11 @@ export function GitPanel({ cwd, refreshKey, onDirtyChange }: Props) {
   const selectedIsCurrent = selectedBranch === status.branch || branchOptions.some((branch) => branch.name === selectedBranch && branch.isCurrent);
   const canSwitchBranch = Boolean(selectedBranch) && branchOptions.length > 0 && !loading && !switching && !status.isDirty && !selectedIsCurrent;
   const switchDisabledReason = status.isDirty
-    ? "Commit, stash, or discard local changes before switching branches."
+    ? t("git.switchDisabledDirty")
     : branchOptions.length === 0
-      ? "Branch list is unavailable."
+      ? t("git.switchDisabledNoBranches")
       : selectedIsCurrent
-        ? "Select a different local branch to switch."
+        ? t("git.switchDisabledCurrent")
         : null;
 
   return (
@@ -396,8 +414,8 @@ export function GitPanel({ cwd, refreshKey, onDirtyChange }: Props) {
         <div className="inspector-section-title">{t("git.branch")}</div>
         <div className="git-branch-summary">
           <span className="git-branch-name">{status.isDetached ? "(detached)" : status.branch}</span>
-          {status.isDirty && <span className="inspector-badge is-warning">dirty</span>}
-          {status.isWorktree && <span className="inspector-badge is-info">worktree</span>}
+          {status.isDirty && <span className="inspector-badge is-warning">{t("git.dirty")}</span>}
+          {status.isWorktree && <span className="inspector-badge is-info">{t("git.worktreeBadge")}</span>}
           {status.upstream && (
             <span className="git-upstream">
               {status.upstream}
@@ -413,7 +431,7 @@ export function GitPanel({ cwd, refreshKey, onDirtyChange }: Props) {
         </div>
 
         <div className="git-branch-controls">
-          <div className="git-control-label">Preview / switch local branch</div>
+          <div className="git-control-label">{t("git.previewSwitchLabel")}</div>
           <div className="git-branch-switch-row">
             <select
               value={selectedBranch}
@@ -437,10 +455,10 @@ export function GitPanel({ cwd, refreshKey, onDirtyChange }: Props) {
               title={switchDisabledReason ?? t("git.switchTo", { branch: selectedBranch })}
               className="git-switch-button"
             >
-              {switching ? "Switching..." : "Switch"}
+              {switching ? t("git.switching") : t("git.switch")}
             </button>
           </div>
-          <div className="git-control-help">Selecting a branch previews its commit graph. Switch changes the checkout.</div>
+          <div className="git-control-help">{t("git.previewSwitchHelp")}</div>
           {switchDisabledReason && <div className={`git-control-message${status.isDirty ? " is-warning" : ""}`}>{switchDisabledReason}</div>}
           {switchError && <div className="git-control-message is-error" role="alert">{switchError}</div>}
         </div>
@@ -450,7 +468,7 @@ export function GitPanel({ cwd, refreshKey, onDirtyChange }: Props) {
         <div className="git-history-grid">
           <div className="git-history-column">
             <div className="inspector-section-title">
-              Commit Graph
+              {t("git.commitGraph")}
               {previewBranch && <span className="inspector-section-context">preview: {previewBranch}</span>}
             </div>
             <div className="git-graph-scroll">
@@ -492,6 +510,7 @@ export function GitPanel({ cwd, refreshKey, onDirtyChange }: Props) {
               loading={commitDetailLoading}
               error={commitDetailError}
               onOpenDiff={handleOpenDiff}
+              onRetry={handleRetryCommitDetail}
             />
           </div>
         </div>
@@ -506,7 +525,7 @@ export function GitPanel({ cwd, refreshKey, onDirtyChange }: Props) {
                 <FileChangeRow key={`staged-${change.status}-${change.oldFile ?? ""}-${change.file}`} change={change} />
               ))}
               {status.staged.length > MAX_FILE_ROWS && (
-                <div className="git-empty-inline">+{status.staged.length - MAX_FILE_ROWS} more</div>
+                <div className="git-empty-inline">{t("git.moreItems", { count: status.staged.length - MAX_FILE_ROWS })}</div>
               )}
             </div>
           )
@@ -522,7 +541,7 @@ export function GitPanel({ cwd, refreshKey, onDirtyChange }: Props) {
                 <FileChangeRow key={`unstaged-${change.status}-${change.oldFile ?? ""}-${change.file}`} change={change} />
               ))}
               {status.unstaged.length > MAX_FILE_ROWS && (
-                <div className="git-empty-inline">+{status.unstaged.length - MAX_FILE_ROWS} more</div>
+                <div className="git-empty-inline">{t("git.moreItems", { count: status.unstaged.length - MAX_FILE_ROWS })}</div>
               )}
             </div>
           )
@@ -540,7 +559,7 @@ export function GitPanel({ cwd, refreshKey, onDirtyChange }: Props) {
               </div>
             ))}
             {status.untracked.length > MAX_FILE_ROWS && (
-              <div className="git-empty-inline">+{status.untracked.length - MAX_FILE_ROWS} more</div>
+              <div className="git-empty-inline">{t("git.moreItems", { count: status.untracked.length - MAX_FILE_ROWS })}</div>
             )}
           </div>
         ) : <div className="git-empty-inline">{t("git.noUntracked")}</div>}
@@ -549,7 +568,7 @@ export function GitPanel({ cwd, refreshKey, onDirtyChange }: Props) {
       <section className="inspector-section git-stash-section">
         <div className="inspector-section-title">{t("git.stash")}</div>
         {status.stashCount > 0
-          ? <div className="git-stash-count">{status.stashCount} stash {status.stashCount === 1 ? "entry" : "entries"}</div>
+          ? <div className="git-stash-count">{t("git.stashEntries", { count: status.stashCount })}</div>
           : <div className="git-empty-inline">{t("git.noStash")}</div>}
       </section>
 

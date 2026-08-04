@@ -80,6 +80,7 @@ function buildGraphLayout(
   );
 
   // Sort tips: branch-type (refs/heads/xxx) first, then HEAD-only, then current branch first within each group
+  const hashToIndex = new Map(commits.map((c, i) => [c.hash, i]));
   const tipOrder = [...tips].sort((a, b) => {
     const aBranch = a.refs.some((r) => r.type === "branch");
     const bBranch = b.refs.some((r) => r.type === "branch");
@@ -90,7 +91,7 @@ function buildGraphLayout(
     const bCur = currentBranch && b.refs.some((r) => r.name === currentBranch);
     if (aCur && !bCur) return -1;
     if (!aCur && bCur) return 1;
-    return commits.indexOf(a) - commits.indexOf(b);
+    return (hashToIndex.get(a.hash) ?? 0) - (hashToIndex.get(b.hash) ?? 0);
   });
 
   const commitBranch = new Map<string, string>();
@@ -206,6 +207,7 @@ function buildRowData(
   laneOrder: number[],
   laneWidth: number,
   paddingL: number,
+  hashToIndex: Map<string, number>,
 ): RowData[] {
   const rows: RowData[] = [];
 
@@ -247,7 +249,7 @@ function buildRowData(
     const fk = layout.forkParent.get(commit.hash);
     let forkInfo: RowData["forkInfo"] = null;
     if (fk) {
-      const parentIdx = commits.findIndex((c) => c.hash === fk.parentHash);
+      const parentIdx = hashToIndex.get(fk.parentHash) ?? -1;
       if (parentIdx >= 0) {
         forkInfo = { parentHash: fk.parentHash, parentLane: fk.parentLane, parentIdx };
       }
@@ -315,7 +317,8 @@ export function CommitGraph({ commits, currentBranch, maxDisplay = 50, selectedH
     const graphWidth = ordered.length * laneWidth + paddingL;
     const rowHeight = 20;
 
-    const rows = buildRowData(display, layout, ordered, laneWidth, paddingL);
+    const hashToIndex = new Map(display.map((c, i) => [c.hash, i]));
+    const rows = buildRowData(display, layout, ordered, laneWidth, paddingL, hashToIndex);
 
     // Build overlay connection data (fork & merge lines)
     const overlays: OverlayLine[] = [];
@@ -344,7 +347,7 @@ export function CommitGraph({ commits, currentBranch, maxDisplay = 50, selectedH
       for (let pi = 1; pi < rd.commit.parents.length; pi++) {
         const pl = layout.commitLane.get(rd.commit.parents[pi]);
         if (pl === undefined || pl === rd.commitLane) continue;
-        const pRow = rows.findIndex((r) => r.commit.hash === rd.commit.parents[pi]);
+        const pRow = hashToIndex.get(rd.commit.parents[pi]) ?? -1;
         if (pRow < 0) continue;
         const pCX = ordered.indexOf(pl) * laneWidth + 7 + paddingL;
         const dCX = rd.dotCX;
