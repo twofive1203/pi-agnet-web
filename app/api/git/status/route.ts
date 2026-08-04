@@ -9,7 +9,9 @@ async function git(args: string[], cwd: string): Promise<string> {
   const { stdout } = await execFileAsync("git", args, {
     cwd,
     encoding: "utf8",
-    maxBuffer: 1024 * 1024,
+    // Large repos can produce multi-MB porcelain output; keep headroom so the
+    // buffer limit is not mistaken for a clean tree.
+    maxBuffer: 8 * 1024 * 1024,
   });
   return stdout;
 }
@@ -112,9 +114,11 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ status: null });
     }
 
-    // Run status, log, stash, branch info, and worktree detection in parallel
+    // `git status` is strict: swallowing its failure would misreport the repo as
+    // clean. The rest are best-effort metadata and may degrade to empty values.
+    const statusOutput = await git(["status", "--porcelain"], cwd);
+
     const [
-      statusOutput,
       logOutput,
       stashOutput,
       branchOutput,
@@ -123,7 +127,6 @@ export async function GET(req: NextRequest) {
       upstreamOutput,
       aheadBehindOutput,
     ] = await Promise.all([
-      git(["status", "--porcelain"], cwd).catch(() => ""),
       git(["log", "--format=%H\t%an\t%ar\t%ai\t%s", "-10"], cwd).catch(() => ""),
       git(["stash", "list"], cwd).catch(() => ""),
       git(["rev-parse", "--abbrev-ref", "HEAD"], cwd).catch(() => "HEAD"),
@@ -131,10 +134,7 @@ export async function GET(req: NextRequest) {
       git(["rev-parse", "--git-common-dir"], cwd).catch(() => ""),
       git(["rev-parse", "--abbrev-ref", "@{upstream}"], cwd).catch(() => ""),
       git(["rev-list", "--count", "--left-right", "HEAD...@{upstream}"], cwd).catch(() => ""),
-    ]).catch(() => {
-      // If parallel fails, retry minimal set
-      throw new Error("Git command failed");
-    });
+    ]);
 
     const { staged, unstaged, untracked } = parsePorcelainV1(statusOutput.trim());
     const isDirty = staged.length > 0 || unstaged.length > 0 || untracked.length > 0;
@@ -183,6 +183,8 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ status });
   } catch {
-    return NextResponse.json({ status: null });
+    // Distinguish command failures from "not a git repository" (status: null,
+    // HTTP 200) so the UI does not misreport errors as a missing repo.
+    return NextResponse.json({ status: null, error: "Git command failed" }, { status: 500 });
   }
 }

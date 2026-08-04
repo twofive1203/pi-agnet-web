@@ -19,6 +19,9 @@ function gitStatusTone(status: string): string {
   return "is-muted";
 }
 
+/** Cap rendered rows per file section so huge repos cannot freeze the panel. */
+const MAX_FILE_ROWS = 200;
+
 const gitStatusLabels: Record<string, string> = {
   M: "modified",
   A: "added",
@@ -134,6 +137,11 @@ export function GitPanel({ cwd, refreshKey, onDirtyChange }: Props) {
   const [loading, setLoading] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [selectedBranch, setSelectedBranch] = useState("");
+  // Branch whose graph is actually loaded. Updated via debounce from dropdown
+  // changes so browsing the select does not fire a fetch per keystroke.
+  const [graphBranch, setGraphBranch] = useState("");
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [graphError, setGraphError] = useState<string | null>(null);
   const [switching, setSwitching] = useState(false);
   const [switchError, setSwitchError] = useState<string | null>(null);
   const [selectedCommitHash, setSelectedCommitHash] = useState<string | null>(null);
@@ -143,12 +151,19 @@ export function GitPanel({ cwd, refreshKey, onDirtyChange }: Props) {
   const [diffFile, setDiffFile] = useState<GitCommitChangedFile | null>(null);
   const fetchIdRef = useRef(0);
   const commitDetailFetchIdRef = useRef(0);
+  const branchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (branchDebounceRef.current) clearTimeout(branchDebounceRef.current);
+    };
+  }, []);
 
   const fetchAll = useCallback(async () => {
     if (!cwd) return;
     const id = ++fetchIdRef.current;
     const graphParams = new URLSearchParams({ cwd, maxCount: "50" });
-    if (selectedBranch) graphParams.set("branch", selectedBranch);
+    if (graphBranch) graphParams.set("branch", graphBranch);
     setLoading(true);
     try {
       const [statusRes, graphRes] = await Promise.all([
@@ -156,61 +171,81 @@ export function GitPanel({ cwd, refreshKey, onDirtyChange }: Props) {
         fetch(`/api/git/graph?${graphParams.toString()}`),
       ]);
       const statusData = await statusRes.json() as { status: GitStatusInfo | null; error?: string };
-      const graphData_ = await graphRes.json() as { data: GitGraphData | null; error?: string };
+      const graphBody = await graphRes.json() as { data: GitGraphData | null; error?: string };
 
       if (id !== fetchIdRef.current) return;
 
       if (!statusRes.ok) {
         setStatus(null);
         setGraphData(null);
+        setLoadError(statusData.error ?? `Failed to load git status (HTTP ${statusRes.status})`);
         setLoaded(true);
         onDirtyChange?.(false);
         return;
       }
 
+      setLoadError(null);
       setStatus(statusData.status);
-      setGraphData(graphData_.data);
-      setLoaded(true);
       onDirtyChange?.(statusData.status?.isDirty ?? false);
-    } catch {
+
+      if (!graphRes.ok) {
+        setGraphData(null);
+        setGraphError(graphBody.error ?? `Failed to load commit graph (HTTP ${graphRes.status})`);
+      } else {
+        setGraphData(graphBody.data);
+        setGraphError(graphBody.error ?? null);
+      }
+      setLoaded(true);
+    } catch (error) {
       if (id !== fetchIdRef.current) return;
       setStatus(null);
       setGraphData(null);
+      setLoadError(error instanceof Error ? error.message : "Failed to load git data");
       setLoaded(true);
       onDirtyChange?.(false);
     } finally {
       if (id === fetchIdRef.current) setLoading(false);
     }
-  }, [cwd, onDirtyChange, selectedBranch]);
+  }, [cwd, onDirtyChange, graphBranch]);
 
   useEffect(() => {
     void fetchAll();
   }, [fetchAll, refreshKey]);
 
   useEffect(() => {
+    if (branchDebounceRef.current) {
+      clearTimeout(branchDebounceRef.current);
+      branchDebounceRef.current = null;
+    }
     setSelectedBranch("");
+    setGraphBranch("");
     setSwitchError(null);
     setSelectedCommitHash(null);
     setCommitDetail(null);
     setCommitDetailError(null);
+    setLoadError(null);
+    setGraphError(null);
     setDiffFile(null);
   }, [cwd]);
 
   useEffect(() => {
     const branches = graphData?.branches ?? [];
     if (branches.length === 0) {
-      setSelectedBranch("");
+      if (selectedBranch) {
+        setSelectedBranch("");
+        setGraphBranch("");
+      }
       return;
     }
 
-    setSelectedBranch((current) => {
-      if (current && branches.some((branch) => branch.name === current)) return current;
-      const currentBranch = status?.branch
-        ? branches.find((branch) => branch.name === status.branch)
-        : branches.find((branch) => branch.isCurrent);
-      return currentBranch?.name ?? branches[0]?.name ?? "";
-    });
-  }, [graphData?.branches, status?.branch]);
+    if (selectedBranch && branches.some((branch) => branch.name === selectedBranch)) return;
+    const currentBranch = status?.branch
+      ? branches.find((branch) => branch.name === status.branch)
+      : branches.find((branch) => branch.isCurrent);
+    const next = currentBranch?.name ?? branches[0]?.name ?? "";
+    setSelectedBranch(next);
+    setGraphBranch(next);
+  }, [graphData?.branches, status?.branch, selectedBranch]);
 
   useEffect(() => {
     const graphCommits = graphData?.commits ?? [];
@@ -265,6 +300,16 @@ export function GitPanel({ cwd, refreshKey, onDirtyChange }: Props) {
     setSelectedCommitHash(commit.hash);
   }, []);
 
+  const handleBranchSelect = useCallback((name: string) => {
+    setSelectedBranch(name);
+    setSwitchError(null);
+    if (branchDebounceRef.current) clearTimeout(branchDebounceRef.current);
+    branchDebounceRef.current = setTimeout(() => {
+      branchDebounceRef.current = null;
+      setGraphBranch(name);
+    }, 600);
+  }, []);
+
   const handleOpenDiff = useCallback((file: GitCommitChangedFile) => {
     setDiffFile(file);
   }, []);
@@ -284,6 +329,16 @@ export function GitPanel({ cwd, refreshKey, onDirtyChange }: Props) {
       if (!res.ok || body.error) {
         throw new Error(body.error ?? `Switch failed with HTTP ${res.status}`);
       }
+      // Drop commit selection from the old branch so no stale detail flashes.
+      setSelectedCommitHash(null);
+      setCommitDetail(null);
+      setCommitDetailError(null);
+      setDiffFile(null);
+      if (branchDebounceRef.current) {
+        clearTimeout(branchDebounceRef.current);
+        branchDebounceRef.current = null;
+      }
+      setGraphBranch(selectedBranch);
       await fetchAll();
     } catch (error) {
       setSwitchError(error instanceof Error ? error.message : String(error));
@@ -291,6 +346,17 @@ export function GitPanel({ cwd, refreshKey, onDirtyChange }: Props) {
       setSwitching(false);
     }
   }, [cwd, fetchAll, selectedBranch, status?.isDirty, switching]);
+
+  if (loaded && loadError && !loading) {
+    return (
+      <div className="inspector-state inspector-state-error" role="alert">
+        <div>{loadError}</div>
+        <button type="button" onClick={() => void fetchAll()} className="git-switch-button" style={{ marginTop: 8 }}>
+          Retry
+        </button>
+      </div>
+    );
+  }
 
   if (loaded && status === null && !loading) {
     return <div className="inspector-state inspector-state-empty">Not a Git repository</div>;
@@ -303,7 +369,7 @@ export function GitPanel({ cwd, refreshKey, onDirtyChange }: Props) {
   if (!status) return null;
 
   const branchOptions = graphData?.branches ?? [];
-  const previewBranch = selectedBranch || status.branch;
+  const previewBranch = graphBranch || status.branch;
   const selectedIsCurrent = selectedBranch === status.branch || branchOptions.some((branch) => branch.name === selectedBranch && branch.isCurrent);
   const canSwitchBranch = Boolean(selectedBranch) && branchOptions.length > 0 && !loading && !switching && !status.isDirty && !selectedIsCurrent;
   const switchDisabledReason = status.isDirty
@@ -351,10 +417,7 @@ export function GitPanel({ cwd, refreshKey, onDirtyChange }: Props) {
           <div className="git-branch-switch-row">
             <select
               value={selectedBranch}
-              onChange={(e) => {
-                setSelectedBranch(e.currentTarget.value);
-                setSwitchError(null);
-              }}
+              onChange={(e) => handleBranchSelect(e.currentTarget.value)}
               disabled={loading || switching || branchOptions.length === 0}
               aria-label={t("git.selectBranchAria")}
               className="git-branch-select"
@@ -391,7 +454,9 @@ export function GitPanel({ cwd, refreshKey, onDirtyChange }: Props) {
               {previewBranch && <span className="inspector-section-context">preview: {previewBranch}</span>}
             </div>
             <div className="git-graph-scroll">
-              {graphData && graphData.commits && graphData.commits.length > 0 ? (
+              {graphError ? (
+                <div className="git-control-message is-error" role="alert">{graphError}</div>
+              ) : graphData && graphData.commits && graphData.commits.length > 0 ? (
                 <CommitGraph
                   commits={graphData.commits}
                   currentBranch={previewBranch}
@@ -435,14 +500,32 @@ export function GitPanel({ cwd, refreshKey, onDirtyChange }: Props) {
       <section className="inspector-section">
         <div className="inspector-section-title">{t("git.staged")} <span>({status.staged.length})</span></div>
         {status.staged.length > 0
-          ? <div className="git-file-list">{status.staged.map((change, i) => <FileChangeRow key={`staged-${i}`} change={change} />)}</div>
+          ? (
+            <div className="git-file-list">
+              {status.staged.slice(0, MAX_FILE_ROWS).map((change) => (
+                <FileChangeRow key={`staged-${change.status}-${change.oldFile ?? ""}-${change.file}`} change={change} />
+              ))}
+              {status.staged.length > MAX_FILE_ROWS && (
+                <div className="git-empty-inline">+{status.staged.length - MAX_FILE_ROWS} more</div>
+              )}
+            </div>
+          )
           : <div className="git-empty-inline">{t("git.noStaged")}</div>}
       </section>
 
       <section className="inspector-section">
         <div className="inspector-section-title">{t("git.unstaged")} <span>({status.unstaged.length})</span></div>
         {status.unstaged.length > 0
-          ? <div className="git-file-list">{status.unstaged.map((change, i) => <FileChangeRow key={`unstaged-${i}`} change={change} />)}</div>
+          ? (
+            <div className="git-file-list">
+              {status.unstaged.slice(0, MAX_FILE_ROWS).map((change) => (
+                <FileChangeRow key={`unstaged-${change.status}-${change.oldFile ?? ""}-${change.file}`} change={change} />
+              ))}
+              {status.unstaged.length > MAX_FILE_ROWS && (
+                <div className="git-empty-inline">+{status.unstaged.length - MAX_FILE_ROWS} more</div>
+              )}
+            </div>
+          )
           : <div className="git-empty-inline">{t("git.noUnstaged")}</div>}
       </section>
 
@@ -450,12 +533,15 @@ export function GitPanel({ cwd, refreshKey, onDirtyChange }: Props) {
         <div className="inspector-section-title">{t("git.untracked")} <span>({status.untracked.length})</span></div>
         {status.untracked.length > 0 ? (
           <div className="git-file-list">
-            {status.untracked.map((file, i) => (
-              <div key={`untracked-${i}`} className="git-file-row">
+            {status.untracked.slice(0, MAX_FILE_ROWS).map((file) => (
+              <div key={file} className="git-file-row">
                 <span className="git-status-dot is-muted" />
                 <span className="git-file-path is-muted">{file}</span>
               </div>
             ))}
+            {status.untracked.length > MAX_FILE_ROWS && (
+              <div className="git-empty-inline">+{status.untracked.length - MAX_FILE_ROWS} more</div>
+            )}
           </div>
         ) : <div className="git-empty-inline">{t("git.noUntracked")}</div>}
       </section>

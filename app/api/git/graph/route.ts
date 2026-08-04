@@ -147,18 +147,33 @@ export async function GET(req: NextRequest) {
 
     const logTargetArgs = branch ? [`refs/heads/${branch}`] : ["--all"];
 
-    // Fetch all data in parallel
-    const [logOutput, branchOutput] = await Promise.all([
-      // Custom format that's easy to parse: hash|||parents|||decorations|||author|||relativeDate|||isoDate|||subject
-      git([
-        "log", ...logTargetArgs, "--decorate=full",
-        `--max-count=${maxCount}`,
-        "--format=%H|||%P|||%D|||%an|||%ar|||%ai|||%s",
-      ], cwd).catch(() => ""),
-      git([
-        "branch", "--format=%(if)%(HEAD)%(then)*%(else) %(end)|||%(refname:short)|||%(objectname)|||%(upstream:short)|||%(upstream:track)",
-      ], cwd).catch(() => ""),
-    ]);
+    // A repo without any commit has no HEAD; git log fails there, so treat it
+    // as an empty history instead of an error.
+    let hasCommits = true;
+    try {
+      await git(["rev-parse", "--verify", "HEAD"], cwd);
+    } catch {
+      hasCommits = false;
+    }
+
+    // Custom format that's easy to parse: hash|||parents|||decorations|||author|||relativeDate|||isoDate|||subject
+    let logOutput = "";
+    if (hasCommits) {
+      try {
+        logOutput = await git([
+          "log", ...logTargetArgs, "--decorate=full",
+          `--max-count=${maxCount}`,
+          "--format=%H|||%P|||%D|||%an|||%ar|||%ai|||%s",
+        ], cwd);
+      } catch {
+        return NextResponse.json({ data: null, error: "Failed to read commit history" }, { status: 500 });
+      }
+    }
+
+    // Branch list is auxiliary; degrade to empty instead of failing the panel.
+    const branchOutput = await git([
+      "branch", "--format=%(if)%(HEAD)%(then)*%(else) %(end)|||%(refname:short)|||%(objectname)|||%(upstream:short)|||%(upstream:track)",
+    ], cwd).catch(() => "");
 
     const commits = parseLogOutput(logOutput);
     const branches = parseBranchOutput(branchOutput);
@@ -167,6 +182,6 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ data });
   } catch {
-    return NextResponse.json({ data: null });
+    return NextResponse.json({ data: null, error: "Git command failed" }, { status: 500 });
   }
 }
