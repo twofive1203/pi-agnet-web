@@ -33,6 +33,7 @@ function shortenPath(path: string): string {
 function sourceLabel(skill: Skill): string {
   const source = skill.sourceInfo?.source;
   const scope = skill.sourceInfo?.scope;
+  if (source?.startsWith("webui-bundled:")) return "bundled";
   if (scope === "user" || source === "user") return "global";
   if (scope === "project" || source === "project") return "project";
   return "path";
@@ -53,6 +54,7 @@ function SkillDetail({
 }) {
   const label = sourceLabel(skill);
   const enabled = !skill.disableModelInvocation;
+  const bundled = label === "bundled";
   const displayPath = label === "project" && skill.filePath.startsWith(cwd)
     ? `./${skill.filePath.slice(cwd.length).replace(/^[/\\]/, "")}`
     : shortenPath(skill.filePath);
@@ -67,9 +69,13 @@ function SkillDetail({
       />
       <SettingsToggle
         label="Available to the model"
-        description={enabled ? "This skill is included in the model prompt." : "This skill is hidden from the model prompt."}
+        description={bundled
+          ? "Bundled skills are read-only here. Disable the owning package in Settings → Extensions."
+          : enabled
+            ? "This skill is included in the model prompt."
+            : "This skill is hidden from the model prompt."}
         checked={enabled}
-        disabled={toggling}
+        disabled={toggling || bundled}
         onChange={() => onToggle(skill)}
       />
       {saveError && <SettingsNotice tone="danger">{saveError}</SettingsNotice>}

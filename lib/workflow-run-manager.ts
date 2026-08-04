@@ -11,6 +11,7 @@ import type { EventBusController } from "@earendil-works/pi-coding-agent";
 import { canonicalizeCwd } from "./cwd";
 import { disposeAgentSession, type DisposableAgentSession } from "./pi-session-lifecycle";
 import { preparePiRuntimeEnvironment } from "./pi-runtime-resolver";
+import { createBundledPiResourceLoader } from "./bundled-pi-extensions";
 import {
   agentNameForPhase,
   buildPhasePrompt,
@@ -258,7 +259,7 @@ async function createWorkflowHost(cwd: string): Promise<WorkflowHost> {
 
   const eventBus = createEventBus();
   const settingsManager = SettingsManager.create(canonical, agentDir);
-  const resourceLoader = new DefaultResourceLoader({
+  const resourceLoader = createBundledPiResourceLoader(DefaultResourceLoader, {
     cwd: canonical,
     agentDir,
     settingsManager,

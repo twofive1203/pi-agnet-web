@@ -4,7 +4,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { AgentsConfig } from "./AgentsConfig";
 import { ExtensionsConfig } from "./ExtensionsConfig";
 import { McpConfig } from "./McpConfig";
+import { WebToolsConfig } from "./WebToolsConfig";
 import type {
+  PiWebBundledExtensionsConfig,
   PiWebChatGptConfig,
   PiWebConfig,
   PiWebEditorConfig,
@@ -30,6 +32,7 @@ import {
   SettingsToggle as ToggleField,
 } from "@/components/ui/SettingsPrimitives";
 import type { Locale } from "@/lib/i18n";
+import { BUNDLED_PI_EXTENSIONS } from "@/lib/bundled-pi-extension-registry";
 
 interface WebConfigResponse {
   config: PiWebConfig;
@@ -72,7 +75,7 @@ const TEMPLATE_VARIABLES = [
   { token: "{yyyyMMdd-HHmmss}", descriptionKey: "settings.pathVarsTimestamp" },
 ];
 
-type SettingsSection = "language" | "worktree" | "usage" | "terminal" | "chatgpt" | "grok" | "editor" | "agents" | "mcp" | "workflow" | "extensions";
+type SettingsSection = "language" | "worktree" | "usage" | "terminal" | "chatgpt" | "grok" | "editor" | "agents" | "mcp" | "webtools" | "workflow" | "extensions";
 type SubagentThinkingOption = PiWebSubagentRunPolicy["thinking"];
 
 const SUBAGENT_THINKING_OPTIONS: SubagentThinkingOption[] = ["inherit", "off", "minimal", "low", "medium", "high", "xhigh"];
@@ -289,6 +292,8 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
   const [savedGrok, setSavedGrok] = useState<import("@/lib/pi-web-config").PiWebGrokConfig | null>(null);
   const [editor, setEditor] = useState<PiWebEditorConfig | null>(null);
   const [savedEditor, setSavedEditor] = useState<PiWebEditorConfig | null>(null);
+  const [bundledExtensions, setBundledExtensions] = useState<PiWebBundledExtensionsConfig | null>(null);
+  const [savedBundledExtensions, setSavedBundledExtensions] = useState<PiWebBundledExtensionsConfig | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [workflowStatus, setWorkflowStatus] = useState<WorkflowSetupStatus | null>(null);
@@ -300,8 +305,8 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
   const [modelsError, setModelsError] = useState<string | null>(null);
 
   const dirty = useMemo(
-    () => !worktreeConfigsEqual(worktree, savedWorktree) || !workflowConfigsEqual(workflow, savedWorkflow) || !usageConfigsEqual(usage, savedUsage) || !terminalConfigsEqual(terminal, savedTerminal) || !chatGptConfigsEqual(chatgpt, savedChatgpt) || JSON.stringify(grok) !== JSON.stringify(savedGrok) || !editorConfigsEqual(editor, savedEditor),
-    [worktree, savedWorktree, workflow, savedWorkflow, usage, savedUsage, terminal, savedTerminal, chatgpt, savedChatgpt, grok, savedGrok, editor, savedEditor],
+    () => !worktreeConfigsEqual(worktree, savedWorktree) || !workflowConfigsEqual(workflow, savedWorkflow) || !usageConfigsEqual(usage, savedUsage) || !terminalConfigsEqual(terminal, savedTerminal) || !chatGptConfigsEqual(chatgpt, savedChatgpt) || JSON.stringify(grok) !== JSON.stringify(savedGrok) || !editorConfigsEqual(editor, savedEditor) || JSON.stringify(bundledExtensions) !== JSON.stringify(savedBundledExtensions),
+    [worktree, savedWorktree, workflow, savedWorkflow, usage, savedUsage, terminal, savedTerminal, chatgpt, savedChatgpt, grok, savedGrok, editor, savedEditor, bundledExtensions, savedBundledExtensions],
   );
 
   const loadConfig = useCallback(async (signal?: AbortSignal) => {
@@ -327,6 +332,8 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
       setSavedGrok(data.config.grok);
       setEditor(data.config.editor);
       setSavedEditor(data.config.editor);
+      setBundledExtensions(data.config.bundledExtensions);
+      setSavedBundledExtensions(data.config.bundledExtensions);
       setConfigPath(data.path);
       setExists(data.exists);
       if (data.parseError) {
@@ -517,13 +524,15 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
     setSavedGrok(config.grok);
     setEditor(config.editor);
     setSavedEditor(config.editor);
+    setBundledExtensions(config.bundledExtensions);
+    setSavedBundledExtensions(config.bundledExtensions);
     setConfigPath(path);
     setExists(configExists);
     onConfigChange?.();
   }, [onConfigChange]);
 
   const saveConfig = useCallback(async (successNotice?: string): Promise<boolean> => {
-    if (!worktree || !workflow || !usage || !terminal || !chatgpt || !grok || !editor) return false;
+    if (!worktree || !workflow || !usage || !terminal || !chatgpt || !grok || !editor || !bundledExtensions) return false;
     setSaving(true);
     setError(null);
     setNotice(null);
@@ -532,7 +541,7 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         // Intentionally omit legacy trellis so inert pi-web.json.trellis data is preserved.
-        body: JSON.stringify({ worktree, workflow, usage, terminal, chatgpt, grok, editor }),
+        body: JSON.stringify({ worktree, workflow, usage, terminal, chatgpt, grok, editor, bundledExtensions }),
       });
       const data = await res.json() as WebConfigResponse & { success?: boolean };
       if (!res.ok || data.error) throw new Error(data.error ?? `HTTP ${res.status}`);
@@ -545,7 +554,7 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
     } finally {
       setSaving(false);
     }
-  }, [applyLoadedConfig, worktree, workflow, usage, terminal, chatgpt, grok, editor]);
+  }, [applyLoadedConfig, worktree, workflow, usage, terminal, chatgpt, grok, editor, bundledExtensions]);
 
   const handleSave = useCallback(async () => {
     await saveConfig(t("settings.savedToast"));
@@ -560,6 +569,7 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
     setChatgpt(defaults.chatgpt);
     setGrok(defaults.grok);
     setEditor(defaults.editor);
+    setBundledExtensions(defaults.bundledExtensions);
     setNotice(t("settings.restoredDefaults"));
   }, [defaults, t]);
 
@@ -578,6 +588,8 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
     setSavedGrok(config.grok);
     setEditor(config.editor);
     setSavedEditor(config.editor);
+    setBundledExtensions(config.bundledExtensions);
+    setSavedBundledExtensions(config.bundledExtensions);
     onConfigChange?.();
   }, [onConfigChange]);
 
@@ -673,6 +685,7 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
             {renderSectionButton("editor", t("settings.sectionEditor"), t("settings.editorSection"))}
             {renderSectionButton("agents", t("settings.sectionAgents"), t("settings.agentsSection"))}
             {renderSectionButton("mcp", t("settings.sectionMcp"), t("settings.mcpSection"))}
+            {renderSectionButton("webtools", t("settings.webTools.nav"), t("settings.webTools.title"))}
             {renderSectionButton("workflow", "SnFlow", t("settings.workflowSection"))}
             {renderSectionButton("extensions", "Extensions", t("settings.extensionsSection"))}
           </nav>
@@ -680,7 +693,7 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
           <div className="settings-modal-content">
             {loading ? (
               <SettingsState kind="loading" title={t("settings.loadingSettings")} />
-            ) : worktree && workflow && usage && terminal && chatgpt && editor ? (
+            ) : worktree && workflow && usage && terminal && chatgpt && editor && bundledExtensions ? (
               <div className="settings-section">
                 {error && <SettingsNotice tone="danger">{error}</SettingsNotice>}
                 {notice && <SettingsNotice>{notice}</SettingsNotice>}
@@ -1024,11 +1037,32 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
                     />
                   </div>
                 ) : section === "extensions" ? (
-                  <ExtensionsConfig cwd={cwd} onClose={() => {}} embed />
+                  <div className="settings-section">
+                    <SettingsSectionHeader
+                      title={t("settings.bundledExtensionsTitle")}
+                      description={t("settings.bundledExtensionsHint")}
+                    />
+                    {BUNDLED_PI_EXTENSIONS.map((extension) => (
+                      <ToggleField
+                        key={extension.id}
+                        label={`${extension.displayName} · ${extension.id}`}
+                        description={extension.description}
+                        checked={bundledExtensions[extension.id]}
+                        onChange={(enabled) => {
+                          setBundledExtensions((current) => current ? { ...current, [extension.id]: enabled } : current);
+                          setNotice(null);
+                        }}
+                      />
+                    ))}
+                    <SettingsNotice tone="warning">{t("settings.bundledExtensionsReloadHint")}</SettingsNotice>
+                    <ExtensionsConfig cwd={cwd} onClose={() => {}} embed />
+                  </div>
                 ) : section === "agents" ? (
                   <AgentsConfig cwd={cwd} />
                 ) : section === "mcp" ? (
                   <McpConfig cwd={cwd} />
+                ) : section === "webtools" ? (
+                  <WebToolsConfig />
                 ) : section === "workflow" ? (
                   <div className="settings-section">
                     <SettingsSectionHeader
@@ -1172,10 +1206,10 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
         </div>
 
         <div className="pi-modal-footer settings-modal-footer">
-          {section === "agents" || section === "mcp" ? (
+          {section === "agents" || section === "mcp" || section === "webtools" ? (
             <>
               <span className="settings-modal-footer-note">
-                {section === "mcp" ? t("settings.mcpPanelNote") : t("settings.agentsPanelNote")}
+                {section === "mcp" ? t("settings.mcpPanelNote") : section === "webtools" ? t("settings.webTools.panelNote") : t("settings.agentsPanelNote")}
               </span>
               <SettingsButton onClick={onClose}>{t("common.close")}</SettingsButton>
             </>
@@ -1190,7 +1224,7 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
                 <SettingsButton
                   variant="primary"
                   onClick={() => void handleSave()}
-                  disabled={!worktree || !workflow || !usage || !terminal || !chatgpt || !grok || !editor || loading || saving || !dirty}
+                  disabled={!worktree || !workflow || !usage || !terminal || !chatgpt || !grok || !editor || !bundledExtensions || loading || saving || !dirty}
                   busy={saving}
                 >
                   {saving ? t("settings.saving") : t("settings.save")}

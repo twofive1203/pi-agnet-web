@@ -1,6 +1,10 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { homedir } from "os";
 import { dirname, join } from "path";
+import {
+  DEFAULT_BUNDLED_PI_EXTENSION_ENABLEMENT,
+  type BundledPiExtensionId,
+} from "./bundled-pi-extension-registry";
 
 /**
  * Expand ~ paths the same way as pi SDK expandTildePath/normalizePath
@@ -73,6 +77,8 @@ export interface PiWebGrokConfig {
   usagePanelEnabled: boolean;
 }
 
+export type PiWebBundledExtensionsConfig = Record<BundledPiExtensionId, boolean>;
+
 export interface PiWebWorkflowConfig {
   /**
    * @deprecated Ignored. SnFlow is per-project: initialized projects use it,
@@ -128,6 +134,7 @@ export interface PiWebConfig {
   chatgpt: PiWebChatGptConfig;
   editor: PiWebEditorConfig;
   grok: PiWebGrokConfig;
+  bundledExtensions: PiWebBundledExtensionsConfig;
 }
 
 /** Supported patch sections only. Legacy raw `trellis` is never accepted or rewritten. */
@@ -139,6 +146,7 @@ export interface PiWebConfigPatch {
   chatgpt?: unknown;
   editor?: unknown;
   grok?: unknown;
+  bundledExtensions?: unknown;
 }
 
 export interface PiWebConfigReadResult {
@@ -213,6 +221,9 @@ export const DEFAULT_PI_WEB_CONFIG: PiWebConfig = {
   },
   grok: {
     usagePanelEnabled: false,
+  },
+  bundledExtensions: {
+    ...DEFAULT_BUNDLED_PI_EXTENSION_ENABLEMENT,
   },
 };
 
@@ -327,6 +338,7 @@ function normalizePiWebConfig(raw: unknown): PiWebConfig {
   const chatgpt = isRecord(root.chatgpt) ? root.chatgpt : {};
   const editor = isRecord(root.editor) ? root.editor : {};
   const grok = isRecord(root.grok) ? root.grok : {};
+  const bundledExtensions = isRecord(root.bundledExtensions) ? root.bundledExtensions : {};
   const editorShortcuts = isRecord(editor.shortcuts) ? editor.shortcuts : {};
   const terminalEnv: Record<string, string> = {};
   if (isRecord(terminal.env)) {
@@ -377,6 +389,12 @@ function normalizePiWebConfig(raw: unknown): PiWebConfig {
     },
     grok: {
       usagePanelEnabled: readBoolean(grok.usagePanelEnabled, defaults.grok.usagePanelEnabled),
+    },
+    bundledExtensions: {
+      "pi-subagents": readBoolean(bundledExtensions["pi-subagents"], defaults.bundledExtensions["pi-subagents"]),
+      "rpiv-web-tools": readBoolean(bundledExtensions["rpiv-web-tools"], defaults.bundledExtensions["rpiv-web-tools"]),
+      "pi-ask-user": readBoolean(bundledExtensions["pi-ask-user"], defaults.bundledExtensions["pi-ask-user"]),
+      "pi-manage-todo-list": readBoolean(bundledExtensions["pi-manage-todo-list"], defaults.bundledExtensions["pi-manage-todo-list"]),
     },
     workflow: {
       // enabled is intentionally ignored — SnFlow activation is project-local init only.
@@ -591,6 +609,18 @@ export function validatePiWebGrokConfig(value: unknown): PiWebGrokConfig {
   };
 }
 
+export function validatePiWebBundledExtensionsConfig(value: unknown): PiWebBundledExtensionsConfig {
+  if (!isRecord(value)) {
+    throw new PiWebConfigValidationError("bundledExtensions config must be an object");
+  }
+  return {
+    "pi-subagents": requireBoolean(value["pi-subagents"], "bundledExtensions.pi-subagents"),
+    "rpiv-web-tools": requireBoolean(value["rpiv-web-tools"], "bundledExtensions.rpiv-web-tools"),
+    "pi-ask-user": requireBoolean(value["pi-ask-user"], "bundledExtensions.pi-ask-user"),
+    "pi-manage-todo-list": requireBoolean(value["pi-manage-todo-list"], "bundledExtensions.pi-manage-todo-list"),
+  };
+}
+
 export function validatePiWebEditorConfig(value: unknown): PiWebEditorConfig {
   if (!isRecord(value)) {
     throw new PiWebConfigValidationError("editor config must be an object");
@@ -640,7 +670,8 @@ export function writePiWebConfigPatch(patch: PiWebConfigPatch): PiWebConfigReadR
   const hasChatGpt = Object.prototype.hasOwnProperty.call(patch, "chatgpt");
   const hasEditor = Object.prototype.hasOwnProperty.call(patch, "editor");
   const hasGrok = Object.prototype.hasOwnProperty.call(patch, "grok");
-  if (!hasWorktree && !hasWorkflow && !hasUsage && !hasTerminal && !hasChatGpt && !hasEditor && !hasGrok) {
+  const hasBundledExtensions = Object.prototype.hasOwnProperty.call(patch, "bundledExtensions");
+  if (!hasWorktree && !hasWorkflow && !hasUsage && !hasTerminal && !hasChatGpt && !hasEditor && !hasGrok && !hasBundledExtensions) {
     throw new PiWebConfigValidationError("no supported config sections provided");
   }
 
@@ -651,6 +682,7 @@ export function writePiWebConfigPatch(patch: PiWebConfigPatch): PiWebConfigReadR
   const chatGptPatch = hasChatGpt ? patch.chatgpt : undefined;
   const normalizedWorktree = hasWorktree ? validatePiWebWorktreeConfig(patch.worktree) : undefined;
   const normalizedGrok = hasGrok ? validatePiWebGrokConfig(patch.grok) : undefined;
+  const normalizedBundledExtensions = hasBundledExtensions ? validatePiWebBundledExtensionsConfig(patch.bundledExtensions) : undefined;
   const normalizedWorkflow = hasWorkflow ? validatePiWebWorkflowConfig(patch.workflow) : undefined;
   const normalizedUsage = hasUsage ? validatePiWebUsageConfig(patch.usage) : undefined;
   const normalizedTerminal = hasTerminal ? validatePiWebTerminalConfig(patch.terminal) : undefined;
@@ -718,6 +750,14 @@ export function writePiWebConfigPatch(patch: PiWebConfigPatch): PiWebConfigReadR
     nextRaw.grok = {
       ...previousGrok,
       ...normalizedGrok,
+    };
+  }
+
+  if (normalizedBundledExtensions) {
+    const previousBundledExtensions = isRecord(raw.bundledExtensions) ? raw.bundledExtensions : {};
+    nextRaw.bundledExtensions = {
+      ...previousBundledExtensions,
+      ...normalizedBundledExtensions,
     };
   }
 

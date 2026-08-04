@@ -8,6 +8,7 @@ See `package.json` for exact versions.
 | --- | --- |
 | `next`, `react`, `react-dom` | Web application framework/runtime. |
 | `@earendil-works/pi-coding-agent`, `@earendil-works/pi-ai` | In-process pi AgentSession and AI provider integration. **Pinned to exact `0.83.0`**. Auth/catalog access goes through `ModelRuntime` (`lib/pi-auth.ts`); multi-account helpers use `FileCredentialStore` for `auth.json` because public `AuthStorage` was removed. |
+| `pi-subagents@0.40.0`, `@juicesharp/rpiv-web-tools@2.3.1`, `pi-ask-user@0.13.1`, `pi-manage-todo-list@0.4.0` | Exact-version WebUI-bundled Pi extensions for subagents, web tools, structured user questions, and Todo management. Enabled by default for ordinary interactive Web sessions and individually disableable through `pi-web.json`; Automation does not inherit them. |
 | `typebox` | Tool parameter schemas used directly by first-party extensions. Pinned to Pi's `1.3.7` runtime version to keep schema objects compatible. |
 | `react-markdown`, `remark-gfm`, `remark-math`, `rehype-raw`, `rehype-sanitize`, `rehype-katex`, `katex` | Markdown, raw HTML sanitization, and math rendering. |
 | `react-syntax-highlighter` | Code block highlighting. |
@@ -99,7 +100,17 @@ must not use the WebUI server's `process.cwd()` as the authoritative workspace
 because one server can host sessions for multiple projects. The process cwd is
 only a fallback when the SDK context does not expose a workspace.
 
-Web sessions call `AgentSession.bindExtensions()` with a Web/RPC UI adapter so extension commands, lifecycle events, simple dialogs/notifications, and diagnostics are available without shelling out to the local CLI. Use `/api/pi/resources?cwd=...` to inspect loaded extensions, tools, extension commands, skills, prompts, and load diagnostics.
+Web sessions call `AgentSession.bindExtensions()` with a Web/RPC UI adapter so extension commands, lifecycle events, simple dialogs/notifications, and diagnostics are available without shelling out to the local CLI. Use `/api/pi/resources?cwd=...` to inspect loaded extensions, tools, extension commands, skills, prompts, bundled source metadata, and duplicate suppression diagnostics.
+
+### WebUI-bundled core extensions
+
+`lib/bundled-pi-extension-registry.ts` owns the four pinned package definitions/defaults and `lib/bundled-pi-extensions.ts` is their single interactive loader adapter. It adds each enabled package root as a temporary resource source, preserving package-relative extension/skill/prompt behavior. Before factories bind, it removes another loaded copy with the same package manifest name, so the WebUI-pinned copy wins without duplicate tools, commands, or lifecycle handlers. The user's Pi `settings.json` is never rewritten; disabling a bundle only changes `pi-web.json → bundledExtensions` and applies to new sessions or `/reload`.
+
+This helper is used by interactive chat, command/resource/skill inspection, native subagent discovery, extension-settings discovery, and the legacy SnFlow host. Automation deliberately keeps its reviewed resource loader and never calls it.
+
+### Web Search provider configuration
+
+Settings → **Web Search** edits the adapter-native XDG-aware `rpiv-web-tools/config.json` through `lib/web-tools-config.ts` and `/api/web-tools/config`. The browser receives configured/source metadata only—never stored or environment API-key values. Writes use explicit preserve/replace/clear operations, exact-byte revision checks, same-directory atomic rename, and unknown-field-preserving object merges. Runtime precedence remains per-call provider override → `WEB_SEARCH_PROVIDER` → persisted provider → Brave default, while keys use provider env → `apiKeys[provider]` → legacy Brave `apiKey`; SearXNG/Ollama URL environment variables similarly shadow stored URLs. The package reads config on every tool execution, so saved provider/key/URL changes affect subsequent calls in an existing session.
 
 ## Native Pi Subagent Settings
 

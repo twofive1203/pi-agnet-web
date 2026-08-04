@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import { DefaultResourceLoader, getAgentDir, parseFrontmatter } from "@earendil-works/pi-coding-agent";
+import { createBundledPiResourceLoader, isBundledPiResourcePath } from "@/lib/bundled-pi-extensions";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +14,7 @@ export async function GET(req: Request) {
   if (!cwd) return NextResponse.json({ error: "cwd required" }, { status: 400 });
 
   try {
-    const loader = new DefaultResourceLoader({ cwd, agentDir: getAgentDir() });
+    const loader = createBundledPiResourceLoader(DefaultResourceLoader, { cwd, agentDir: getAgentDir() });
     await loader.reload();
     const { skills, diagnostics } = loader.getSkills();
     return NextResponse.json({ skills, diagnostics });
@@ -29,6 +30,12 @@ export async function PATCH(req: Request) {
     const { filePath, disableModelInvocation } = body;
     if (!filePath) return NextResponse.json({ error: "filePath required" }, { status: 400 });
     if (!existsSync(filePath)) return NextResponse.json({ error: "file not found" }, { status: 404 });
+    if (isBundledPiResourcePath(filePath)) {
+      return NextResponse.json(
+        { error: "WebUI-bundled skills are read-only; disable their owning bundle in Settings → Extensions." },
+        { status: 403 },
+      );
+    }
 
     const content = readFileSync(filePath, "utf8");
     const key = "disable-model-invocation";

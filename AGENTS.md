@@ -66,7 +66,7 @@ npm run dev     # http://localhost:62666
 | Chat/session UI state | `hooks/useAgentSession.ts`, `components/ChatWindow.tsx`, `components/ChatInput.tsx` | `docs/modules/frontend.md` |
 | Tool-call normalization | `lib/normalize.ts` | `docs/architecture/overview.md`, `docs/modules/library.md` |
 | Workspace files and Git context | `app/api/files/**`, `app/file/page.tsx`, `components/StandaloneFileViewer.tsx`, `app/api/git/**`, `lib/file-paths.ts`, `lib/file-viewer-url.ts`, `lib/git-worktree.ts`, `lib/workspace-title.ts` | `docs/modules/api.md`, `docs/modules/frontend.md`, `docs/modules/library.md` |
-| Models, model pricing/catalog, native subagents, MCP config, skills, extensions, auth, usage | `app/api/models*`, `app/api/model-pricing/`, `app/api/subagents/config/**`, `app/api/mcp/config/**`, `app/api/skills/**`, `app/api/pi/**`, `app/api/auth/**`, `app/api/usage/route.ts` | `docs/modules/api.md`, `docs/integrations/README.md` |
+| Models, model pricing/catalog, bundled/native subagents, Web Search/MCP config, skills, extensions, auth, usage | `app/api/models*`, `app/api/model-pricing/`, `app/api/subagents/config/**`, `app/api/web-tools/config/**`, `app/api/mcp/config/**`, `app/api/skills/**`, `app/api/pi/**`, `app/api/auth/**`, `app/api/usage/route.ts` | `docs/modules/api.md`, `docs/integrations/README.md` |
 | WebUI-owned SnFlow tasks/runs | `lib/workflow-store.ts`, `lib/workflow-chat-lifecycle.ts`, `lib/workflow-run-manager.ts`, `app/api/workflows/**`, `components/WorkflowPanel.tsx` | `docs/modules/api.md`, `docs/modules/library.md`, `docs/modules/frontend.md` |
 | Scheduled Agent Automation | `lib/automation-service.ts`, `lib/automation-scheduler.ts`, `lib/automation-runner.ts`, `app/api/automations/**`, `components/AutomationPanel.tsx`, `instrumentation.ts` | `docs/architecture/decisions/automation-scheduler.md`, `docs/modules/api.md`, `docs/modules/library.md`, `docs/modules/frontend.md` |
 | Chrome tab debugging (local bridge + extension) | `lib/browser-*.ts`, `app/api/browser/**`, `components/BrowserBindingPanel.tsx`, `extensions/chrome-tab-debug/` | `docs/modules/api.md`, `docs/modules/library.md`, `docs/modules/frontend.md`, `docs/operations/troubleshooting.md`, `extensions/chrome-tab-debug/README.md` |
@@ -124,7 +124,8 @@ node_modules/.bin/tsc --noEmit
 | Session files | `~/.pi/agent/sessions/<encoded-cwd>/<timestamp>_<uuid>.jsonl` |
 | Model config | `~/.pi/agent/models.json` |
 | Settings/default model/native subagents | `~/.pi/agent/settings.json`, project override `<cwd>/.pi/settings.json` |
-| Web UI settings (WorkTree, Usage, Web Terminal, ChatGPT panel, Grok panel, Editor, SnFlow panel). Unknown legacy root keys such as `trellis` are ignored and left on disk | `~/.pi/agent/pi-web.json` |
+| Web UI settings (WorkTree, Usage, Web Terminal, ChatGPT panel, Grok panel, Editor, bundled core-extension toggles, SnFlow panel). Unknown legacy root keys such as `trellis` are ignored and left on disk | `~/.pi/agent/pi-web.json` |
+| Bundled Web Search provider/API key/base URL config | XDG-aware `~/.config/rpiv-web-tools/config.json` (or `XDG_CONFIG_HOME`) |
 | WebUI SnFlow tasks | `<cwd>/.pi/snflows/tasks/<task-id>/` (archived: `<cwd>/.pi/snflows/archived/<task-id>/`; version/assets: `.pi/snflows/.version`, `.pi/extensions/snflow/`, `.pi/skills/snflow-dev/`, `.pi/agents/snflow-*.md`) |
 | Automation tasks/runs/sessions | `~/.pi/agent/automations/` (`tasks.json`, locks, claims, runs, promotions, audit, sessions); default cwd `~/pi-automation-cwd` (canonical path persisted once) |
 
@@ -162,9 +163,17 @@ Current docs index:
 ## AI Working Conventions
 
 - Start by following the reading order for the task type.
+
 - Before modifying code, read the relevant module docs and source files.
+
 - Keep `AGENTS.md` concise and navigational; move detailed explanations to `docs/`.
+
 - When adding/removing API routes, update `docs/modules/api.md` and this file only if the top-level navigation changes.
+
 - When adding/removing major components, hooks, or shared modules, update the relevant file under `docs/modules/`.
+
 - When changing deployment, dependencies, or external integrations, update `docs/deployment/` or `docs/integrations/`.
+
 - Preserve user-authored content unless it is stale, misleading, duplicated in docs, or conflicts with this contract.
+
+- Upon project completion, unless the user explicitly requests that the project be launched for testing, the only requirement is to ensure that compilation and unit tests pass.

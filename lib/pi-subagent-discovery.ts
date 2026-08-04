@@ -6,7 +6,7 @@
  * Falls back gracefully when the extension/tool is unavailable.
  */
 
-import { createAgentSession, getAgentDir, SessionManager } from "@earendil-works/pi-coding-agent";
+import { createBundledPiResourceLoader } from "./bundled-pi-extensions";
 import { disposeAgentSession } from "./pi-session-lifecycle";
 
 // ---------------------------------------------------------------------------
@@ -105,9 +105,20 @@ export async function discoverAgents(cwd: string): Promise<AgentDiscoveryResult>
   let session: { dispose: () => void; agent?: { state?: { tools?: Array<{ name?: string; execute?: unknown }> } } } | undefined;
 
   try {
+    // Keep the Pi extension loader in its native ESM graph under smoke/tsx hosts.
+    const {
+      createAgentSession,
+      DefaultResourceLoader,
+      getAgentDir,
+      SessionManager,
+    } = await import("@earendil-works/pi-coding-agent");
+    const agentDir = getAgentDir();
+    const resourceLoader = createBundledPiResourceLoader(DefaultResourceLoader, { cwd, agentDir });
+    await resourceLoader.reload();
     const created = await createAgentSession({
       cwd,
-      agentDir: getAgentDir(),
+      agentDir,
+      resourceLoader,
       sessionManager: SessionManager.inMemory(cwd),
     });
     session = created.session as typeof session;

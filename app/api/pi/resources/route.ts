@@ -8,6 +8,11 @@ import {
   SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import { ExtensionWebUiBridge } from "@/lib/extension-web-ui";
+import {
+  createBundledPiResourceLoader,
+  getBundledPiExtensionRuntimeStatus,
+  projectBundledPiSourceInfo,
+} from "@/lib/bundled-pi-extensions";
 import { disposeAgentSession, type DisposableAgentSession } from "@/lib/pi-session-lifecycle";
 
 export const dynamic = "force-dynamic";
@@ -33,7 +38,7 @@ export async function GET(req: Request) {
   let session: DisposableAgentSession | undefined;
   try {
     const agentDir = getAgentDir();
-    const loader = new DefaultResourceLoader({ cwd, agentDir });
+    const loader = createBundledPiResourceLoader(DefaultResourceLoader, { cwd, agentDir });
     await loader.reload();
 
     const extensionResult = loader.getExtensions();
@@ -89,13 +94,13 @@ export async function GET(req: Request) {
       name: command.invocationName,
       description: command.description,
       source: "extension" as const,
-      sourceInfo: command.sourceInfo,
+      sourceInfo: projectBundledPiSourceInfo(command.sourceInfo),
     }));
 
     const tools = result.session.getAllTools().map((tool) => ({
       name: tool.name,
       description: tool.description,
-      sourceInfo: (tool as { sourceInfo?: SourceInfo }).sourceInfo,
+      sourceInfo: projectBundledPiSourceInfo((tool as { sourceInfo?: SourceInfo }).sourceInfo),
     }));
 
     let packages: Array<{ source: string; scope: string; filtered: boolean; installedPath?: string }> = [];
@@ -120,6 +125,19 @@ export async function GET(req: Request) {
       cwd,
       agentDir,
       packages,
+      bundledExtensions: getBundledPiExtensionRuntimeStatus(loader).map((status) => ({
+        id: status.id,
+        packageName: status.packageName,
+        pinnedVersion: status.pinnedVersion,
+        installedVersion: status.installedVersion,
+        displayName: status.displayName,
+        description: status.description,
+        enabled: status.enabled,
+        available: status.available,
+        source: status.source,
+        ignoredDuplicateCount: status.ignoredDuplicateCount,
+        diagnostic: status.diagnostic,
+      })),
       extensions,
       tools,
       commands,

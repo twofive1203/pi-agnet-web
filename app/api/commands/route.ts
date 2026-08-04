@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { createAgentSession, DefaultResourceLoader, getAgentDir, SessionManager, type SlashCommandInfo } from "@earendil-works/pi-coding-agent";
 import { ExtensionWebUiBridge } from "@/lib/extension-web-ui";
+import {
+  createBundledPiResourceLoader,
+  projectBundledPiSourceInfo,
+} from "@/lib/bundled-pi-extensions";
 import { disposeAgentSession, type DisposableAgentSession } from "@/lib/pi-session-lifecycle";
 import { annotateExtensionCommandWebSupport, type ExtensionCommandWebSupport } from "@/lib/extension-command-web-support";
 
@@ -44,7 +48,7 @@ export async function GET(req: Request) {
   let session: DisposableAgentSession | undefined;
   try {
     const agentDir = getAgentDir();
-    const loader = new DefaultResourceLoader({ cwd, agentDir });
+    const loader = createBundledPiResourceLoader(DefaultResourceLoader, { cwd, agentDir });
     await loader.reload();
 
     const result = await createAgentSession({
@@ -94,7 +98,7 @@ export async function GET(req: Request) {
       description: command.description,
       location: locationFromSourceInfo(command.sourceInfo),
       path: pathFromSourceInfo(command.sourceInfo),
-      sourceInfo: command.sourceInfo,
+      sourceInfo: projectBundledPiSourceInfo(command.sourceInfo),
     }));
 
     const commands: SlashCommandEntry[] = [

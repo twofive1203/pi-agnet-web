@@ -9,6 +9,7 @@ import {
 } from "./workflow-lifecycle-load";
 export { getSnflowChatLifecycleLoadDiagnostic, isSnflowLifecycleRequired };
 import { preparePiRuntimeEnvironment } from "./pi-runtime-resolver";
+import { createBundledPiResourceLoader } from "./bundled-pi-extensions";
 import { ExtensionWebUiBridge } from "./extension-web-ui";
 import { disposeAgentSession } from "./pi-session-lifecycle";
 import type { AgentSessionLike, ToolInfo } from "./pi-types";
@@ -640,7 +641,7 @@ export async function startRpcSession(
       const settingsManager = SettingsManager.create(cwd, agentDir);
 
       if (!snflowActive) {
-        resourceLoader = new DefaultResourceLoader({
+        resourceLoader = createBundledPiResourceLoader(DefaultResourceLoader, {
           cwd,
           agentDir,
           settingsManager,
@@ -659,7 +660,7 @@ export async function startRpcSession(
         });
       } else {
         const guidance = hasWorkflowExtension(cwd) ? null : buildWorkflowSystemGuidance(cwd);
-        resourceLoader = new DefaultResourceLoader({
+        resourceLoader = createBundledPiResourceLoader(DefaultResourceLoader, {
           cwd,
           agentDir,
           settingsManager,

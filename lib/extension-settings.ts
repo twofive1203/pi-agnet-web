@@ -8,6 +8,7 @@ import {
   getAgentDir,
   SettingsManager,
 } from "@earendil-works/pi-coding-agent";
+import { createBundledPiResourceLoader } from "./bundled-pi-extensions";
 
 const SETTINGS_FILE_NAME = "settings-extensions.json";
 
@@ -144,25 +145,19 @@ export async function discoverRegisteredExtensionSettings(cwd: string, agentDir 
 
   const diagnostics: Array<{ type: string; message: string; path?: string }> = [];
   let extensionPaths: string[] = [];
-  try {
-    const resolved = await packageManager.resolve(async () => "skip");
-    extensionPaths = resolved.extensions.filter((item) => item.enabled).map((item) => item.path);
-  } catch (error) {
-    diagnostics.push({ type: "error", message: `Failed to resolve packages: ${String(error)}` });
-  }
 
-  // Also include project/global loose extension files discovered by the resource loader.
+  // Use the same effective extension set as interactive Web sessions, including
+  // bundled defaults and bundled-wins duplicate filtering.
   try {
-    const loader = new DefaultResourceLoader({ cwd, agentDir });
+    const loader = createBundledPiResourceLoader(DefaultResourceLoader, { cwd, agentDir });
     await loader.reload();
     const loaded = loader.getExtensions();
     for (const error of loaded.errors) {
       diagnostics.push({ type: "error", message: error.error, path: error.path });
     }
-    for (const extension of loaded.extensions) {
-      const path = extension.resolvedPath || extension.path;
-      if (path && !extensionPaths.includes(path)) extensionPaths.push(path);
-    }
+    extensionPaths = loaded.extensions
+      .map((extension) => extension.resolvedPath || extension.path)
+      .filter((path): path is string => !!path);
   } catch (error) {
     diagnostics.push({ type: "warning", message: `Resource loader diagnostics unavailable: ${String(error)}` });
   }

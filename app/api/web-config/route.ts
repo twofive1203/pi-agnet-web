@@ -27,6 +27,7 @@ export async function PUT(req: Request) {
       chatgpt?: unknown;
       editor?: unknown;
       grok?: unknown;
+      bundledExtensions?: unknown;
     };
     const result = writePiWebConfigPatch(body);
     ensureOpenAICodexWarmupScheduler();
