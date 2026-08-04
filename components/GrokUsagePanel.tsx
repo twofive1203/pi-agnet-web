@@ -197,7 +197,7 @@ export function GrokUsagePanel() {
         className="usage-panel-trigger"
       >
         <span className="usage-panel-trigger-name">Grok</span>
-        <span>{compactStatus}</span>
+        <span className="usage-panel-trigger-status">{compactStatus}</span>
         <span className="usage-panel-pies">
           {monthly && <UsagePie utilization={monthlyUtilization} />}
         </span>

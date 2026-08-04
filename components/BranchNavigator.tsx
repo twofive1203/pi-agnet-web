@@ -273,9 +273,11 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, cont
   );
 
 
+  if (inline && !hasContent) return null;
+
   if (inline) {
     return (
-      <div className="branch-navigator-inline" style={{ height: "100%", display: "flex", alignItems: "stretch" }}>
+      <div className="branch-navigator-inline" style={{ height: 32, display: "flex", alignItems: "center" }}>
         <button
           ref={btnRef}
           className={`app-top-pill${open ? " app-top-pill-active" : ""}`}
@@ -287,12 +289,11 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, cont
             display: "flex",
             alignItems: "center",
             gap: 6,
-            height: "100%",
-            padding: "0 12px",
-            background: open ? "var(--bg-selected)" : "none",
-            border: "none",
-            borderTop: open ? "2px solid var(--accent)" : "2px solid transparent",
-            borderRight: "1px solid var(--border)",
+            height: 32,
+            padding: "0 9px",
+            background: open ? "var(--surface-selected)" : "transparent",
+            border: `1px solid ${open ? "var(--accent-border)" : "var(--border-default)"}`,
+            borderRadius: 8,
             cursor: "pointer",
             color: open ? "var(--text)" : "var(--text-muted)",
             fontSize: 11,

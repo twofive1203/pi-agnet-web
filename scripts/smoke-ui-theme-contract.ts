@@ -85,7 +85,9 @@ const REQUIRED_LAYER_TOKENS = [
 const REQUIRED_STABLE_CLASSES = [
   ".app-shell-root",
   ".top-context",
-  ".observe-bar",
+  ".app-resource-cluster",
+  ".app-top-more-portal",
+  ".top-more-menu",
   ".insp-tabs",
   ".chat-input-dropdown-panel",
   ".pi-modal-overlay",
@@ -285,6 +287,12 @@ function collectContractProblems(
     || !sources.shell.includes("if (!desktopMedia.matches) {")
     || !sources.shell.includes("if (isMobileLayoutViewport()) setSidebarOpen(false);")) {
     problems.push("workbench layout: mobile drawers must start closed and open mutually exclusively");
+  }
+  if (!sources.shell.includes('className={activeTopPanel === "more" ? "app-top-more-portal" : "app-top-aux-panel"}')) {
+    problems.push("top portal: overflow menu shell must stay separate from themed auxiliary panels");
+  }
+  if (!/\.app-top-more-portal\s*\{[^}]*position:\s*fixed;[^}]*background:\s*transparent;/.test(sources.css)) {
+    problems.push("top portal: overflow menu shell must remain fixed and transparent");
   }
   if (!sources.shell.includes("handleInspectorTabKeyDown")
     || !sources.shell.includes('event.key === "Home"')

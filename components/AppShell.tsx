@@ -36,7 +36,7 @@ import { recordSubagentClientMetric } from "@/lib/subagent-observability-client"
 import { SubagentStore } from "@/lib/subagent-store";
 import { makeTempSessionId } from "./sidebar/sidebar-utils";
 
-const TOP_PANEL_SAFE_SELECTOR = ".app-top-aux-panel, .app-top-aux-tab, .branch-navigator-inline";
+const TOP_PANEL_SAFE_SELECTOR = ".app-top-aux-panel, .app-top-more-portal, .app-top-aux-tab, .branch-navigator-inline, .theme-picker-popover";
 const RIGHT_PANEL_WIDTH_STORAGE_KEY = "pi-web-right-panel-width-v2";
 const DEFAULT_RIGHT_PANEL_WIDTH = 380;
 const MAX_RIGHT_PANEL_RATIO = 0.7;
@@ -194,7 +194,7 @@ export function AppShell() {
   }, []);
 
   const [systemPrompt, setSystemPrompt] = useState<string | null>(null);
-  const systemBtnRef = useRef<HTMLButtonElement>(null);
+  const moreButtonRef = useRef<HTMLButtonElement>(null);
   const systemPanelRef = useRef<HTMLDivElement>(null);
 
   const handleSystemPromptChange = useCallback((prompt: string | null) => {
@@ -207,7 +207,7 @@ export function AppShell() {
     setSessionStats(stats);
   }, []);
 
-  // Agent running state — driven by ChatWindow, used by observe-bar / Changes polling
+  // Agent running state drives the Inspector attention signal and Changes polling.
   const [agentRunning, setAgentRunning] = useState(false);
   const handleAgentRunningChange = useCallback((running: boolean) => {
     setAgentRunning(running);
@@ -242,11 +242,11 @@ export function AppShell() {
   const [gitDirty, setGitDirty] = useState(false);
   const [gitRefreshKey, setGitRefreshKey] = useState(0);
 
-  // Single active panel — only one dropdown open at a time
-  const [activeTopPanel, setActiveTopPanel] = useState<"branches" | "system" | "subagents" | "git" | null>(null);
+  // Single active top-bar surface keeps branches, system prompt, and overflow mutually exclusive.
+  const [activeTopPanel, setActiveTopPanel] = useState<"branches" | "system" | "more" | null>(null);
   const [topPanelPos, setTopPanelPos] = useState<{ top: number; left: number; width: number } | null>(null);
 
-  const toggleTopPanel = useCallback((panel: "branches" | "system" | "subagents" | "git") => {
+  const toggleTopPanel = useCallback((panel: "branches" | "system" | "more") => {
     setActiveTopPanel((cur) => cur === panel ? null : panel);
   }, []);
 
@@ -263,8 +263,8 @@ export function AppShell() {
       if (event.key !== "Escape") return;
       event.preventDefault();
       setActiveTopPanel(null);
-      if (activeTopPanel === "system") {
-        window.requestAnimationFrame(() => systemBtnRef.current?.focus());
+      if (activeTopPanel === "system" || activeTopPanel === "more") {
+        window.requestAnimationFrame(() => moreButtonRef.current?.focus());
       }
     };
 
@@ -299,12 +299,12 @@ export function AppShell() {
   // Right panel — file tabs and optional SnFlow task drawer
   const [fileTabs, setFileTabs] = useState<Tab[]>([]);
   const [activeFileTabId, setActiveFileTabId] = useState<string | null>(null);
-  // Inspector starts collapsed by default; users open it via the Observe chips.
+  // Inspector starts collapsed by default; the focused top-bar trigger reopens the last tab.
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
   /** Inspector tabs: files(Preview) / workflow(SnFlow) / changes / git / agents. */
   const [rightPanelMode, setRightPanelMode] = useState<InspectorMode>("changes");
   const inspectorTabRefs = useRef<Partial<Record<InspectorMode, HTMLButtonElement | null>>>({});
-  const inspectorTriggerRefs = useRef<Partial<Record<InspectorMode, HTMLButtonElement | null>>>({});
+  const inspectorButtonRef = useRef<HTMLButtonElement>(null);
   const [automationOpen, setAutomationOpen] = useState(false);
   const [automationUnread, setAutomationUnread] = useState(0);
   const [rightPanelWidth, setRightPanelWidth] = useState(DEFAULT_RIGHT_PANEL_WIDTH);
@@ -855,7 +855,7 @@ export function AppShell() {
         <div ref={topBarRef} className="top-context">
           <button
             ref={sidebarToggleRef}
-            className="icon-round context-icon-compact"
+            className="icon-round context-icon-compact top-sidebar-trigger"
             onClick={() => {
               if (!sidebarOpen && isMobileLayoutViewport()) setRightPanelOpen(false);
               setSidebarOpen((open) => !open);
@@ -894,221 +894,193 @@ export function AppShell() {
           </div>
 
           {showChat && (
-            <div className="app-top-actions">
-              <button
-                className="icon-round context-action"
-                onClick={handleExportSession}
-                disabled={!selectedSession}
-                title={selectedSession ? t("app.exportHtml") : t("app.exportHtmlDisabled")}
-                aria-label={t("app.exportHtml")}
-              >
-                <span className="context-action-icon">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                    <polyline points="7 10 12 15 17 10" />
-                    <line x1="12" y1="15" x2="12" y2="3" />
-                  </svg>
-                </span>
-              </button>
-              <BranchNavigator
-                tree={branchTree}
-                activeLeafId={branchActiveLeafId}
-                onLeafChange={handleBranchLeafChange}
-                inline
-                containerRef={topBarRef}
-                open={activeTopPanel === "branches"}
-                onToggle={() => toggleTopPanel("branches")}
-                hasSession
-              />
-              <button
-                ref={systemBtnRef}
-                className={`app-top-aux-tab icon-round context-action${activeTopPanel === "system" ? " on" : ""}${systemPrompt ? " has-content" : ""}`}
-                onClick={() => toggleTopPanel("system")}
-                title={t("app.system")}
-                aria-label={t("app.system")}
-                aria-controls={SYSTEM_PROMPT_PANEL_ID}
-                aria-expanded={activeTopPanel === "system"}
-              >
-                <svg className="context-action-svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                  <polyline points="14 2 14 8 20 8" />
-                  <line x1="8" y1="13" x2="16" y2="13" />
-                  <line x1="8" y1="17" x2="13" y2="17" />
-                </svg>
-              </button>
-            </div>
+            <BranchNavigator
+              tree={branchTree}
+              activeLeafId={branchActiveLeafId}
+              onLeafChange={handleBranchLeafChange}
+              inline
+              containerRef={topBarRef}
+              open={activeTopPanel === "branches"}
+              onToggle={() => toggleTopPanel("branches")}
+              hasSession
+            />
           )}
-          {terminalEnabled && terminalCwd && (
+          <div className="top-primary-tools" aria-label={t("app.primaryTools")}>
+            <ThemePicker />
             <button
-              className={`icon-round context-action${terminalOpen ? " on" : ""}`}
-              onClick={async () => {
-                if (!terminalOpen) {
-                  setTerminalDockCwd(terminalCwd);
-                  setTerminalOpen(true);
-                  setTerminalCollapsed(false);
-                  return;
-                }
-                if (terminalDockCwd && terminalDockCwd !== terminalCwd) {
-                  const confirmed = await appDialog.confirm({ message: t("app.switchWorkspaceTerminalConfirm"), tone: "danger" });
-                  if (!confirmed) return;
-                  setTerminalOpen(false);
-                  setTerminalCollapsed(false);
-                  window.setTimeout(() => {
+              className="icon-round context-action language-switch"
+              type="button"
+              onClick={() => setLocale(locale === "zh" ? "en" : "zh")}
+              title={t("app.languageSwitch")}
+              aria-label={t("app.languageSwitch")}
+            >
+              {locale === "zh" ? "EN" : "中"}
+            </button>
+            {terminalEnabled && terminalCwd && (
+              <button
+                className={`icon-round context-action${terminalOpen ? " on" : ""}`}
+                onClick={async () => {
+                  if (!terminalOpen) {
                     setTerminalDockCwd(terminalCwd);
                     setTerminalOpen(true);
-                  }, 0);
-                  return;
-                }
-                setTerminalCollapsed((collapsed) => !collapsed);
-              }}
-              title={terminalOpen && terminalDockCwd && terminalDockCwd !== terminalCwd ? t("app.openTerminalForWorkspace") : t("app.openTerminal")}
-              aria-label={terminalOpen && terminalDockCwd && terminalDockCwd !== terminalCwd ? t("app.openTerminalForWorkspace") : t("app.openTerminal")}
-              aria-pressed={terminalOpen}
+                    setTerminalCollapsed(false);
+                    return;
+                  }
+                  if (terminalDockCwd && terminalDockCwd !== terminalCwd) {
+                    const confirmed = await appDialog.confirm({ message: t("app.switchWorkspaceTerminalConfirm"), tone: "danger" });
+                    if (!confirmed) return;
+                    setTerminalOpen(false);
+                    setTerminalCollapsed(false);
+                    window.setTimeout(() => {
+                      setTerminalDockCwd(terminalCwd);
+                      setTerminalOpen(true);
+                    }, 0);
+                    return;
+                  }
+                  setTerminalCollapsed((collapsed) => !collapsed);
+                }}
+                title={terminalOpen && terminalDockCwd && terminalDockCwd !== terminalCwd ? t("app.openTerminalForWorkspace") : t("app.openTerminal")}
+                aria-label={terminalOpen && terminalDockCwd && terminalDockCwd !== terminalCwd ? t("app.openTerminalForWorkspace") : t("app.openTerminal")}
+                aria-pressed={terminalOpen}
+              >
+                <svg className="context-action-svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <polyline points="4 17 10 11 4 5" />
+                  <line x1="12" y1="19" x2="20" y2="19" />
+                </svg>
+              </button>
+            )}
+            <button
+              className="icon-round context-action"
+              type="button"
+              onClick={() => setModelsConfigOpen(true)}
+              title={t("sidebar.models")}
+              aria-label={t("sidebar.models")}
             >
-              <svg className="context-action-svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="4 17 10 11 4 5" />
-                <line x1="12" y1="19" x2="20" y2="19" />
+              <svg className="context-action-svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="m21 8-9-5-9 5 9 5 9-5Z" /><path d="M3 8v8l9 5 9-5V8" />
               </svg>
             </button>
-          )}
-          <button
-            className="icon-round context-action"
-            onClick={() => setModelsConfigOpen(true)}
-            title={t("sidebar.models")}
-            aria-label={t("sidebar.models")}
-          >
-            <svg className="context-action-svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="m21 8-9-5-9 5 9 5 9-5Z" />
-              <path d="M3 8v8l9 5 9-5V8" />
-              <path d="M12 13v8" />
-            </svg>
-          </button>
-          <button
-            className="icon-round context-action"
-            onClick={() => setSettingsConfigOpen(true)}
-            title={t("sidebar.settings")}
-            aria-label={t("sidebar.settings")}
-          >
-            <svg className="context-action-svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="3" />
-              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.65 1.65 0 0 0 15 19.4a1.65 1.65 0 0 0-1 .6 1.65 1.65 0 0 0-.33 1.06V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-.6-1 1.65 1.65 0 0 0-1.06-.33H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-.6 1.65 1.65 0 0 0 .33-1.06V3a2 2 0 1 1 4 0v.09A1.65 1.65 0 0 0 15 4.6a1.65 1.65 0 0 0 1.82-.33l.06.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.4.14.74.38 1 .6.31.23.68.35 1.06.33H21a2 2 0 1 1 0 4h-.09A1.65 1.65 0 0 0 19.4 15z" />
-            </svg>
-          </button>
-          {/* Session stats — right-aligned in top bar */}
-          {showChat && (sessionStats || contextUsage) && (() => {
-            const t = sessionStats?.tokens;
-            const c = sessionStats?.cost ?? 0;
-            const fmt = (n: number) => n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(0)}k` : String(n);
-            const costStr = c > 0 ? (c >= 0.01 ? `$${c.toFixed(2)}` : `<$0.01`) : null;
+            <button
+              className="icon-round context-action"
+              type="button"
+              onClick={() => setSettingsConfigOpen(true)}
+              title={t("sidebar.settings")}
+              aria-label={t("sidebar.settings")}
+            >
+              <svg className="context-action-svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.05.05-2.83 2.83-.05-.05A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 1.55V21h-4v-.05A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.88.34l-.05.05-2.83-2.83.05-.05A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.55-1H3v-4h.05A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.34-1.88l-.05-.05 2.83-2.83.05.05A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.55V3h4v.05A1.7 1.7 0 0 0 15 4.6a1.7 1.7 0 0 0 1.88-.34l.05-.05 2.83 2.83-.05.05A1.7 1.7 0 0 0 19.4 9a1.7 1.7 0 0 0 1.55 1H21v4h-.05A1.7 1.7 0 0 0 19.4 15Z" />
+              </svg>
+            </button>
+          </div>
+          {((showChat && (sessionStats || contextUsage)) || webConfig?.chatgpt.usagePanelEnabled || webConfig?.grok.usagePanelEnabled) && (
+            <div className="app-resource-cluster" aria-label={t("app.resources")}>
+              {showChat && (sessionStats || contextUsage) && (() => {
+                const tokens = sessionStats?.tokens;
+                const cost = sessionStats?.cost ?? 0;
+                const formatCompact = (value: number) => value >= 1_000_000 ? `${(value / 1_000_000).toFixed(1)}M` : value >= 1000 ? `${(value / 1000).toFixed(0)}k` : String(value);
+                const totalTokens = tokens ? tokens.input + tokens.output + tokens.cacheRead + tokens.cacheWrite : 0;
+                const usageSummary = cost > 0
+                  ? (cost >= 0.01 ? `$${cost.toFixed(2)}` : `<$0.01`)
+                  : totalTokens > 0 ? formatCompact(totalTokens) : null;
 
-            let ctxTone = "";
-            let ctxStr: string | null = null;
-            if (contextUsage?.contextWindow) {
-              const pct = contextUsage.percent;
-              if (pct !== null && pct > 90) ctxTone = " is-danger";
-              else if (pct !== null && pct > 70) ctxTone = " is-warning";
-              ctxStr = pct !== null ? `${pct.toFixed(0)}% / ${fmt(contextUsage.contextWindow)}` : `? / ${fmt(contextUsage.contextWindow)}`;
-            }
+                let contextTone = "";
+                let contextSummary: string | null = null;
+                if (contextUsage?.contextWindow) {
+                  const percent = contextUsage.percent;
+                  if (percent !== null && percent > 90) contextTone = " is-danger";
+                  else if (percent !== null && percent > 70) contextTone = " is-warning";
+                  contextSummary = percent !== null ? `${percent.toFixed(0)}%` : "?";
+                }
 
-            const tooltipParts: string[] = [];
-            if (t) {
-              tooltipParts.push(`in: ${t.input.toLocaleString()}`);
-              tooltipParts.push(`out: ${t.output.toLocaleString()}`);
-              tooltipParts.push(`cache read: ${t.cacheRead.toLocaleString()}`);
-              tooltipParts.push(`cache write: ${t.cacheWrite.toLocaleString()}`);
-              if (c > 0) tooltipParts.push(`cost: $${c.toFixed(4)}`);
-            }
-            if (contextUsage?.contextWindow) {
-              const pct = contextUsage.percent;
-              tooltipParts.push(`context: ${pct !== null ? pct.toFixed(1) + "%" : "unknown"} of ${contextUsage.contextWindow.toLocaleString()} tokens`);
-            }
-            const tooltip = tooltipParts.join("  |  ");
+                const tooltipParts: string[] = [];
+                if (tokens) {
+                  tooltipParts.push(`in: ${tokens.input.toLocaleString()}`);
+                  tooltipParts.push(`out: ${tokens.output.toLocaleString()}`);
+                  tooltipParts.push(`cache read: ${tokens.cacheRead.toLocaleString()}`);
+                  tooltipParts.push(`cache write: ${tokens.cacheWrite.toLocaleString()}`);
+                  if (cost > 0) tooltipParts.push(`cost: $${cost.toFixed(4)}`);
+                }
+                if (contextUsage?.contextWindow) {
+                  const percent = contextUsage.percent;
+                  tooltipParts.push(`context: ${percent !== null ? percent.toFixed(1) + "%" : "unknown"} of ${contextUsage.contextWindow.toLocaleString()} tokens`);
+                }
 
-            return (
-              <button
-                type="button"
-                className="app-top-stats chip"
-                title={tooltip}
-                onClick={() => setUsageStatsOpen(true)}
-              >
-                {t && t.input > 0 && (
-                  <span className="app-top-stat-item">
-                    <svg width="12" height="12" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
-                      <line x1="5" y1="8.5" x2="5" y2="1.5" /><polyline points="2 4 5 1.5 8 4" />
-                    </svg>
-                    {fmt(t.input)}
-                  </span>
-                )}
-                {t && t.output > 0 && (
-                  <span className="app-top-stat-item">
-                    <svg width="12" height="12" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
-                      <line x1="5" y1="1.5" x2="5" y2="8.5" /><polyline points="2 6 5 8.5 8 6" />
-                    </svg>
-                    {fmt(t.output)}
-                  </span>
-                )}
-                {t && t.cacheRead > 0 && (
-                  <span className="app-top-stat-item">
-                    <svg width="12" height="12" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M8.5 5a3.5 3.5 0 1 1-1-2.45" /><polyline points="6.5 1.5 8.5 2.5 7.5 4.5" />
-                    </svg>
-                    {fmt(t.cacheRead)}
-                  </span>
-                )}
-                {costStr && <span className="app-top-stat-item app-top-stat-cost">{costStr}</span>}
-                {ctxStr && (
-                  <span className={`app-top-stat-item app-top-stat-context${ctxTone}`}>
-                    <svg width="12" height="12" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M1 9 L1 5 Q1 1 5 1 Q9 1 9 5 L9 9" /><line x1="1" y1="9" x2="9" y2="9" />
-                    </svg>
-                    {ctxStr}
-                  </span>
-                )}
-              </button>
-            );
-          })()}
-          <ThemePicker />
-          <button
-            className="icon-round context-icon-compact language-switch"
-            type="button"
-            onClick={() => setLocale(locale === "zh" ? "en" : "zh")}
-            title={t("app.languageSwitch")}
-            aria-label={t("app.languageSwitch")}
-          >
-            {locale === "zh" ? "EN" : "中"}
-          </button>
-          {/* Automation — global badge entry */}
-          <button
-            className="icon-round"
-            onClick={() => setAutomationOpen((open) => !open)}
-            title={automationOpen ? t("automation.close") : t("automation.open")}
-            aria-label={automationOpen ? t("automation.close") : t("automation.open")}
-            aria-expanded={automationOpen}
-            aria-controls="automation-drawer"
-          >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="10" />
-              <polyline points="12 6 12 12 16 14" />
-            </svg>
-            {automationUnread > 0 && (
-              <span className="badge">{automationUnread > 9 ? "9+" : automationUnread}</span>
-            )}
-          </button>
-          {(webConfig?.chatgpt.usagePanelEnabled || webConfig?.grok.usagePanelEnabled) && (
-            <div className={`app-top-usage-panel${showChat && (sessionStats || contextUsage) ? "" : " push-right"}`}>
-              {webConfig?.chatgpt.usagePanelEnabled && <ChatGptUsagePanel />}
-              {webConfig?.grok.usagePanelEnabled && <GrokUsagePanel />}
+                if (!contextSummary && !usageSummary) return null;
+                return (
+                  <button
+                    type="button"
+                    className="app-resource-session"
+                    title={tooltipParts.join("  |  ")}
+                    aria-label={t("app.sessionUsage")}
+                    onClick={() => setUsageStatsOpen(true)}
+                  >
+                    {contextSummary && (
+                      <span className={`app-resource-context${contextTone}`}>
+                        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <path d="M2 13V8a6 6 0 0 1 12 0v5" />
+                          <path d="M2 13h12" />
+                        </svg>
+                        <span className="app-resource-context-label">{t("app.contextUsage")}</span>
+                        <strong>{contextSummary}</strong>
+                      </span>
+                    )}
+                    {usageSummary && <span className="app-resource-cost">{usageSummary}</span>}
+                  </button>
+                );
+              })()}
+              {(webConfig?.chatgpt.usagePanelEnabled || webConfig?.grok.usagePanelEnabled) && (
+                <div className="app-resource-providers">
+                  {webConfig?.chatgpt.usagePanelEnabled && <ChatGptUsagePanel />}
+                  {webConfig?.grok.usagePanelEnabled && <GrokUsagePanel />}
+                </div>
+              )}
             </div>
           )}
+          <button
+            ref={inspectorButtonRef}
+            className={`icon-round context-action top-inspector-trigger${rightPanelOpen ? " on" : ""}`}
+            type="button"
+            onClick={() => {
+              if (rightPanelOpen) setRightPanelOpen(false);
+              else openInspectorTab(rightPanelMode);
+            }}
+            title={rightPanelOpen ? t("app.closeInspector") : t("app.openInspector")}
+            aria-label={rightPanelOpen ? t("app.closeInspector") : t("app.openInspector")}
+            aria-controls={INSPECTOR_PANEL_ID}
+            aria-expanded={rightPanelOpen}
+          >
+            <svg className="context-action-svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <rect x="3" y="3" width="18" height="18" rx="2" />
+              <line x1="15" y1="3" x2="15" y2="21" />
+            </svg>
+            <span className="top-inspector-signals" aria-hidden="true">
+              {(agentRunning || todoActive || gitDirty) && <span className={`top-inspector-dot${gitDirty ? " is-warning" : ""}`} />}
+              <SubagentBadgeIndicator store={subagentStore} />
+            </span>
+          </button>
+          <button
+            ref={moreButtonRef}
+            className={`app-top-aux-tab icon-round context-action top-more-trigger${activeTopPanel === "more" ? " on" : ""}`}
+            type="button"
+            onClick={() => toggleTopPanel("more")}
+            title={t("common.more")}
+            aria-label={t("common.more")}
+            aria-expanded={activeTopPanel === "more"}
+            aria-haspopup="menu"
+          >
+            <svg className="context-action-svg" width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <circle cx="5" cy="12" r="1.7" /><circle cx="12" cy="12" r="1.7" /><circle cx="19" cy="12" r="1.7" />
+            </svg>
+          </button>
           {/* Top panel dropdown — shared, only one active at a time */}
           {activeTopPanel && activeTopPanel !== "branches" && topPanelPos && typeof document !== "undefined" && createPortal((
             <div
               ref={activeTopPanel === "system" ? systemPanelRef : undefined}
               id={activeTopPanel === "system" ? SYSTEM_PROMPT_PANEL_ID : undefined}
-              className="app-top-aux-panel"
-              role="region"
-              aria-label={activeTopPanel === "system" ? t("app.system") : t("common.workbench.inspector")}
-              tabIndex={-1}
+              className={activeTopPanel === "more" ? "app-top-more-portal" : "app-top-aux-panel"}
+              role={activeTopPanel === "more" ? "presentation" : "region"}
+              aria-label={activeTopPanel === "system" ? t("app.system") : undefined}
+              tabIndex={activeTopPanel === "system" ? -1 : undefined}
               style={{
                 top: topPanelPos.top,
                 left: topPanelPos.left,
@@ -1126,69 +1098,54 @@ export function AppShell() {
                   )}
                 </div>
               )}
-              {activeTopPanel === "subagents" && (
-                <div className="app-top-aux-surface">
-                  <StoredSubagentPanel store={subagentStore} />
-                </div>
-              )}
-              {activeTopPanel === "git" && (
-                <div className="app-top-aux-surface">
-                  <GitPanel cwd={workspaceCwd} refreshKey={gitRefreshKey} onDirtyChange={setGitDirty} />
+              {activeTopPanel === "more" && (
+                <div className="top-more-menu" role="menu" aria-label={t("common.more")}>
+                  {showChat && (
+                    <>
+                      <div className="top-more-menu-label">{t("app.sessionActions")}</div>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className="top-more-menu-item"
+                        disabled={!selectedSession}
+                        onClick={() => {
+                          setActiveTopPanel(null);
+                          void handleExportSession();
+                        }}
+                      >
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                          <polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
+                        </svg>
+                        <span>{t("app.exportHtml")}</span>
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className="top-more-menu-item"
+                        onClick={() => setActiveTopPanel("system")}
+                      >
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" />
+                        </svg>
+                        <span>{t("app.system")}</span>
+                        {systemPrompt && <span className="top-more-menu-status" />}
+                      </button>
+                    </>
+                  )}
+                  <div className="top-more-menu-label">{t("app.applicationActions")}</div>
+                  <button type="button" role="menuitem" className="top-more-menu-item" onClick={() => { setActiveTopPanel(null); setAutomationOpen((open) => !open); }}>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 16 14" />
+                    </svg>
+                    <span>{t("automation.title")}</span>
+                    {automationUnread > 0 && <span className="top-more-menu-badge">{automationUnread > 9 ? "9+" : automationUnread}</span>}
+                  </button>
                 </div>
               )}
             </div>
           ), document.body)}
 
-        </div>
-
-        {/* Observe bar — Changes / Git / Subagents / Todo */}
-        <div className="observe-bar" aria-label={t("common.workbench.inspector")}>
-          <button
-            ref={(node) => { inspectorTriggerRefs.current.changes = node; }}
-            className={`chip${rightPanelOpen && rightPanelMode === "changes" ? " on" : ""}`}
-            onClick={() => {
-              if (rightPanelOpen && rightPanelMode === "changes") setRightPanelOpen(false);
-              else openInspectorTab("changes");
-            }}
-            title={t("common.workbench.changesHint")}
-            aria-pressed={rightPanelOpen && rightPanelMode === "changes"}
-          >
-            <span className={`dot${agentRunning ? " is-running" : ""}`} />
-            {t("common.workbench.changes")}
-          </button>
-          <button
-            ref={(node) => { inspectorTriggerRefs.current.git = node; }}
-            className={`chip${rightPanelOpen && rightPanelMode === "git" ? " on" : ""}`}
-            onClick={() => {
-              if (rightPanelOpen && rightPanelMode === "git") setRightPanelOpen(false);
-              else openInspectorTab("git");
-            }}
-            title={t("common.workbench.gitHint")}
-            aria-pressed={rightPanelOpen && rightPanelMode === "git"}
-          >
-            <span className={`dot${gitDirty ? " warn" : " is-idle"}`} />
-            {t("common.workbench.git")}
-          </button>
-          <button
-            ref={(node) => { inspectorTriggerRefs.current.agents = node; }}
-            className={`chip${rightPanelOpen && rightPanelMode === "agents" ? " on" : ""}`}
-            onClick={() => {
-              if (rightPanelOpen && rightPanelMode === "agents") setRightPanelOpen(false);
-              else openInspectorTab("agents");
-            }}
-            title={t("common.workbench.subagentsHint")}
-            aria-pressed={rightPanelOpen && rightPanelMode === "agents"}
-          >
-            <SubagentBadgeIndicator store={subagentStore} />
-            {t("common.workbench.subagents")}
-          </button>
-          <span
-            className={`chip observe-status${todoActive ? " on" : ""}`}
-            title={todoActive ? t("common.workbench.todoAvailable") : t("common.workbench.todoUnavailable")}
-          >
-            <span className={`dot${todoActive ? "" : " is-idle"}`} />
-            {t("common.workbench.todo")}
-          </span>
         </div>
 
         {/* Chat content + optional bottom terminal dock */}
@@ -1299,7 +1256,7 @@ export function AppShell() {
                 onClick={() => {
                   setRightPanelOpen(false);
                   window.requestAnimationFrame(() => {
-                    (inspectorTriggerRefs.current[rightPanelMode] ?? sidebarToggleRef.current)?.focus();
+                    inspectorButtonRef.current?.focus();
                   });
                 }}
                 title={t("app.hidePreview")}

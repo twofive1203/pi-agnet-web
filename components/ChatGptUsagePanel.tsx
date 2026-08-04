@@ -377,7 +377,7 @@ export function ChatGptUsagePanel() {
         className="usage-panel-trigger"
       >
         <span className="usage-panel-trigger-name">GPT</span>
-        <span>{compactStatus}</span>
+        <span className="usage-panel-trigger-status">{compactStatus}</span>
         <span className="usage-panel-pies">
           {knownTiers.length > 0 ? knownTiers.map((tier) => (
             <UsagePie key={tier.name} tier={tier} label={QUOTA_TIER_LABELS[tier.name]} />
