@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { AgentsConfig } from "./AgentsConfig";
 import { ExtensionsConfig } from "./ExtensionsConfig";
 import { McpConfig } from "./McpConfig";
+import { SkillsConfig } from "./SkillsConfig";
 import { WebToolsConfig } from "./WebToolsConfig";
 import type {
   PiWebBundledExtensionsConfig,
@@ -75,7 +76,7 @@ const TEMPLATE_VARIABLES = [
   { token: "{yyyyMMdd-HHmmss}", descriptionKey: "settings.pathVarsTimestamp" },
 ];
 
-type SettingsSection = "language" | "worktree" | "usage" | "terminal" | "chatgpt" | "grok" | "editor" | "agents" | "mcp" | "webtools" | "workflow" | "extensions";
+type SettingsSection = "language" | "worktree" | "usage" | "terminal" | "editor" | "agents" | "mcp" | "skills" | "webtools" | "workflow" | "extensions";
 type SubagentThinkingOption = PiWebSubagentRunPolicy["thinking"];
 
 const SUBAGENT_THINKING_OPTIONS: SubagentThinkingOption[] = ["inherit", "off", "minimal", "low", "medium", "high", "xhigh"];
@@ -680,11 +681,10 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
             {renderSectionButton("worktree", t("settings.sectionWorktree"), t("settings.worktreeSection"))}
             {renderSectionButton("usage", t("settings.sectionUsage"), t("settings.usageSection"))}
             {renderSectionButton("terminal", t("settings.sectionTerminal"), t("settings.terminalSection"))}
-            {renderSectionButton("chatgpt", "ChatGPT", t("settings.chatgptSection"))}
-            {renderSectionButton("grok", "Grok", t("settings.grokSection"))}
             {renderSectionButton("editor", t("settings.sectionEditor"), t("settings.editorSection"))}
             {renderSectionButton("agents", t("settings.sectionAgents"), t("settings.agentsSection"))}
             {renderSectionButton("mcp", t("settings.sectionMcp"), t("settings.mcpSection"))}
+            {renderSectionButton("skills", t("settings.sectionSkills"), t("settings.skillsSection"))}
             {renderSectionButton("webtools", t("settings.webTools.nav"), t("settings.webTools.title"))}
             {renderSectionButton("workflow", "SnFlow", t("settings.workflowSection"))}
             {renderSectionButton("extensions", "Extensions", t("settings.extensionsSection"))}
@@ -774,6 +774,59 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
                       description={t("settings.includeArchivedSessionsHint")}
                       checked={usage.includeArchived}
                       onChange={(includeArchived) => updateUsage({ includeArchived })}
+                    />
+
+                    <SettingsSectionHeader
+                      title="ChatGPT"
+                      description={<>{t("settings.chatgptDescription")} <code className="settings-inline-code">{configPath}</code>{exists ? "" : t("settings.autoCreateOnSave")}</>}
+                    />
+                    <ToggleField
+                      label={t("settings.chatgptSection")}
+                      description={t("settings.chatgptPanelEnable")}
+                      checked={chatgpt.usagePanelEnabled}
+                      onChange={(usagePanelEnabled) => updateChatgpt({ usagePanelEnabled })}
+                    />
+                    <ToggleField
+                      label={t("settings.chatgptAutoRefresh")}
+                      description={t("settings.chatgptAutoRefreshHint")}
+                      checked={chatgpt.autoRefreshEnabled}
+                      onChange={(autoRefreshEnabled) => updateChatgpt({ autoRefreshEnabled })}
+                    />
+                    <div className="settings-grid">
+                      <Field label={t("settings.cycleInterval")} description={t("settings.cycleIntervalHint")}>
+                        <SettingsInput type="number" min={300} step={60} value={chatgpt.refreshCycleIntervalSeconds} onChange={(e) => updateChatgpt({ refreshCycleIntervalSeconds: Number.parseInt(e.target.value || "0", 10) })} />
+                      </Field>
+                      <Field label={t("settings.accountInterval")} description={t("settings.accountIntervalHint")}>
+                        <SettingsInput type="number" min={5} step={1} value={chatgpt.refreshAccountIntervalSeconds} onChange={(e) => updateChatgpt({ refreshAccountIntervalSeconds: Number.parseInt(e.target.value || "0", 10) })} />
+                      </Field>
+                    </div>
+                    <div className="settings-grid">
+                      <Field label={t("settings.cycleSaltMin")} description={t("settings.cycleSaltMinHint")}>
+                        <SettingsInput type="number" min={0} step={1} value={chatgpt.refreshCycleSaltMinSeconds} onChange={(e) => updateChatgpt({ refreshCycleSaltMinSeconds: Number.parseInt(e.target.value || "0", 10) })} />
+                      </Field>
+                      <Field label={t("settings.cycleSaltMax")} description={t("settings.cycleSaltMaxHint")}>
+                        <SettingsInput type="number" min={0} step={1} value={chatgpt.refreshCycleSaltMaxSeconds} onChange={(e) => updateChatgpt({ refreshCycleSaltMaxSeconds: Number.parseInt(e.target.value || "0", 10) })} />
+                      </Field>
+                    </div>
+                    <div className="settings-grid">
+                      <Field label={t("settings.accountSaltMin")} description={t("settings.accountSaltMinHint")}>
+                        <SettingsInput type="number" min={0} step={1} value={chatgpt.refreshAccountSaltMinSeconds} onChange={(e) => updateChatgpt({ refreshAccountSaltMinSeconds: Number.parseInt(e.target.value || "0", 10) })} />
+                      </Field>
+                      <Field label={t("settings.accountSaltMax")} description={t("settings.accountSaltMaxHint")}>
+                        <SettingsInput type="number" min={0} step={1} value={chatgpt.refreshAccountSaltMaxSeconds} onChange={(e) => updateChatgpt({ refreshAccountSaltMaxSeconds: Number.parseInt(e.target.value || "0", 10) })} />
+                      </Field>
+                    </div>
+                    <SettingsNotice>{t("settings.chatgptLockInfo")}</SettingsNotice>
+
+                    <SettingsSectionHeader
+                      title="Grok"
+                      description={<>{t("settings.grokDescription")} <code className="settings-inline-code">{configPath}</code>{exists ? "" : t("settings.autoCreateOnSave")}</>}
+                    />
+                    <ToggleField
+                      label={t("settings.grokUsagePanel")}
+                      description={t("settings.grokPanelEnable")}
+                      checked={grok?.usagePanelEnabled ?? false}
+                      onChange={(usagePanelEnabled) => updateGrok({ usagePanelEnabled })}
                     />
                   </div>
                 ) : section === "terminal" ? (
@@ -899,50 +952,6 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
                       </div>
                     </div>
                   </div>
-                ) : section === "chatgpt" ? (
-                  <div className="settings-section">
-                    <SettingsSectionHeader
-                      title="ChatGPT"
-                      description={<>{t("settings.chatgptDescription")} <code className="settings-inline-code">{configPath}</code>{exists ? "" : t("settings.autoCreateOnSave")}</>}
-                    />
-                    <ToggleField
-                      label={t("settings.chatgptSection")}
-                      description={t("settings.chatgptPanelEnable")}
-                      checked={chatgpt.usagePanelEnabled}
-                      onChange={(usagePanelEnabled) => updateChatgpt({ usagePanelEnabled })}
-                    />
-                    <ToggleField
-                      label={t("settings.chatgptAutoRefresh")}
-                      description={t("settings.chatgptAutoRefreshHint")}
-                      checked={chatgpt.autoRefreshEnabled}
-                      onChange={(autoRefreshEnabled) => updateChatgpt({ autoRefreshEnabled })}
-                    />
-                    <div className="settings-grid">
-                      <Field label={t("settings.cycleInterval")} description={t("settings.cycleIntervalHint")}>
-                        <SettingsInput type="number" min={300} step={60} value={chatgpt.refreshCycleIntervalSeconds} onChange={(e) => updateChatgpt({ refreshCycleIntervalSeconds: Number.parseInt(e.target.value || "0", 10) })} />
-                      </Field>
-                      <Field label={t("settings.accountInterval")} description={t("settings.accountIntervalHint")}>
-                        <SettingsInput type="number" min={5} step={1} value={chatgpt.refreshAccountIntervalSeconds} onChange={(e) => updateChatgpt({ refreshAccountIntervalSeconds: Number.parseInt(e.target.value || "0", 10) })} />
-                      </Field>
-                    </div>
-                    <div className="settings-grid">
-                      <Field label={t("settings.cycleSaltMin")} description={t("settings.cycleSaltMinHint")}>
-                        <SettingsInput type="number" min={0} step={1} value={chatgpt.refreshCycleSaltMinSeconds} onChange={(e) => updateChatgpt({ refreshCycleSaltMinSeconds: Number.parseInt(e.target.value || "0", 10) })} />
-                      </Field>
-                      <Field label={t("settings.cycleSaltMax")} description={t("settings.cycleSaltMaxHint")}>
-                        <SettingsInput type="number" min={0} step={1} value={chatgpt.refreshCycleSaltMaxSeconds} onChange={(e) => updateChatgpt({ refreshCycleSaltMaxSeconds: Number.parseInt(e.target.value || "0", 10) })} />
-                      </Field>
-                    </div>
-                    <div className="settings-grid">
-                      <Field label={t("settings.accountSaltMin")} description={t("settings.accountSaltMinHint")}>
-                        <SettingsInput type="number" min={0} step={1} value={chatgpt.refreshAccountSaltMinSeconds} onChange={(e) => updateChatgpt({ refreshAccountSaltMinSeconds: Number.parseInt(e.target.value || "0", 10) })} />
-                      </Field>
-                      <Field label={t("settings.accountSaltMax")} description={t("settings.accountSaltMaxHint")}>
-                        <SettingsInput type="number" min={0} step={1} value={chatgpt.refreshAccountSaltMaxSeconds} onChange={(e) => updateChatgpt({ refreshAccountSaltMaxSeconds: Number.parseInt(e.target.value || "0", 10) })} />
-                      </Field>
-                    </div>
-                    <SettingsNotice>{t("settings.chatgptLockInfo")}</SettingsNotice>
-                  </div>
                 ) : section === "editor" ? (
                   <div className="settings-section">
                     <SettingsSectionHeader
@@ -1023,19 +1032,6 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
                       <div style={{ marginTop: 8 }}>{t("settings.monacoDisclaimer")}</div>
                     </div>
                   </div>
-                ) : section === "grok" ? (
-                  <div className="settings-section">
-                    <SettingsSectionHeader
-                      title="Grok"
-                      description={<>{t("settings.grokDescription")} <code className="settings-inline-code">{configPath}</code>{exists ? "" : t("settings.autoCreateOnSave")}</>}
-                    />
-                    <ToggleField
-                      label={t("settings.grokUsagePanel")}
-                      description={t("settings.grokPanelEnable")}
-                      checked={grok?.usagePanelEnabled ?? false}
-                      onChange={(usagePanelEnabled) => updateGrok({ usagePanelEnabled })}
-                    />
-                  </div>
                 ) : section === "extensions" ? (
                   <div className="settings-section">
                     <SettingsSectionHeader
@@ -1061,6 +1057,12 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
                   <AgentsConfig cwd={cwd} />
                 ) : section === "mcp" ? (
                   <McpConfig cwd={cwd} />
+                ) : section === "skills" ? (
+                  cwd ? (
+                    <SkillsConfig cwd={cwd} onClose={() => {}} embed />
+                  ) : (
+                    <SettingsState title={t("settings.selectWorkspaceFirst")} />
+                  )
                 ) : section === "webtools" ? (
                   <WebToolsConfig />
                 ) : section === "workflow" ? (
@@ -1206,10 +1208,10 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
         </div>
 
         <div className="pi-modal-footer settings-modal-footer">
-          {section === "agents" || section === "mcp" || section === "webtools" ? (
+          {section === "agents" || section === "mcp" || section === "skills" || section === "webtools" ? (
             <>
               <span className="settings-modal-footer-note">
-                {section === "mcp" ? t("settings.mcpPanelNote") : section === "webtools" ? t("settings.webTools.panelNote") : t("settings.agentsPanelNote")}
+                {section === "mcp" ? t("settings.mcpPanelNote") : section === "skills" ? t("settings.skillsPanelNote") : section === "webtools" ? t("settings.webTools.panelNote") : t("settings.agentsPanelNote")}
               </span>
               <SettingsButton onClick={onClose}>{t("common.close")}</SettingsButton>
             </>

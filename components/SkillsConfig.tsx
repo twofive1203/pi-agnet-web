@@ -218,7 +218,7 @@ function AddSkillPanel({ cwd, onInstalled }: { cwd: string; onInstalled: () => v
   );
 }
 
-export function SkillsConfig({ cwd, onClose }: { cwd: string; onClose: () => void }) {
+export function SkillsConfig({ cwd, onClose, embed }: { cwd: string; onClose: () => void; embed?: boolean }) {
   const [skills, setSkills] = useState<Skill[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -277,18 +277,8 @@ export function SkillsConfig({ cwd, onClose }: { cwd: string; onClose: () => voi
   const selectedSkill = skills.find((skill) => skill.filePath === selected) ?? null;
   const groups = ["project", "global", "path"].map((label) => ({ label, skills: skills.filter((skill) => sourceLabel(skill) === label) })).filter((group) => group.skills.length > 0);
 
-  return (
-    <div className="pi-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="skills-config-title" onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-      <div className="pi-modal-panel pi-modal-panel-large resource-split-panel">
-        <div className="pi-modal-header">
-          <div className="pi-modal-header-copy">
-            <div id="skills-config-title" className="pi-modal-title">Skills</div>
-            <div className="pi-modal-subtitle resource-path">{shortenPath(cwd)}</div>
-          </div>
-          <button type="button" onClick={onClose} className="pi-modal-close" aria-label="Close skills">×</button>
-        </div>
-
-        <div className="pi-modal-split-body resource-split-body">
+  const panelContent = (
+        <div className={embed ? "resource-split-body skills-embed-body" : "pi-modal-split-body resource-split-body"}>
           <aside className="resource-split-nav" aria-label="Installed skills">
             <div className="resource-split-list">
               {loading ? <SettingsState kind="loading" title="Loading skills…" /> : error ? <SettingsState kind="error" title="Could not load skills" description={error} /> : skills.length === 0 ? <SettingsState title="No skills found" /> : groups.map((group) => (
@@ -327,6 +317,21 @@ export function SkillsConfig({ cwd, onClose }: { cwd: string; onClose: () => voi
             )}
           </main>
         </div>
+  );
+
+  if (embed) return panelContent;
+  return (
+    <div className="pi-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="skills-config-title" onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <div className="pi-modal-panel pi-modal-panel-large resource-split-panel">
+        <div className="pi-modal-header">
+          <div className="pi-modal-header-copy">
+            <div id="skills-config-title" className="pi-modal-title">Skills</div>
+            <div className="pi-modal-subtitle resource-path">{shortenPath(cwd)}</div>
+          </div>
+          <button type="button" onClick={onClose} className="pi-modal-close" aria-label="Close skills">×</button>
+        </div>
+
+        {panelContent}
 
         <div className="pi-modal-footer"><SettingsButton onClick={onClose}>Close</SettingsButton></div>
       </div>

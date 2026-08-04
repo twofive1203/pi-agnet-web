@@ -2191,6 +2191,14 @@ span.linenumber {
   overflow: hidden;
 }
 
+/* Skills panel embedded inside the settings modal needs its own bounded height. */
+.skills-embed-body {
+  flex: none;
+  height: min(58dvh, 560px);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
 .resource-split-nav {
   width: 224px;
   flex: 0 0 auto;
@@ -5477,39 +5485,6 @@ span.linenumber {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-
-/* Sidebar foot: settings hub */
-.sidebar-foot {
-  border-top: 1px solid var(--line-soft);
-  padding: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  flex-shrink: 0;
-}
-.sidebar-foot .hub-row {
-  display: grid;
-  grid-template-columns: repeat(3, 30px);
-  gap: 4px;
-}
-.sidebar-foot .hub-btn {
-  width: 30px;
-  height: 30px;
-  border-radius: 9px;
-  border: 1px solid var(--line);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  font-size: 0;
-  color: var(--text-2);
-  background: none;
-  cursor: pointer;
-  transition: background 0.12s, color 0.12s, border-color 0.12s;
-}
-.sidebar-foot .hub-btn:hover:not(:disabled) { background: var(--bg-hover); color: var(--text); }
-.sidebar-foot .hub-btn:disabled { opacity: 0.35; cursor: default; }
 
 @media (hover: none) {
   .workspace-quick-actions {

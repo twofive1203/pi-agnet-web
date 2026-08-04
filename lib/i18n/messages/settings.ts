@@ -32,6 +32,7 @@ export const settingsZh = {
   terminalSection: "Web 终端设置",
   chatgptSection: "ChatGPT 用量悬浮面板",
   grokSection: "Grok CLI 用量悬浮面板",
+  skillsSection: "已安装技能浏览、模型可见性与安装",
   editorSection: "文件编辑器和快捷键",
   agentsSection: "Pi 原生 subagent 模型设置",
   mcpSection: "MCP 适配器配置（pi-mcp-adapter）",
@@ -327,6 +328,7 @@ export const settingsZh = {
   sectionEditor: "编辑器",
   sectionAgents: "代理",
   sectionMcp: "MCP",
+  sectionSkills: "技能",
 
   // WorkTree section
   saveTo: "保存到",
@@ -375,6 +377,8 @@ export const settingsZh = {
     "Agents 面板保存到 Pi settings.json；请使用面板内的保存/重新加载按钮。",
   mcpPanelNote:
     "MCP 面板保存到 adapter 原生配置文件，不写入 pi-web.json；请使用面板内的保存/重新加载按钮。",
+  skillsPanelNote:
+    "技能开关与安装修改立即写入对应 skill 文件，不写入 pi-web.json。",
   resetDefaults: "恢复默认值",
   unsavedChanges: "有未保存更改",
 
@@ -511,6 +515,7 @@ export const settingsEn = {
   terminalSection: "Web Terminal",
   chatgptSection: "ChatGPT usage panel",
   grokSection: "Grok CLI usage panel",
+  skillsSection: "Browse installed skills, model visibility, and installation",
   editorSection: "Editor and shortcuts",
   agentsSection: "Native Pi subagent model settings",
   mcpSection: "MCP adapter configuration (pi-mcp-adapter)",
@@ -817,6 +822,7 @@ export const settingsEn = {
   sectionEditor: "Editor",
   sectionAgents: "Agents",
   sectionMcp: "MCP",
+  sectionSkills: "Skills",
 
   // WorkTree section
   saveTo: "Saved to",
@@ -867,6 +873,8 @@ export const settingsEn = {
     "The Agents panel saves to Pi settings.json; use its own save/reload buttons.",
   mcpPanelNote:
     "The MCP panel saves adapter-native config files, not pi-web.json; use its own save/reload buttons.",
+  skillsPanelNote:
+    "Skill toggles and installs are written to the skill files immediately, not to pi-web.json.",
   resetDefaults: "Reset to defaults",
   unsavedChanges: "Unsaved changes",
 
