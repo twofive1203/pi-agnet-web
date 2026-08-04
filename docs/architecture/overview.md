@@ -73,6 +73,7 @@ Recent-session browse order uses file mtime (then filename timestamp, then path)
 
 ### Usage accounting
 
+- The chat top bar's parent-session token/cost totals use the same lifetime billing scope as the Pi CLI: every persisted assistant/tool-result usage plus compaction and branch-summary calls, including compacted-away and abandoned-branch entries. Context percentage remains a separate current-branch, compaction-aware value.
 - Usage starts from top-level sessions returned by the active/archive session readers. It never recursively scans the global sessions tree, so orphaned subagent directories whose parent was deleted are not billed.
 - For each parent `<session>.jsonl`, `lib/session-artifacts.ts` discovers nested pi-subagents `session.jsonl` files only under the path-derived `<session>/` companion directory. Nested assistant usage contributes to daily/model/provider totals and is attributed to the parent in `bySession`.
 - API results expose `mainTotals`, `subagentTotals`, and `subagentSessions` globally and per parent session. Persisted message `usage.cost.total` remains authoritative; Usage does not reprice historical calls from the current model catalog.

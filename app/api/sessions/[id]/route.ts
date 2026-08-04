@@ -13,7 +13,9 @@ import {
 import { getRpcSession } from "@/lib/rpc-manager";
 import { deleteSessionChangesSidecar } from "@/lib/session-file-changes";
 import { deleteSessionArtifacts } from "@/lib/session-artifacts";
+import { getSessionBillingStats, hasSessionBillingUsage } from "@/lib/session-billing-stats";
 import { canonicalizeCwd } from "@/lib/cwd";
+import type { SessionEntry } from "@/lib/types";
 
 // BranchNavigator still traverses recursively, so keep the response tree shallow.
 const MAX_PROJECTED_TREE_DEPTH = 200;
@@ -136,7 +138,7 @@ export async function GET(
 
     let sm: SessionManager;
     let header: ReturnType<SessionManager["getHeader"]>;
-    let entries: never;
+    let entries: SessionEntry[];
     let leafId: string | null;
     let tree: ReturnType<typeof projectTreeForResponse>;
     try {
@@ -155,7 +157,7 @@ export async function GET(
         invalidateSessionPathCache(id);
         return NextResponse.json({ error: "Session not found" }, { status: 404 });
       }
-      entries = sm.getEntries() as never;
+      entries = sm.getEntries() as unknown as SessionEntry[];
       leafId = sm.getLeafId();
       tree = projectTreeForResponse(sm.getTree());
     } catch {
@@ -164,6 +166,7 @@ export async function GET(
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
     }
     const context = buildSessionContext(entries, leafId);
+    const billingStats = getSessionBillingStats(entries);
 
     let modified = header?.timestamp ?? new Date().toISOString();
     try { modified = statSync(filePath).mtime.toISOString(); } catch { /* use header timestamp */ }
@@ -209,6 +212,7 @@ export async function GET(
       leafId,
       tree,
       context,
+      sessionStats: hasSessionBillingUsage(billingStats) ? billingStats : null,
       ...(agentState !== undefined ? { agentState } : {}),
     });
   } catch (error) {

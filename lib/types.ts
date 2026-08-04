@@ -64,6 +64,25 @@ export interface UserMessage {
   timestamp?: number;
 }
 
+export interface TokenUsage {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  cost: {
+    input: number;
+    output: number;
+    cacheRead: number;
+    cacheWrite: number;
+    total: number;
+  };
+}
+
+export interface SessionBillingStats {
+  tokens: Pick<TokenUsage, "input" | "output" | "cacheRead" | "cacheWrite">;
+  cost: number;
+}
+
 export interface AssistantMessage {
   role: "assistant";
   content: AssistantContentBlock[];
@@ -72,19 +91,7 @@ export interface AssistantMessage {
   stopReason?: string;
   errorMessage?: string;
   timestamp?: number;
-  usage?: {
-    input: number;
-    output: number;
-    cacheRead: number;
-    cacheWrite: number;
-    cost: {
-      input: number;
-      output: number;
-      cacheRead: number;
-      cacheWrite: number;
-      total: number;
-    };
-  };
+  usage?: TokenUsage;
 }
 
 export interface ToolResultMessage {
@@ -94,6 +101,7 @@ export interface ToolResultMessage {
   content: (TextContent | ImageContent)[];
   isError?: boolean;
   timestamp?: number;
+  usage?: TokenUsage;
 }
 
 export interface CustomMessage {
@@ -231,6 +239,7 @@ export interface CompactionEntry extends SessionEntryBase {
   tokensBefore: number;
   details?: unknown;
   fromHook?: boolean;
+  usage?: TokenUsage;
 }
 
 export interface BranchSummaryEntry extends SessionEntryBase {
@@ -239,6 +248,7 @@ export interface BranchSummaryEntry extends SessionEntryBase {
   summary: string;
   details?: unknown;
   fromHook?: boolean;
+  usage?: TokenUsage;
 }
 
 export interface CustomEntry extends SessionEntryBase {

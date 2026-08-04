@@ -7,6 +7,7 @@ import type {
   ExtensionStatusItem,
   ExtensionToastItem,
   ExtensionWidgetItem,
+  SessionBillingStats,
   SessionInfo,
   SessionTreeNode,
 } from "@/lib/types";
@@ -48,6 +49,7 @@ export interface SessionData {
   filePath: string;
   tree: SessionTreeNode[];
   leafId: string | null;
+  sessionStats: SessionBillingStats | null;
   context: {
     messages: AgentMessage[];
     entryIds: string[];
@@ -640,22 +642,23 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const currentModel = currentModelOverride ?? data?.context.model ?? pendingModel ?? null;
   const displayModel = isNew ? newSessionModel : currentModel;
 
-  const sessionStats = useMemo(() => {
+  const currentContextStats = useMemo(() => {
     const tokens = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
     let cost = 0;
     for (const msg of messages) {
       if (msg.role !== "assistant") continue;
-      const u = (msg as import("@/lib/types").AssistantMessage).usage;
-      if (!u) continue;
-      tokens.input += u.input ?? 0;
-      tokens.output += u.output ?? 0;
-      tokens.cacheRead += u.cacheRead ?? 0;
-      tokens.cacheWrite += u.cacheWrite ?? 0;
-      cost += u.cost?.total ?? 0;
+      const usage = msg.usage;
+      if (!usage) continue;
+      tokens.input += usage.input ?? 0;
+      tokens.output += usage.output ?? 0;
+      tokens.cacheRead += usage.cacheRead ?? 0;
+      tokens.cacheWrite += usage.cacheWrite ?? 0;
+      cost += usage.cost?.total ?? 0;
     }
     const total = tokens.input + tokens.output + tokens.cacheRead + tokens.cacheWrite;
     return total > 0 ? { tokens, cost } : null;
   }, [messages]);
+  const sessionStats = data?.sessionStats ?? currentContextStats;
 
   const loadSession = useCallback(async (sid: string, showLoading = false, includeState = false) => {
     const requestId = ++sessionLoadRequestRef.current;
