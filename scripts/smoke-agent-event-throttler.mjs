@@ -54,6 +54,20 @@ function textOf(event) {
   throttler.clear();
 }
 
+// agent_settled is also a terminal barrier for multi-run prompt lifecycles.
+{
+  let now = 100;
+  const delivered = [];
+  const throttler = new AgentEventThrottler((event) => delivered.push(textOf(event)), 50, () => now);
+  throttler.handle(update("retry-1-a"));
+  now += 1;
+  throttler.handle(update("retry-1-b"));
+  throttler.handle({ type: "agent_settled" });
+  throttler.handle(update("retry-2-a"));
+  assert.deepEqual(delivered, ["retry-1-a", "retry-1-b", "agent_settled", "retry-2-a"]);
+  throttler.clear();
+}
+
 // clear() must not leak a delayed update after wrapper teardown.
 {
   const delivered = [];
