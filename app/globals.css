@@ -141,6 +141,17 @@ html.dark {
   --motion-ease-standard: cubic-bezier(0.2, 0, 0, 1);
   --motion-ease-emphasized: cubic-bezier(0.16, 1, 0.3, 1);
 
+  /* Workbench skin (wallpaper/gradient + glass/atmosphere). Boot/hook may override. */
+  --skin-wallpaper-image: none;
+  --skin-bg-image: none;
+  --skin-glass: 0;
+  --skin-panel-alpha: 1;
+  --skin-blur: 0px;
+  --skin-panel-blur: 0px;
+  --skin-bg-blur: 0px;
+  --skin-vignette: 0;
+  --skin-scrim: 0.18;
+
   /* Workbench layer order: cards < drawer backdrop < drawers < global drawer < portals < fullscreen < dialogs. */
   --z-workbench-card: 1;
   --z-sidebar-backdrop: 240;
@@ -650,7 +661,11 @@ html:is(
 .theme-picker-popover {
   position: fixed;
   z-index: var(--z-top-portal);
+  max-height: min(720px, calc(100dvh - 24px));
   padding: 10px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   border: 1px solid var(--border-default);
   border-radius: var(--radius-popover);
   background: var(--surface-raised);
@@ -688,7 +703,7 @@ html:is(
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
-  max-height: min(360px, calc(100dvh - 100px));
+  max-height: min(220px, calc(100dvh - 360px));
   overflow-y: auto;
   overscroll-behavior: contain;
 }
@@ -754,6 +769,202 @@ html:is(
   font-size: 12px;
   font-weight: 800;
   text-align: center;
+}
+
+.theme-picker-workbench {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 4px;
+  padding-top: 2px;
+}
+
+.theme-picker-workbench-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.theme-picker-gradient-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.theme-picker-gradient-option {
+  display: flex;
+  min-width: 0;
+  min-height: var(--control-height-md);
+  align-items: center;
+  gap: 7px;
+  padding: 5px 7px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.theme-picker-gradient-option:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.theme-picker-gradient-option-selected {
+  border-color: var(--accent-border);
+  background: var(--surface-selected);
+  color: var(--text-primary);
+}
+
+.theme-picker-gradient-swatch {
+  width: 28px;
+  height: 18px;
+  flex: 0 0 28px;
+  border: 1px solid var(--border-default);
+  border-radius: 5px;
+  background-position: center;
+  background-size: cover;
+}
+
+.theme-picker-gradient-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+}
+
+.theme-picker-workbench .theme-picker-section-label {
+  border-top: 1px solid var(--border-subtle);
+  margin: 0;
+  padding-top: 10px;
+}
+
+.theme-picker-workbench-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.theme-picker-workbench-row-stack {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.theme-picker-workbench-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.theme-picker-workbench-copy-inline {
+  flex-direction: row;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.theme-picker-workbench-label {
+  color: var(--text-primary);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.theme-picker-workbench-hint {
+  color: var(--text-tertiary);
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.theme-picker-workbench-value {
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.theme-picker-workbench-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.theme-picker-action-button,
+.theme-picker-reset-button {
+  min-height: var(--control-height-sm);
+  padding: 0 9px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--surface-hover);
+  color: var(--text-primary);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.theme-picker-action-button:hover,
+.theme-picker-reset-button:hover {
+  background: var(--surface-selected);
+}
+
+.theme-picker-action-button:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.theme-picker-action-button-muted {
+  background: transparent;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.theme-picker-reset-button {
+  align-self: stretch;
+  background: transparent;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.theme-picker-wallpaper-preview {
+  height: 56px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background-color: var(--surface-subtle);
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+}
+
+.theme-picker-workbench-error {
+  color: var(--status-danger-foreground);
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.theme-picker-glass-slider {
+  width: 100%;
+  accent-color: var(--accent-primary);
+  cursor: pointer;
+}
+
+.theme-picker-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
 }
 
 html, body {
@@ -4567,6 +4778,129 @@ span.linenumber {
   padding: var(--workbench-gutter);
   overflow: hidden;
   background: var(--surface-app);
+}
+
+/* Workbench skin: image/gradient background through gutters; glass softens cards.
+   Background blur uses a fixed pseudo-layer so UI text stays sharp. */
+html:is([data-wallpaper="on"], [data-wallpaper="image"], [data-wallpaper="gradient"]) body {
+  position: relative;
+  isolation: isolate;
+  background-color: var(--palette-app);
+  background-image: none;
+}
+
+html:is([data-wallpaper="on"], [data-wallpaper="image"], [data-wallpaper="gradient"]) body::before,
+html:is([data-wallpaper="on"], [data-wallpaper="image"], [data-wallpaper="gradient"]) body::after {
+  content: "";
+  position: fixed;
+  pointer-events: none;
+  z-index: -1;
+}
+
+/* Blurred wallpaper/gradient layer (extra inset avoids empty edges after blur). */
+html:is([data-wallpaper="on"], [data-wallpaper="image"], [data-wallpaper="gradient"]) body::before {
+  inset: -36px;
+  background-color: var(--palette-app);
+  background-image: var(--skin-bg-image, var(--skin-wallpaper-image));
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+  filter: blur(var(--skin-bg-blur));
+  transform: translateZ(0);
+}
+
+/* Flat scrim + radial vignette (暗角) above the blurred background. */
+html:is([data-wallpaper="on"], [data-wallpaper="image"], [data-wallpaper="gradient"]) body::after {
+  inset: 0;
+  background:
+    radial-gradient(
+      ellipse 78% 72% at 50% 42%,
+      transparent 0%,
+      color-mix(in srgb, #05070c calc(var(--skin-vignette) * 100%), transparent) 100%
+    ),
+    linear-gradient(
+      color-mix(in srgb, var(--palette-app) calc(var(--skin-scrim) * 100%), transparent),
+      color-mix(in srgb, var(--palette-app) calc(var(--skin-scrim) * 100%), transparent)
+    );
+}
+
+html:is([data-wallpaper="on"], [data-wallpaper="image"], [data-wallpaper="gradient"]) .app-shell-root {
+  background: transparent !important;
+}
+
+html[data-glass="on"] .app-shell-root > .sidebar-container,
+html[data-glass="on"] .app-shell-root > .right-panel-container,
+html[data-glass="on"] .center-panel {
+  background: color-mix(
+    in srgb,
+    var(--palette-panel) calc(var(--skin-panel-alpha) * 100%),
+    transparent
+  ) !important;
+  -webkit-backdrop-filter: blur(var(--skin-panel-blur, var(--skin-blur)));
+  backdrop-filter: blur(var(--skin-panel-blur, var(--skin-blur)));
+}
+
+html[data-glass="on"] .center-panel {
+  background:
+    radial-gradient(
+      760px 220px at 50% -10%,
+      color-mix(in srgb, var(--accent) calc(9% * var(--skin-panel-alpha)), transparent),
+      transparent 60%
+    ),
+    color-mix(
+      in srgb,
+      var(--palette-panel) calc(var(--skin-panel-alpha) * 100%),
+      transparent
+    ) !important;
+}
+
+html[data-glass="on"] .sidebar-container,
+html[data-glass="on"] .right-panel-container {
+  background: color-mix(
+    in srgb,
+    var(--palette-panel) calc(var(--skin-panel-alpha) * 100%),
+    transparent
+  ) !important;
+}
+
+/* At full glass, drop the inset highlight that still reads as a solid fill. */
+html[data-glass="on"] .app-shell-root > .sidebar-container,
+html[data-glass="on"] .app-shell-root > .right-panel-container,
+html[data-glass="on"] .center-panel {
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, #fff calc(var(--skin-panel-alpha) * 12%), transparent),
+    var(--shadow-panel);
+}
+
+html:is([data-wallpaper="on"], [data-wallpaper="image"], [data-wallpaper="gradient"]) :is(
+  .message-user-bubble,
+  .message-thinking,
+  .message-tool-card,
+  .chat-input-main-row,
+  .insp-body,
+  .diff-modal-body
+) {
+  /* Keep high-frequency reading surfaces on solid semantic fills over wallpaper. */
+  background-color: var(--surface-panel);
+}
+
+html:is([data-wallpaper="on"], [data-wallpaper="image"], [data-wallpaper="gradient"]) .message-user-bubble {
+  background-color: var(--surface-user-message);
+}
+
+html:is([data-wallpaper="on"], [data-wallpaper="image"], [data-wallpaper="gradient"]) .message-tool-card,
+html:is([data-wallpaper="on"], [data-wallpaper="image"], [data-wallpaper="gradient"]) .message-thinking {
+  background-color: var(--surface-tool-message);
+}
+
+html:is([data-wallpaper="on"], [data-wallpaper="image"], [data-wallpaper="gradient"]) .chat-input-main-row {
+  background-color: var(--surface-app);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html:is([data-wallpaper="on"], [data-wallpaper="image"], [data-wallpaper="gradient"]) body::before {
+    filter: none;
+  }
 }
 .sidebar-overlay-backdrop {
   position: fixed;
@@ -8405,6 +8739,9 @@ button.inspector-list-row { cursor: pointer; }
     .chip,
     .top-more-menu-item,
     .theme-picker-option,
+    .theme-picker-gradient-option,
+    .theme-picker-action-button,
+    .theme-picker-reset-button,
     .insp-tabs button,
     .chat-input-action-button,
     .chat-input-control-button,

@@ -1,8 +1,26 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from "react";
 import { createPortal } from "react-dom";
 import { useTheme } from "@/hooks/useTheme";
+import { useWorkbenchSkin } from "@/hooks/useWorkbenchSkin";
+import {
+  WORKBENCH_GRADIENT_IDS,
+  WORKBENCH_GRADIENT_META,
+  WORKBENCH_SKIN_LEVEL_MAX,
+  WORKBENCH_SKIN_LEVEL_MIN,
+  WORKBENCH_SKIN_SOURCE_MAX_BYTES,
+  type WorkbenchGradientId,
+} from "@/lib/theme-skin";
 import { THEME_META, THEME_PREFERENCES } from "@/lib/theme";
 import { useI18n } from "./I18nProvider";
 
@@ -19,17 +37,43 @@ const SECTIONS = [
   { labelKey: "app.themeGroupDark", options: DARK_OPTIONS },
 ] as const;
 
-const POPOVER_WIDTH = 260;
+const GRADIENT_OPTIONS = WORKBENCH_GRADIENT_IDS.map((id) => WORKBENCH_GRADIENT_META[id]);
+
+const POPOVER_WIDTH = 312;
 const THEME_PICKER_ID = "theme-picker-popover";
 
 export function ThemePicker() {
   const { preference, setTheme, isDark } = useTheme();
+  const {
+    mode,
+    gradientId,
+    glass,
+    bgBlur,
+    vignette,
+    hasBackground,
+    hasWallpaper,
+    isCustomized,
+    setGlass,
+    setBgBlur,
+    setVignette,
+    setWallpaperFile,
+    setGradientId,
+    clearBackground,
+    resetWorkbenchSkin,
+  } = useWorkbenchSkin();
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState<{ top: number; left: number } | null>(null);
+  const [wallpaperBusy, setWallpaperBusy] = useState(false);
+  const [wallpaperError, setWallpaperError] = useState<string | null>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const pickingFileRef = useRef(false);
   const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const glassSliderId = useId();
+  const bgBlurSliderId = useId();
+  const vignetteSliderId = useId();
 
   const updatePosition = useCallback(() => {
     const rect = buttonRef.current?.getBoundingClientRect();
@@ -46,11 +90,13 @@ export function ThemePicker() {
     updatePosition();
 
     const handlePointerDown = (event: PointerEvent) => {
+      if (pickingFileRef.current) return;
       const target = event.target as Node;
       if (buttonRef.current?.contains(target) || popoverRef.current?.contains(target)) return;
       setOpen(false);
     };
     const handleFocusIn = (event: FocusEvent) => {
+      if (pickingFileRef.current) return;
       const target = event.target as Node;
       if (buttonRef.current?.contains(target) || popoverRef.current?.contains(target)) return;
       setOpen(false);
@@ -62,8 +108,15 @@ export function ThemePicker() {
         buttonRef.current?.focus();
       }
     };
+    const handleWindowFocus = () => {
+      // File dialog dismissal returns focus without a reliable cancel event.
+      window.setTimeout(() => {
+        pickingFileRef.current = false;
+      }, 0);
+    };
 
     window.addEventListener("resize", updatePosition);
+    window.addEventListener("focus", handleWindowFocus);
     window.visualViewport?.addEventListener("resize", updatePosition);
     window.visualViewport?.addEventListener("scroll", updatePosition);
     document.addEventListener("pointerdown", handlePointerDown, true);
@@ -71,6 +124,7 @@ export function ThemePicker() {
     document.addEventListener("keydown", handleKeyDown);
     return () => {
       window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("focus", handleWindowFocus);
       window.visualViewport?.removeEventListener("resize", updatePosition);
       window.visualViewport?.removeEventListener("scroll", updatePosition);
       document.removeEventListener("pointerdown", handlePointerDown, true);
@@ -99,6 +153,54 @@ export function ThemePicker() {
     window.requestAnimationFrame(() => optionRefs.current[nextIndex]?.focus());
   }, [setTheme]);
 
+  const handleWallpaperPick = useCallback(() => {
+    setWallpaperError(null);
+    pickingFileRef.current = true;
+    fileInputRef.current?.click();
+  }, []);
+
+  const handleWallpaperChange = useCallback(async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    pickingFileRef.current = false;
+    if (!file) return;
+
+    if (!/^image\/(png|jpe?g|webp|gif)$/i.test(file.type)) {
+      setWallpaperError(t("app.themeWallpaperErrorType"));
+      return;
+    }
+    if (file.size > WORKBENCH_SKIN_SOURCE_MAX_BYTES) {
+      setWallpaperError(t("app.themeWallpaperErrorSize"));
+      return;
+    }
+
+    setWallpaperBusy(true);
+    setWallpaperError(null);
+    try {
+      await setWallpaperFile(file);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      if (/too large|storage budget|Encoded wallpaper/i.test(message)) {
+        setWallpaperError(t("app.themeWallpaperErrorSize"));
+      } else if (/Unsupported image type/i.test(message)) {
+        setWallpaperError(t("app.themeWallpaperErrorType"));
+      } else {
+        setWallpaperError(t("app.themeWallpaperErrorGeneric"));
+      }
+    } finally {
+      setWallpaperBusy(false);
+    }
+  }, [setWallpaperFile, t]);
+
+  const handleGradientSelect = useCallback((id: WorkbenchGradientId) => {
+    setWallpaperError(null);
+    if (mode === "gradient" && gradientId === id) {
+      setGradientId(null);
+      return;
+    }
+    setGradientId(id);
+  }, [gradientId, mode, setGradientId]);
+
   const renderOption = (option: (typeof OPTIONS)[number], index: number) => {
     const selected = preference === option.id;
     return (
@@ -124,6 +226,38 @@ export function ThemePicker() {
       </button>
     );
   };
+
+  const renderLevelSlider = (
+    id: string,
+    label: string,
+    hint: string,
+    value: number,
+    onChange: (next: number) => void,
+  ) => (
+    <div className="theme-picker-workbench-row theme-picker-workbench-row-stack">
+      <div className="theme-picker-workbench-copy theme-picker-workbench-copy-inline">
+        <label className="theme-picker-workbench-label" htmlFor={id}>
+          {label}
+        </label>
+        <span className="theme-picker-workbench-value" aria-hidden="true">{value}</span>
+      </div>
+      <input
+        id={id}
+        className="theme-picker-glass-slider"
+        type="range"
+        min={WORKBENCH_SKIN_LEVEL_MIN}
+        max={WORKBENCH_SKIN_LEVEL_MAX}
+        step={1}
+        value={value}
+        onChange={(event) => onChange(Number(event.currentTarget.value))}
+        aria-valuemin={WORKBENCH_SKIN_LEVEL_MIN}
+        aria-valuemax={WORKBENCH_SKIN_LEVEL_MAX}
+        aria-valuenow={value}
+        aria-label={label}
+      />
+      <span className="theme-picker-workbench-hint">{hint}</span>
+    </div>
+  );
 
   return (
     <>
@@ -175,6 +309,129 @@ export function ThemePicker() {
               </Fragment>
             ))}
           </div>
+
+          <div className="theme-picker-workbench">
+            <div className="theme-picker-section-label">{t("app.themeWorkbenchSkin")}</div>
+
+            <div className="theme-picker-workbench-block">
+              <div className="theme-picker-workbench-copy">
+                <span className="theme-picker-workbench-label">{t("app.themeGradientPresets")}</span>
+                <span className="theme-picker-workbench-hint">{t("app.themeGradientPresetsHint")}</span>
+              </div>
+              <div className="theme-picker-gradient-grid" role="listbox" aria-label={t("app.themeGradientPresets")}>
+                {GRADIENT_OPTIONS.map((gradient) => {
+                  const selected = mode === "gradient" && gradientId === gradient.id;
+                  return (
+                    <button
+                      key={gradient.id}
+                      type="button"
+                      role="option"
+                      aria-selected={selected}
+                      className={`theme-picker-gradient-option${selected ? " theme-picker-gradient-option-selected" : ""}`}
+                      title={t(gradient.labelKey)}
+                      onClick={() => handleGradientSelect(gradient.id)}
+                    >
+                      <span
+                        className="theme-picker-gradient-swatch"
+                        style={{ backgroundImage: gradient.css }}
+                        aria-hidden="true"
+                      />
+                      <span className="theme-picker-gradient-label">{t(gradient.labelKey)}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="theme-picker-workbench-row">
+              <div className="theme-picker-workbench-copy">
+                <span className="theme-picker-workbench-label">{t("app.themeWallpaper")}</span>
+                <span className="theme-picker-workbench-hint">{t("app.themeWallpaperHint")}</span>
+              </div>
+              <div className="theme-picker-workbench-actions">
+                <button
+                  type="button"
+                  className="theme-picker-action-button"
+                  onClick={handleWallpaperPick}
+                  disabled={wallpaperBusy}
+                >
+                  {wallpaperBusy ? "…" : t("app.themeWallpaperChoose")}
+                </button>
+                {hasBackground ? (
+                  <button
+                    type="button"
+                    className="theme-picker-action-button theme-picker-action-button-muted"
+                    onClick={() => {
+                      setWallpaperError(null);
+                      clearBackground();
+                    }}
+                    disabled={wallpaperBusy}
+                  >
+                    {t("app.themeBackgroundClear")}
+                  </button>
+                ) : null}
+              </div>
+            </div>
+
+            {hasBackground ? (
+              <div
+                className="theme-picker-wallpaper-preview"
+                style={{ backgroundImage: "var(--skin-bg-image)" }}
+                aria-hidden="true"
+              />
+            ) : null}
+            {hasWallpaper ? (
+              <div className="theme-picker-workbench-hint">{t("app.themeWallpaperActive")}</div>
+            ) : null}
+            {wallpaperError ? (
+              <div className="theme-picker-workbench-error" role="alert">{wallpaperError}</div>
+            ) : null}
+
+            {renderLevelSlider(
+              glassSliderId,
+              t("app.themeGlass"),
+              t("app.themeGlassHint"),
+              glass,
+              setGlass,
+            )}
+            {renderLevelSlider(
+              bgBlurSliderId,
+              t("app.themeBgBlur"),
+              t("app.themeBgBlurHint"),
+              bgBlur,
+              setBgBlur,
+            )}
+            {renderLevelSlider(
+              vignetteSliderId,
+              t("app.themeVignette"),
+              t("app.themeVignetteHint"),
+              vignette,
+              setVignette,
+            )}
+
+            {isCustomized ? (
+              <button
+                type="button"
+                className="theme-picker-reset-button"
+                onClick={() => {
+                  setWallpaperError(null);
+                  resetWorkbenchSkin();
+                }}
+              >
+                {t("app.themeResetWorkbenchSkin")}
+              </button>
+            ) : null}
+          </div>
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/gif"
+            className="theme-picker-file-input"
+            onChange={handleWallpaperChange}
+            tabIndex={-1}
+            aria-hidden="true"
+          />
         </div>,
         document.body,
       )}

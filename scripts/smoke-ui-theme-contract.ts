@@ -11,6 +11,22 @@ import {
   THEME_STORAGE_KEY,
   type ThemeMetadata,
 } from "../lib/theme";
+import {
+  buildWorkbenchSkinBootFragment,
+  clampWorkbenchGlass,
+  isWorkbenchGradientId,
+  isWorkbenchWallpaperDataUrl,
+  parseWorkbenchGlass,
+  resolveWorkbenchAtmosphereTokens,
+  resolveWorkbenchGlassTokens,
+  WORKBENCH_GRADIENT_IDS,
+  WORKBENCH_GRADIENT_META,
+  WORKBENCH_SKIN_BG_BLUR_STORAGE_KEY,
+  WORKBENCH_SKIN_GLASS_STORAGE_KEY,
+  WORKBENCH_SKIN_GRADIENT_STORAGE_KEY,
+  WORKBENCH_SKIN_VIGNETTE_STORAGE_KEY,
+  WORKBENCH_SKIN_WALLPAPER_STORAGE_KEY,
+} from "../lib/theme-skin";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const EXPECTED_THEME_COUNT = 14;
@@ -133,6 +149,8 @@ interface ThemeSources {
   layout: string;
   picker: string;
   hook: string;
+  workbenchSkinHook: string;
+  workbenchSkinLib: string;
   shell: string;
   chatInput: string;
   appDialog: string;
@@ -243,6 +261,59 @@ function collectContractProblems(
   if (!sources.hook.includes("THEME_STORAGE_KEY") || !sources.hook.includes("isThemeSkinPreference")) {
     problems.push("theme hook: storage key or skin derivation is not shared");
   }
+  if (!sources.layout.includes("buildWorkbenchSkinBootFragment")) {
+    problems.push("workbench skin boot: layout must restore wallpaper/glass before paint");
+  }
+  if (!sources.workbenchSkinLib.includes("WORKBENCH_SKIN_WALLPAPER_STORAGE_KEY")
+    || !sources.workbenchSkinLib.includes("WORKBENCH_SKIN_GLASS_STORAGE_KEY")
+    || !sources.workbenchSkinLib.includes("WORKBENCH_SKIN_GRADIENT_STORAGE_KEY")
+    || !sources.workbenchSkinLib.includes("WORKBENCH_SKIN_BG_BLUR_STORAGE_KEY")
+    || !sources.workbenchSkinLib.includes("WORKBENCH_SKIN_VIGNETTE_STORAGE_KEY")
+    || !sources.workbenchSkinLib.includes("WORKBENCH_GRADIENT_META")
+    || !sources.workbenchSkinLib.includes("applyWorkbenchSkinToDocument")
+    || !sources.workbenchSkinLib.includes("buildWorkbenchSkinBootFragment")) {
+    problems.push("workbench skin lib: storage keys, gradients, or apply/boot helpers are missing");
+  }
+  if (!sources.workbenchSkinHook.includes("useWorkbenchSkin")
+    || !sources.workbenchSkinHook.includes("setWallpaperFile")
+    || !sources.workbenchSkinHook.includes("setGradientId")
+    || !sources.workbenchSkinHook.includes("setBgBlur")
+    || !sources.workbenchSkinHook.includes("setVignette")
+    || !sources.workbenchSkinHook.includes("resetWorkbenchSkin")) {
+    problems.push("workbench skin hook: wallpaper/gradient/atmosphere API surface is incomplete");
+  }
+  if (!sources.picker.includes("useWorkbenchSkin")
+    || !sources.picker.includes("theme-picker-workbench")
+    || !sources.picker.includes("theme-picker-gradient-grid")
+    || !sources.picker.includes("theme-picker-glass-slider")
+    || !sources.picker.includes("pickingFileRef")
+    || !sources.picker.includes("setBgBlur")
+    || !sources.picker.includes("setVignette")) {
+    problems.push("theme picker: workbench wallpaper/gradient/atmosphere controls are missing");
+  }
+  if (!sources.css.includes("--skin-wallpaper-image")
+    || !sources.css.includes("--skin-bg-image")
+    || !sources.css.includes("--skin-panel-alpha")
+    || !sources.css.includes("--skin-bg-blur")
+    || !sources.css.includes("--skin-vignette")
+    || !sources.css.includes('data-wallpaper="image"')
+    || !sources.css.includes('data-wallpaper="gradient"')
+    || !sources.css.includes('html[data-glass="on"]')
+    || !sources.css.includes("backdrop-filter: blur(var(--skin-panel-blur, var(--skin-blur)))")
+    || !sources.css.includes("filter: blur(var(--skin-bg-blur))")) {
+    problems.push("workbench skin css: wallpaper/gradient/atmosphere token layer is incomplete");
+  }
+  if (!sources.css.includes(".theme-picker-workbench")
+    || !sources.css.includes(".theme-picker-gradient-grid")
+    || !sources.css.includes(".theme-picker-glass-slider")) {
+    problems.push("workbench skin css: Theme Picker workbench controls are missing");
+  }
+  for (const gradientId of WORKBENCH_GRADIENT_IDS) {
+    const meta = WORKBENCH_GRADIENT_META[gradientId];
+    if (!meta?.css.includes("gradient") || meta.preview.length !== 3) {
+      problems.push(`workbench gradient: ${gradientId} metadata incomplete`);
+    }
+  }
   if (!sources.hook.includes("prefers-reduced-motion: reduce") || !sources.css.includes("@media (prefers-reduced-motion: reduce)")) {
     problems.push("theme motion: reduced-motion contract is missing");
   }
@@ -344,6 +415,8 @@ const sources: ThemeSources = {
   layout: readSource("app/layout.tsx"),
   picker: readSource("components/ThemePicker.tsx"),
   hook: readSource("hooks/useTheme.ts"),
+  workbenchSkinHook: readSource("hooks/useWorkbenchSkin.ts"),
+  workbenchSkinLib: readSource("lib/theme-skin.ts"),
   shell: readSource("components/AppShell.tsx"),
   chatInput: readSource("components/ChatInput.tsx"),
   appDialog: readSource("components/AppDialogProvider.tsx"),
@@ -410,9 +483,32 @@ assertProblem(
 );
 
 assert(THEME_STORAGE_KEY === "pi-theme", "theme storage key must remain backward compatible");
+assert(WORKBENCH_SKIN_WALLPAPER_STORAGE_KEY === "pi-theme-wallpaper", "wallpaper storage key drift");
+assert(WORKBENCH_SKIN_GLASS_STORAGE_KEY === "pi-theme-glass", "glass storage key drift");
+assert(WORKBENCH_SKIN_GRADIENT_STORAGE_KEY === "pi-theme-gradient", "gradient storage key drift");
+assert(WORKBENCH_SKIN_BG_BLUR_STORAGE_KEY === "pi-theme-bg-blur", "bg blur storage key drift");
+assert(WORKBENCH_SKIN_VIGNETTE_STORAGE_KEY === "pi-theme-vignette", "vignette storage key drift");
 assert(!isThemePreference("retired-theme"), "invalid theme preference must be rejected");
 assert(resolveThemePreference("system", false) === "light", "system light resolution");
 assert(resolveThemePreference("system", true) === "dark", "system dark resolution");
+assert(clampWorkbenchGlass(140) === 100, "glass clamp upper bound");
+assert(clampWorkbenchGlass(-3) === 0, "glass clamp lower bound");
+assert(parseWorkbenchGlass("52") === 52, "glass parse");
+assert(parseWorkbenchGlass("nope") === 0, "invalid glass falls back");
+assert(isWorkbenchWallpaperDataUrl("data:image/jpeg;base64,abc="), "valid wallpaper data url");
+assert(!isWorkbenchWallpaperDataUrl("https://example.com/a.jpg"), "remote wallpaper must be rejected");
+assert(isWorkbenchGradientId("dusk-aurora"), "known gradient id");
+assert(!isWorkbenchGradientId("not-a-gradient"), "unknown gradient id rejected");
+assert(resolveWorkbenchGlassTokens(0).panelAlpha === 1, "glass 0 keeps opaque panels");
+assert(resolveWorkbenchGlassTokens(100).panelAlpha === 0, "glass 100 is fully transparent");
+assert(resolveWorkbenchGlassTokens(50).panelAlpha === 0.5, "glass mid is half transparent");
+assert(resolveWorkbenchGlassTokens(100).blurPx === 28, "glass 100 max panel blur");
+assert(resolveWorkbenchAtmosphereTokens(100, 0).bgBlurPx === 30, "bg blur max");
+assert(resolveWorkbenchAtmosphereTokens(0, 100).vignette === 0.78, "vignette max");
+assert(buildWorkbenchSkinBootFragment().includes(WORKBENCH_SKIN_WALLPAPER_STORAGE_KEY), "boot fragment must read wallpaper key");
+assert(buildWorkbenchSkinBootFragment().includes(WORKBENCH_SKIN_GRADIENT_STORAGE_KEY), "boot fragment must read gradient key");
+assert(buildWorkbenchSkinBootFragment().includes("--skin-bg-blur"), "boot fragment must set bg blur");
+assert(buildWorkbenchSkinBootFragment().includes("--skin-vignette"), "boot fragment must set vignette");
 for (const preference of THEME_PREFERENCES) {
   assert(
     THEME_MODE_BY_PREFERENCE[preference] === THEME_META[preference].mode,
