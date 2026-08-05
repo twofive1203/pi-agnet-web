@@ -3458,7 +3458,10 @@ span.linenumber {
   align-items: center;
   justify-content: center;
   padding: 18px;
-  background: var(--surface-overlay);
+  background: color-mix(in srgb, var(--surface-overlay) 62%, transparent);
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+  animation: pi-modal-overlay-in var(--motion-duration-base) var(--motion-ease-standard) both;
 }
 
 .pi-modal-panel {
@@ -3471,9 +3474,30 @@ span.linenumber {
   border: 1px solid var(--border-default);
   border-radius: var(--radius-popover);
   outline: none;
-  background: var(--surface-raised);
+  background: color-mix(in srgb, var(--surface-raised) 94%, transparent);
+  backdrop-filter: blur(18px) saturate(1.25);
+  -webkit-backdrop-filter: blur(18px) saturate(1.25);
   color: var(--text-primary);
-  box-shadow: var(--shadow-popover);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, #ffffff 7%, transparent),
+    var(--shadow-popover);
+  transform-origin: center;
+  animation: pi-modal-panel-in var(--motion-duration-slow) var(--motion-ease-emphasized) both;
+}
+
+@keyframes pi-modal-overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes pi-modal-panel-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pi-modal-overlay,
+  .pi-modal-panel { animation: none; }
 }
 
 .pi-modal-panel-wide {
@@ -3634,7 +3658,7 @@ span.linenumber {
   align-items: center;
   gap: 12px;
   padding: 12px 14px;
-  background: var(--surface-panel);
+  background: color-mix(in srgb, var(--surface-panel) 66%, transparent);
 }
 
 .pi-modal-header {
@@ -3657,6 +3681,7 @@ span.linenumber {
   font-size: 14px;
   font-weight: 700;
   line-height: 1.35;
+  letter-spacing: 0.01em;
 }
 
 .pi-modal-subtitle {
@@ -3697,6 +3722,7 @@ span.linenumber {
   font-size: 20px;
   line-height: 1;
   cursor: pointer;
+  transition: border-color var(--motion-duration-fast) var(--motion-ease-standard), background var(--motion-duration-fast) var(--motion-ease-standard), color var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
 .pi-modal-close:hover {
