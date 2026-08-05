@@ -4875,7 +4875,7 @@ html[data-glass="on"] .center-panel {
 html:is([data-wallpaper="on"], [data-wallpaper="image"], [data-wallpaper="gradient"]) :is(
   .message-user-bubble,
   .message-thinking,
-  .message-tool-card,
+  .message-tool-call,
   .chat-input-main-row,
   .insp-body,
   .diff-modal-body
@@ -4888,7 +4888,7 @@ html:is([data-wallpaper="on"], [data-wallpaper="image"], [data-wallpaper="gradie
   background-color: var(--surface-user-message);
 }
 
-html:is([data-wallpaper="on"], [data-wallpaper="image"], [data-wallpaper="gradient"]) .message-tool-card,
+html:is([data-wallpaper="on"], [data-wallpaper="image"], [data-wallpaper="gradient"]) .message-tool-call,
 html:is([data-wallpaper="on"], [data-wallpaper="image"], [data-wallpaper="gradient"]) .message-thinking {
   background-color: var(--surface-tool-message);
 }
@@ -7361,20 +7361,38 @@ html:is([data-wallpaper="on"], [data-wallpaper="image"], [data-wallpaper="gradie
   color: var(--text-primary);
 }
 .assistant-token-estimate { gap: 2px; }
+/* Soft status badges: soft fill + status foreground keeps contrast safe on
+   every theme palette; the previous solid hex chips ignored the skin. */
 .assistant-tps-badge {
   margin-left: 6px;
   padding: 1px 6px;
+  border: 1px solid transparent;
   border-radius: var(--radius-pill);
-  color: #fff;
   font-size: 10px;
   font-weight: 700;
   line-height: 1.5;
   font-variant-numeric: tabular-nums;
 }
-.assistant-tps-badge.is-fast { background: #2588a0; }
-.assistant-tps-badge.is-steady { background: #5f8d24; }
-.assistant-tps-badge.is-moderate { background: #a56d00; }
-.assistant-tps-badge.is-slow { background: #c62b55; }
+.assistant-tps-badge.is-fast {
+  border-color: var(--status-success-border);
+  background: var(--status-success-soft);
+  color: var(--status-success-foreground);
+}
+.assistant-tps-badge.is-steady {
+  border-color: var(--status-info-border);
+  background: var(--status-info-soft);
+  color: var(--status-info-foreground);
+}
+.assistant-tps-badge.is-moderate {
+  border-color: var(--status-warning-border);
+  background: var(--status-warning-soft);
+  color: var(--status-warning-foreground);
+}
+.assistant-tps-badge.is-slow {
+  border-color: var(--status-danger-border);
+  background: var(--status-danger-soft);
+  color: var(--status-danger-foreground);
+}
 .assistant-block-stack {
   display: flex;
   flex-direction: column;
@@ -7390,6 +7408,11 @@ html:is([data-wallpaper="on"], [data-wallpaper="image"], [data-wallpaper="gradie
   background: var(--surface-tool-message);
 }
 .message-thinking { font-size: 13px; }
+.message-thinking-icon {
+  flex-shrink: 0;
+  color: var(--accent-primary);
+  opacity: 0.85;
+}
 .message-disclosure,
 .message-tool-header {
   display: flex;
@@ -7433,18 +7456,37 @@ html:is([data-wallpaper="on"], [data-wallpaper="image"], [data-wallpaper="gradie
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+/* Tool cards stay on the neutral tool surface; status is communicated by a
+   small dot + tool-name color. Only errors flood the card with a tint, which
+   keeps long tool runs calm and readable under every skin. */
 .message-tool-call { font-size: 12px; }
-.message-tool-call.is-success {
-  border-color: var(--status-success-border);
-  background: var(--status-success-soft);
-}
 .message-tool-call.is-error {
   border-color: var(--status-danger-border);
   background: var(--status-danger-soft);
 }
-.message-tool-call.is-pending {
-  border-color: var(--status-info-border);
-  background: var(--status-info-soft);
+.message-tool-status-dot {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--status-success-foreground);
+  box-shadow: 0 0 0 3px var(--status-success-soft);
+}
+.message-tool-call.is-error .message-tool-status-dot {
+  background: var(--status-danger-foreground);
+  box-shadow: 0 0 0 3px var(--status-danger-soft);
+}
+.message-tool-call.is-pending .message-tool-status-dot {
+  background: var(--status-info-foreground);
+  box-shadow: 0 0 0 3px var(--status-info-soft);
+  animation: message-tool-dot-pulse 1.2s ease-in-out infinite;
+}
+@keyframes message-tool-dot-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .message-tool-call.is-pending .message-tool-status-dot { animation: none; }
 }
 .message-tool-name {
   flex-shrink: 0;

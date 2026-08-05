@@ -431,6 +431,9 @@ function ThinkingBlock({ block, duration }: { block: ThinkingContent; duration?:
         onClick={() => setExpanded((v) => !v)}
         aria-expanded={expanded}
       >
+        <svg className="message-thinking-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1" />
+        </svg>
         <span>{t("chat.thinking")}</span>
         {duration !== undefined && <span className="message-duration">{duration}s</span>}
         <svg className={expanded ? "message-disclosure-chevron is-expanded" : "message-disclosure-chevron"} width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -463,6 +466,7 @@ function ToolCallBlock({ block, result, duration }: { block: ToolCallContent; re
         onClick={() => setExpanded((v) => !v)}
         aria-expanded={expanded}
       >
+        <span className="message-tool-status-dot" aria-hidden="true" />
         <span className="message-tool-name">{block.toolName}</span>
         <span className="message-tool-preview">{getToolPreview(block)}</span>
         {duration !== undefined && <span className="message-duration">{duration}s</span>}
