@@ -32,6 +32,7 @@ function checkBrowseDirectories(): void {
 
     const listed = browseCwdDirectory(base);
     assert(listed.path.length > 0, "browse must return a canonical path");
+    assert(listed.platform === process.platform, "browse must report server platform");
     assert(listed.entries.some((entry) => entry.name === "alpha-dir"), "browse must list child directories");
     assert(listed.entries.some((entry) => entry.name === "beta-dir"), "browse must list all child directories");
     assert(!listed.entries.some((entry) => entry.name === "note.txt"), "browse must not list files");
@@ -69,11 +70,15 @@ function checkWiring(): void {
   const picker = readFileSync(join(ROOT, "components", "sidebar", "WorkspacePicker.tsx"), "utf8");
   assert(picker.includes("DirectoryPickerDialog"), "workspace picker must mount directory picker dialog");
   assert(picker.includes('t("sidebar.addProject")'), "workspace picker must expose add-project entry");
+  assert(picker.includes("tryNativeDirectoryPick"), "add-project prefers native picker when local");
+  assert(picker.includes('fetch("/api/cwd/pick-native"'), "add-project probes native picker capabilities");
 
   const dialog = readFileSync(join(ROOT, "components", "sidebar", "DirectoryPickerDialog.tsx"), "utf8");
   assert(dialog.includes('fetch(`/api/cwd/browse'), "dialog must load directories from browse API");
   assert(dialog.includes('fetch("/api/cwd/validate"'), "dialog must validate before selecting cwd");
   assert(dialog.includes("createPortal"), "dialog must portal to document body");
+  assert(dialog.includes("data-server-platform"), "dialog must expose server platform");
+  assert(dialog.includes("normalizePlatform"), "dialog must normalize server platform for OS copy");
 }
 
 function main(): void {

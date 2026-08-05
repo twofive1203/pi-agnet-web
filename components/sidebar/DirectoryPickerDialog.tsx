@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useId,
+  useMemo,
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -22,12 +23,15 @@ interface BrowseEntry {
   path: string;
 }
 
+type ServerPlatform = "win32" | "darwin" | "linux" | "other" | string;
+
 interface BrowseResponse {
   path?: string;
   parent?: string | null;
   entries?: BrowseEntry[];
   truncated?: boolean;
   home?: string;
+  platform?: ServerPlatform;
   error?: string;
 }
 
@@ -38,6 +42,13 @@ export interface DirectoryPickerDialogProps {
   onClose: () => void;
   /** Called with the validated canonical cwd after save succeeds. */
   onSelect: (cwd: string) => void;
+  /**
+   * When true, show a control that opens the host OS folder chooser.
+   * Parent owns the native pick flow (loopback + timeout + fallback).
+   */
+  nativePickerAvailable?: boolean;
+  nativePicking?: boolean;
+  onRequestNativePicker?: () => void;
 }
 
 const FOCUSABLE_SELECTOR = [
@@ -49,11 +60,20 @@ const FOCUSABLE_SELECTOR = [
   "[tabindex]:not([tabindex='-1'])",
 ].join(",");
 
+function normalizePlatform(raw?: string | null): "win32" | "darwin" | "linux" | "other" {
+  if (raw === "win32" || raw === "darwin") return raw;
+  if (raw === "linux" || raw === "freebsd" || raw === "openbsd") return "linux";
+  return "other";
+}
+
 export function DirectoryPickerDialog({
   open,
   initialPath,
   onClose,
   onSelect,
+  nativePickerAvailable = false,
+  nativePicking = false,
+  onRequestNativePicker,
 }: DirectoryPickerDialogProps) {
   const { t } = useI18n();
   const titleId = useId();
@@ -67,10 +87,40 @@ export function DirectoryPickerDialog({
   const [parentPath, setParentPath] = useState<string | null>(null);
   const [entries, setEntries] = useState<BrowseEntry[]>([]);
   const [truncated, setTruncated] = useState(false);
+  const [platform, setPlatform] = useState<"win32" | "darwin" | "linux" | "other">("other");
   const [loading, setLoading] = useState(false);
   const [browseError, setBrowseError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+
+  const labels = useMemo(() => {
+    if (platform === "win32") {
+      return {
+        subtitle: t("sidebar.directoryPickerSubtitleWindows"),
+        roots: t("sidebar.directoryPickerRootsWindows"),
+        placeholder: t("sidebar.pathPlaceholderWindows"),
+      };
+    }
+    if (platform === "darwin") {
+      return {
+        subtitle: t("sidebar.directoryPickerSubtitleMac"),
+        roots: t("sidebar.directoryPickerRootsMac"),
+        placeholder: t("sidebar.pathPlaceholderMac"),
+      };
+    }
+    if (platform === "linux") {
+      return {
+        subtitle: t("sidebar.directoryPickerSubtitleLinux"),
+        roots: t("sidebar.directoryPickerRootsLinux"),
+        placeholder: t("sidebar.pathPlaceholderLinux"),
+      };
+    }
+    return {
+      subtitle: t("sidebar.directoryPickerSubtitle"),
+      roots: t("sidebar.directoryPickerRoots"),
+      placeholder: t("sidebar.pathPlaceholder"),
+    };
+  }, [platform, t]);
 
   const loadDirectory = useCallback(async (targetPath: string, signal?: AbortSignal) => {
     setLoading(true);
@@ -90,6 +140,7 @@ export function DirectoryPickerDialog({
       setEntries(data.entries ?? []);
       setTruncated(Boolean(data.truncated));
       setDraftPath(nextPath);
+      if (data.platform) setPlatform(normalizePlatform(data.platform));
     } catch (error) {
       if (signal?.aborted) return;
       setBrowseError(error instanceof Error ? error.message : String(error));
@@ -148,11 +199,11 @@ export function DirectoryPickerDialog({
   const handleKeyDown = useCallback((event: ReactKeyboardEvent<HTMLDivElement>) => {
     if (event.key === "Escape") {
       event.stopPropagation();
-      if (!saving) onClose();
+      if (!saving && !nativePicking) onClose();
       return;
     }
     trapFocus(event);
-  }, [onClose, saving, trapFocus]);
+  }, [nativePicking, onClose, saving, trapFocus]);
 
   const goToDraftPath = useCallback(() => {
     void loadDirectory(draftPath.trim());
@@ -160,7 +211,7 @@ export function DirectoryPickerDialog({
 
   const handleSave = useCallback(async () => {
     const path = (draftPath.trim() || currentPath).trim();
-    if (!path || saving) return;
+    if (!path || saving || nativePicking) return;
 
     setSaving(true);
     setSaveError(null);
@@ -181,19 +232,22 @@ export function DirectoryPickerDialog({
     } finally {
       setSaving(false);
     }
-  }, [currentPath, draftPath, onSelect, saving]);
+  }, [currentPath, draftPath, nativePicking, onSelect, saving]);
 
   if (!open || typeof document === "undefined") return null;
 
   const canGoUp = parentPath != null || currentPath !== "";
-  const saveDisabled = saving || !(draftPath.trim() || currentPath);
+  const saveDisabled = saving || nativePicking || !(draftPath.trim() || currentPath);
+  const busy = saving || nativePicking || loading;
+  const rootsLabel = labels.roots;
+  const locationLabel = currentPath || rootsLabel;
 
   return createPortal(
     <div
       className="pi-modal-overlay"
       role="presentation"
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget && !saving) onClose();
+        if (event.target === event.currentTarget && !saving && !nativePicking) onClose();
       }}
     >
       <div
@@ -203,20 +257,21 @@ export function DirectoryPickerDialog({
         aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={subtitleId}
+        data-server-platform={platform}
         tabIndex={-1}
         onKeyDown={handleKeyDown}
       >
         <div className="pi-modal-header">
           <div className="pi-modal-header-copy">
             <div id={titleId} className="pi-modal-title">{t("sidebar.addProject")}</div>
-            <div id={subtitleId} className="pi-modal-subtitle">{t("sidebar.directoryPickerSubtitle")}</div>
+            <div id={subtitleId} className="pi-modal-subtitle">{labels.subtitle}</div>
           </div>
           <button
             type="button"
             className="pi-modal-close"
             aria-label={t("common.close")}
             onClick={() => {
-              if (!saving) onClose();
+              if (!saving && !nativePicking) onClose();
             }}
           >
             ×
@@ -238,17 +293,18 @@ export function DirectoryPickerDialog({
                   goToDraftPath();
                 }
               }}
-              placeholder={t("sidebar.pathPlaceholder")}
+              placeholder={labels.placeholder}
               aria-label={t("sidebar.directoryPickerPathAria")}
               spellCheck={false}
               className="settings-control-mono directory-picker-path-input"
+              disabled={nativePicking}
             />
             <SettingsButton
               type="button"
               variant="secondary"
               size="sm"
               onClick={goToDraftPath}
-              disabled={loading || saving}
+              disabled={busy}
             >
               {t("sidebar.directoryPickerGo")}
             </SettingsButton>
@@ -260,7 +316,7 @@ export function DirectoryPickerDialog({
               variant="ghost"
               size="sm"
               onClick={() => void loadDirectory(parentPath ?? "")}
-              disabled={!canGoUp || loading || saving}
+              disabled={!canGoUp || busy}
               title={t("sidebar.directoryPickerUp")}
             >
               ← {t("sidebar.directoryPickerUp")}
@@ -270,12 +326,24 @@ export function DirectoryPickerDialog({
               variant="ghost"
               size="sm"
               onClick={() => void loadDirectory("")}
-              disabled={loading || saving}
+              disabled={busy}
             >
-              {t("sidebar.directoryPickerRoots")}
+              {rootsLabel}
             </SettingsButton>
-            <span className="directory-picker-location" title={currentPath || t("sidebar.directoryPickerRoots")}>
-              {currentPath || t("sidebar.directoryPickerRoots")}
+            {nativePickerAvailable && onRequestNativePicker && (
+              <SettingsButton
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={onRequestNativePicker}
+                disabled={busy}
+                title={t("sidebar.directoryPickerNativeTitle")}
+              >
+                {nativePicking ? t("sidebar.nativePickingProject") : t("sidebar.directoryPickerNative")}
+              </SettingsButton>
+            )}
+            <span className="directory-picker-location" title={locationLabel}>
+              {locationLabel}
             </span>
           </div>
 
@@ -287,7 +355,7 @@ export function DirectoryPickerDialog({
             className="directory-picker-list"
             role="list"
             aria-label={t("sidebar.directoryPickerListAria")}
-            aria-busy={loading || undefined}
+            aria-busy={loading || nativePicking || undefined}
           >
             {loading && entries.length === 0 ? (
               <div className="directory-picker-empty" role="status">{t("sidebar.loading")}</div>
@@ -300,7 +368,7 @@ export function DirectoryPickerDialog({
                     type="button"
                     className="directory-picker-entry"
                     title={entry.path}
-                    disabled={loading || saving}
+                    disabled={busy}
                     onClick={() => void loadDirectory(entry.path)}
                   >
                     <span className="directory-picker-entry-icon" aria-hidden="true">
@@ -324,7 +392,12 @@ export function DirectoryPickerDialog({
 
         <div className="pi-modal-footer">
           <SettingsActionRow>
-            <SettingsButton type="button" variant="secondary" onClick={onClose} disabled={saving}>
+            <SettingsButton
+              type="button"
+              variant="secondary"
+              onClick={onClose}
+              disabled={saving || nativePicking}
+            >
               {t("common.cancel")}
             </SettingsButton>
             <SettingsButton
