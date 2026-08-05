@@ -10,6 +10,7 @@ import {
   type CwdPickerRow,
   type WorktreeContextMenuState,
 } from "./sidebar-utils";
+import { DirectoryPickerDialog } from "./DirectoryPickerDialog";
 import { WorktreeBadge } from "./WorktreeBadge";
 
 export interface WorkspacePickerProps {
@@ -58,14 +59,10 @@ export const WorkspacePicker = memo(function WorkspacePicker({
   const folderStatusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [allProjectsOpen, setAllProjectsOpen] = useState(false);
   const [cwdSearch, setCwdSearch] = useState("");
-  const [customPathOpen, setCustomPathOpen] = useState(false);
-  const [customPathValue, setCustomPathValue] = useState("");
-  const [customPathError, setCustomPathError] = useState<string | null>(null);
-  const [customPathValidating, setCustomPathValidating] = useState(false);
+  const [directoryPickerOpen, setDirectoryPickerOpen] = useState(false);
   const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false);
   const [worktreeContextMenu, setWorktreeContextMenu] = useState<WorktreeContextMenuState | null>(null);
 
-  const customPathInputRef = useRef<HTMLInputElement>(null);
   const cwdSearchInputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const workspaceMenuRef = useRef<HTMLDivElement>(null);
@@ -78,9 +75,6 @@ export const WorkspacePicker = memo(function WorkspacePicker({
   const closeCwdPicker = useCallback(() => {
     setDropdownOpen(false);
     resetCwdPickerView();
-    setCustomPathOpen(false);
-    setCustomPathValue("");
-    setCustomPathError(null);
   }, [resetCwdPickerView]);
 
   // Close picker when workspace changes externally (WorkTree create, restore, etc.).
@@ -104,31 +98,16 @@ export const WorkspacePicker = memo(function WorkspacePicker({
     return () => document.removeEventListener("mousedown", handler);
   }, [closeCwdPicker]);
 
-  const commitCustomPath = useCallback(async () => {
-    const path = customPathValue.trim();
-    if (!path || customPathValidating) return;
+  const openDirectoryPicker = useCallback(() => {
+    closeCwdPicker();
+    setDirectoryPickerOpen(true);
+  }, [closeCwdPicker]);
 
-    setCustomPathValidating(true);
-    setCustomPathError(null);
-    try {
-      const res = await fetch("/api/cwd/validate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cwd: path }),
-      });
-      const data = await res.json().catch(() => ({})) as { cwd?: string; error?: string };
-      if (!res.ok || data.error) {
-        setCustomPathError(data.error ?? `HTTP ${res.status}`);
-        return;
-      }
-      onActiveCwdChange(data.cwd ?? path);
-      closeCwdPicker();
-    } catch (e) {
-      setCustomPathError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setCustomPathValidating(false);
-    }
-  }, [closeCwdPicker, customPathValue, customPathValidating, onActiveCwdChange]);
+  const handleDirectoryPicked = useCallback((cwd: string) => {
+    setDirectoryPickerOpen(false);
+    onActiveCwdChange(cwd);
+    onClearWorktreeError?.();
+  }, [onActiveCwdChange, onClearWorktreeError]);
 
   const handleDefaultCwd = useCallback(async () => {
     try {
@@ -540,143 +519,56 @@ export const WorkspacePicker = memo(function WorkspacePicker({
               </button>
             )}
 
-            {!customPathOpen && (
-              <button
-                onClick={(e) => { e.stopPropagation(); void handleDefaultCwd(); }}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 7,
-                  width: "100%",
-                  padding: "8px 10px",
-                  background: "none",
-                  border: "none",
-                  borderTop: displayedCwdRows.length > 0 || cwdGroups.length > 5 ? "1px solid var(--border)" : "none",
-                  color: "var(--text-muted)",
-                  cursor: "pointer",
-                  textAlign: "left",
-                  fontSize: 11,
-                  flexShrink: 0,
-                }}
-              >
-                <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-                  <path d="M1 3A1 1 0 0 1 2 2H4L5 3.5H8.5a.5.5 0 0 1 .5.5v4a.5.5 0 0 1-.5.5h-7A.5.5 0 0 1 1 8V3Z" />
-                </svg>
-                <span>{t("sidebar.useDefaultDirectory")}</span>
-              </button>
-            )}
+            <button
+              onClick={(e) => { e.stopPropagation(); void handleDefaultCwd(); }}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 7,
+                width: "100%",
+                padding: "8px 10px",
+                background: "none",
+                border: "none",
+                borderTop: displayedCwdRows.length > 0 || cwdGroups.length > 5 ? "1px solid var(--border)" : "none",
+                color: "var(--text-muted)",
+                cursor: "pointer",
+                textAlign: "left",
+                fontSize: 11,
+                flexShrink: 0,
+              }}
+            >
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                <path d="M1 3A1 1 0 0 1 2 2H4L5 3.5H8.5a.5.5 0 0 1 .5.5v4a.5.5 0 0 1-.5.5h-7A.5.5 0 0 1 1 8V3Z" />
+              </svg>
+              <span>{t("sidebar.useDefaultDirectory")}</span>
+            </button>
 
-            {!customPathOpen ? (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setCustomPathOpen(true);
-                  setCustomPathError(null);
-                  setTimeout(() => customPathInputRef.current?.focus(), 0);
-                }}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 7,
-                  width: "100%",
-                  padding: "8px 10px",
-                  background: "none",
-                  border: "none",
-                  color: "var(--text-muted)",
-                  cursor: "pointer",
-                  textAlign: "left",
-                  fontSize: 11,
-                  flexShrink: 0,
-                }}
-              >
-                <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" style={{ flexShrink: 0 }}>
-                  <line x1="5" y1="1" x2="5" y2="9" />
-                  <line x1="1" y1="5" x2="9" y2="5" />
-                </svg>
-                <span>{t("sidebar.customPath")}</span>
-              </button>
-            ) : (
-              <div style={{ padding: "6px 8px", borderTop: displayedCwdRows.length > 0 ? "none" : undefined, flexShrink: 0 }}>
-                <input
-                  ref={customPathInputRef}
-                  value={customPathValue}
-                  onChange={(e) => {
-                    setCustomPathValue(e.target.value);
-                    setCustomPathError(null);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      void commitCustomPath();
-                    }
-                    if (e.key === "Escape") {
-                      setCustomPathOpen(false);
-                      setCustomPathValue("");
-                      setCustomPathError(null);
-                    }
-                  }}
-                  placeholder={t("sidebar.pathPlaceholder")}
-                  style={{
-                    width: "100%",
-                    fontSize: 11,
-                    fontFamily: "var(--font-mono)",
-                    padding: "5px 8px",
-                    border: "1px solid var(--accent)",
-                    borderRadius: 5,
-                    outline: "none",
-                    background: "var(--bg)",
-                    color: "var(--text)",
-                    boxSizing: "border-box",
-                  }}
-                />
-                {customPathError && (
-                  <div style={{
-                    marginTop: 5,
-                    color: "var(--status-danger-foreground)",
-                    fontSize: 11,
-                    lineHeight: 1.35,
-                    overflowWrap: "anywhere",
-                  }}>
-                    {customPathError}
-                  </div>
-                )}
-                <div style={{ display: "flex", gap: 5, marginTop: 5 }}>
-                  <button
-                    onClick={() => void commitCustomPath()}
-                    disabled={customPathValidating || !customPathValue.trim()}
-                    style={{
-                      flex: 1,
-                      padding: "4px 0",
-                      background: "var(--accent)",
-                      border: "none",
-                      borderRadius: 5,
-                      color: "var(--text-inverse)",
-                      fontSize: 11,
-                      fontWeight: 600,
-                      cursor: customPathValidating || !customPathValue.trim() ? "not-allowed" : "pointer",
-                      opacity: customPathValidating || !customPathValue.trim() ? 0.65 : 1,
-                    }}
-                  >
-                    {customPathValidating ? t("sidebar.checkingPath") : t("sidebar.openPath")}
-                  </button>
-                  <button
-                    onClick={() => { setCustomPathOpen(false); setCustomPathValue(""); setCustomPathError(null); }}
-                    style={{
-                      flex: 1,
-                      padding: "4px 0",
-                      background: "var(--bg-hover)",
-                      border: "1px solid var(--border)",
-                      borderRadius: 5,
-                      color: "var(--text-muted)",
-                      fontSize: 11,
-                      cursor: "pointer",
-                    }}
-                  >
-                    {t("common.cancel")}
-                  </button>
-                </div>
-              </div>
-            )}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                openDirectoryPicker();
+              }}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 7,
+                width: "100%",
+                padding: "8px 10px",
+                background: "none",
+                border: "none",
+                color: "var(--text-muted)",
+                cursor: "pointer",
+                textAlign: "left",
+                fontSize: 11,
+                flexShrink: 0,
+              }}
+            >
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" style={{ flexShrink: 0 }}>
+                <line x1="5" y1="1" x2="5" y2="9" />
+                <line x1="1" y1="5" x2="9" y2="5" />
+              </svg>
+              <span>{t("sidebar.addProject")}</span>
+            </button>
           </div>
         )}
       </div>
@@ -709,6 +601,13 @@ export const WorkspacePicker = memo(function WorkspacePicker({
           </button>
         </div>
       )}
+
+      <DirectoryPickerDialog
+        open={directoryPickerOpen}
+        initialPath={activeCwd}
+        onClose={() => setDirectoryPickerOpen(false)}
+        onSelect={handleDirectoryPicked}
+      />
     </div>
   );
 });

@@ -30,6 +30,7 @@ Shared logic lives under `lib/`. Prefer adding behavior here when it is used by 
 | `lib/file-paths.ts` | Path normalization utilities for file viewer APIs. |
 | `lib/file-viewer-url.ts` | Parse historical/local agent file links (including trailing line/column), reject ordinary web links, and build canonical standalone `/file` URLs shared by chat, Explorer, SnFlow, and compatibility routing. |
 | `lib/cwd.ts` | Cwd validation and normalization helpers. |
+| `lib/cwd-browse.ts` | Server-side directory listing for the project path picker: roots (Home + drives/`/`), child-directory enumeration with a hard entry cap, and typed browse errors. Directories only; never returns file contents. |
 | `lib/open-path.ts` | Cross-platform helper to open a local path in the OS file manager (Windows `explorer.exe`, macOS `open`, Linux `xdg-open`). Treats spawn success as success because Windows explorer often exits non-zero after opening a folder. |
 | `lib/git-worktree.ts` | Git worktree creation, status, archive, and removal helpers. Every Git subprocess has a 120-second termination deadline and returns actionable timeout guidance; timed-out partial state is left for explicit inspection rather than destructive automatic cleanup. |
 | `lib/deepseek-balance.ts` | Query DeepSeek account balance. |
