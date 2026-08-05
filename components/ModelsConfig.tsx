@@ -204,6 +204,11 @@ interface ProviderEntry {
   compat?: Record<string, unknown>;
   models?: ModelEntry[];
   modelOverrides?: Record<string, unknown>;
+  /**
+   * WebUI-only: rewrite empty post-tool "completed" assistant responses into
+   * Pi auto-retry errors. Stored in models.json; Pi ignores unknown fields.
+   */
+  emptyCompletedRetry?: boolean;
 }
 
 interface ModelsJson {
@@ -736,6 +741,20 @@ function ProviderDetail({ name, provider, onChange, onRename, onDelete, onAddDis
           required
         />
       </Field>
+
+      <SettingsSurface>
+        <Check
+          label="Retry empty completed responses"
+          checked={provider.emptyCompletedRetry === true}
+          onChange={(enabled) => set("emptyCompletedRetry", enabled ? true : undefined)}
+        />
+        <div className="settings-surface-muted">
+          Some relay gateways finish a tool turn with an empty assistant message
+          (<code>stop/completed</code>, zero usage). When enabled for this provider,
+          WebUI rewrites that response into a normal Pi retryable error so the agent
+          can continue automatically. Applies to every model under this provider.
+        </div>
+      </SettingsSurface>
 
       <HeadersEditor
         headers={provider.headers}

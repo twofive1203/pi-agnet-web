@@ -1,25 +1,126 @@
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import type { InlineExtension } from "@earendil-works/pi-coding-agent";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import { EMPTY_COMPLETED_RETRY_ERROR } from "./agent-retry-errors";
 
-export const EMPTY_COMPLETED_RETRY_MODELS_ENV = "PI_WEB_EMPTY_COMPLETED_RETRY_MODELS";
-export const DEFAULT_EMPTY_COMPLETED_RETRY_MODELS = ["cun1/kimi-k3"] as const;
-
-function modelKey(provider: string, model: string): string {
-  return `${provider.trim()}/${model.trim()}`.toLowerCase();
+/** Resolve ~/.pi/agent without importing the ESM-only pi package entry. */
+function getAgentDir(): string {
+  const envDir = process.env.PI_CODING_AGENT_DIR;
+  if (typeof envDir === "string" && envDir.trim()) return envDir.trim();
+  return join(homedir(), ".pi", "agent");
 }
 
-export function readEmptyCompletedRetryModelWhitelist(
-  configuredValue = process.env[EMPTY_COMPLETED_RETRY_MODELS_ENV],
+/** Provider-level models.json flag recognized by WebUI (ignored by Pi schema extras). */
+export const EMPTY_COMPLETED_RETRY_PROVIDER_FLAG = "emptyCompletedRetry" as const;
+
+export interface EmptyCompletedRetryProviderConfig {
+  [EMPTY_COMPLETED_RETRY_PROVIDER_FLAG]?: unknown;
+}
+
+function normalizeProviderId(provider: string): string {
+  return provider.trim().toLowerCase();
+}
+
+export function isEmptyCompletedRetryProviderEnabled(
+  providerConfig: EmptyCompletedRetryProviderConfig | null | undefined,
+): boolean {
+  return providerConfig?.[EMPTY_COMPLETED_RETRY_PROVIDER_FLAG] === true;
+}
+
+/** Collect provider ids that opted into empty-completed retry from a models.json object. */
+export function readEmptyCompletedRetryProvidersFromModelsJson(
+  modelsJson: unknown,
 ): Set<string> {
-  const configuredModels = configuredValue === undefined
-    ? DEFAULT_EMPTY_COMPLETED_RETRY_MODELS
-    : configuredValue.split(",");
-  return new Set(
-    configuredModels
-      .map((value) => value.trim().toLowerCase())
-      .filter((value) => /^[^/\s]+\/[^/\s]+$/.test(value)),
-  );
+  const enabled = new Set<string>();
+  if (!modelsJson || typeof modelsJson !== "object" || Array.isArray(modelsJson)) {
+    return enabled;
+  }
+  const providers = (modelsJson as { providers?: unknown }).providers;
+  if (!providers || typeof providers !== "object" || Array.isArray(providers)) {
+    return enabled;
+  }
+  for (const [providerId, config] of Object.entries(providers as Record<string, unknown>)) {
+    if (!providerId.trim()) continue;
+    if (
+      config
+      && typeof config === "object"
+      && !Array.isArray(config)
+      && isEmptyCompletedRetryProviderEnabled(config as EmptyCompletedRetryProviderConfig)
+    ) {
+      enabled.add(normalizeProviderId(providerId));
+    }
+  }
+  return enabled;
+}
+
+export function getModelsJsonPath(agentDir = getAgentDir()): string {
+  return join(agentDir, "models.json");
+}
+
+let providerCache:
+  | {
+      path: string;
+      mtimeMs: number;
+      size: number;
+      providers: Set<string>;
+    }
+  | null = null;
+
+/** Read enabled providers from disk, reusing a small mtime/size cache. */
+export function readEmptyCompletedRetryProviders(
+  modelsJsonPath = getModelsJsonPath(),
+): Set<string> {
+  if (!existsSync(modelsJsonPath)) {
+    providerCache = null;
+    return new Set();
+  }
+
+  let stats: { mtimeMs: number; size: number };
+  try {
+    const fileStats = statSync(modelsJsonPath);
+    stats = { mtimeMs: fileStats.mtimeMs, size: fileStats.size };
+  } catch {
+    providerCache = null;
+    return new Set();
+  }
+
+  if (
+    providerCache
+    && providerCache.path === modelsJsonPath
+    && providerCache.mtimeMs === stats.mtimeMs
+    && providerCache.size === stats.size
+  ) {
+    return providerCache.providers;
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(modelsJsonPath, "utf8")) as unknown;
+  } catch {
+    providerCache = {
+      path: modelsJsonPath,
+      mtimeMs: stats.mtimeMs,
+      size: stats.size,
+      providers: new Set(),
+    };
+    return providerCache.providers;
+  }
+
+  const providers = readEmptyCompletedRetryProvidersFromModelsJson(parsed);
+  providerCache = {
+    path: modelsJsonPath,
+    mtimeMs: stats.mtimeMs,
+    size: stats.size,
+    providers,
+  };
+  return providers;
+}
+
+/** Test helper to clear the on-disk cache between smoke cases. */
+export function clearEmptyCompletedRetryProviderCache(): void {
+  providerCache = null;
 }
 
 function hasMeaningfulAssistantContent(message: AssistantMessage): boolean {
@@ -49,7 +150,8 @@ function hasZeroUsage(message: AssistantMessage): boolean {
 export interface EmptyCompletedNormalizationContext {
   followsToolResult: boolean;
   aborted: boolean;
-  modelWhitelist: ReadonlySet<string>;
+  /** Provider ids with emptyCompletedRetry enabled in models.json. */
+  enabledProviders: ReadonlySet<string>;
 }
 
 export function normalizeEmptyCompletedAssistantMessage(
@@ -59,7 +161,7 @@ export function normalizeEmptyCompletedAssistantMessage(
   if (
     context.aborted
     || !context.followsToolResult
-    || !context.modelWhitelist.has(modelKey(message.provider, message.model))
+    || !context.enabledProviders.has(normalizeProviderId(message.provider))
     || message.stopReason !== "stop"
     || message.rawStopReason !== "completed"
     || hasMeaningfulAssistantContent(message)
@@ -86,6 +188,7 @@ function lastContextMessageRole(sessionManager: { getBranch(): unknown[] }): str
 
 /**
  * Convert a provider-specific empty success into a normal Pi retryable error.
+ * Opt-in is provider-scoped via models.json `emptyCompletedRetry: true`.
  * The in-memory continuation flag keeps later retry attempts tied to the same
  * post-tool turn even though each failed Assistant message is persisted.
  */
@@ -94,7 +197,6 @@ export function createEmptyCompletedRetryExtension(): InlineExtension {
     name: "empty-completed-retry",
     hidden: true,
     factory(pi) {
-      const modelWhitelist = readEmptyCompletedRetryModelWhitelist();
       let continuingAfterToolResult = false;
 
       pi.on("message_end", (event, ctx) => {
@@ -105,7 +207,8 @@ export function createEmptyCompletedRetryExtension(): InlineExtension {
         const normalized = normalizeEmptyCompletedAssistantMessage(event.message, {
           followsToolResult,
           aborted: ctx.signal?.aborted === true,
-          modelWhitelist,
+          // Re-read on each check so Models UI saves apply without restarting the process.
+          enabledProviders: readEmptyCompletedRetryProviders(),
         });
 
         if (normalized !== event.message) {

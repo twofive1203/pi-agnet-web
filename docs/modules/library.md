@@ -5,7 +5,7 @@ Shared logic lives under `lib/`. Prefer adding behavior here when it is used by 
 | File | Purpose |
 | --- | --- |
 | `lib/rpc-manager.ts` | `AgentSessionWrapper`, global registry, `startRpcSession()`, cwd-scoped session cleanup, lifecycle handling. Interactive loaders always attach the empty-completed retry normalizer extension. |
-| `lib/empty-completed-retry.ts` | Provider-targeted `message_end` normalizer: empty post-tool `completed` assistant responses on a whitelist become retryable errors for Pi auto-retry. |
+| `lib/empty-completed-retry.ts` | Provider-targeted `message_end` normalizer: empty post-tool `completed` assistant responses become retryable errors when the provider sets `emptyCompletedRetry: true` in `models.json`. |
 | `lib/agent-retry-errors.ts` | Shared empty-completed retry error text so the normalizer and UI stay aligned. |
 | `lib/agent-lifecycle.ts` | Pure mapping from Pi lifecycle events to WebUI settle/keep-running directives. |
 | `lib/pi-session-lifecycle.ts` | Shared AgentSession disposal helper that awaits extension `session_shutdown` cleanup before SDK context invalidation. |

@@ -5,9 +5,10 @@
  */
 import assert from "node:assert/strict";
 import {
-  DEFAULT_EMPTY_COMPLETED_RETRY_MODELS,
+  clearEmptyCompletedRetryProviderCache,
+  isEmptyCompletedRetryProviderEnabled,
   normalizeEmptyCompletedAssistantMessage,
-  readEmptyCompletedRetryModelWhitelist,
+  readEmptyCompletedRetryProvidersFromModelsJson,
 } from "../lib/empty-completed-retry.ts";
 import { EMPTY_COMPLETED_RETRY_ERROR } from "../lib/agent-retry-errors.ts";
 import { getAgentLifecycleDirective } from "../lib/agent-lifecycle.ts";
@@ -34,20 +35,48 @@ function baseMessage(overrides = {}) {
   };
 }
 
-const whitelist = readEmptyCompletedRetryModelWhitelist();
-assert.equal(whitelist.has("cun1/kimi-k3"), true);
-assert.deepEqual([...DEFAULT_EMPTY_COMPLETED_RETRY_MODELS], ["cun1/kimi-k3"]);
+clearEmptyCompletedRetryProviderCache();
 
-// Empty completed after tool results on a whitelisted model becomes retryable.
+// models.json provider flag parsing is case-insensitive on provider id.
+{
+  const enabled = readEmptyCompletedRetryProvidersFromModelsJson({
+    providers: {
+      Cun1: { emptyCompletedRetry: true, baseUrl: "https://example.test" },
+      other: { emptyCompletedRetry: false },
+      skipped: { baseUrl: "https://example.test" },
+      bad: null,
+    },
+  });
+  assert.equal(enabled.has("cun1"), true);
+  assert.equal(enabled.has("other"), false);
+  assert.equal(enabled.has("skipped"), false);
+  assert.equal(isEmptyCompletedRetryProviderEnabled({ emptyCompletedRetry: true }), true);
+  assert.equal(isEmptyCompletedRetryProviderEnabled({ emptyCompletedRetry: false }), false);
+  assert.equal(isEmptyCompletedRetryProviderEnabled({}), false);
+}
+
+const enabledProviders = new Set(["cun1"]);
+
+// Empty completed after tool results on an opted-in provider becomes retryable.
 {
   const normalized = normalizeEmptyCompletedAssistantMessage(baseMessage(), {
     followsToolResult: true,
     aborted: false,
-    modelWhitelist: whitelist,
+    enabledProviders,
   });
   assert.equal(normalized.stopReason, "error");
   assert.equal(normalized.errorMessage, EMPTY_COMPLETED_RETRY_ERROR);
   assert.match(normalized.errorMessage, /retry your request/i);
+}
+
+// All models under the provider are covered (not a model-id whitelist).
+{
+  const normalized = normalizeEmptyCompletedAssistantMessage(baseMessage({ model: "any-model" }), {
+    followsToolResult: true,
+    aborted: false,
+    enabledProviders,
+  });
+  assert.equal(normalized.stopReason, "error");
 }
 
 // Non-empty completed responses stay untouched.
@@ -66,7 +95,7 @@ assert.deepEqual([...DEFAULT_EMPTY_COMPLETED_RETRY_MODELS], ["cun1/kimi-k3"]);
   const normalized = normalizeEmptyCompletedAssistantMessage(message, {
     followsToolResult: true,
     aborted: false,
-    modelWhitelist: whitelist,
+    enabledProviders,
   });
   assert.equal(normalized, message);
 }
@@ -77,18 +106,18 @@ assert.deepEqual([...DEFAULT_EMPTY_COMPLETED_RETRY_MODELS], ["cun1/kimi-k3"]);
   const normalized = normalizeEmptyCompletedAssistantMessage(message, {
     followsToolResult: false,
     aborted: false,
-    modelWhitelist: whitelist,
+    enabledProviders,
   });
   assert.equal(normalized, message);
 }
 
-// Non-whitelisted providers keep empty completed responses as-is.
+// Providers without the switch keep empty completed responses as-is.
 {
   const message = baseMessage({ provider: "openai", model: "gpt-5" });
   const normalized = normalizeEmptyCompletedAssistantMessage(message, {
     followsToolResult: true,
     aborted: false,
-    modelWhitelist: whitelist,
+    enabledProviders,
   });
   assert.equal(normalized, message);
 }
@@ -99,18 +128,9 @@ assert.deepEqual([...DEFAULT_EMPTY_COMPLETED_RETRY_MODELS], ["cun1/kimi-k3"]);
   const normalized = normalizeEmptyCompletedAssistantMessage(message, {
     followsToolResult: true,
     aborted: true,
-    modelWhitelist: whitelist,
+    enabledProviders,
   });
   assert.equal(normalized, message);
-}
-
-// Env override replaces the default whitelist.
-{
-  const custom = readEmptyCompletedRetryModelWhitelist("openai/gpt-test, bad-entry, deepseek/v4");
-  assert.equal(custom.has("openai/gpt-test"), true);
-  assert.equal(custom.has("deepseek/v4"), true);
-  assert.equal(custom.has("cun1/kimi-k3"), false);
-  assert.equal(custom.has("bad-entry"), false);
 }
 
 // Lifecycle mapping: only agent_settled / prompt_error settle model turns.
