@@ -46,6 +46,7 @@ function serialize(settings: WorkbenchSkinSettings): string {
     settings.glass,
     settings.bgBlur,
     settings.vignette,
+    settings.frostClarity,
     settings.wallpaperDataUrl ? settings.wallpaperDataUrl.length : 0,
     settings.wallpaperDataUrl ? "1" : "0",
   ].join(":");
@@ -93,6 +94,10 @@ export function useWorkbenchSkin() {
     commit({ ...readSettings(), vignette: clampWorkbenchLevel(vignette) });
   }, []);
 
+  const setFrostClarity = useCallback((frostClarity: number) => {
+    commit({ ...readSettings(), frostClarity: clampWorkbenchLevel(frostClarity) });
+  }, []);
+
   const setWallpaperDataUrl = useCallback((wallpaperDataUrl: string | null) => {
     commit(buildWallpaperSettings(readSettings(), wallpaperDataUrl));
   }, []);
@@ -131,12 +136,14 @@ export function useWorkbenchSkin() {
     glass: settings.glass,
     bgBlur: settings.bgBlur,
     vignette: settings.vignette,
+    frostClarity: settings.frostClarity,
     hasBackground: hasWorkbenchBackground(settings),
     hasWallpaper: settings.mode === "image" && Boolean(settings.wallpaperDataUrl),
     isCustomized: isWorkbenchSkinCustomized(settings),
     setGlass,
     setBgBlur,
     setVignette,
+    setFrostClarity,
     setWallpaperDataUrl,
     setWallpaperFile,
     setGradientId,

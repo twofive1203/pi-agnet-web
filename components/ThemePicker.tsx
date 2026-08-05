@@ -50,12 +50,14 @@ export function ThemePicker() {
     glass,
     bgBlur,
     vignette,
+    frostClarity,
     hasBackground,
     hasWallpaper,
     isCustomized,
     setGlass,
     setBgBlur,
     setVignette,
+    setFrostClarity,
     setWallpaperFile,
     setGradientId,
     clearBackground,
@@ -74,6 +76,7 @@ export function ThemePicker() {
   const glassSliderId = useId();
   const bgBlurSliderId = useId();
   const vignetteSliderId = useId();
+  const frostClaritySliderId = useId();
 
   const updatePosition = useCallback(() => {
     const rect = buttonRef.current?.getBoundingClientRect();
@@ -393,6 +396,13 @@ export function ThemePicker() {
               t("app.themeGlassHint"),
               glass,
               setGlass,
+            )}
+            {renderLevelSlider(
+              frostClaritySliderId,
+              t("app.themeFrostClarity"),
+              t("app.themeFrostClarityHint"),
+              frostClarity,
+              setFrostClarity,
             )}
             {renderLevelSlider(
               bgBlurSliderId,

@@ -22,6 +22,7 @@ import {
   WORKBENCH_GRADIENT_IDS,
   WORKBENCH_GRADIENT_META,
   WORKBENCH_SKIN_BG_BLUR_STORAGE_KEY,
+  WORKBENCH_SKIN_FROST_CLARITY_STORAGE_KEY,
   WORKBENCH_SKIN_GLASS_STORAGE_KEY,
   WORKBENCH_SKIN_GRADIENT_STORAGE_KEY,
   WORKBENCH_SKIN_VIGNETTE_STORAGE_KEY,
@@ -269,6 +270,7 @@ function collectContractProblems(
     || !sources.workbenchSkinLib.includes("WORKBENCH_SKIN_GRADIENT_STORAGE_KEY")
     || !sources.workbenchSkinLib.includes("WORKBENCH_SKIN_BG_BLUR_STORAGE_KEY")
     || !sources.workbenchSkinLib.includes("WORKBENCH_SKIN_VIGNETTE_STORAGE_KEY")
+    || !sources.workbenchSkinLib.includes("WORKBENCH_SKIN_FROST_CLARITY_STORAGE_KEY")
     || !sources.workbenchSkinLib.includes("WORKBENCH_GRADIENT_META")
     || !sources.workbenchSkinLib.includes("applyWorkbenchSkinToDocument")
     || !sources.workbenchSkinLib.includes("buildWorkbenchSkinBootFragment")) {
@@ -279,6 +281,7 @@ function collectContractProblems(
     || !sources.workbenchSkinHook.includes("setGradientId")
     || !sources.workbenchSkinHook.includes("setBgBlur")
     || !sources.workbenchSkinHook.includes("setVignette")
+    || !sources.workbenchSkinHook.includes("setFrostClarity")
     || !sources.workbenchSkinHook.includes("resetWorkbenchSkin")) {
     problems.push("workbench skin hook: wallpaper/gradient/atmosphere API surface is incomplete");
   }
@@ -288,7 +291,8 @@ function collectContractProblems(
     || !sources.picker.includes("theme-picker-glass-slider")
     || !sources.picker.includes("pickingFileRef")
     || !sources.picker.includes("setBgBlur")
-    || !sources.picker.includes("setVignette")) {
+    || !sources.picker.includes("setVignette")
+    || !sources.picker.includes("setFrostClarity")) {
     problems.push("theme picker: workbench wallpaper/gradient/atmosphere controls are missing");
   }
   if (!sources.css.includes("--skin-wallpaper-image")
@@ -488,6 +492,7 @@ assert(WORKBENCH_SKIN_GLASS_STORAGE_KEY === "pi-theme-glass", "glass storage key
 assert(WORKBENCH_SKIN_GRADIENT_STORAGE_KEY === "pi-theme-gradient", "gradient storage key drift");
 assert(WORKBENCH_SKIN_BG_BLUR_STORAGE_KEY === "pi-theme-bg-blur", "bg blur storage key drift");
 assert(WORKBENCH_SKIN_VIGNETTE_STORAGE_KEY === "pi-theme-vignette", "vignette storage key drift");
+assert(WORKBENCH_SKIN_FROST_CLARITY_STORAGE_KEY === "pi-theme-frost-clarity", "frost clarity storage key drift");
 assert(!isThemePreference("retired-theme"), "invalid theme preference must be rejected");
 assert(resolveThemePreference("system", false) === "light", "system light resolution");
 assert(resolveThemePreference("system", true) === "dark", "system dark resolution");
@@ -503,6 +508,9 @@ assert(resolveWorkbenchGlassTokens(0).panelAlpha === 1, "glass 0 keeps opaque pa
 assert(resolveWorkbenchGlassTokens(100).panelAlpha === 0, "glass 100 is fully transparent");
 assert(resolveWorkbenchGlassTokens(50).panelAlpha === 0.5, "glass mid is half transparent");
 assert(resolveWorkbenchGlassTokens(100).blurPx === 28, "glass 100 max panel blur");
+assert(resolveWorkbenchGlassTokens(100, 50).blurPx === 14, "frost clarity 50 halves panel blur");
+assert(resolveWorkbenchGlassTokens(100, 100).blurPx === 0, "frost clarity 100 removes panel blur");
+assert(resolveWorkbenchGlassTokens(0, 100).blurPx === 0, "glass 0 stays blur-free regardless of clarity");
 assert(resolveWorkbenchAtmosphereTokens(100, 0).bgBlurPx === 30, "bg blur max");
 assert(resolveWorkbenchAtmosphereTokens(0, 100).vignette === 0.78, "vignette max");
 assert(buildWorkbenchSkinBootFragment().includes(WORKBENCH_SKIN_WALLPAPER_STORAGE_KEY), "boot fragment must read wallpaper key");

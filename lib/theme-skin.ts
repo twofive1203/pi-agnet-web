@@ -8,6 +8,7 @@ export const WORKBENCH_SKIN_WALLPAPER_STORAGE_KEY = "pi-theme-wallpaper";
 export const WORKBENCH_SKIN_GLASS_STORAGE_KEY = "pi-theme-glass";
 export const WORKBENCH_SKIN_GRADIENT_STORAGE_KEY = "pi-theme-gradient";
 export const WORKBENCH_SKIN_BG_BLUR_STORAGE_KEY = "pi-theme-bg-blur";
+export const WORKBENCH_SKIN_FROST_CLARITY_STORAGE_KEY = "pi-theme-frost-clarity";
 export const WORKBENCH_SKIN_VIGNETTE_STORAGE_KEY = "pi-theme-vignette";
 /** Active background mode: none | image | gradient id. Legacy installs without this key are inferred. */
 export const WORKBENCH_SKIN_BG_MODE_STORAGE_KEY = "pi-theme-bg-mode";
@@ -18,6 +19,8 @@ export const WORKBENCH_SKIN_GLASS_MIN = WORKBENCH_SKIN_LEVEL_MIN;
 export const WORKBENCH_SKIN_GLASS_MAX = WORKBENCH_SKIN_LEVEL_MAX;
 export const WORKBENCH_SKIN_GLASS_DEFAULT = 0;
 export const WORKBENCH_SKIN_BG_BLUR_DEFAULT = 0;
+/** 0 = keep the glass-derived frost blur; 100 = remove panel blur entirely. */
+export const WORKBENCH_SKIN_FROST_CLARITY_DEFAULT = 0;
 export const WORKBENCH_SKIN_VIGNETTE_DEFAULT = 0;
 /** Defaults applied the first time a background becomes active while extras are still off. */
 export const WORKBENCH_SKIN_GLASS_ON_BACKGROUND = 48;
@@ -113,6 +116,7 @@ export interface WorkbenchSkinSettings {
   glass: number;
   bgBlur: number;
   vignette: number;
+  frostClarity: number;
 }
 
 export const DEFAULT_WORKBENCH_SKIN: WorkbenchSkinSettings = {
@@ -122,6 +126,7 @@ export const DEFAULT_WORKBENCH_SKIN: WorkbenchSkinSettings = {
   glass: WORKBENCH_SKIN_GLASS_DEFAULT,
   bgBlur: WORKBENCH_SKIN_BG_BLUR_DEFAULT,
   vignette: WORKBENCH_SKIN_VIGNETTE_DEFAULT,
+  frostClarity: WORKBENCH_SKIN_FROST_CLARITY_DEFAULT,
 };
 
 const DATA_URL_PATTERN = /^data:image\/(png|jpe?g|webp|gif);base64,[a-z0-9+/=\s]+$/i;
@@ -181,6 +186,7 @@ export function normalizeWorkbenchSkinSettings(
     glass: clampWorkbenchGlass(partial.glass ?? WORKBENCH_SKIN_GLASS_DEFAULT),
     bgBlur: clampWorkbenchLevel(partial.bgBlur ?? WORKBENCH_SKIN_BG_BLUR_DEFAULT),
     vignette: clampWorkbenchLevel(partial.vignette ?? WORKBENCH_SKIN_VIGNETTE_DEFAULT),
+    frostClarity: clampWorkbenchLevel(partial.frostClarity ?? WORKBENCH_SKIN_FROST_CLARITY_DEFAULT),
   };
 }
 
@@ -220,6 +226,7 @@ export function readWorkbenchSkinFromStorage(): WorkbenchSkinSettings {
       glass: parseWorkbenchGlass(localStorage.getItem(WORKBENCH_SKIN_GLASS_STORAGE_KEY)),
       bgBlur: parseWorkbenchLevel(localStorage.getItem(WORKBENCH_SKIN_BG_BLUR_STORAGE_KEY)),
       vignette: parseWorkbenchLevel(localStorage.getItem(WORKBENCH_SKIN_VIGNETTE_STORAGE_KEY)),
+      frostClarity: parseWorkbenchLevel(localStorage.getItem(WORKBENCH_SKIN_FROST_CLARITY_STORAGE_KEY)),
     });
   } catch {
     return DEFAULT_WORKBENCH_SKIN;
@@ -252,6 +259,7 @@ export function persistWorkbenchSkin(settings: WorkbenchSkinSettings): void {
 
     writeLevel(WORKBENCH_SKIN_GLASS_STORAGE_KEY, normalized.glass, WORKBENCH_SKIN_GLASS_DEFAULT);
     writeLevel(WORKBENCH_SKIN_BG_BLUR_STORAGE_KEY, normalized.bgBlur, WORKBENCH_SKIN_BG_BLUR_DEFAULT);
+    writeLevel(WORKBENCH_SKIN_FROST_CLARITY_STORAGE_KEY, normalized.frostClarity, WORKBENCH_SKIN_FROST_CLARITY_DEFAULT);
     writeLevel(WORKBENCH_SKIN_VIGNETTE_STORAGE_KEY, normalized.vignette, WORKBENCH_SKIN_VIGNETTE_DEFAULT);
   } catch {
     // Ignore quota / private-mode failures; the in-memory document state still applies.
@@ -276,7 +284,7 @@ export function resolveWorkbenchBackgroundLayer(settings: WorkbenchSkinSettings)
 
 /** Map 0–100 glass to panel opacity/blur used by the CSS skin layer.
  * 0 = fully opaque workbench cards; 100 = fully transparent cards (frosted via blur only). */
-export function resolveWorkbenchGlassTokens(glass: number): {
+export function resolveWorkbenchGlassTokens(glass: number, frostClarity = WORKBENCH_SKIN_FROST_CLARITY_DEFAULT): {
   unit: number;
   panelAlpha: number;
   blurPx: number;
@@ -284,12 +292,13 @@ export function resolveWorkbenchGlassTokens(glass: number): {
   scrim: number;
 } {
   const unit = clampWorkbenchGlass(glass) / WORKBENCH_SKIN_LEVEL_MAX;
+  const clarityUnit = clampWorkbenchLevel(frostClarity, WORKBENCH_SKIN_FROST_CLARITY_DEFAULT) / WORKBENCH_SKIN_LEVEL_MAX;
   return {
     unit,
     // Linear to full clear at 100 so the slider matches user expectation.
     panelAlpha: 1 - unit,
-    // Stronger frost as panels go clear so chrome edges stay legible.
-    blurPx: unit * 28,
+    // Stronger frost as panels go clear so chrome edges stay legible; clarity scales it down to zero.
+    blurPx: unit * 28 * (1 - clarityUnit),
     scrim: 0.18,
   };
 }
@@ -323,6 +332,7 @@ export function isWorkbenchSkinCustomized(settings: WorkbenchSkinSettings): bool
     || normalized.glass > 0
     || normalized.bgBlur > 0
     || normalized.vignette > 0
+    || normalized.frostClarity > 0
     || Boolean(normalized.wallpaperDataUrl)
     || Boolean(normalized.gradientId)
   );
@@ -332,7 +342,7 @@ export function applyWorkbenchSkinToDocument(settings: WorkbenchSkinSettings): v
   if (typeof document === "undefined") return;
   const root = document.documentElement;
   const normalized = normalizeWorkbenchSkinSettings(settings);
-  const glassTokens = resolveWorkbenchGlassTokens(normalized.glass);
+  const glassTokens = resolveWorkbenchGlassTokens(normalized.glass, normalized.frostClarity);
   const atmosphere = resolveWorkbenchAtmosphereTokens(normalized.bgBlur, normalized.vignette);
   const backgroundLayer = resolveWorkbenchBackgroundLayer(normalized);
   const activeBackground = hasWorkbenchBackground(normalized);
@@ -471,9 +481,10 @@ export function buildWorkbenchSkinBootFragment(): string {
     `var wm=localStorage.getItem(${JSON.stringify(WORKBENCH_SKIN_BG_MODE_STORAGE_KEY)});`,
     `var wb=localStorage.getItem(${JSON.stringify(WORKBENCH_SKIN_BG_BLUR_STORAGE_KEY)});`,
     `var wv=localStorage.getItem(${JSON.stringify(WORKBENCH_SKIN_VIGNETTE_STORAGE_KEY)});`,
+    `var wfc=localStorage.getItem(${JSON.stringify(WORKBENCH_SKIN_FROST_CLARITY_STORAGE_KEY)});`,
     `var gmap=${JSON.stringify(gradientMap)};`,
     "function lv(v){var n=parseInt(v||'0',10);if(!isFinite(n))n=0;if(n<0)n=0;if(n>100)n=100;return n;}",
-    "var g=lv(wg),bb=lv(wb),vn=lv(wv);",
+    "var g=lv(wg),bb=lv(wb),vn=lv(wv),fc=lv(wfc);",
     "var hasW=typeof ww==='string'&&/^data:image\\/(png|jpe?g|webp|gif);base64,/i.test(ww)&&ww.length<=2600000;",
     "var hasG=typeof wgr==='string'&&Object.prototype.hasOwnProperty.call(gmap,wgr);",
     "var mode=wm==='image'||wm==='gradient'||wm==='none'?wm:(hasW?'image':(hasG?'gradient':'none'));",
@@ -484,7 +495,7 @@ export function buildWorkbenchSkinBootFragment(): string {
     "else if(mode==='gradient'&&hasG){layer=gmap[wgr];r.dataset.wallpaper='gradient';r.dataset.skinBg='gradient';r.dataset.skinGradient=wgr;}",
     "else{delete r.dataset.wallpaper;delete r.dataset.skinBg;delete r.dataset.skinGradient;}",
     "if(g>0){r.dataset.glass='on';}else{delete r.dataset.glass;}",
-    "var u=g/100,pa=1-u,pbl=u*28,bbl=(bb/100)*30,vig=(vn/100)*0.78,sc=0.1+(vn/100)*0.22;",
+    "var u=g/100,pa=1-u,pbl=u*28*(1-fc/100),bbl=(bb/100)*30,vig=(vn/100)*0.78,sc=0.1+(vn/100)*0.22;",
     "r.style.setProperty('--skin-wallpaper-image',layer);",
     "r.style.setProperty('--skin-bg-image',layer);",
     "r.style.setProperty('--skin-glass',u.toFixed(3));",
