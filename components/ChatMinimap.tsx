@@ -41,13 +41,6 @@ function getMessagePreview(msg: AgentMessage | Partial<AgentMessage>): string {
   return "";
 }
 
-function getNodeColor(msg: AgentMessage | Partial<AgentMessage>): { bg: string; border: string } {
-  if (msg.role === "user") {
-    return { bg: "rgba(37,99,235,0.18)", border: "rgba(37,99,235,0.7)" };
-  }
-  return { bg: "rgba(107,114,128,0.12)", border: "rgba(107,114,128,0.5)" };
-}
-
 function hasTextContent(msg: AgentMessage | Partial<AgentMessage>): boolean {
   if (msg.role === "user") return true;
   if (msg.role === "assistant") {
@@ -247,30 +240,31 @@ export function ChatMinimap({ messages, streamingMessage, scrollContainer, messa
         position: "relative",
         cursor: "default",
         userSelect: "none",
-        borderLeft: "1px solid var(--border)",
-        background: "var(--bg-panel)",
+        borderLeft: "1px solid var(--border-subtle, var(--border))",
+        background: "transparent",
         overflow: "visible",
       }}
     >
-      {/* Viewport indicator */}
+      {/* Viewport indicator: rounded pill following the theme accent */}
       <div
         style={{
           position: "absolute",
-          left: 0,
-          right: 0,
+          left: 6,
+          right: 6,
           top: `${viewportBoxTop}%`,
           height: `${viewportBoxHeight}%`,
-          background: "rgba(100,100,100,0.1)",
-          borderTop: "1px solid rgba(100,100,100,0.2)",
-          borderBottom: "1px solid rgba(100,100,100,0.2)",
+          background: "var(--accent-soft)",
+          border: "1px solid var(--accent-border)",
+          borderRadius: 10,
+          boxShadow: "0 0 0 1px color-mix(in srgb, var(--accent-primary) 8%, transparent)",
           pointerEvents: "none",
           zIndex: 1,
+          transition: "top 0.08s ease-out, height 0.08s ease-out",
         }}
       />
 
       {/* Message nodes */}
       {nodes.map((node) => {
-        const color = getNodeColor(node.msg);
         const isNearest = minimapHovered && nearestIndex === node.index;
         const isUser = node.msg.role === "user";
         const dotTop = node.topRatio * 100;
@@ -293,17 +287,22 @@ export function ChatMinimap({ messages, streamingMessage, scrollContainer, messa
               zIndex: 2,
             }}
           >
-            {/* Dot */}
+            {/* Dot: user messages render as an accent bar, assistant as a dot */}
             <div
               style={{
-                width: isUser ? 8 : 6,
-                height: isUser ? 8 : 6,
-                borderRadius: isUser ? 2 : "50%",
-                background: color.bg,
-                border: `1.5px solid ${color.border}`,
+                width: isUser ? 14 : 6,
+                height: isUser ? 4 : 6,
+                borderRadius: isUser ? 999 : "50%",
+                background: isUser
+                  ? "color-mix(in srgb, var(--accent-primary) 72%, transparent)"
+                  : "color-mix(in srgb, var(--text-muted) 42%, transparent)",
+                border: "none",
                 flexShrink: 0,
-                transition: "transform 0.1s",
-                transform: isNearest ? "scale(1.6)" : "scale(1)",
+                transition: "transform 0.15s ease-out, box-shadow 0.15s ease-out, background 0.15s",
+                transform: isNearest ? "scale(1.5)" : "scale(1)",
+                boxShadow: isNearest
+                  ? `0 0 8px 1px ${isUser ? "color-mix(in srgb, var(--accent-primary) 45%, transparent)" : "color-mix(in srgb, var(--text-muted) 35%, transparent)"}`
+                  : "none",
               }}
             />
 
@@ -312,15 +311,17 @@ export function ChatMinimap({ messages, streamingMessage, scrollContainer, messa
         );
       })}
 
-      {/* Center line */}
+      {/* Center rail: soft rounded track that fades at both ends */}
       <div
         style={{
           position: "absolute",
           left: "50%",
-          top: 0,
-          bottom: 0,
-          width: 1,
-          background: "var(--border)",
+          top: 6,
+          bottom: 6,
+          width: 2,
+          borderRadius: 999,
+          background:
+            "linear-gradient(to bottom, transparent, color-mix(in srgb, var(--text-muted) 26%, transparent) 12%, color-mix(in srgb, var(--text-muted) 26%, transparent) 88%, transparent)",
           transform: "translateX(-50%)",
           zIndex: 0,
         }}
@@ -329,7 +330,6 @@ export function ChatMinimap({ messages, streamingMessage, scrollContainer, messa
       {/* Tooltips for all nodes, collision-free positions */}
       {minimapHovered && nodes.map((node, i) => {
         const preview = getMessagePreview(node.msg);
-        const color = getNodeColor(node.msg);
         const isNearest = nearestIndex === node.index;
         if (!preview || tooltipPositions.length === 0) return null;
         return (
@@ -339,24 +339,25 @@ export function ChatMinimap({ messages, streamingMessage, scrollContainer, messa
               position: "absolute",
               top: tooltipPositions[i],
               right: "100%",
-              marginRight: 6,
-              background: "var(--bg)",
-              borderTop: `1px solid ${isNearest ? color.border : "var(--border)"}`,
-              borderRight: `1px solid ${isNearest ? color.border : "var(--border)"}`,
-              borderBottom: `1px solid ${isNearest ? color.border : "var(--border)"}`,
-              borderLeft: `2px solid ${color.border}`,
-              borderRadius: 4,
-              padding: "2px 7px",
+              marginRight: 8,
+              background: "var(--bg-panel)",
+              border: `1px solid ${isNearest ? "var(--accent-border)" : "var(--border)"}`,
+              borderLeft: `3px solid ${isNearest ? "var(--accent-primary)" : "color-mix(in srgb, var(--text-muted) 45%, transparent)"}`,
+              borderRadius: 8,
+              padding: "4px 9px",
               width: 200,
               zIndex: 100,
               pointerEvents: "none",
-              opacity: isNearest ? 1 : 0.45,
+              opacity: isNearest ? 1 : 0.4,
+              boxShadow: "0 4px 16px color-mix(in srgb, var(--text, #000) 14%, transparent)",
+              backdropFilter: "blur(8px)",
               transition: "top 0.1s, opacity 0.1s",
             }}
           >
             <div
               style={{
                 fontSize: 11,
+                fontWeight: isNearest ? 500 : 400,
                 color: isNearest ? "var(--text)" : "var(--text-muted)",
                 lineHeight: 1.4,
                 whiteSpace: "nowrap",
