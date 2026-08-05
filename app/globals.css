@@ -7406,6 +7406,8 @@ html:is([data-wallpaper="on"], [data-wallpaper="image"], [data-wallpaper="gradie
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-control);
   background: var(--surface-tool-message);
+  transition: border-color var(--motion-duration-base) var(--motion-ease-standard),
+    background var(--motion-duration-base) var(--motion-ease-standard);
 }
 .message-thinking { font-size: 13px; }
 .message-thinking-icon {
@@ -7464,19 +7466,12 @@ html:is([data-wallpaper="on"], [data-wallpaper="image"], [data-wallpaper="gradie
   border-color: var(--status-danger-border);
   background: var(--status-danger-soft);
 }
+/* Only rendered while the tool is still running (is-pending). */
 .message-tool-status-dot {
   flex-shrink: 0;
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--status-success-foreground);
-  box-shadow: 0 0 0 3px var(--status-success-soft);
-}
-.message-tool-call.is-error .message-tool-status-dot {
-  background: var(--status-danger-foreground);
-  box-shadow: 0 0 0 3px var(--status-danger-soft);
-}
-.message-tool-call.is-pending .message-tool-status-dot {
   background: var(--status-info-foreground);
   box-shadow: 0 0 0 3px var(--status-info-soft);
   animation: message-tool-dot-pulse 1.2s ease-in-out infinite;
@@ -7488,12 +7483,15 @@ html:is([data-wallpaper="on"], [data-wallpaper="image"], [data-wallpaper="gradie
 @media (prefers-reduced-motion: reduce) {
   .message-tool-call.is-pending .message-tool-status-dot { animation: none; }
 }
+.message-tool-icon {
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+}
 .message-tool-name {
   flex-shrink: 0;
   color: var(--status-success-foreground);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 700;
+  font-size: 12px;
+  font-weight: 600;
 }
 .message-tool-call.is-error .message-tool-name { color: var(--status-danger-foreground); }
 .message-tool-call.is-pending .message-tool-name { color: var(--status-info-foreground); }
@@ -7521,6 +7519,8 @@ html:is([data-wallpaper="on"], [data-wallpaper="image"], [data-wallpaper="gradie
   overflow-wrap: anywhere;
 }
 .message-tool-input {
+  /* Large edit/write payloads must not blow up the chat flow. */
+  max-height: 320px;
   border-top: 1px solid var(--border-subtle);
   background: var(--surface-subtle);
 }

@@ -446,6 +446,85 @@ function ThinkingBlock({ block, duration }: { block: ThinkingContent; duration?:
 }
 
 
+// Tool icons communicate category at a glance; color stays tertiary so the
+// status dot remains the loudest signal in the header.
+type ToolCategory = "read" | "search" | "edit" | "write" | "terminal" | "web" | "agent" | "tool";
+
+function getToolCategory(name: string): ToolCategory {
+  const n = name.toLowerCase();
+  if (n === "read" || n === "ls") return "read";
+  if (n === "grep" || n === "find" || n.includes("search") || n.includes("grep")) return "search";
+  if (n === "edit") return "edit";
+  if (n === "write") return "write";
+  if (n === "bash" || n.includes("terminal") || n.includes("shell") || n.includes("command")) return "terminal";
+  if (n.includes("web") || n.includes("fetch") || n.includes("browse")) return "web";
+  if (n.includes("subagent") || n.includes("task") || n.includes("agent")) return "agent";
+  return "tool";
+}
+
+const TOOL_ICON_PATHS: Record<ToolCategory, React.ReactNode> = {
+  read: (
+    <>
+      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
+      <circle cx="12" cy="12" r="3" />
+    </>
+  ),
+  search: (
+    <>
+      <circle cx="11" cy="11" r="7" />
+      <line x1="21" y1="21" x2="16.5" y2="16.5" />
+    </>
+  ),
+  edit: (
+    <>
+      <path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+    </>
+  ),
+  write: (
+    <>
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z" />
+      <polyline points="14 2 14 8 20 8" />
+      <line x1="9" y1="13" x2="15" y2="13" />
+      <line x1="9" y1="17" x2="13" y2="17" />
+    </>
+  ),
+  terminal: (
+    <>
+      <polyline points="4 17 10 11 4 5" />
+      <line x1="12" y1="19" x2="20" y2="19" />
+    </>
+  ),
+  web: (
+    <>
+      <circle cx="12" cy="12" r="10" />
+      <line x1="2" y1="12" x2="22" y2="12" />
+      <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10Z" />
+    </>
+  ),
+  agent: (
+    <>
+      <circle cx="9" cy="7" r="3" />
+      <path d="M2 21v-2a5 5 0 0 1 5-5h4a5 5 0 0 1 5 5v2" />
+      <circle cx="17.5" cy="8.5" r="2.5" />
+      <path d="M17 14.5a4 4 0 0 1 5 3.8V21" />
+    </>
+  ),
+  tool: (
+    <>
+      <path d="M14.7 6.3a4.5 4.5 0 0 0-6 6L3 18l3 3 5.7-5.7a4.5 4.5 0 0 0 6-6L14 13l-3-3 3.7-3.7Z" />
+    </>
+  ),
+};
+
+function ToolIcon({ name }: { name: string }) {
+  const category = getToolCategory(name);
+  return (
+    <svg className="message-tool-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      {TOOL_ICON_PATHS[category]}
+    </svg>
+  );
+}
+
 function ToolCallBlock({ block, result, duration }: { block: ToolCallContent; result?: ToolResultMessage; duration?: number }) {
   const [expanded, setExpanded] = useState(false);
   const inputStr = JSON.stringify(block.input, null, 2);
@@ -466,7 +545,8 @@ function ToolCallBlock({ block, result, duration }: { block: ToolCallContent; re
         onClick={() => setExpanded((v) => !v)}
         aria-expanded={expanded}
       >
-        <span className="message-tool-status-dot" aria-hidden="true" />
+        {!result && <span className="message-tool-status-dot" aria-hidden="true" />}
+        <ToolIcon name={block.toolName} />
         <span className="message-tool-name">{block.toolName}</span>
         <span className="message-tool-preview">{getToolPreview(block)}</span>
         {duration !== undefined && <span className="message-duration">{duration}s</span>}
