@@ -1,6 +1,6 @@
 {
   "name": "@twofive/snail-pi-web",
-  "version": "0.9.7",
+  "version": "0.9.8",
   "description": "Snail Pi Web (蜗牛派) workspace for the pi coding agent",
   "license": "MIT",
   "repository": {
