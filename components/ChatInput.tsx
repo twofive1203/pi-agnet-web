@@ -343,6 +343,14 @@ function hasContent(el: HTMLElement): boolean {
   return el.querySelector('[data-chip]') !== null;
 }
 
+function formatRetryReason(errorMessage: string | undefined, t: (key: string) => string): string | undefined {
+  if (!errorMessage) return undefined;
+  if (errorMessage.includes("empty completed response")) {
+    return t("chat.agentFailureEmptyCompleted");
+  }
+  return errorMessage;
+}
+
 export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   onSend, cwd, onAbort, onSteer, onFollowUp, isStreaming, model, modelNames, modelList, onModelChange,
   onCompact, onAbortCompaction, isCompacting, compactError, toolPreset, onToolPresetChange,
@@ -353,6 +361,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   browserSessionId, browserSessionLabel,
 }: Props, ref) {
   const { t } = useI18n();
+  const retryReason = formatRetryReason(retryInfo?.errorMessage, t);
   const [slashCommands, setSlashCommands] = useState<SlashCommandEntry[]>([]);
 
   const [slashCommandsLoading, setSlashCommandsLoading] = useState(false);
@@ -1167,7 +1176,13 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
               <path d="M3 3v5h5" />
             </svg>
-            {t("chat.retrying", { attempt: retryInfo.attempt, max: retryInfo.maxAttempts })}{retryInfo.errorMessage && <span className="chat-input-retry-detail">— {retryInfo.errorMessage}</span>}
+            {retryReason
+              ? t("chat.retryingWithReason", {
+                  reason: retryReason,
+                  attempt: retryInfo.attempt,
+                  max: retryInfo.maxAttempts,
+                })
+              : t("chat.retrying", { attempt: retryInfo.attempt, max: retryInfo.maxAttempts })}
           </div>
         )}
         {/* Image previews */}

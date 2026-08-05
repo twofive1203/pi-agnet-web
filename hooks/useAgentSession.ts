@@ -13,6 +13,7 @@ import type {
 } from "@/lib/types";
 import { normalizeToolCalls } from "@/lib/normalize";
 import { sendAgentCommand } from "@/lib/agent-client";
+import { getAgentLifecycleDirective } from "@/lib/agent-lifecycle";
 import type { ToolEntry, ToolPreset } from "@/components/ToolPanel";
 import {
   boundSubagentOutput,
@@ -458,6 +459,15 @@ export type AgentPhase =
   | { kind: "running_tools"; tools: { id: string; name: string }[] }
   | null;
 
+export interface AgentFailure {
+  provider?: string;
+  model?: string;
+  errorMessage: string;
+  retryAttempts: number;
+  maxAttempts?: number;
+  technicalDetails: string;
+}
+
 export type OnSubagentChange = (runs: SubagentRun[]) => void;
 
 export interface UseAgentSessionOptions {
@@ -563,6 +573,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [toolPreset, setToolPreset] = useState<ToolPreset>("all");
   const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevelOption>("auto");
   const [retryInfo, setRetryInfo] = useState<{ attempt: number; maxAttempts: number; errorMessage?: string } | null>(null);
+  const [agentFailure, setAgentFailure] = useState<AgentFailure | null>(null);
   const [contextUsage, setContextUsage] = useState<{ percent: number | null; contextWindow: number; tokens: number | null } | null>(null);
   const [systemPrompt, setSystemPrompt] = useState<string | null>(null);
   const [forkingEntryId, setForkingEntryId] = useState<string | null>(null);
@@ -591,6 +602,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const toastTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const sessionIdRef = useRef<string | null>(session?.id ?? null);
   const agentRunningRef = useRef(false);
+  const promptHadAgentLifecycleRef = useRef(false);
+  const pendingAgentErrorRef = useRef<AgentFailure | null>(null);
+  const retryProgressRef = useRef<{ attempt: number; maxAttempts: number; errorMessage?: string } | null>(null);
   const handleAgentEventRef = useRef<((event: AgentEvent) => void) | null>(null);
   const initialScrollDoneRef = useRef(false);
   const lastUserMsgRef = useRef<HTMLDivElement | null>(null);
@@ -944,28 +958,59 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         console.error("Pi extension error", event);
         break;
       case "agent_start":
+        promptHadAgentLifecycleRef.current = true;
         setAgentRunning(true);
         setAgentPhase({ kind: "waiting_model" });
         dispatch({ type: "start" });
         break;
       case "prompt_settled":
-        // Extension slash commands return from prompt() without agent_end. Normal model turns
-        // also settle after agent_end; clearing again here is harmless.
-        setAgentRunning(false);
-        setAgentPhase(null);
-        dispatch({ type: "end" });
-        break;
-      case "prompt_error":
-        setAgentRunning(false);
-        setAgentPhase(null);
-        dispatch({ type: "end" });
-        console.error("Prompt failed", event.error ?? event);
-        break;
-      case "agent_end":
+        // Slash commands can finish without an Agent lifecycle. Model turns are finalized by
+        // agent_settled, so their trailing prompt_settled event must not end the UI twice.
+        if (getAgentLifecycleDirective(event.type, promptHadAgentLifecycleRef.current) === "ignore") break;
         setAgentRunning(false);
         setAgentPhase(null);
         setRetryInfo(null);
+        retryProgressRef.current = null;
         dispatch({ type: "end" });
+        break;
+      case "prompt_error": {
+        const errorMessage = typeof event.errorMessage === "string"
+          ? event.errorMessage
+          : typeof event.error === "string"
+            ? event.error
+            : "Command failed";
+        const failure: AgentFailure = {
+          provider: currentModel?.provider,
+          model: currentModel?.modelId,
+          errorMessage,
+          retryAttempts: retryProgressRef.current?.attempt ?? 0,
+          maxAttempts: retryProgressRef.current?.maxAttempts,
+          technicalDetails: errorMessage,
+        };
+        pendingAgentErrorRef.current = failure;
+        setAgentFailure(failure);
+        setAgentRunning(false);
+        setAgentPhase(null);
+        setRetryInfo(null);
+        retryProgressRef.current = null;
+        dispatch({ type: "end" });
+        console.error("Prompt failed", errorMessage);
+        break;
+      }
+      case "agent_end":
+        // agent_end is a low-level run boundary. Pi may still back off, retry, compact, or
+        // process a queued continuation; only agent_settled is terminal for the prompt.
+        if (event.willRetry === true) setAgentRunning(true);
+        break;
+      case "agent_settled":
+        setAgentRunning(false);
+        setAgentPhase(null);
+        setRetryInfo(null);
+        retryProgressRef.current = null;
+        dispatch({ type: "end" });
+        if (pendingAgentErrorRef.current) {
+          setAgentFailure((current) => current ?? pendingAgentErrorRef.current);
+        }
         if (sessionIdRef.current) {
           loadSession(sessionIdRef.current);
           fetch(`/api/agent/${encodeURIComponent(sessionIdRef.current)}`)
@@ -994,6 +1039,20 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         const completed = event.message as AgentMessage | undefined;
         if (completed && completed.role !== "user") {
           setMessages((prev) => [...prev, normalizeToolCalls(completed)]);
+        }
+        if (completed?.role === "assistant") {
+          if (completed.stopReason === "error" && completed.errorMessage) {
+            pendingAgentErrorRef.current = {
+              provider: completed.provider,
+              model: completed.model,
+              errorMessage: completed.errorMessage,
+              retryAttempts: retryProgressRef.current?.attempt ?? 0,
+              maxAttempts: retryProgressRef.current?.maxAttempts,
+              technicalDetails: completed.errorMessage,
+            };
+          } else if (completed.stopReason !== "error") {
+            pendingAgentErrorRef.current = null;
+          }
         }
         dispatch({ type: "reset" });
         setAgentPhase({ kind: "waiting_model" });
@@ -1133,12 +1192,45 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         });
         break;
       }
-      case "auto_retry_start":
-        setRetryInfo({ attempt: event.attempt as number, maxAttempts: event.maxAttempts as number, errorMessage: event.errorMessage as string | undefined });
+      case "auto_retry_start": {
+        const progress = {
+          attempt: event.attempt as number,
+          maxAttempts: event.maxAttempts as number,
+          errorMessage: event.errorMessage as string | undefined,
+        };
+        retryProgressRef.current = progress;
+        setRetryInfo(progress);
+        setAgentFailure(null);
+        setAgentRunning(true);
         break;
-      case "auto_retry_end":
+      }
+      case "auto_retry_end": {
+        const success = event.success === true;
+        const attempt = typeof event.attempt === "number"
+          ? event.attempt
+          : retryProgressRef.current?.attempt ?? 0;
+        if (success) {
+          pendingAgentErrorRef.current = null;
+          setAgentFailure(null);
+        } else {
+          const finalError = typeof event.finalError === "string"
+            ? event.finalError
+            : pendingAgentErrorRef.current?.errorMessage ?? "Retry failed";
+          const failure: AgentFailure = {
+            provider: pendingAgentErrorRef.current?.provider ?? currentModel?.provider,
+            model: pendingAgentErrorRef.current?.model ?? currentModel?.modelId,
+            errorMessage: finalError,
+            retryAttempts: attempt,
+            maxAttempts: retryProgressRef.current?.maxAttempts,
+            technicalDetails: pendingAgentErrorRef.current?.technicalDetails ?? finalError,
+          };
+          pendingAgentErrorRef.current = failure;
+          setAgentFailure(failure);
+        }
+        retryProgressRef.current = null;
         setRetryInfo(null);
         break;
+      }
       case "auto_compaction_start":
       case "compaction_start":
         setIsCompacting(true);
@@ -1160,7 +1252,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         break;
     }
     recordSubagentClientDuration("eventHandlerMs", handlerStartedAt);
-  }, [chatInputRef, dismissExtensionToast, loadSession, onAgentEnd, updateSubagentRuns]);
+  }, [chatInputRef, currentModel, dismissExtensionToast, loadSession, onAgentEnd, updateSubagentRuns]);
   handleAgentEventRef.current = handleAgentEvent;
 
   const handleSend = useCallback(async (message: string, images?: AttachedImage[]) => {
@@ -1178,6 +1270,11 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     setMessages((prev) => [...prev, userMsg]);
     // Mark busy immediately so the send button disables, but do not show
     // "Waiting for model..." until agent_start — extension slash commands never start the model.
+    promptHadAgentLifecycleRef.current = false;
+    pendingAgentErrorRef.current = null;
+    retryProgressRef.current = null;
+    setAgentFailure(null);
+    setRetryInfo(null);
     setAgentRunning(true);
     setAgentPhase(null);
     dispatch({ type: "start" });
@@ -1227,11 +1324,31 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       }
     } catch (e) {
       console.error("Failed to send message:", e);
+      const errorMessage = e instanceof Error ? e.message : String(e);
+      const failure: AgentFailure = {
+        provider: currentModel?.provider ?? newSessionModel?.provider,
+        model: currentModel?.modelId ?? newSessionModel?.modelId,
+        errorMessage,
+        retryAttempts: 0,
+        technicalDetails: errorMessage,
+      };
+      pendingAgentErrorRef.current = failure;
+      setAgentFailure(failure);
       setAgentRunning(false);
       setAgentPhase(null);
       dispatch({ type: "end" });
     }
-  }, [isNew, newSessionCwd, newSessionModel, toolPreset, thinkingLevel, session, agentRunning, connectEvents, onSessionCreated]);
+  }, [isNew, newSessionCwd, newSessionModel, toolPreset, thinkingLevel, session, agentRunning, connectEvents, onSessionCreated, currentModel]);
+
+  const handleContinueAfterFailure = useCallback(() => {
+    if (agentRunning) return;
+    void handleSend("继续");
+  }, [agentRunning, handleSend]);
+
+  const dismissAgentFailure = useCallback(() => {
+    pendingAgentErrorRef.current = null;
+    setAgentFailure(null);
+  }, []);
 
   const handleAbort = useCallback(async () => {
     const sid = sessionIdRef.current;
@@ -1548,7 +1665,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     // State
     data, loading, error, activeLeafId, messages, entryIds, streamState,
     agentRunning, modelNames, modelList, modelThinkingLevels, modelThinkingLevelMaps, newSessionModel, toolPreset, thinkingLevel,
-    retryInfo, contextUsage, systemPrompt, forkingEntryId,
+    retryInfo, agentFailure, contextUsage, systemPrompt, forkingEntryId,
     isCompacting, compactError, currentModel, displayModel, sessionStats,
     agentPhase, subagentRuns: subagentRunsRef.current,
     sessionChangesRefreshKey,
@@ -1561,7 +1678,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     sessionIdRef, eventSourceRef, messagesEndRef, scrollContainerRef,
     lastUserMsgRef, pendingScrollToUserRef, initialScrollDoneRef,
     // Actions
-    handleSend, handleAbort, handleFork, handleNavigate, handleModelChange,
+    handleSend, handleContinueAfterFailure, dismissAgentFailure,
+    handleAbort, handleFork, handleNavigate, handleModelChange,
     handleCompact, handleSteer, handleFollowUp, handleAbortCompaction,
     handleToolPresetChange, handleThinkingLevelChange, loadTools, setActiveLeafId, setData, setMessages,
     dispatch, setAgentRunning, setForkingEntryId,

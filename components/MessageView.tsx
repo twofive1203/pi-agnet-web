@@ -366,6 +366,12 @@ function AssistantMessageView({
         {blocks.map((block, i) => (
           <BlockView key={i} block={block} toolResults={toolResults} isStreaming={isStreaming} streamingDuration={streamingDurations.get(i) ?? (block.type === "thinking" ? thinkingDurationFromFile : undefined)} toolCallDurations={toolCallDurations} />
         ))}
+        {!isStreaming && message.stopReason === "error" && message.errorMessage && (
+          <div className="message-assistant-error" role="alert">
+            <div className="message-assistant-error-title">{t("chat.assistantError")}</div>
+            <div className="message-assistant-error-body">{message.errorMessage}</div>
+          </div>
+        )}
       </div>
 
       <div className="message-action-row message-action-row-assistant">

@@ -22,7 +22,12 @@ export class AgentEventThrottler<T extends StreamAgentEvent> {
     if (event.type !== "message_update") {
       this.flush();
       this.deliver(event);
-      if (event.type === "message_end" || event.type === "agent_end" || event.type === "prompt_settled") {
+      if (
+        event.type === "message_end"
+        || event.type === "agent_end"
+        || event.type === "agent_settled"
+        || event.type === "prompt_settled"
+      ) {
         this.lastDeliveredAt = null;
       }
       return;

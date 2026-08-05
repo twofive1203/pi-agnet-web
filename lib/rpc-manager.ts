@@ -11,6 +11,7 @@ export { getSnflowChatLifecycleLoadDiagnostic, isSnflowLifecycleRequired };
 import { preparePiRuntimeEnvironment } from "./pi-runtime-resolver";
 import { createBundledPiResourceLoader } from "./bundled-pi-extensions";
 import { ExtensionWebUiBridge } from "./extension-web-ui";
+import { createEmptyCompletedRetryExtension } from "./empty-completed-retry";
 import { disposeAgentSession } from "./pi-session-lifecycle";
 import type { AgentSessionLike, ToolInfo } from "./pi-types";
 import { isSubagentToolName } from "./subagent-runs";
@@ -645,6 +646,7 @@ export async function startRpcSession(
           cwd,
           agentDir,
           settingsManager,
+          extensionFactories: [createEmptyCompletedRetryExtension()],
           extensionsOverride: (base) => ({
             ...base,
             extensions: base.extensions.filter((ext) => !isSnflowManagedExtensionPath(ext.path)),
@@ -664,7 +666,10 @@ export async function startRpcSession(
           cwd,
           agentDir,
           settingsManager,
-          extensionFactories: [createWorkflowChatLifecycleExtension(cwd)],
+          extensionFactories: [
+            createEmptyCompletedRetryExtension(),
+            createWorkflowChatLifecycleExtension(cwd),
+          ],
           ...(guidance ? { appendSystemPrompt: [guidance] } : {}),
         });
       }
@@ -680,8 +685,19 @@ export async function startRpcSession(
           `SnFlow lifecycle validator failed to initialize; native subagent dispatch is blocked for this session: ${message}`,
         );
       }
-      // General sessions keep the SDK's default loader when optional SnFlow filtering is unavailable.
-      resourceLoader = undefined;
+      // Keep the retry normalizer available even if optional SnFlow filtering fails.
+      try {
+        resourceLoader = createBundledPiResourceLoader(DefaultResourceLoader, {
+          cwd,
+          agentDir,
+          settingsManager: SettingsManager.create(cwd, agentDir),
+          extensionFactories: [createEmptyCompletedRetryExtension()],
+        });
+        await resourceLoader.reload();
+      } catch {
+        // General sessions keep the SDK's default loader as the final fallback.
+        resourceLoader = undefined;
+      }
     }
 
     // Do NOT pass the `tools` parameter to createAgentSession.

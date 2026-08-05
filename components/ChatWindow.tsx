@@ -121,14 +121,15 @@ export const ChatWindow = memo(function ChatWindow({ session, newSessionCwd, onA
   const {
     loading, error, messages, entryIds, streamState,
     agentRunning, modelNames, modelList, modelThinkingLevels, modelThinkingLevelMaps, toolPreset, thinkingLevel,
-    retryInfo, contextUsage, forkingEntryId,
+    retryInfo, agentFailure, contextUsage, forkingEntryId,
     isCompacting, compactError, displayModel: displayModelValue, sessionStats,
     agentPhase, sessionChangesRefreshKey,
     extensionStatuses, extensionWidgets, extensionDialog, extensionToasts,
     isNew,
     messagesEndRef, scrollContainerRef,
     lastUserMsgRef,
-    handleSend, handleAbort, handleFork, handleNavigate, handleModelChange,
+    handleSend, handleContinueAfterFailure, dismissAgentFailure,
+    handleAbort, handleFork, handleNavigate, handleModelChange,
     handleCompact, handleSteer, handleFollowUp, handleAbortCompaction,
     handleToolPresetChange, handleThinkingLevelChange,
     respondExtensionDialog, dismissExtensionToast,
@@ -145,11 +146,11 @@ export const ChatWindow = memo(function ChatWindow({ session, newSessionCwd, onA
   const soundEnabledRef = useRef(soundEnabled);
   soundEnabledRef.current = soundEnabled;
 
-  // Wrap agent event handler to play sound on agent_end
+  // Play completion sound only when the whole prompt lifecycle settles.
   const origHandler = handleAgentEventRef.current;
   useEffect(() => {
     handleAgentEventRef.current = (event) => {
-      if (event.type === "agent_end" && soundEnabledRef.current) {
+      if (event.type === "agent_settled" && soundEnabledRef.current) {
         playDoneSoundRef.current();
       }
       origHandler?.(event);
@@ -430,6 +431,52 @@ export const ChatWindow = memo(function ChatWindow({ session, newSessionCwd, onA
             {agentRunning && !streamState.streamingMessage && (
               <div className="py-2 text-[13px] text-text-muted">
                 <span className="animate-[pulse_1.5s_infinite]">{phaseLabel(agentPhase)}</span>
+              </div>
+            )}
+
+            {!agentRunning && agentFailure && (
+              <div className="chat-agent-failure" role="alert">
+                <div className="chat-agent-failure-header">
+                  <div className="chat-agent-failure-title">{t("chat.agentFailureTitle")}</div>
+                  <button
+                    type="button"
+                    className="chat-agent-failure-dismiss"
+                    onClick={dismissAgentFailure}
+                  >
+                    {t("chat.agentFailureDismiss")}
+                  </button>
+                </div>
+                <div className="chat-agent-failure-message">
+                  {agentFailure.errorMessage.includes("empty completed response")
+                    ? t("chat.agentFailureEmptyCompleted")
+                    : agentFailure.errorMessage}
+                </div>
+                <div className="chat-agent-failure-meta">
+                  {agentFailure.provider && (
+                    <span>{t("chat.agentFailureProvider")}: {agentFailure.provider}</span>
+                  )}
+                  {agentFailure.model && (
+                    <span>{t("chat.agentFailureModel")}: {modelNames[`${agentFailure.provider}:${agentFailure.model}`] ?? agentFailure.model}</span>
+                  )}
+                  <span>
+                    {t("chat.agentFailureRetries")}: {agentFailure.retryAttempts}
+                    {agentFailure.maxAttempts ? `/${agentFailure.maxAttempts}` : ""}
+                  </span>
+                </div>
+                <details className="chat-agent-failure-details">
+                  <summary>{t("chat.agentFailureDetails")}</summary>
+                  <pre>{agentFailure.technicalDetails}</pre>
+                </details>
+                <div className="chat-agent-failure-actions">
+                  <button
+                    type="button"
+                    className="chat-agent-failure-continue"
+                    onClick={handleContinueAfterFailure}
+                    disabled={isArchived}
+                  >
+                    {t("chat.agentFailureContinue")}
+                  </button>
+                </div>
               </div>
             )}
 
