@@ -33,56 +33,39 @@ import { recordSubagentClientMetric } from "@/lib/subagent-observability-client"
 import { SubagentStore } from "@/lib/subagent-store";
 import { makeTempSessionId } from "./sidebar/sidebar-utils";
 
-function PanelChunkLoading({ label }: { label: string }) {
-  return (
-    <div className="panel-chunk-loading" role="status" aria-live="polite">
-      {label}
-    </div>
-  );
-}
-
 // Settings-class surfaces stay out of the initial chat shell chunk.
+// loading: null — never inject an in-flow placeholder (that flashed the chat shell).
+// Hover/focus prefetch on open controls usually finishes the chunk before click.
+const loadModelsConfig = () => import("./ModelsConfig");
+const loadSettingsConfig = () => import("./SettingsConfig");
+const loadUsageStatsModal = () => import("./UsageStatsModal");
+const loadTerminalPanel = () => import("./TerminalPanel");
+const loadWorkflowPanel = () => import("./WorkflowPanel");
+const loadAutomationPanel = () => import("./AutomationPanel");
+
 const ModelsConfig = dynamic(
-  () => import("./ModelsConfig").then((mod) => mod.ModelsConfig),
-  {
-    ssr: false,
-    loading: () => <PanelChunkLoading label="Loading models…" />,
-  },
+  () => loadModelsConfig().then((mod) => mod.ModelsConfig),
+  { ssr: false, loading: () => null },
 );
 const SettingsConfig = dynamic(
-  () => import("./SettingsConfig").then((mod) => mod.SettingsConfig),
-  {
-    ssr: false,
-    loading: () => <PanelChunkLoading label="Loading settings…" />,
-  },
+  () => loadSettingsConfig().then((mod) => mod.SettingsConfig),
+  { ssr: false, loading: () => null },
 );
 const UsageStatsModal = dynamic(
-  () => import("./UsageStatsModal").then((mod) => mod.UsageStatsModal),
-  {
-    ssr: false,
-    loading: () => <PanelChunkLoading label="Loading usage…" />,
-  },
+  () => loadUsageStatsModal().then((mod) => mod.UsageStatsModal),
+  { ssr: false, loading: () => null },
 );
 const TerminalPanel = dynamic(
-  () => import("./TerminalPanel").then((mod) => mod.TerminalPanel),
-  {
-    ssr: false,
-    loading: () => <PanelChunkLoading label="Loading terminal…" />,
-  },
+  () => loadTerminalPanel().then((mod) => mod.TerminalPanel),
+  { ssr: false, loading: () => null },
 );
 const WorkflowPanel = dynamic(
-  () => import("./WorkflowPanel").then((mod) => mod.WorkflowPanel),
-  {
-    ssr: false,
-    loading: () => <PanelChunkLoading label="Loading SnFlow…" />,
-  },
+  () => loadWorkflowPanel().then((mod) => mod.WorkflowPanel),
+  { ssr: false, loading: () => null },
 );
 const AutomationPanel = dynamic(
-  () => import("./AutomationPanel").then((mod) => mod.AutomationPanel),
-  {
-    ssr: false,
-    loading: () => <PanelChunkLoading label="Loading automation…" />,
-  },
+  () => loadAutomationPanel().then((mod) => mod.AutomationPanel),
+  { ssr: false, loading: () => null },
 );
 
 const TOP_PANEL_SAFE_SELECTOR = ".app-top-aux-panel, .app-top-more-portal, .app-top-aux-tab, .branch-navigator-inline, .theme-picker-popover";
@@ -642,6 +625,7 @@ export function AppShell() {
   }, [router]);
 
   const openInspectorTab = useCallback((mode: InspectorMode) => {
+    if (mode === "workflow") void loadWorkflowPanel();
     if (isMobileLayoutViewport()) setSidebarOpen(false);
     setRightPanelMode(mode);
     setRightPanelOpen(true);
@@ -979,8 +963,11 @@ export function AppShell() {
               <Tooltip content={terminalOpen && terminalDockCwd && terminalDockCwd !== terminalCwd ? t("app.openTerminalForWorkspace") : t("app.openTerminal")} position="bottom">
               <button
                 className={`icon-round context-action${terminalOpen ? " on" : ""}`}
+                onPointerEnter={() => { void loadTerminalPanel(); }}
+                onFocus={() => { void loadTerminalPanel(); }}
                 onClick={async () => {
                   if (!terminalOpen) {
+                    void loadTerminalPanel();
                     setTerminalDockCwd(terminalCwd);
                     setTerminalOpen(true);
                     setTerminalCollapsed(false);
@@ -1013,7 +1000,12 @@ export function AppShell() {
             <button
               className="icon-round context-action"
               type="button"
-              onClick={() => setModelsConfigOpen(true)}
+              onPointerEnter={() => { void loadModelsConfig(); }}
+              onFocus={() => { void loadModelsConfig(); }}
+              onClick={() => {
+                void loadModelsConfig();
+                setModelsConfigOpen(true);
+              }}
               aria-label={t("sidebar.models")}
             >
               <svg className="context-action-svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -1025,7 +1017,12 @@ export function AppShell() {
             <button
               className="icon-round context-action"
               type="button"
-              onClick={() => setSettingsConfigOpen(true)}
+              onPointerEnter={() => { void loadSettingsConfig(); }}
+              onFocus={() => { void loadSettingsConfig(); }}
+              onClick={() => {
+                void loadSettingsConfig();
+                setSettingsConfigOpen(true);
+              }}
               aria-label={t("sidebar.settings")}
             >
               <svg className="context-action-svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -1074,7 +1071,12 @@ export function AppShell() {
                     type="button"
                     className="app-resource-session"
                     aria-label={t("app.sessionUsage")}
-                    onClick={() => setUsageStatsOpen(true)}
+                    onPointerEnter={() => { void loadUsageStatsModal(); }}
+                    onFocus={() => { void loadUsageStatsModal(); }}
+                    onClick={() => {
+                      void loadUsageStatsModal();
+                      setUsageStatsOpen(true);
+                    }}
                   >
                     {contextSummary && (
                       <span className={`app-resource-context${contextTone}`}>
@@ -1199,7 +1201,20 @@ export function AppShell() {
                     </>
                   )}
                   <div className="top-more-menu-label">{t("app.applicationActions")}</div>
-                  <button type="button" role="menuitem" className="top-more-menu-item" onClick={() => { setActiveTopPanel(null); setAutomationOpen((open) => !open); }}>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="top-more-menu-item"
+                    onPointerEnter={() => { void loadAutomationPanel(); }}
+                    onFocus={() => { void loadAutomationPanel(); }}
+                    onClick={() => {
+                      setActiveTopPanel(null);
+                      setAutomationOpen((open) => {
+                        if (!open) void loadAutomationPanel();
+                        return !open;
+                      });
+                    }}
+                  >
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                       <circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 16 14" />
                     </svg>
@@ -1347,6 +1362,8 @@ export function AppShell() {
                 aria-selected={rightPanelMode === "workflow"}
                 tabIndex={rightPanelMode === "workflow" ? 0 : -1}
                 className={rightPanelMode === "workflow" ? "on" : ""}
+                onPointerEnter={() => { void loadWorkflowPanel(); }}
+                onFocus={() => { void loadWorkflowPanel(); }}
                 onKeyDown={(event) => handleInspectorTabKeyDown(event, "workflow")}
                 onClick={(e) => {
                   // Alt+click: create SnFlow task from current chat without opening the create form.

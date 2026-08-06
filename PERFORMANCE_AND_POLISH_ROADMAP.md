@@ -20,7 +20,7 @@
 | Hidden tab | `hooks/useAgentSession.ts` 在页面隐藏时按 500 ms 合并累计消息快照，恢复可见或遇到生命周期事件时立即 flush |
 | Historical chat renders | streaming bubble 与已提交历史分离；历史消息对象在 token streaming 期间保持稳定，`MessageView` 已 memo |
 | Streaming Markdown | `MarkdownBody` streaming/折叠大代码块走轻量 `<pre><code>`，settled 展开后才 Prism；内容相等 memo；≥80 行或 ≥4000 字符默认折叠 |
-| Settings-class code split | `AppShell` 对 Models/Settings/Usage/Terminal/Workflow/Automation 使用 `next/dynamic`；Automation 关闭时 unread 由 `useAutomationUnread` 维护 |
+| Settings-class code split | `AppShell` 对 Models/Settings/Usage/Terminal/Workflow/Automation 使用 `next/dynamic`（`loading: null`，打开控件 hover/focus prefetch）；Automation 关闭时 unread 由 `useAutomationUnread` 维护 |
 | Message identity | `ChatWindow` 优先 `entryIds`，无 entry id 的 optimistic 行使用 WeakMap 本地稳定 key，单层 keyed owner |
 | Subagent progress | `lib/subagent-progress-throttler.ts` 按 300 ms 合并普通进度，terminal/error/attention 立即送达 |
 | Subagent payload | `lib/subagent-event-projection.ts` 删除普通进度中的完整输出并限制终态预览大小 |

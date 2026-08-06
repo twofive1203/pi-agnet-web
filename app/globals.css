@@ -7245,16 +7245,6 @@ html:is([data-wallpaper="on"], [data-wallpaper="image"], [data-wallpaper="gradie
   text-align: center;
 }
 .chat-window-state.is-error { color: var(--status-danger-foreground); }
-.panel-chunk-loading {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 120px;
-  padding: 24px;
-  color: var(--text-secondary);
-  font-size: 13px;
-  text-align: center;
-}
 .chat-drop-zone,
 .chat-drop-ripples {
   position: absolute;
