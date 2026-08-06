@@ -23,6 +23,7 @@ import {
 } from "@/lib/theme-skin";
 import { THEME_META, THEME_PREFERENCES } from "@/lib/theme";
 import { useI18n } from "./I18nProvider";
+import Tooltip from "./Tooltip";
 
 const OPTIONS = THEME_PREFERENCES.map((id) => ({ id, ...THEME_META[id] }));
 
@@ -264,12 +265,12 @@ export function ThemePicker() {
 
   return (
     <>
+      <Tooltip content={t("app.openThemePicker")} position="bottom">
       <button
         ref={buttonRef}
         type="button"
         className="app-top-icon-button theme-picker-trigger"
         onClick={() => setOpen((value) => !value)}
-        title={t("app.openThemePicker")}
         aria-label={t("app.openThemePicker")}
         aria-expanded={open}
         aria-haspopup="dialog"
@@ -289,6 +290,7 @@ export function ThemePicker() {
           </svg>
         )}
       </button>
+      </Tooltip>
       {open && position && typeof document !== "undefined" && createPortal(
         <div
           ref={popoverRef}
@@ -331,7 +333,6 @@ export function ThemePicker() {
                       role="option"
                       aria-selected={selected}
                       className={`theme-picker-gradient-option${selected ? " theme-picker-gradient-option-selected" : ""}`}
-                      title={t(gradient.labelKey)}
                       onClick={() => handleGradientSelect(gradient.id)}
                     >
                       <span

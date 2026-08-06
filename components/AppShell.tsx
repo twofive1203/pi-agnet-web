@@ -27,6 +27,7 @@ import { TerminalPanel } from "./TerminalPanel";
 import { getRelativeFilePath } from "@/lib/file-paths";
 import { formatWorkspaceHeaderTitle, formatWorkspaceTitle } from "@/lib/workspace-title";
 import { ThemePicker } from "./ThemePicker";
+import Tooltip from "./Tooltip";
 import { useI18n } from "@/components/I18nProvider";
 import { useAppDialog } from "@/components/AppDialogProvider";
 import type { GitInfo, SessionInfo, SessionTreeNode } from "@/lib/types";
@@ -853,6 +854,7 @@ export function AppShell() {
         <div className="center-panel">
         {/* Context strip — merged top bar */}
         <div ref={topBarRef} className="top-context">
+          <Tooltip content={sidebarOpen ? t("app.hideSidebar") : t("app.showSidebar")} position="bottom">
           <button
             ref={sidebarToggleRef}
             className="icon-round context-icon-compact top-sidebar-trigger"
@@ -860,7 +862,6 @@ export function AppShell() {
               if (!sidebarOpen && isMobileLayoutViewport()) setRightPanelOpen(false);
               setSidebarOpen((open) => !open);
             }}
-            title={sidebarOpen ? t("app.hideSidebar") : t("app.showSidebar")}
             aria-label={sidebarOpen ? t("app.hideSidebar") : t("app.showSidebar")}
             aria-controls={SIDEBAR_ID}
             aria-expanded={sidebarOpen}
@@ -875,9 +876,11 @@ export function AppShell() {
               </svg>
             )}
           </button>
+          </Tooltip>
 
           {/* Breadcrumb: workspace / session */}
-          <div className="breadcrumb" title={workspaceCwd ?? undefined}>
+          <Tooltip content={workspaceCwd ?? undefined} position="bottom">
+          <div className="breadcrumb">
             <span className="workspace-breadcrumb-label">{t("common.workspace")}</span>
             <span className="breadcrumb-separator">/</span>
             <strong className="breadcrumb-workspace">
@@ -892,6 +895,7 @@ export function AppShell() {
               </>
             )}
           </div>
+          </Tooltip>
 
           {showChat && (
             <BranchNavigator
@@ -907,16 +911,18 @@ export function AppShell() {
           )}
           <div className="top-primary-tools" aria-label={t("app.primaryTools")}>
             <ThemePicker />
-            <button
-              className="icon-round context-action language-switch"
-              type="button"
-              onClick={() => setLocale(locale === "zh" ? "en" : "zh")}
-              title={t("app.languageSwitch")}
-              aria-label={t("app.languageSwitch")}
-            >
-              {locale === "zh" ? "EN" : "中"}
-            </button>
+            <Tooltip content={t("app.languageSwitch")} position="bottom">
+              <button
+                className="icon-round context-action language-switch"
+                type="button"
+                onClick={() => setLocale(locale === "zh" ? "en" : "zh")}
+                aria-label={t("app.languageSwitch")}
+              >
+                {locale === "zh" ? "EN" : "中"}
+              </button>
+            </Tooltip>
             {terminalEnabled && terminalCwd && (
+              <Tooltip content={terminalOpen && terminalDockCwd && terminalDockCwd !== terminalCwd ? t("app.openTerminalForWorkspace") : t("app.openTerminal")} position="bottom">
               <button
                 className={`icon-round context-action${terminalOpen ? " on" : ""}`}
                 onClick={async () => {
@@ -939,7 +945,6 @@ export function AppShell() {
                   }
                   setTerminalCollapsed((collapsed) => !collapsed);
                 }}
-                title={terminalOpen && terminalDockCwd && terminalDockCwd !== terminalCwd ? t("app.openTerminalForWorkspace") : t("app.openTerminal")}
                 aria-label={terminalOpen && terminalDockCwd && terminalDockCwd !== terminalCwd ? t("app.openTerminalForWorkspace") : t("app.openTerminal")}
                 aria-pressed={terminalOpen}
               >
@@ -948,29 +953,32 @@ export function AppShell() {
                   <line x1="12" y1="19" x2="20" y2="19" />
                 </svg>
               </button>
+              </Tooltip>
             )}
+            <Tooltip content={t("sidebar.models")} position="bottom">
             <button
               className="icon-round context-action"
               type="button"
               onClick={() => setModelsConfigOpen(true)}
-              title={t("sidebar.models")}
               aria-label={t("sidebar.models")}
             >
               <svg className="context-action-svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="m21 8-9-5-9 5 9 5 9-5Z" /><path d="M3 8v8l9 5 9-5V8" />
               </svg>
             </button>
+            </Tooltip>
+            <Tooltip content={t("sidebar.settings")} position="bottom">
             <button
               className="icon-round context-action"
               type="button"
               onClick={() => setSettingsConfigOpen(true)}
-              title={t("sidebar.settings")}
               aria-label={t("sidebar.settings")}
             >
               <svg className="context-action-svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.05.05-2.83 2.83-.05-.05A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 1.55V21h-4v-.05A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.88.34l-.05.05-2.83-2.83.05-.05A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.55-1H3v-4h.05A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.34-1.88l-.05-.05 2.83-2.83.05.05A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.55V3h4v.05A1.7 1.7 0 0 0 15 4.6a1.7 1.7 0 0 0 1.88-.34l.05-.05 2.83 2.83-.05.05A1.7 1.7 0 0 0 19.4 9a1.7 1.7 0 0 0 1.55 1H21v4h-.05A1.7 1.7 0 0 0 19.4 15Z" />
               </svg>
             </button>
+            </Tooltip>
           </div>
           {((showChat && (sessionStats || contextUsage)) || webConfig?.chatgpt.usagePanelEnabled || webConfig?.grok.usagePanelEnabled) && (
             <div className="app-resource-cluster" aria-label={t("app.resources")}>
@@ -1007,10 +1015,10 @@ export function AppShell() {
 
                 if (!contextSummary && !usageSummary) return null;
                 return (
+                  <Tooltip content={tooltipParts.join("\n")} position="bottom">
                   <button
                     type="button"
                     className="app-resource-session"
-                    title={tooltipParts.join("  |  ")}
                     aria-label={t("app.sessionUsage")}
                     onClick={() => setUsageStatsOpen(true)}
                   >
@@ -1026,6 +1034,7 @@ export function AppShell() {
                     )}
                     {usageSummary && <span className="app-resource-cost">{usageSummary}</span>}
                   </button>
+                  </Tooltip>
                 );
               })()}
               {(webConfig?.chatgpt.usagePanelEnabled || webConfig?.grok.usagePanelEnabled) && (
@@ -1036,6 +1045,7 @@ export function AppShell() {
               )}
             </div>
           )}
+          <Tooltip content={rightPanelOpen ? t("app.closeInspector") : t("app.openInspector")} position="bottom">
           <button
             ref={inspectorButtonRef}
             className={`icon-round context-action top-inspector-trigger${rightPanelOpen ? " on" : ""}`}
@@ -1044,7 +1054,6 @@ export function AppShell() {
               if (rightPanelOpen) setRightPanelOpen(false);
               else openInspectorTab(rightPanelMode);
             }}
-            title={rightPanelOpen ? t("app.closeInspector") : t("app.openInspector")}
             aria-label={rightPanelOpen ? t("app.closeInspector") : t("app.openInspector")}
             aria-controls={INSPECTOR_PANEL_ID}
             aria-expanded={rightPanelOpen}
@@ -1058,12 +1067,13 @@ export function AppShell() {
               <SubagentBadgeIndicator store={subagentStore} />
             </span>
           </button>
+          </Tooltip>
+          <Tooltip content={t("common.more")} position="bottom">
           <button
             ref={moreButtonRef}
             className={`app-top-aux-tab icon-round context-action top-more-trigger${activeTopPanel === "more" ? " on" : ""}`}
             type="button"
             onClick={() => toggleTopPanel("more")}
-            title={t("common.more")}
             aria-label={t("common.more")}
             aria-expanded={activeTopPanel === "more"}
             aria-haspopup="menu"
@@ -1072,6 +1082,7 @@ export function AppShell() {
               <circle cx="5" cy="12" r="1.7" /><circle cx="12" cy="12" r="1.7" /><circle cx="19" cy="12" r="1.7" />
             </svg>
           </button>
+          </Tooltip>
           {/* Top panel dropdown — shared, only one active at a time */}
           {activeTopPanel && activeTopPanel !== "branches" && topPanelPos && typeof document !== "undefined" && createPortal((
             <div
@@ -1233,44 +1244,47 @@ export function AppShell() {
         inert={!rightPanelOpen}
       >
         {rightPanelOpen && rightPanelResizable && (
-          <div
-            className={`panel-resize-handle panel-resize-handle-vertical${rightPanelResizing ? " is-active" : ""}`}
-            role="separator"
-            aria-orientation="vertical"
-            aria-valuemin={getRightPanelWidthBounds(sidebarOpen).min}
-            aria-valuemax={getRightPanelWidthBounds(sidebarOpen).max}
-            aria-valuenow={clampRightPanelWidth(rightPanelWidth, sidebarOpen)}
-            aria-label={t("app.resizeRightPanel")}
-            title={t("app.resizeRightPanel")}
-            tabIndex={0}
-            onPointerDown={handleRightPanelResizePointerDown}
-            onKeyDown={handleRightPanelResizeKeyDown}
-          />
+          <Tooltip content={t("app.resizeRightPanel")} position="left">
+            <div
+              className={`panel-resize-handle panel-resize-handle-vertical${rightPanelResizing ? " is-active" : ""}`}
+              role="separator"
+              aria-orientation="vertical"
+              aria-valuemin={getRightPanelWidthBounds(sidebarOpen).min}
+              aria-valuemax={getRightPanelWidthBounds(sidebarOpen).max}
+              aria-valuenow={clampRightPanelWidth(rightPanelWidth, sidebarOpen)}
+              aria-label={t("app.resizeRightPanel")}
+              tabIndex={0}
+              onPointerDown={handleRightPanelResizePointerDown}
+              onKeyDown={handleRightPanelResizeKeyDown}
+            />
+          </Tooltip>
         )}
         {rightPanelOpen && (
           <>
             <div className="insp-head">
               <h3>{t("common.workbench.inspector")}</h3>
-              <button
-                className="chip insp-close"
-                onClick={() => {
-                  setRightPanelOpen(false);
-                  window.requestAnimationFrame(() => {
-                    inspectorButtonRef.current?.focus();
-                  });
-                }}
-                title={t("app.hidePreview")}
-                aria-label={t("app.hidePreview")}
-              >
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                  <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                </svg>
-              </button>
+              <Tooltip content={t("app.hidePreview")} position="bottom">
+                <button
+                  className="chip insp-close"
+                  onClick={() => {
+                    setRightPanelOpen(false);
+                    window.requestAnimationFrame(() => {
+                      inspectorButtonRef.current?.focus();
+                    });
+                  }}
+                  aria-label={t("app.hidePreview")}
+                >
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                    <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </button>
+              </Tooltip>
             </div>
             <div className="insp-tabs" role="tablist" aria-label={t("common.workbench.inspector")}>
               <button ref={(node) => { inspectorTabRefs.current.changes = node; }} id="inspector-tab-changes" role="tab" aria-controls="inspector-active-panel" aria-selected={rightPanelMode === "changes"} tabIndex={rightPanelMode === "changes" ? 0 : -1} className={rightPanelMode === "changes" ? "on" : ""} onKeyDown={(event) => handleInspectorTabKeyDown(event, "changes")} onClick={() => openInspectorTab("changes")}>{t("common.workbench.changes")}</button>
               <button ref={(node) => { inspectorTabRefs.current.files = node; }} id="inspector-tab-files" role="tab" aria-controls="inspector-active-panel" aria-selected={rightPanelMode === "files"} tabIndex={rightPanelMode === "files" ? 0 : -1} className={rightPanelMode === "files" ? "on" : ""} onKeyDown={(event) => handleInspectorTabKeyDown(event, "files")} onClick={() => openInspectorTab("files")}>{t("common.workbench.preview")}</button>
               <button ref={(node) => { inspectorTabRefs.current.git = node; }} id="inspector-tab-git" role="tab" aria-controls="inspector-active-panel" aria-selected={rightPanelMode === "git"} tabIndex={rightPanelMode === "git" ? 0 : -1} className={rightPanelMode === "git" ? "on" : ""} onKeyDown={(event) => handleInspectorTabKeyDown(event, "git")} onClick={() => openInspectorTab("git")}>{t("common.workbench.git")}</button>
+              <Tooltip content={selectedSession?.id ? t("app.workflowToggleWithCreate") : undefined} position="bottom">
               <button
                 ref={(node) => { inspectorTabRefs.current.workflow = node; }}
                 id="inspector-tab-workflow"
@@ -1288,8 +1302,8 @@ export function AppShell() {
                   }
                   openInspectorTab("workflow");
                 }}
-                title={selectedSession?.id ? t("app.workflowToggleWithCreate") : undefined}
               >{t("common.workbench.snflow")}</button>
+              </Tooltip>
               <button ref={(node) => { inspectorTabRefs.current.agents = node; }} id="inspector-tab-agents" role="tab" aria-controls="inspector-active-panel" aria-selected={rightPanelMode === "agents"} tabIndex={rightPanelMode === "agents" ? 0 : -1} className={rightPanelMode === "agents" ? "on" : ""} onKeyDown={(event) => handleInspectorTabKeyDown(event, "agents")} onClick={() => openInspectorTab("agents")}>{t("common.workbench.agents")}</button>
             </div>
             <div id="inspector-active-panel" className="insp-body" role="tabpanel" aria-labelledby={`inspector-tab-${rightPanelMode}`} tabIndex={0}>
@@ -1329,7 +1343,11 @@ export function AppShell() {
                 <div className="insp-panel-column">
                   <div className="insp-panel-toolbar insp-workflow-toolbar">
                     <span className="insp-panel-title">{t("workflow.panelTitle")}</span>
-                    {workflowCwd && <span className="insp-panel-context" title={workflowCwd}>{workflowCwd}</span>}
+                    {workflowCwd && (
+                      <Tooltip content={workflowCwd} position="bottom">
+                        <span className="insp-panel-context">{workflowCwd}</span>
+                      </Tooltip>
+                    )}
                   </div>
                   <div className="insp-panel-scroll">
                     <WorkflowPanel

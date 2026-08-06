@@ -5057,6 +5057,79 @@ html:is([data-wallpaper="on"], [data-wallpaper="image"], [data-wallpaper="gradie
   flex-shrink: 0;
 }
 
+/* Design-system tooltip (replaces native title popups). Portaled to body so
+   it escapes the top bar's overflow clipping and follows the active theme. */
+.app-tooltip {
+  position: fixed;
+  z-index: calc(var(--z-top-portal) + 10);
+  max-width: 260px;
+  padding: 5px 10px;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-popover);
+  color: var(--text-primary);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.45;
+  letter-spacing: 0.01em;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+  animation: app-tooltip-in 140ms var(--meta-ease, ease-out) both;
+}
+.app-tooltip-arrow {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  background: inherit;
+  border: 1px solid var(--border-default);
+  transform: rotate(45deg);
+}
+.app-tooltip-top .app-tooltip-arrow {
+  bottom: -4.5px;
+  left: var(--tooltip-arrow-offset, 50%);
+  margin-left: -3.5px;
+  border-top: 0;
+  border-left: 0;
+}
+.app-tooltip-bottom .app-tooltip-arrow {
+  top: -4.5px;
+  left: var(--tooltip-arrow-offset, 50%);
+  margin-left: -3.5px;
+  border-bottom: 0;
+  border-right: 0;
+}
+.app-tooltip-left .app-tooltip-arrow {
+  right: -4.5px;
+  top: 50%;
+  margin-top: -3.5px;
+  border-bottom: 0;
+  border-left: 0;
+}
+.app-tooltip-right .app-tooltip-arrow {
+  left: -4.5px;
+  top: 50%;
+  margin-top: -3.5px;
+  border-top: 0;
+  border-right: 0;
+}
+@keyframes app-tooltip-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .app-tooltip {
+    animation: none;
+  }
+}
+
 /* Session, context, and account usage read as one resource surface. */
 .app-resource-cluster {
   min-width: 0;
