@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentMessage, SessionInfo, SessionTreeNode } from "@/lib/types";
 import { MessageView } from "./MessageView";
 import { ChatInput, type ChatInputHandle } from "./ChatInput";
@@ -17,6 +17,28 @@ import { useAutoScroll } from "@/hooks/useAutoScroll";
 import { useDragDrop } from "@/hooks/useDragDrop";
 import { SessionChangesFloatingPanel } from "./SessionChangesFloatingPanel";
 import { useI18n } from "@/components/I18nProvider";
+
+/**
+ * Stable React keys for chat rows.
+ * Prefer persisted JSONL entry ids; optimistic/steer/follow-up rows without an
+ * entry id keep a WeakMap-backed local id for the message object lifetime.
+ */
+function useStableMessageKeys(messages: AgentMessage[], entryIds: string[]) {
+  const localKeyMapRef = useRef(new WeakMap<object, string>());
+  const localKeyCounterRef = useRef(0);
+
+  return useMemo(() => {
+    return messages.map((message, idx) => {
+      const entryId = entryIds[idx];
+      if (entryId) return entryId;
+      const existing = localKeyMapRef.current.get(message as object);
+      if (existing) return existing;
+      const next = `local-${++localKeyCounterRef.current}`;
+      localKeyMapRef.current.set(message as object, next);
+      return next;
+    });
+  }, [messages, entryIds]);
+}
 
 interface Props {
   session: SessionInfo | null;
@@ -198,6 +220,7 @@ export const ChatWindow = memo(function ChatWindow({ session, newSessionCwd, onA
     () => messages.filter((m) => m.role === "user" || m.role === "assistant"),
     [messages],
   );
+  const messageKeys = useStableMessageKeys(messages, entryIds);
   const toolResultsMap = useMemo(() => {
     const results = new Map<string, import("@/lib/types").ToolResultMessage>();
     for (const message of messages) {
@@ -377,6 +400,8 @@ export const ChatWindow = memo(function ChatWindow({ session, newSessionCwd, onA
               }
               let refIdx = 0;
               return messages.map((msg, idx) => {
+                // Single keyed owner per row — outer wrapper for visible messages.
+                const messageKey = messageKeys[idx] ?? `idx-${idx}`;
                 const prevAssistantEntryId =
                   msg.role === "user" && idx > 0 && messages[idx - 1].role === "assistant"
                     ? entryIds[idx - 1]
@@ -398,7 +423,6 @@ export const ChatWindow = memo(function ChatWindow({ session, newSessionCwd, onA
                 }
                 const view = (
                   <MessageView
-                    key={idx}
                     message={msg}
                     toolResults={toolResultsMap}
                     modelNames={modelNames}
@@ -412,9 +436,11 @@ export const ChatWindow = memo(function ChatWindow({ session, newSessionCwd, onA
                     prevTimestamp={idx > 0 ? (messages[idx - 1] as import("@/lib/types").AgentMessage & { timestamp?: number }).timestamp : undefined}
                   />
                 );
-                if (!isVisible) return view;
+                if (!isVisible) {
+                  return <Fragment key={messageKey}>{view}</Fragment>;
+                }
                 return (
-                  <div key={idx} ref={(el) => {
+                  <div key={messageKey} ref={(el) => {
                     messageRefs.current[currentRefIdx] = el;
                     if (idx === lastUserIdx) { (lastUserMsgRef as { current: HTMLDivElement | null }).current = el; }
                   }}>
@@ -425,7 +451,12 @@ export const ChatWindow = memo(function ChatWindow({ session, newSessionCwd, onA
             })()}
 
             {streamState.isStreaming && streamState.streamingMessage && (
-              <MessageView message={streamState.streamingMessage as AgentMessage} isStreaming modelNames={modelNames} />
+              <MessageView
+                key="streaming-assistant"
+                message={streamState.streamingMessage as AgentMessage}
+                isStreaming
+                modelNames={modelNames}
+              />
             )}
 
             {agentRunning && !streamState.streamingMessage && (

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { memo, useEffect, useMemo, useState, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vs } from "react-syntax-highlighter/dist/cjs/styles/prism";
@@ -14,6 +14,11 @@ interface MarkdownBodyProps {
   className?: string;
   isStreaming?: boolean;
 }
+
+/** Large fenced blocks stay collapsed until expanded; highlight only after expand. */
+const LARGE_CODE_LINE_THRESHOLD = 80;
+const LARGE_CODE_CHAR_THRESHOLD = 4000;
+const COLLAPSED_CODE_PREVIEW_LINES = 24;
 
 function copyText(text: string): Promise<void> {
   if (navigator.clipboard?.writeText) {
@@ -34,7 +39,19 @@ function copyText(text: string): Promise<void> {
   }
 }
 
-export function MarkdownBody({ children, className, isStreaming }: MarkdownBodyProps) {
+function markdownBodyPropsEqual(prev: MarkdownBodyProps, next: MarkdownBodyProps): boolean {
+  return (
+    prev.children === next.children &&
+    prev.className === next.className &&
+    prev.isStreaming === next.isStreaming
+  );
+}
+
+export const MarkdownBody = memo(function MarkdownBody({
+  children,
+  className,
+  isStreaming,
+}: MarkdownBodyProps) {
   const normalizedMarkdown = useMemo(() => normalizeDisplayMath(children), [children]);
 
   return (
@@ -43,36 +60,39 @@ export function MarkdownBody({ children, className, isStreaming }: MarkdownBodyP
         remarkPlugins={markdownRemarkPlugins}
         rehypePlugins={markdownRehypePlugins}
         components={{
-          code({ className, children, ...props }) {
-            const lang = className?.replace("language-", "").toLowerCase() ?? "";
-            const raw = String(children);
-            const isBlock = className?.includes("language-") || raw.includes("\n");
+          code({ className: codeClassName, children: codeChildren, ...props }) {
+            const lang = codeClassName?.replace("language-", "").toLowerCase() ?? "";
+            const raw = String(codeChildren);
+            const isBlock = codeClassName?.includes("language-") || raw.includes("\n");
             if (isBlock) {
               if (lang === "mermaid") {
                 return <MermaidBlock code={raw.replace(/\n$/, "")} isStreaming={isStreaming} />;
               }
-              return <CodeBlock code={raw.replace(/\n$/, "")} lang={lang} />;
+              return (
+                <CodeBlock
+                  code={raw.replace(/\n$/, "")}
+                  lang={lang}
+                  isStreaming={isStreaming}
+                />
+              );
             }
             return (
-              <code
-                className="markdown-inline-code"
-                {...props}
-              >
-                {children}
+              <code className="markdown-inline-code" {...props}>
+                {codeChildren}
               </code>
             );
           },
-          pre({ children }) {
-            return <>{children}</>;
+          pre({ children: preChildren }) {
+            return <>{preChildren}</>;
           },
-          table({ children }) {
+          table({ children: tableChildren }) {
             return (
               <div className="markdown-table-wrap">
-                <table>{children}</table>
+                <table>{tableChildren}</table>
               </div>
             );
           },
-          a({ href, children, ...props }) {
+          a({ href, children: linkChildren, ...props }) {
             const fileLocation = parseLocalFileHref(href);
             if (fileLocation) {
               return (
@@ -83,11 +103,15 @@ export function MarkdownBody({ children, className, isStreaming }: MarkdownBodyP
                   rel="noopener noreferrer"
                   title={fileLocation.filePath}
                 >
-                  {children}
+                  {linkChildren}
                 </a>
               );
             }
-            return <a {...props} href={href}>{children}</a>;
+            return (
+              <a {...props} href={href}>
+                {linkChildren}
+              </a>
+            );
           },
         }}
       >
@@ -95,7 +119,7 @@ export function MarkdownBody({ children, className, isStreaming }: MarkdownBodyP
       </ReactMarkdown>
     </div>
   );
-}
+}, markdownBodyPropsEqual);
 
 function normalizeDisplayMath(markdown: string): string {
   const lineBreak = markdown.includes("\r\n") ? "\r\n" : "\n";
@@ -176,7 +200,13 @@ function MermaidBlock({ code, isStreaming }: { code: string; isStreaming?: boole
     <button
       onClick={() => setShowPreview((v) => !v)}
       disabled={isStreaming}
-      title={isStreaming ? "Preview available after streaming" : (showPreview ? "Show Mermaid source" : "Preview Mermaid diagram")}
+      title={
+        isStreaming
+          ? "Preview available after streaming"
+          : showPreview
+            ? "Show Mermaid source"
+            : "Preview Mermaid diagram"
+      }
       className={["markdown-code-action", showPreview ? "is-active" : ""].filter(Boolean).join(" ")}
     >
       {showPreview ? "Source" : "Preview"}
@@ -184,7 +214,7 @@ function MermaidBlock({ code, isStreaming }: { code: string; isStreaming?: boole
   );
 
   if (!showPreview || isStreaming) {
-    return <CodeBlock code={code} lang="mermaid" headerAction={previewButton} />;
+    return <CodeBlock code={code} lang="mermaid" headerAction={previewButton} isStreaming={isStreaming} />;
   }
 
   const body =
@@ -193,10 +223,7 @@ function MermaidBlock({ code, isStreaming }: { code: string; isStreaming?: boole
     ) : !svg || renderedKey !== currentKey ? (
       <div className="mermaid-block mermaid-block-loading" aria-label="Rendering Mermaid diagram" />
     ) : (
-      <div
-        className="mermaid-block"
-        dangerouslySetInnerHTML={{ __html: svg }}
-      />
+      <div className="mermaid-block" dangerouslySetInnerHTML={{ __html: svg }} />
     );
 
   return (
@@ -210,9 +237,58 @@ function MermaidBlock({ code, isStreaming }: { code: string; isStreaming?: boole
   );
 }
 
-function CodeBlock({ code, lang, headerAction }: { code: string; lang: string; headerAction?: ReactNode }) {
+function isLargeCodeBlock(code: string): boolean {
+  if (code.length >= LARGE_CODE_CHAR_THRESHOLD) return true;
+  // Count lines without allocating a full split when clearly short.
+  if (code.length < LARGE_CODE_LINE_THRESHOLD) return false;
+  let lines = 1;
+  for (let i = 0; i < code.length; i++) {
+    if (code.charCodeAt(i) === 10 /* \n */) {
+      lines += 1;
+      if (lines >= LARGE_CODE_LINE_THRESHOLD) return true;
+    }
+  }
+  return false;
+}
+
+function countCodeLines(code: string): number {
+  if (!code) return 0;
+  let lines = 1;
+  for (let i = 0; i < code.length; i++) {
+    if (code.charCodeAt(i) === 10) lines += 1;
+  }
+  return lines;
+}
+
+function LightweightCode({ code }: { code: string }) {
+  return (
+    <pre className="markdown-code-lightweight">
+      <code className="markdown-code-lightweight-code">{code}</code>
+    </pre>
+  );
+}
+
+function CodeBlock({
+  code,
+  lang,
+  headerAction,
+  isStreaming,
+}: {
+  code: string;
+  lang: string;
+  headerAction?: ReactNode;
+  isStreaming?: boolean;
+}) {
   const { isDark } = useTheme();
   const [copied, setCopied] = useState(false);
+  const large = useMemo(() => isLargeCodeBlock(code), [code]);
+  const lineCount = useMemo(() => countCodeLines(code), [code]);
+  // Large settled blocks start collapsed; streaming always stays lightweight.
+  const [expanded, setExpanded] = useState(() => !large);
+
+  useEffect(() => {
+    if (!large) setExpanded(true);
+  }, [large]);
 
   const copy = () => {
     copyText(code).then(() => {
@@ -221,37 +297,57 @@ function CodeBlock({ code, lang, headerAction }: { code: string; lang: string; h
     });
   };
 
+  const useHighlight = !isStreaming && expanded;
+  const previewCode =
+    !expanded && large
+      ? code.split("\n").slice(0, COLLAPSED_CODE_PREVIEW_LINES).join("\n") +
+        (lineCount > COLLAPSED_CODE_PREVIEW_LINES ? "\n…" : "")
+      : code;
+
   return (
     <div className="markdown-code-block">
       <div className="markdown-code-header">
-        <span className="markdown-code-lang">{lang || "text"}</span>
+        <span className="markdown-code-lang">
+          {lang || "text"}
+          {large ? ` · ${lineCount} lines` : ""}
+        </span>
         <div className="markdown-code-actions">
           {headerAction}
-          <button
-            onClick={copy}
-            className="markdown-code-action"
-          >
+          {large && !isStreaming && (
+            <button
+              type="button"
+              onClick={() => setExpanded((v) => !v)}
+              className={["markdown-code-action", expanded ? "is-active" : ""].filter(Boolean).join(" ")}
+            >
+              {expanded ? "collapse" : "expand"}
+            </button>
+          )}
+          <button type="button" onClick={copy} className="markdown-code-action">
             {copied ? "copied" : "copy"}
           </button>
         </div>
       </div>
-      <SyntaxHighlighter
-        language={lang || "text"}
-        style={isDark ? vscDarkPlus : vs}
-        showLineNumbers
-        lineNumberStyle={{ color: "var(--text-tertiary)", fontStyle: "normal" }}
-        customStyle={{
-          margin: 0,
-          padding: "11px 13px",
-          fontSize: 12.5,
-          lineHeight: 1.62,
-          borderRadius: 0,
-          background: "color-mix(in srgb, var(--surface-app) 92%, var(--surface-panel))",
-        }}
-        codeTagProps={{ style: { fontFamily: "var(--font-mono)" } }}
-      >
-        {code}
-      </SyntaxHighlighter>
+      {useHighlight ? (
+        <SyntaxHighlighter
+          language={lang || "text"}
+          style={isDark ? vscDarkPlus : vs}
+          showLineNumbers
+          lineNumberStyle={{ color: "var(--text-tertiary)", fontStyle: "normal" }}
+          customStyle={{
+            margin: 0,
+            padding: "11px 13px",
+            fontSize: 12.5,
+            lineHeight: 1.62,
+            borderRadius: 0,
+            background: "color-mix(in srgb, var(--surface-app) 92%, var(--surface-panel))",
+          }}
+          codeTagProps={{ style: { fontFamily: "var(--font-mono)" } }}
+        >
+          {code}
+        </SyntaxHighlighter>
+      ) : (
+        <LightweightCode code={previewCode} />
+      )}
     </div>
   );
 }

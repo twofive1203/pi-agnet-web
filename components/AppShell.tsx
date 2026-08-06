@@ -2,19 +2,15 @@
 
 import { useState, useCallback, useRef, useEffect, useLayoutEffect } from "react";
 import { createPortal } from "react-dom";
+import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
 import { SessionSidebar } from "./SessionSidebar";
 import { ChatWindow } from "./ChatWindow";
 import { FileViewer } from "./FileViewer";
 import { TabBar, type Tab } from "./TabBar";
-import { ModelsConfig } from "./ModelsConfig";
-import { UsageStatsModal } from "./UsageStatsModal";
 import { ChatGptUsagePanel } from "./ChatGptUsagePanel";
 import { GrokUsagePanel } from "./GrokUsagePanel";
 import { StoredSubagentPanel, SubagentBadgeIndicator } from "./SubagentObservation";
-import { SettingsConfig } from "./SettingsConfig";
-import { WorkflowPanel } from "./WorkflowPanel";
-import { AutomationPanel } from "./AutomationPanel";
 import { WorkflowSessionWidget } from "./WorkflowSessionWidget";
 import type { WorkflowTaskDetail } from "@/lib/workflow-types";
 import type { WorkflowPhaseLabel } from "@/lib/workflow-guidance";
@@ -23,19 +19,71 @@ import { workflowTaskToChatContext, type WorkflowTaskChatContext } from "@/lib/w
 import { BranchNavigator } from "./BranchNavigator";
 import { GitPanel } from "./GitPanel";
 import { InspectorChangesPanel } from "./InspectorChangesPanel";
-import { TerminalPanel } from "./TerminalPanel";
 import { getRelativeFilePath } from "@/lib/file-paths";
 import { formatWorkspaceHeaderTitle, formatWorkspaceTitle } from "@/lib/workspace-title";
 import { ThemePicker } from "./ThemePicker";
 import Tooltip from "./Tooltip";
 import { useI18n } from "@/components/I18nProvider";
 import { useAppDialog } from "@/components/AppDialogProvider";
+import { useAutomationUnread } from "@/hooks/useAutomationUnread";
 import type { GitInfo, SessionInfo, SessionTreeNode } from "@/lib/types";
 import type { PiWebConfig } from "@/lib/pi-web-config";
 import type { ChatInputHandle } from "./ChatInput";
 import { recordSubagentClientMetric } from "@/lib/subagent-observability-client";
 import { SubagentStore } from "@/lib/subagent-store";
 import { makeTempSessionId } from "./sidebar/sidebar-utils";
+
+function PanelChunkLoading({ label }: { label: string }) {
+  return (
+    <div className="panel-chunk-loading" role="status" aria-live="polite">
+      {label}
+    </div>
+  );
+}
+
+// Settings-class surfaces stay out of the initial chat shell chunk.
+const ModelsConfig = dynamic(
+  () => import("./ModelsConfig").then((mod) => mod.ModelsConfig),
+  {
+    ssr: false,
+    loading: () => <PanelChunkLoading label="Loading models…" />,
+  },
+);
+const SettingsConfig = dynamic(
+  () => import("./SettingsConfig").then((mod) => mod.SettingsConfig),
+  {
+    ssr: false,
+    loading: () => <PanelChunkLoading label="Loading settings…" />,
+  },
+);
+const UsageStatsModal = dynamic(
+  () => import("./UsageStatsModal").then((mod) => mod.UsageStatsModal),
+  {
+    ssr: false,
+    loading: () => <PanelChunkLoading label="Loading usage…" />,
+  },
+);
+const TerminalPanel = dynamic(
+  () => import("./TerminalPanel").then((mod) => mod.TerminalPanel),
+  {
+    ssr: false,
+    loading: () => <PanelChunkLoading label="Loading terminal…" />,
+  },
+);
+const WorkflowPanel = dynamic(
+  () => import("./WorkflowPanel").then((mod) => mod.WorkflowPanel),
+  {
+    ssr: false,
+    loading: () => <PanelChunkLoading label="Loading SnFlow…" />,
+  },
+);
+const AutomationPanel = dynamic(
+  () => import("./AutomationPanel").then((mod) => mod.AutomationPanel),
+  {
+    ssr: false,
+    loading: () => <PanelChunkLoading label="Loading automation…" />,
+  },
+);
 
 const TOP_PANEL_SAFE_SELECTOR = ".app-top-aux-panel, .app-top-more-portal, .app-top-aux-tab, .branch-navigator-inline, .theme-picker-popover";
 const RIGHT_PANEL_WIDTH_STORAGE_KEY = "pi-web-right-panel-width-v2";
@@ -307,7 +355,13 @@ export function AppShell() {
   const inspectorTabRefs = useRef<Partial<Record<InspectorMode, HTMLButtonElement | null>>>({});
   const inspectorButtonRef = useRef<HTMLButtonElement>(null);
   const [automationOpen, setAutomationOpen] = useState(false);
+  // Lightweight owner keeps badge live while the heavy drawer stays code-split.
+  // While open, the drawer owns updates; keep last polled value until it reports.
+  const polledAutomationUnread = useAutomationUnread(!automationOpen);
   const [automationUnread, setAutomationUnread] = useState(0);
+  useEffect(() => {
+    if (!automationOpen) setAutomationUnread(polledAutomationUnread);
+  }, [automationOpen, polledAutomationUnread]);
   const [rightPanelWidth, setRightPanelWidth] = useState(DEFAULT_RIGHT_PANEL_WIDTH);
   const [rightPanelResizing, setRightPanelResizing] = useState(false);
   const [isDesktopLayout, setIsDesktopLayout] = useState(false);
@@ -1370,48 +1424,49 @@ export function AppShell() {
         )}
       </div>
     </div>
-    {/* Keep mounted so unread badge stays live while drawer is closed. */}
-    <div
-      id="automation-drawer"
-      className="automation-drawer-overlay"
-      hidden={!automationOpen}
-      style={{
-        display: automationOpen ? "block" : "none",
-        position: "fixed",
-        top: 0,
-        right: 0,
-        bottom: 0,
-        width: "min(480px, 100vw)",
-        zIndex: "var(--z-automation-drawer)",
-        background: "var(--bg-panel)",
-        borderLeft: "1px solid var(--border)",
-        boxShadow: "-8px 0 24px rgba(0,0,0,0.18)",
-        overflow: "auto",
-      }}
-    >
-      <AutomationPanel
-        open={automationOpen}
-        onClose={() => setAutomationOpen(false)}
-        onUnreadChange={setAutomationUnread}
-        onOpenSession={(session) => {
-          // Open/select promoted session using promotion cwd/path (not activeCwdRef synthetic empty path).
-          const now = new Date().toISOString();
-          const cwd = session.cwd || activeCwdRef.current || activeCwd || "";
-          const path = session.path || "";
-          handleSelectSession({
-            id: session.id,
-            path,
-            cwd,
-            name: session.id,
-            created: now,
-            modified: now,
-            messageCount: 0,
-            firstMessage: "",
-          });
-          setAutomationOpen(false);
+    {/* Drawer mounts only while open; unread badge is owned by useAutomationUnread when closed. */}
+    {automationOpen && (
+      <div
+        id="automation-drawer"
+        className="automation-drawer-overlay"
+        style={{
+          display: "block",
+          position: "fixed",
+          top: 0,
+          right: 0,
+          bottom: 0,
+          width: "min(480px, 100vw)",
+          zIndex: "var(--z-automation-drawer)",
+          background: "var(--bg-panel)",
+          borderLeft: "1px solid var(--border)",
+          boxShadow: "-8px 0 24px rgba(0,0,0,0.18)",
+          overflow: "auto",
         }}
-      />
-    </div>
+      >
+        <AutomationPanel
+          open={automationOpen}
+          onClose={() => setAutomationOpen(false)}
+          onUnreadChange={setAutomationUnread}
+          onOpenSession={(session) => {
+            // Open/select promoted session using promotion cwd/path (not activeCwdRef synthetic empty path).
+            const now = new Date().toISOString();
+            const cwd = session.cwd || activeCwdRef.current || activeCwd || "";
+            const path = session.path || "";
+            handleSelectSession({
+              id: session.id,
+              path,
+              cwd,
+              name: session.id,
+              created: now,
+              modified: now,
+              messageCount: 0,
+              firstMessage: "",
+            });
+            setAutomationOpen(false);
+          }}
+        />
+      </div>
+    )}
     {modelsConfigOpen && <ModelsConfig cwd={workspaceCwd ?? null} onClose={() => { setModelsConfigOpen(false); setModelsRefreshKey((k) => k + 1); }} />}
     {usageStatsOpen && (
       <UsageStatsModal cwd={activeCwd ?? selectedSession?.cwd ?? newSessionCwd} onClose={() => setUsageStatsOpen(false)} />
