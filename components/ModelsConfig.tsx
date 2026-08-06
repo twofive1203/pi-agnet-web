@@ -1001,6 +1001,7 @@ function ThinkingLevelMapEditor({
 const DEEPSEEK_COMPAT = {
   thinkingFormat: "deepseek",
   requiresReasoningContentOnAssistantMessages: true,
+  supportsDeveloperRole: false,
 } as const;
 
 function hasDeepseekCompat(model: ModelEntry): boolean {
@@ -1015,6 +1016,7 @@ function setDeepseekCompat(model: ModelEntry, enabled: boolean): ModelEntry {
   const rest = { ...model.compat };
   delete rest.thinkingFormat;
   delete rest.requiresReasoningContentOnAssistantMessages;
+  delete rest.supportsDeveloperRole;
   return { ...model, compat: Object.keys(rest).length ? rest : undefined };
 }
 
