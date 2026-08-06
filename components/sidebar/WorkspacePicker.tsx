@@ -5,12 +5,12 @@ import type { WorktreeInfo } from "@/lib/types";
 import { useAppDialog } from "@/components/AppDialogProvider";
 import { useI18n } from "@/components/I18nProvider";
 import {
-  filterCwdPickerGroups,
   shortenCwd,
   type CwdPickerRow,
   type WorktreeContextMenuState,
 } from "./sidebar-utils";
 import { DirectoryPickerDialog } from "./DirectoryPickerDialog";
+import { ProjectPickerDialog } from "./ProjectPickerDialog";
 import { WorktreeBadge } from "./WorktreeBadge";
 
 export interface WorkspacePickerProps {
@@ -53,20 +53,16 @@ export const WorkspacePicker = memo(function WorkspacePicker({
 }: WorkspacePickerProps) {
   const { t } = useI18n();
   const appDialog = useAppDialog();
-  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [projectPickerOpen, setProjectPickerOpen] = useState(false);
   const [openingFolder, setOpeningFolder] = useState(false);
   const [folderActionStatus, setFolderActionStatus] = useState<string | null>(null);
   const folderStatusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [allProjectsOpen, setAllProjectsOpen] = useState(false);
-  const [cwdSearch, setCwdSearch] = useState("");
   const [directoryPickerOpen, setDirectoryPickerOpen] = useState(false);
   const [nativePicking, setNativePicking] = useState(false);
   const [nativePickerAvailable, setNativePickerAvailable] = useState(false);
   const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false);
   const [worktreeContextMenu, setWorktreeContextMenu] = useState<WorktreeContextMenuState | null>(null);
 
-  const cwdSearchInputRef = useRef<HTMLInputElement>(null);
-  const dropdownRef = useRef<HTMLDivElement>(null);
   const workspaceMenuRef = useRef<HTMLDivElement>(null);
   const pickCapabilitiesRef = useRef<{
     preferNative: boolean;
@@ -75,36 +71,27 @@ export const WorkspacePicker = memo(function WorkspacePicker({
   } | null>(null);
   const nativePickAbortRef = useRef<AbortController | null>(null);
 
-  const resetCwdPickerView = useCallback(() => {
-    setAllProjectsOpen(false);
-    setCwdSearch("");
+  const closeProjectPicker = useCallback(() => {
+    setProjectPickerOpen(false);
   }, []);
-
-  const closeCwdPicker = useCallback(() => {
-    setDropdownOpen(false);
-    resetCwdPickerView();
-  }, [resetCwdPickerView]);
 
   // Close picker when workspace changes externally (WorkTree create, restore, etc.).
   useEffect(() => {
-    closeCwdPicker();
+    closeProjectPicker();
     setWorkspaceMenuOpen(false);
     setWorktreeContextMenu(null);
-  }, [activeCwd, closeCwdPicker]);
+  }, [activeCwd, closeProjectPicker]);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       setWorktreeContextMenu(null);
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        closeCwdPicker();
-      }
       if (workspaceMenuRef.current && !workspaceMenuRef.current.contains(e.target as Node)) {
         setWorkspaceMenuOpen(false);
       }
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
-  }, [closeCwdPicker]);
+  }, []);
 
   const showFolderStatus = useCallback((message: string, clearMs = 2500) => {
     if (folderStatusTimerRef.current) {
@@ -223,7 +210,7 @@ export const WorkspacePicker = memo(function WorkspacePicker({
     nativePickAbortRef.current = controller;
     setNativePicking(true);
     if (!options?.fromWebDialog) {
-      closeCwdPicker();
+      closeProjectPicker();
       showFolderStatus(t("sidebar.nativePickingProject"), 0);
     }
 
@@ -293,7 +280,7 @@ export const WorkspacePicker = memo(function WorkspacePicker({
     }
   }, [
     activeCwd,
-    closeCwdPicker,
+    closeProjectPicker,
     loadPickCapabilities,
     nativePicking,
     showFolderStatus,
@@ -302,11 +289,11 @@ export const WorkspacePicker = memo(function WorkspacePicker({
   ]);
 
   const openDirectoryPicker = useCallback(async () => {
-    closeCwdPicker();
+    closeProjectPicker();
     const outcome = await tryNativeDirectoryPick();
     if (outcome === "selected" || outcome === "cancelled") return;
     setDirectoryPickerOpen(true);
-  }, [closeCwdPicker, tryNativeDirectoryPick]);
+  }, [closeProjectPicker, tryNativeDirectoryPick]);
 
   const handleRequestNativeFromWeb = useCallback(() => {
     void (async () => {
@@ -323,12 +310,18 @@ export const WorkspacePicker = memo(function WorkspacePicker({
       const data = await res.json() as { cwd?: string; error?: string };
       if (data.cwd) {
         onActiveCwdChange(data.cwd);
-        closeCwdPicker();
+        closeProjectPicker();
       }
     } catch {
       // ignore
     }
-  }, [closeCwdPicker, onActiveCwdChange]);
+  }, [closeProjectPicker, onActiveCwdChange]);
+
+  const handleSelectProject = useCallback((cwd: string) => {
+    onActiveCwdChange(cwd);
+    onClearWorktreeError?.();
+    closeProjectPicker();
+  }, [closeProjectPicker, onActiveCwdChange, onClearWorktreeError]);
 
   useEffect(() => {
     return () => {
@@ -386,14 +379,10 @@ export const WorkspacePicker = memo(function WorkspacePicker({
 
   const openWorktreeAction = useCallback((kind: "delete" | "archive", cwd: string, worktree: WorktreeInfo) => {
     setWorktreeContextMenu(null);
-    closeCwdPicker();
+    closeProjectPicker();
     onWorktreeAction(kind, cwd, worktree);
-  }, [closeCwdPicker, onWorktreeAction]);
+  }, [closeProjectPicker, onWorktreeAction]);
 
-  const filteredCwdGroups = allProjectsOpen
-    ? filterCwdPickerGroups(cwdGroups, cwdSearch)
-    : cwdGroups.slice(0, 5);
-  const displayedCwdRows = filteredCwdGroups.flat();
   const selectedWorktree = activeCwd ? worktreeByCwd.get(activeCwd) : undefined;
 
   return (
@@ -506,270 +495,37 @@ export const WorkspacePicker = memo(function WorkspacePicker({
         </div>
       )}
 
-      <div ref={dropdownRef} style={{ position: "relative" }}>
-        <button
-          className={`workspace-card${activeCwd ? "" : " is-empty"}`}
-          onClick={() => {
-            if (dropdownOpen) {
-              closeCwdPicker();
-            } else {
-              resetCwdPickerView();
-              setDropdownOpen(true);
-            }
-          }}
-          aria-label={activeCwd ? t("sidebar.switchProjectCurrent", { cwd: activeCwd }) : t("sidebar.switchProject")}
-          aria-expanded={dropdownOpen}
-          onContextMenu={(e) => {
-            const worktree = activeCwd ? worktreeByCwd.get(activeCwd) : undefined;
-            if (!activeCwd || !worktree) return;
-            e.preventDefault();
-            e.stopPropagation();
-            setWorktreeContextMenu({ x: e.clientX, y: e.clientY, cwd: activeCwd, worktree });
-          }}
-
-        >
-          <span className="workspace-card-copy">
-            <strong>{workspaceTitle}</strong>
-            <span title={selectedWorktree ? `${activeCwd ?? ""}\n${t("sidebar.worktreeContextHint")}` : activeCwd ?? ""}>
-              {activeCwd
-                ? shortenCwd(activeCwd, homeDir)
-                : (suppressEmptyPlaceholder ? "" : t("sidebar.selectProjectPlaceholder"))}
-            </span>
+      <button
+        className={`workspace-card${activeCwd ? "" : " is-empty"}`}
+        onClick={() => setProjectPickerOpen(true)}
+        aria-label={activeCwd ? t("sidebar.switchProjectCurrent", { cwd: activeCwd }) : t("sidebar.switchProject")}
+        aria-haspopup="dialog"
+        aria-expanded={projectPickerOpen}
+        onContextMenu={(e) => {
+          const worktree = activeCwd ? worktreeByCwd.get(activeCwd) : undefined;
+          if (!activeCwd || !worktree) return;
+          e.preventDefault();
+          e.stopPropagation();
+          setWorktreeContextMenu({ x: e.clientX, y: e.clientY, cwd: activeCwd, worktree });
+        }}
+      >
+        <span className="workspace-card-copy">
+          <strong>{workspaceTitle}</strong>
+          <span title={selectedWorktree ? `${activeCwd ?? ""}\n${t("sidebar.worktreeContextHint")}` : activeCwd ?? ""}>
+            {activeCwd
+              ? shortenCwd(activeCwd, homeDir)
+              : (suppressEmptyPlaceholder ? "" : t("sidebar.selectProjectPlaceholder"))}
           </span>
-          <WorktreeBadge worktree={selectedWorktree} />
-          <svg className="workspace-card-chevron" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <polyline points="3 4.5 6 7.5 9 4.5" />
-          </svg>
-        </button>
-
-        {dropdownOpen && (
-          <div
-            className="session-sidebar-cwd-menu"
-            style={{
-              position: "absolute",
-              top: "calc(100% + 4px)",
-              left: 0,
-              right: 0,
-              zIndex: 100,
-              background: "var(--bg)",
-              border: "1px solid var(--border)",
-              borderRadius: 8,
-              boxShadow: "0 6px 20px rgba(0,0,0,0.10)",
-              display: "flex",
-              flexDirection: "column",
-              maxHeight: "calc(100dvh - 150px)",
-              overflow: "hidden",
-            }}
-          >
-            {allProjectsOpen && (
-              <div style={{ padding: "8px", borderBottom: "1px solid var(--border)", background: "var(--bg-subtle)", flexShrink: 0 }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 7 }}>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setAllProjectsOpen(false);
-                      setCwdSearch("");
-                    }}
-                    style={{
-                      padding: 0,
-                      background: "none",
-                      border: "none",
-                      color: "var(--accent)",
-                      cursor: "pointer",
-                      fontSize: 11,
-                      fontWeight: 600,
-                    }}
-                  >
-                    ← {t("sidebar.recentProjects")}
-                  </button>
-                  <span style={{ color: "var(--text-dim)", fontSize: 10 }}>
-                    {t("sidebar.projectCount", { count: cwdGroups.length })}
-                  </span>
-                </div>
-                <input
-                  ref={cwdSearchInputRef}
-                  type="search"
-                  aria-label={t("sidebar.searchProjectsAria")}
-                  placeholder={t("sidebar.searchProjectsPlaceholder")}
-                  value={cwdSearch}
-                  onChange={(e) => setCwdSearch(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Escape") closeCwdPicker();
-                  }}
-                  style={{
-                    width: "100%",
-                    boxSizing: "border-box",
-                    padding: "6px 8px",
-                    border: "1px solid var(--border)",
-                    borderRadius: 5,
-                    outline: "none",
-                    background: "var(--bg)",
-                    color: "var(--text)",
-                    fontFamily: "var(--font-mono)",
-                    fontSize: 11,
-                  }}
-                />
-              </div>
-            )}
-
-            <div style={{ maxHeight: allProjectsOpen ? 320 : 300, minHeight: 0, overflowY: "auto", flexShrink: 1 }}>
-              {displayedCwdRows.map((row) => {
-                const selected = row.cwd === activeCwd;
-                const isWorktree = row.kind === "worktree";
-                return (
-                  <button
-                    key={`${row.kind}:${row.cwd}`}
-                    onClick={() => {
-                      onActiveCwdChange(row.cwd);
-                      onClearWorktreeError?.();
-                      closeCwdPicker();
-                    }}
-                    onContextMenu={(e) => {
-                      if (!row.worktree) return;
-                      e.preventDefault();
-                      e.stopPropagation();
-                      setWorktreeContextMenu({ x: e.clientX, y: e.clientY, cwd: row.cwd, worktree: row.worktree });
-                    }}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 7,
-                      width: "100%",
-                      padding: isWorktree ? "7px 10px 7px 28px" : "8px 10px",
-                      background: selected ? "var(--bg-selected)" : isWorktree ? "var(--bg-subtle)" : "none",
-                      border: "none",
-                      borderBottom: "1px solid var(--border)",
-                      color: selected ? "var(--text)" : "var(--text-muted)",
-                      cursor: "pointer",
-                      textAlign: "left",
-                      fontSize: 11,
-                      fontFamily: "var(--font-mono)",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}
-                    title={row.worktree ? `${row.cwd}\n${t("sidebar.worktreeContextHint")}` : row.cwd}
-                  >
-                    {selected && (
-                      <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-                        <polyline points="1.5 5 4 7.5 8.5 2.5" />
-                      </svg>
-                    )}
-                    {!selected && isWorktree && (
-                      <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--text-dim)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-                        <path d="M2 1.5v4A2.5 2.5 0 0 0 4.5 8H8" />
-                      </svg>
-                    )}
-                    {!selected && !isWorktree && <span style={{ width: 10, flexShrink: 0 }} />}
-                    <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {shortenCwd(row.cwd, homeDir)}
-                      {row.syntheticParent && <span style={{ color: "var(--text-dim)", marginLeft: 5 }}>{t("sidebar.mainWorkspaceBadge")}</span>}
-                      {archivedOnlyCwds.has(row.cwd) && <span style={{ color: "var(--text-dim)", fontStyle: "italic", marginLeft: 5 }}>{t("sidebar.archivedWorkspaceBadge")}</span>}
-                    </span>
-                    <WorktreeBadge worktree={row.worktree} />
-                  </button>
-                );
-              })}
-              {allProjectsOpen && filteredCwdGroups.length === 0 && (
-                <div
-                  role="status"
-                  style={{ padding: "18px 12px", color: "var(--text-dim)", fontSize: 11, textAlign: "center" }}
-                >
-                  {cwdSearch.trim() ? t("sidebar.noProjectsMatch") : t("sidebar.noProjects")}
-                </div>
-              )}
-            </div>
-
-            {!allProjectsOpen && cwdGroups.length > 5 && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setAllProjectsOpen(true);
-                  setCwdSearch("");
-                  setTimeout(() => cwdSearchInputRef.current?.focus(), 0);
-                }}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: 8,
-                  width: "100%",
-                  padding: "8px 10px",
-                  background: "var(--bg-subtle)",
-                  border: "none",
-                  borderTop: "1px solid var(--border)",
-                  color: "var(--accent)",
-                  cursor: "pointer",
-                  textAlign: "left",
-                  fontSize: 11,
-                  fontWeight: 600,
-                  flexShrink: 0,
-                }}
-              >
-                <span>{t("sidebar.viewAllProjects")}</span>
-                <span style={{ color: "var(--text-dim)", fontSize: 10, fontWeight: 500 }}>
-                  {t("sidebar.projectCount", { count: cwdGroups.length })}
-                </span>
-              </button>
-            )}
-
-            <button
-              onClick={(e) => { e.stopPropagation(); void handleDefaultCwd(); }}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 7,
-                width: "100%",
-                padding: "8px 10px",
-                background: "none",
-                border: "none",
-                borderTop: displayedCwdRows.length > 0 || cwdGroups.length > 5 ? "1px solid var(--border)" : "none",
-                color: "var(--text-muted)",
-                cursor: "pointer",
-                textAlign: "left",
-                fontSize: 11,
-                flexShrink: 0,
-              }}
-            >
-              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-                <path d="M1 3A1 1 0 0 1 2 2H4L5 3.5H8.5a.5.5 0 0 1 .5.5v4a.5.5 0 0 1-.5.5h-7A.5.5 0 0 1 1 8V3Z" />
-              </svg>
-              <span>{t("sidebar.useDefaultDirectory")}</span>
-            </button>
-
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                void openDirectoryPicker();
-              }}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 7,
-                width: "100%",
-                padding: "8px 10px",
-                background: "none",
-                border: "none",
-                color: "var(--text-muted)",
-                cursor: "pointer",
-                textAlign: "left",
-                fontSize: 11,
-                flexShrink: 0,
-              }}
-            >
-              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" style={{ flexShrink: 0 }}>
-                <line x1="5" y1="1" x2="5" y2="9" />
-                <line x1="1" y1="5" x2="9" y2="5" />
-              </svg>
-              <span>{t("sidebar.addProject")}</span>
-            </button>
-          </div>
-        )}
-      </div>
+        </span>
+        <WorktreeBadge worktree={selectedWorktree} />
+        <svg className="workspace-card-chevron" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <polyline points="3 4.5 6 7.5 9 4.5" />
+        </svg>
+      </button>
 
       {worktreeContextMenu && (
         <div
-          className="sidebar-context-menu sidebar-context-menu-wide"
+          className={`sidebar-context-menu sidebar-context-menu-wide${projectPickerOpen ? " sidebar-context-menu-over-dialog" : ""}`}
           onMouseDown={(e) => e.stopPropagation()}
           style={{ left: worktreeContextMenu.x, top: worktreeContextMenu.y }}
         >
@@ -795,6 +551,25 @@ export const WorkspacePicker = memo(function WorkspacePicker({
           </button>
         </div>
       )}
+
+      <ProjectPickerDialog
+        open={projectPickerOpen}
+        activeCwd={activeCwd}
+        homeDir={homeDir}
+        cwdGroups={cwdGroups}
+        archivedOnlyCwds={archivedOnlyCwds}
+        onClose={closeProjectPicker}
+        onSelect={handleSelectProject}
+        onUseDefaultDirectory={() => {
+          void handleDefaultCwd();
+        }}
+        onAddProject={() => {
+          void openDirectoryPicker();
+        }}
+        onWorktreeContextMenu={(payload) => {
+          setWorktreeContextMenu(payload);
+        }}
+      />
 
       <DirectoryPickerDialog
         open={directoryPickerOpen}

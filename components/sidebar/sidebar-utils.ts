@@ -65,6 +65,59 @@ export function shortenCwd(cwd: string, homeDir?: string): string {
   return "…/" + parts.slice(-2).join(sep);
 }
 
+/** Home-shortened full path for picker rows (IDEA-style secondary line). */
+export function displayCwdPath(cwd: string, homeDir?: string): string {
+  if (!homeDir) return cwd;
+  if (cwd === homeDir) return "~";
+  if (cwd.startsWith(`${homeDir}/`) || cwd.startsWith(`${homeDir}\\`)) {
+    return `~${cwd.slice(homeDir.length)}`;
+  }
+  return cwd;
+}
+
+/** Folder basename used as the primary project title. */
+export function getCwdBaseName(cwd: string): string {
+  const normalized = cwd.replace(/[\\/]+$/, "");
+  if (!normalized) return cwd;
+  const parts = normalized.split(/[\\/]+/).filter(Boolean);
+  return parts[parts.length - 1] ?? normalized;
+}
+
+/** Primary label for a picker row — always the folder name, like IDEA. */
+export function getCwdPickerRowTitle(row: CwdPickerRow): string {
+  return getCwdBaseName(row.cwd);
+}
+
+/** Two-letter avatar initials inspired by IDE project chips. */
+export function getProjectInitials(name: string): string {
+  const trimmed = name.trim();
+  if (!trimmed) return "?";
+
+  if (/[\u4e00-\u9fff]/.test(trimmed)) {
+    return trimmed.slice(0, 1);
+  }
+
+  const parts = trimmed.split(/[-_\s.]+/).filter(Boolean);
+  if (parts.length >= 2) {
+    const a = parts[0][0] ?? "";
+    const b = parts[1][0] ?? "";
+    return `${a}${b}`.toUpperCase();
+  }
+
+  const compact = trimmed.replace(/[^a-zA-Z0-9]/g, "");
+  if (compact.length >= 2) return compact.slice(0, 2).toUpperCase();
+  return trimmed.slice(0, 2).toUpperCase();
+}
+
+/** Stable hue for project avatar backgrounds. */
+export function getProjectAvatarHue(seed: string): number {
+  let hash = 0;
+  for (let i = 0; i < seed.length; i += 1) {
+    hash = ((hash << 5) - hash + seed.charCodeAt(i)) | 0;
+  }
+  return Math.abs(hash) % 360;
+}
+
 export function makeTempSessionId(): string {
   return typeof crypto.randomUUID === "function"
     ? crypto.randomUUID()
@@ -140,6 +193,13 @@ export function groupCwdPickerRows(rows: CwdPickerRow[]): CwdPickerRow[][] {
   return groups;
 }
 
+function cwdPickerRowMatchesQuery(row: CwdPickerRow, normalizedQuery: string): boolean {
+  if (row.cwd.toLowerCase().includes(normalizedQuery)) return true;
+  if (getCwdPickerRowTitle(row).toLowerCase().includes(normalizedQuery)) return true;
+  const branch = row.worktree?.branch?.toLowerCase();
+  return Boolean(branch && branch.includes(normalizedQuery));
+}
+
 export function filterCwdPickerGroups(groups: CwdPickerRow[][], query: string): CwdPickerRow[][] {
   const normalizedQuery = query.trim().toLowerCase();
   if (!normalizedQuery) return groups;
@@ -147,9 +207,9 @@ export function filterCwdPickerGroups(groups: CwdPickerRow[][], query: string): 
   return groups.flatMap((group) => {
     const [project, ...worktrees] = group;
     if (!project) return [];
-    if (project.cwd.toLowerCase().includes(normalizedQuery)) return [group];
+    if (cwdPickerRowMatchesQuery(project, normalizedQuery)) return [group];
     const matchingWorktrees = worktrees.filter((row) =>
-      row.cwd.toLowerCase().includes(normalizedQuery)
+      cwdPickerRowMatchesQuery(row, normalizedQuery)
     );
     return matchingWorktrees.length > 0 ? [[project, ...matchingWorktrees]] : [];
   });

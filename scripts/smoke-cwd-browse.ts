@@ -69,9 +69,16 @@ function checkWiring(): void {
 
   const picker = readFileSync(join(ROOT, "components", "sidebar", "WorkspacePicker.tsx"), "utf8");
   assert(picker.includes("DirectoryPickerDialog"), "workspace picker must mount directory picker dialog");
-  assert(picker.includes('t("sidebar.addProject")'), "workspace picker must expose add-project entry");
+  assert(picker.includes("ProjectPickerDialog"), "workspace picker must mount project picker dialog");
+  assert(picker.includes("setProjectPickerOpen(true)"), "workspace card opens project picker modal");
   assert(picker.includes("tryNativeDirectoryPick"), "add-project prefers native picker when local");
   assert(picker.includes('fetch("/api/cwd/pick-native"'), "add-project probes native picker capabilities");
+
+  const projectDialog = readFileSync(join(ROOT, "components", "sidebar", "ProjectPickerDialog.tsx"), "utf8");
+  assert(projectDialog.includes("createPortal"), "project dialog must portal to document body");
+  assert(projectDialog.includes('t("sidebar.addProject")'), "project dialog must expose add-project entry");
+  assert(projectDialog.includes("filterCwdPickerGroups"), "project dialog must support path search");
+  assert(projectDialog.includes("onSelect"), "project dialog must select cwd on row click");
 
   const dialog = readFileSync(join(ROOT, "components", "sidebar", "DirectoryPickerDialog.tsx"), "utf8");
   assert(dialog.includes('fetch(`/api/cwd/browse'), "dialog must load directories from browse API");
