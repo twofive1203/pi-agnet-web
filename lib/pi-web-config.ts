@@ -75,6 +75,13 @@ export interface PiWebTerminalConfig {
 
 export interface PiWebGrokConfig {
   usagePanelEnabled: boolean;
+  autoRefreshEnabled: boolean;
+  refreshCycleIntervalSeconds: number;
+  refreshCycleSaltMinSeconds: number;
+  refreshCycleSaltMaxSeconds: number;
+  refreshAccountIntervalSeconds: number;
+  refreshAccountSaltMinSeconds: number;
+  refreshAccountSaltMaxSeconds: number;
 }
 
 export type PiWebBundledExtensionsConfig = Record<BundledPiExtensionId, boolean>;
@@ -221,6 +228,13 @@ export const DEFAULT_PI_WEB_CONFIG: PiWebConfig = {
   },
   grok: {
     usagePanelEnabled: false,
+    autoRefreshEnabled: false,
+    refreshCycleIntervalSeconds: 1800,
+    refreshCycleSaltMinSeconds: 0,
+    refreshCycleSaltMaxSeconds: 120,
+    refreshAccountIntervalSeconds: 20,
+    refreshAccountSaltMinSeconds: 0,
+    refreshAccountSaltMaxSeconds: 15,
   },
   bundledExtensions: {
     ...DEFAULT_BUNDLED_PI_EXTENSION_ENABLEMENT,
@@ -389,6 +403,13 @@ function normalizePiWebConfig(raw: unknown): PiWebConfig {
     },
     grok: {
       usagePanelEnabled: readBoolean(grok.usagePanelEnabled, defaults.grok.usagePanelEnabled),
+      autoRefreshEnabled: readBoolean(grok.autoRefreshEnabled, defaults.grok.autoRefreshEnabled),
+      refreshCycleIntervalSeconds: readInteger(grok.refreshCycleIntervalSeconds, defaults.grok.refreshCycleIntervalSeconds),
+      refreshCycleSaltMinSeconds: readInteger(grok.refreshCycleSaltMinSeconds, defaults.grok.refreshCycleSaltMinSeconds),
+      refreshCycleSaltMaxSeconds: readInteger(grok.refreshCycleSaltMaxSeconds, defaults.grok.refreshCycleSaltMaxSeconds),
+      refreshAccountIntervalSeconds: readInteger(grok.refreshAccountIntervalSeconds, defaults.grok.refreshAccountIntervalSeconds),
+      refreshAccountSaltMinSeconds: readInteger(grok.refreshAccountSaltMinSeconds, defaults.grok.refreshAccountSaltMinSeconds),
+      refreshAccountSaltMaxSeconds: readInteger(grok.refreshAccountSaltMaxSeconds, defaults.grok.refreshAccountSaltMaxSeconds),
     },
     bundledExtensions: {
       "pi-subagents": readBoolean(bundledExtensions["pi-subagents"], defaults.bundledExtensions["pi-subagents"]),
@@ -604,8 +625,17 @@ export function validatePiWebGrokConfig(value: unknown): PiWebGrokConfig {
   if (!isRecord(value)) {
     throw new PiWebConfigValidationError("grok config must be an object");
   }
+  const cycleSalt = requireSaltRange(value.refreshCycleSaltMinSeconds, value.refreshCycleSaltMaxSeconds, "grok.refreshCycleSaltMinSeconds", "grok.refreshCycleSaltMaxSeconds", 3600);
+  const accountSalt = requireSaltRange(value.refreshAccountSaltMinSeconds, value.refreshAccountSaltMaxSeconds, "grok.refreshAccountSaltMinSeconds", "grok.refreshAccountSaltMaxSeconds", 300);
   return {
     usagePanelEnabled: requireBoolean(value.usagePanelEnabled, "grok.usagePanelEnabled"),
+    autoRefreshEnabled: requireBoolean(value.autoRefreshEnabled, "grok.autoRefreshEnabled"),
+    refreshCycleIntervalSeconds: requireIntegerInRange(value.refreshCycleIntervalSeconds, "grok.refreshCycleIntervalSeconds", 300, 86400),
+    refreshCycleSaltMinSeconds: cycleSalt.min,
+    refreshCycleSaltMaxSeconds: cycleSalt.max,
+    refreshAccountIntervalSeconds: requireIntegerInRange(value.refreshAccountIntervalSeconds, "grok.refreshAccountIntervalSeconds", 5, 3600),
+    refreshAccountSaltMinSeconds: accountSalt.min,
+    refreshAccountSaltMaxSeconds: accountSalt.max,
   };
 }
 

@@ -72,6 +72,8 @@ export const panelsZh = {
     used: "已用",
     remaining: "剩余",
     reset: "重置",
+    fixLockConfirm:
+      "风险提示：修复会删除当前 Grok 自动刷新锁。如果另一个健康的蜗牛派进程仍在运行，可能短时间产生重复刷新。确认只在刷新器明显卡住或锁文件 stale 时继续？",
   },
   extensions: {
     title: "扩展",
@@ -238,6 +240,8 @@ export const panelsEn = {
     used: "Used",
     remaining: "Remaining",
     reset: "Reset",
+    fixLockConfirm:
+      "Warning: fixing will delete the current Grok auto-refresh lock. If another healthy Snail Pi process is still running, duplicate refreshes may occur briefly. Continue only when the refresher is clearly stuck or the lock file is stale?",
   },
   extensions: {
     title: "Extensions",

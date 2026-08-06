@@ -140,8 +140,11 @@ export const settingsZh = {
   accountSaltMax: "账号间随机盐最大（秒）",
   accountSaltMaxHint: "刷新下一个账号前额外随机等待的上限，需大于等于最小值。",
   grokPanelEnable:
-    "开启后顶部右侧会显示当前 Grok CLI 用量面板入口。仅手动刷新，打开时先显示上次成功结果。需要 Grok CLI 登录。",
+    "开启后顶部右侧会显示当前 Grok CLI 用量面板入口。打开时先显示上次成功结果；可手动刷新，也可开启下方后台自动刷新。需要 xAI / Grok CLI 登录。",
   grokUsagePanel: "Grok 用量悬浮面板",
+  grokAutoRefresh: "后台自动刷新所有账号",
+  grokAutoRefreshHint:
+    "开启后由后端刷新器按下面的节奏刷新所有已保存 xAI / Grok CLI 账号的周用量；不会在每个浏览器标签页里各自轮询。",
   editorImpl: "编辑器实现",
   editorImplHint: "当前仅支持 Monaco；后续新增编辑器时会在这里切换。",
   saveFileShortcut: "保存文件 · Cmd/Ctrl+S",
@@ -359,7 +362,9 @@ export const settingsZh = {
     "文件锁过期判断跟随配置：锁超过约 2 × 总刷新间隔未更新时，启动器会把它视为 stale 并尝试接管。",
 
   // Grok section
-  grokDescription: "Grok CLI 用量面板配置。保存到",
+  grokDescription: "Grok CLI 用量面板与后台自动刷新配置。保存到",
+  grokLockInfo:
+    "文件锁过期判断跟随配置：锁超过约 2 × 总刷新间隔未更新时，启动器会把它视为 stale 并尝试接管。",
 
   // Editor section
   editorDescription: "控制文件面板的编辑器实现和快捷键。保存到",
@@ -625,8 +630,11 @@ export const settingsEn = {
   accountSaltMax: "Account random salt max (seconds)",
   accountSaltMaxHint: "Upper bound of extra random wait before the next account (≥ min).",
   grokPanelEnable:
-    "Shows a Grok CLI usage entry in the top-right. Manual refresh only; opens with the last successful result. Requires Grok CLI login.",
+    "Shows a Grok CLI usage entry in the top-right. Opens with the last successful result; supports manual refresh and optional backend auto-refresh. Requires xAI / Grok CLI login.",
   grokUsagePanel: "Grok usage panel",
+  grokAutoRefresh: "Auto-refresh all accounts in the background",
+  grokAutoRefreshHint:
+    "Backend refresher cycles through saved xAI / Grok CLI accounts for weekly usage. Browsers do not each poll independently.",
   editorImpl: "Editor implementation",
   editorImplHint: "Monaco only for now; future editors will switch here.",
   saveFileShortcut: "Save file · Cmd/Ctrl+S",
@@ -854,7 +862,9 @@ export const settingsEn = {
     "Lock expiry follows config: if a lock is not updated for ~2× the refresh cycle, the launcher treats it as stale and attempts to take over.",
 
   // Grok section
-  grokDescription: "Grok CLI usage panel config. Saved to",
+  grokDescription: "Grok CLI usage panel and backend auto-refresh config. Saved to",
+  grokLockInfo:
+    "Lock expiry follows config: if a lock is not updated for ~2× the refresh cycle, the launcher treats it as stale and attempts to take over.",
 
   // Editor section
   editorDescription:

@@ -828,6 +828,37 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
                       checked={grok?.usagePanelEnabled ?? false}
                       onChange={(usagePanelEnabled) => updateGrok({ usagePanelEnabled })}
                     />
+                    <ToggleField
+                      label={t("settings.grokAutoRefresh")}
+                      description={t("settings.grokAutoRefreshHint")}
+                      checked={grok?.autoRefreshEnabled ?? false}
+                      onChange={(autoRefreshEnabled) => updateGrok({ autoRefreshEnabled })}
+                    />
+                    <div className="settings-grid">
+                      <Field label={t("settings.cycleInterval")} description={t("settings.cycleIntervalHint")}>
+                        <SettingsInput type="number" min={300} step={60} value={grok?.refreshCycleIntervalSeconds ?? 1800} onChange={(e) => updateGrok({ refreshCycleIntervalSeconds: Number.parseInt(e.target.value || "0", 10) })} />
+                      </Field>
+                      <Field label={t("settings.accountInterval")} description={t("settings.accountIntervalHint")}>
+                        <SettingsInput type="number" min={5} step={1} value={grok?.refreshAccountIntervalSeconds ?? 20} onChange={(e) => updateGrok({ refreshAccountIntervalSeconds: Number.parseInt(e.target.value || "0", 10) })} />
+                      </Field>
+                    </div>
+                    <div className="settings-grid">
+                      <Field label={t("settings.cycleSaltMin")} description={t("settings.cycleSaltMinHint")}>
+                        <SettingsInput type="number" min={0} step={1} value={grok?.refreshCycleSaltMinSeconds ?? 0} onChange={(e) => updateGrok({ refreshCycleSaltMinSeconds: Number.parseInt(e.target.value || "0", 10) })} />
+                      </Field>
+                      <Field label={t("settings.cycleSaltMax")} description={t("settings.cycleSaltMaxHint")}>
+                        <SettingsInput type="number" min={0} step={1} value={grok?.refreshCycleSaltMaxSeconds ?? 120} onChange={(e) => updateGrok({ refreshCycleSaltMaxSeconds: Number.parseInt(e.target.value || "0", 10) })} />
+                      </Field>
+                    </div>
+                    <div className="settings-grid">
+                      <Field label={t("settings.accountSaltMin")} description={t("settings.accountSaltMinHint")}>
+                        <SettingsInput type="number" min={0} step={1} value={grok?.refreshAccountSaltMinSeconds ?? 0} onChange={(e) => updateGrok({ refreshAccountSaltMinSeconds: Number.parseInt(e.target.value || "0", 10) })} />
+                      </Field>
+                      <Field label={t("settings.accountSaltMax")} description={t("settings.accountSaltMaxHint")}>
+                        <SettingsInput type="number" min={0} step={1} value={grok?.refreshAccountSaltMaxSeconds ?? 15} onChange={(e) => updateGrok({ refreshAccountSaltMaxSeconds: Number.parseInt(e.target.value || "0", 10) })} />
+                      </Field>
+                    </div>
+                    <SettingsNotice>{t("settings.grokLockInfo")}</SettingsNotice>
                   </div>
                 ) : section === "terminal" ? (
                   <div className="settings-section">

@@ -6,6 +6,13 @@ import {
   fetchGrokBillingPayloads,
   GrokBillingPayloadError,
 } from "@/lib/grok-billing-fetch";
+import {
+  listOAuthAccounts,
+  readOAuthAccountCredential,
+  saveOAuthAccountCredential,
+  updateOAuthAccountQuotaCache,
+  type OAuthAccountQuotaCache,
+} from "@/lib/oauth-accounts";
 
 const GROK_PROVIDER_ID = "grok-cli";
 const XAI_PROVIDER_ID = "xai";
@@ -115,11 +122,10 @@ function resolveTokenEndpoint(credential: GrokStoredOAuthCredential): string {
 }
 
 /**
- * Refresh a stored grok-cli OAuth credential without loading the pi-grok-cli package.
+ * Exchange a Grok refresh token for a fresh access token without loading pi-grok-cli.
  * Billing only needs a valid access token; OAuth login remains owned by the extension.
  */
-async function refreshStoredGrokCredential(
-  providerId: GrokAuthProviderId,
+async function refreshGrokOAuthCredential(
   credential: GrokStoredOAuthCredential,
 ): Promise<GrokStoredOAuthCredential | null> {
   if (!credential.refresh) return null;
@@ -157,7 +163,7 @@ async function refreshStoredGrokCredential(
       + (Number.isFinite(expiresIn) ? expiresIn : 3600) * 1000
       - GROK_TOKEN_REFRESH_SKEW_MS;
 
-    const next: GrokStoredOAuthCredential = {
+    return {
       ...credential,
       type: "oauth",
       access,
@@ -167,22 +173,229 @@ async function refreshStoredGrokCredential(
       tokenType: typeof payload.token_type === "string" ? payload.token_type : credential.tokenType ?? "Bearer",
       idToken: typeof payload.id_token === "string" ? payload.id_token : credential.idToken,
     };
-
-    // Persist refreshed tokens so subsequent billing/UI reads stay in sync with auth.json.
-    await FileCredentialStore.create().modify(providerId, async () => ({
-      type: "oauth",
-      access: next.access,
-      refresh: next.refresh ?? credential.refresh ?? "",
-      expires: next.expires ?? Date.now(),
-      tokenEndpoint: next.tokenEndpoint,
-      discovery: next.discovery,
-      idToken: next.idToken,
-      tokenType: next.tokenType,
-      baseUrl: next.baseUrl,
-    })).catch(() => undefined);
-    return next;
   } catch {
     return null;
+  }
+}
+
+/**
+ * Refresh the active auth.json credential under its original provider key.
+ */
+async function refreshStoredGrokCredential(
+  providerId: GrokAuthProviderId,
+  credential: GrokStoredOAuthCredential,
+): Promise<GrokStoredOAuthCredential | null> {
+  const next = await refreshGrokOAuthCredential(credential);
+  if (!next) return null;
+
+  // Persist refreshed tokens so subsequent billing/UI reads stay in sync with auth.json.
+  await FileCredentialStore.create().modify(providerId, async () => ({
+    type: "oauth",
+    access: next.access,
+    refresh: next.refresh ?? credential.refresh ?? "",
+    expires: next.expires ?? Date.now(),
+    tokenEndpoint: next.tokenEndpoint,
+    discovery: next.discovery,
+    idToken: next.idToken,
+    tokenType: next.tokenType,
+    baseUrl: next.baseUrl,
+  })).catch(() => undefined);
+  return next;
+}
+
+function isGrokAuthProviderId(value: string): value is GrokAuthProviderId {
+  return (GROK_AUTH_PROVIDER_IDS as readonly string[]).includes(value);
+}
+
+function weeklyQuotaCacheFromResult(result: GrokUsageResult): OAuthAccountQuotaCache {
+  const weekly = result.weekly;
+  return {
+    success: result.success,
+    // Store as seven_day so account pies share Codex's "7d" label path.
+    tiers: weekly
+      ? [{
+        name: "seven_day",
+        utilization: Math.min(Math.max(weekly.creditUsagePercent, 0), 100),
+        resetsAt: weekly.billingPeriodEnd,
+      }]
+      : [],
+    error: result.error,
+    queriedAt: result.queriedAt,
+    resetCreditsAvailableCount: null,
+    resetCredits: [],
+    resetCreditsError: null,
+  };
+}
+
+async function cacheWeeklyUsageToAccount(
+  providerId: GrokAuthProviderId,
+  accountId: string | null | undefined,
+  result: GrokUsageResult,
+): Promise<void> {
+  const normalizedAccountId = typeof accountId === "string" ? accountId.trim() : "";
+  if (!normalizedAccountId) return;
+  // Always persist the attempt (success or error) so account rows leave the
+  // "No quota cache" empty state after a manual refresh.
+  try {
+    await updateOAuthAccountQuotaCache(providerId, normalizedAccountId, weeklyQuotaCacheFromResult(result));
+  } catch {
+    // Best-effort only; callers still return the live result to the browser.
+  }
+}
+
+async function cacheWeeklyUsageToActiveAccount(
+  providerId: GrokAuthProviderId,
+  result: GrokUsageResult,
+): Promise<void> {
+  try {
+    const list = await listOAuthAccounts(providerId);
+    await cacheWeeklyUsageToAccount(providerId, list.activeAccountId, result);
+  } catch {
+    // Account-store writes are best-effort and must not fail the billing response.
+  }
+}
+
+function accountUsageFromQuotaCache(
+  providerId: GrokAuthProviderId,
+  quotaCache: OAuthAccountQuotaCache | undefined,
+): GrokUsageResult {
+  if (!quotaCache) {
+    return {
+      provider: GROK_PROVIDER_ID,
+      configured: true,
+      success: false,
+      source: "cache",
+      monthly: null,
+      weekly: null,
+      error: "Not queried yet. Click refresh to query this account's weekly usage.",
+      queriedAt: null,
+      envBypass: false,
+    };
+  }
+
+  const weeklyTier = quotaCache.tiers.find((tier) => tier.name === "seven_day" || tier.name === "weekly");
+  const weekly = weeklyTier && typeof weeklyTier.resetsAt === "string"
+    ? {
+      creditUsagePercent: weeklyTier.utilization,
+      billingPeriodEnd: weeklyTier.resetsAt,
+    }
+    : null;
+
+  return {
+    provider: GROK_PROVIDER_ID,
+    configured: true,
+    success: quotaCache.success && Boolean(weekly),
+    source: "cache",
+    monthly: null,
+    weekly,
+    error: quotaCache.error,
+    queriedAt: quotaCache.queriedAt,
+    envBypass: false,
+  };
+}
+
+/**
+ * Resolve a saved non-active (or active) Grok account token without touching auth.json
+ * unless the caller later activates the account.
+ */
+async function resolveAccountToken(
+  providerId: GrokAuthProviderId,
+  accountId: string,
+): Promise<{ token: string; baseUrl: string } | { error: string }> {
+  let credential;
+  try {
+    credential = await readOAuthAccountCredential(providerId, accountId);
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : String(error) };
+  }
+
+  if (!isGrokStoredOAuthCredential(credential)) {
+    return { error: "Saved Grok account credential is invalid." };
+  }
+
+  let usable: GrokStoredOAuthCredential = credential;
+  if (!isTokenFresh(credential.expires)) {
+    const refreshed = await refreshGrokOAuthCredential(credential);
+    if (!refreshed?.access) {
+      // Do not fall back to an already-expired access token: billing will 401 and the
+      // UI looks like an empty cache hit rather than a credential problem.
+      return {
+        error: "OAuth token expired and refresh failed. Re-login or re-add this account in Models → xAI / Grok CLI.",
+      };
+    }
+    usable = refreshed;
+    // Keep only the account-store credential in sync for non-active accounts.
+    await saveOAuthAccountCredential(providerId, {
+      ...refreshed,
+      accountId,
+    }).catch(() => undefined);
+  }
+
+  if (!usable.access) return { error: "OAuth token unavailable. Please re-login this account." };
+
+  const baseUrl = typeof usable.baseUrl === "string" && usable.baseUrl.trim()
+    ? usable.baseUrl.trim().replace(/\/+$/, "")
+    : resolveBaseUrl(providerId);
+
+  return { token: usable.access, baseUrl };
+}
+
+async function fetchBillingUsage(
+  token: string,
+  baseUrl: string,
+  envBypass: boolean,
+): Promise<GrokUsageResult> {
+  const headers: Record<string, string> = {
+    authorization: `Bearer ${token}`,
+    "x-xai-token-auth": "xai-grok-cli",
+    accept: "application/json",
+  };
+
+  try {
+    // Monthly and optional weekly billing start concurrently. Monthly remains
+    // authoritative for the shared cache; weekly is what account rows display.
+    const { monthlyResponse, monthlyPayload, weeklyPayload } = await fetchGrokBillingPayloads(
+      baseUrl,
+      headers,
+      GROK_BILLING_TIMEOUT_MS,
+    );
+
+    if (!monthlyResponse.ok) {
+      // Keep browser-facing errors free of raw upstream bodies (may contain sensitive detail).
+      if (monthlyResponse.status === 401 || monthlyResponse.status === 403) {
+        return errorResult(true, "Grok CLI token invalid or expired. Re-login via Models → Grok CLI / xAI.");
+      }
+      return errorResult(true, `xAI billing API error (HTTP ${monthlyResponse.status}). Please retry later.`);
+    }
+
+    let monthly: GrokMonthlyUsage;
+    try {
+      monthly = parseMonthlyUsage(monthlyPayload);
+    } catch (parseError) {
+      return errorResult(true, `Invalid billing response: ${errorMessage(parseError)}`);
+    }
+
+    const weekly = parseWeeklyUsage(weeklyPayload);
+    return {
+      provider: GROK_PROVIDER_ID,
+      configured: true,
+      success: true,
+      source: "live",
+      monthly,
+      weekly,
+      error: null,
+      queriedAt: Date.now(),
+      envBypass,
+    };
+  } catch (fetchError) {
+    if (fetchError instanceof GrokBillingPayloadError) {
+      return errorResult(true, `Invalid billing response: ${fetchError.message}`);
+    }
+    if (typeof (fetchError as { name?: string }).name === "string" &&
+        (fetchError as { name: string }).name === "TimeoutError") {
+      return errorResult(true, "xAI billing 请求超时，请检查网络连接后重试。");
+    }
+    return errorResult(true, `Network error: ${errorMessage(fetchError)}`);
   }
 }
 
@@ -389,7 +602,7 @@ function cacheResult(cache: GrokUsageCache): GrokUsageResult {
 }
 
 /**
- * 获取 Grok CLI 用量。
+ * 获取当前活跃 Grok / xAI 订阅用量。
  *
  * @param mode "cache" 仅返回 last-known 缓存；"refresh" 从 billing 端点实时查询。
  * @returns 脱敏后的用量结果。
@@ -412,67 +625,72 @@ export async function getGrokUsage(mode: "cache" | "refresh" = "cache"): Promise
     };
   }
 
-  // Refresh mode: live billing fetch
+  // Refresh mode: live billing fetch for the active credential.
   const resolved = await resolveToken();
   if (!resolved) return notConfiguredResult();
 
   const { token, envBypass, providerId } = resolved;
-  const baseUrl = resolveBaseUrl(providerId);
-  const headers: Record<string, string> = {
-    authorization: `Bearer ${token}`,
-    "x-xai-token-auth": "xai-grok-cli",
-    accept: "application/json",
-  };
+  const result = await fetchBillingUsage(token, resolveBaseUrl(providerId), envBypass);
 
-  try {
-    // Monthly and optional weekly billing start concurrently. Monthly remains
-    // authoritative; weekly failure degrades to null without extending latency.
-    const { monthlyResponse, monthlyPayload, weeklyPayload } = await fetchGrokBillingPayloads(
-      baseUrl,
-      headers,
-      GROK_BILLING_TIMEOUT_MS,
-    );
-
-    if (!monthlyResponse.ok) {
-      // Keep browser-facing errors free of raw upstream bodies (may contain sensitive detail).
-      if (monthlyResponse.status === 401 || monthlyResponse.status === 403) {
-        return errorResult(true, "Grok CLI token invalid or expired. Re-login via Models → Grok CLI.");
-      }
-      return errorResult(true, `xAI billing API error (HTTP ${monthlyResponse.status}). Please retry later.`);
-    }
-
-    let monthly: GrokMonthlyUsage;
-    try {
-      monthly = parseMonthlyUsage(monthlyPayload);
-    } catch (parseError) {
-      return errorResult(true, `Invalid billing response: ${errorMessage(parseError)}`);
-    }
-
-    const weekly = parseWeeklyUsage(weeklyPayload);
-    const result: GrokUsageResult = {
-      provider: GROK_PROVIDER_ID,
-      configured: true,
-      success: true,
-      source: "live",
-      monthly,
-      weekly,
-      error: null,
-      queriedAt: Date.now(),
-      envBypass,
-    };
-
-    // Write cache on success
+  if (result.success && result.monthly) {
     writeCache(result);
-
-    return result;
-  } catch (fetchError) {
-    if (fetchError instanceof GrokBillingPayloadError) {
-      return errorResult(true, `Invalid billing response: ${fetchError.message}`);
-    }
-    if (typeof (fetchError as { name?: string }).name === "string" &&
-        (fetchError as { name: string }).name === "TimeoutError") {
-      return errorResult(true, "xAI billing 请求超时，请检查网络连接后重试。");
-    }
-    return errorResult(true, `Network error: ${errorMessage(fetchError)}`);
+    // Keep the active saved-account weekly pie in sync with the shared usage panel.
+    await cacheWeeklyUsageToActiveAccount(providerId, result);
   }
+
+  return result;
+}
+
+/**
+ * 获取指定已保存 Grok / xAI 账号的用量。
+ * cache 模式只读账号 metadata 中的 weekly quotaCache；refresh 会实时查询并回写。
+ */
+export async function getGrokAccountUsage(
+  provider: string,
+  accountId: string,
+  mode: "cache" | "refresh" = "refresh",
+): Promise<GrokUsageResult> {
+  if (!isGrokAuthProviderId(provider)) {
+    return errorResult(false, `Unsupported Grok account provider: ${provider}`);
+  }
+
+  const normalizedAccountId = accountId.trim();
+  if (!normalizedAccountId) {
+    return errorResult(false, "accountId is required");
+  }
+
+  if (mode === "cache") {
+    try {
+      const list = await listOAuthAccounts(provider);
+      const account = list.accounts.find((entry) => entry.accountId === normalizedAccountId);
+      if (!account) {
+        return errorResult(false, "Saved Grok account not found");
+      }
+      return accountUsageFromQuotaCache(provider, account.quotaCache);
+    } catch (error) {
+      return errorResult(false, error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  const resolved = await resolveAccountToken(provider, normalizedAccountId);
+  if ("error" in resolved) {
+    const failed = errorResult(true, resolved.error);
+    await cacheWeeklyUsageToAccount(provider, normalizedAccountId, failed);
+    return failed;
+  }
+
+  const result = await fetchBillingUsage(resolved.token, resolved.baseUrl, false);
+  await cacheWeeklyUsageToAccount(provider, normalizedAccountId, result);
+
+  // Active-account live refresh also keeps the shared top-bar/Models cache current.
+  try {
+    const list = await listOAuthAccounts(provider);
+    if (result.success && result.monthly && list.activeAccountId === normalizedAccountId) {
+      writeCache(result);
+    }
+  } catch {
+    // Ignore shared-cache sync failures for inactive account queries.
+  }
+
+  return result;
 }

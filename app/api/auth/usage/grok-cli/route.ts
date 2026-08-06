@@ -1,13 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getGrokUsage } from "@/lib/grok-usage";
+import { getGrokAccountUsage, getGrokUsage } from "@/lib/grok-usage";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-export async function GET(request: NextRequest) {
-  const mode = request.nextUrl.searchParams.get("mode");
-  const refresh = mode === "refresh";
+const NO_STORE_HEADERS = {
+  "Cache-Control": "no-store, max-age=0",
+};
 
-  const result = await getGrokUsage(refresh ? "refresh" : "cache");
-  return NextResponse.json(result);
+export async function GET(request: NextRequest) {
+  const mode = request.nextUrl.searchParams.get("mode") === "refresh" ? "refresh" : "cache";
+  const accountId = request.nextUrl.searchParams.get("accountId")?.trim() || "";
+  const provider = request.nextUrl.searchParams.get("provider")?.trim() || "grok-cli";
+
+  if (accountId) {
+    const result = await getGrokAccountUsage(provider, accountId, mode);
+    return NextResponse.json(result, { headers: NO_STORE_HEADERS });
+  }
+
+  const result = await getGrokUsage(mode);
+  return NextResponse.json(result, { headers: NO_STORE_HEADERS });
 }

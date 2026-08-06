@@ -16,12 +16,38 @@ export const QUOTA_TIER_LABELS: Record<string, string> = {
   seven_day: "7d",
 };
 
-export function isKnownQuotaTier(tier: QuotaDisplayTier): boolean {
-  return tier.name in QUOTA_TIER_LABELS;
+/** Canonical Grok weekly window tier — same label path as Codex `seven_day` → "7d". */
+export const GROK_WEEKLY_TIER_NAME = "seven_day";
+
+/** Older Grok account caches wrote `weekly`; normalize to `seven_day` on read. */
+const LEGACY_GROK_WEEKLY_TIER_NAME = "weekly";
+
+function canonicalQuotaTierName(name: string): string {
+  return name === LEGACY_GROK_WEEKLY_TIER_NAME ? GROK_WEEKLY_TIER_NAME : name;
 }
 
+export function isKnownQuotaTier(tier: QuotaDisplayTier): boolean {
+  return canonicalQuotaTierName(tier.name) in QUOTA_TIER_LABELS;
+}
+
+/**
+ * Filter to displayable tiers and normalize legacy Grok `weekly` → `seven_day`
+ * so GPT/Grok share the same "7d" label path.
+ */
 export function knownQuotaTiers<T extends QuotaDisplayTier>(tiers: T[]): T[] {
-  return tiers.filter((tier) => isKnownQuotaTier(tier));
+  const out: T[] = [];
+  const seen = new Set<string>();
+  for (const tier of tiers) {
+    const name = canonicalQuotaTierName(tier.name);
+    if (!(name in QUOTA_TIER_LABELS) || seen.has(name)) continue;
+    seen.add(name);
+    out.push(name === tier.name ? tier : { ...tier, name });
+  }
+  return out;
+}
+
+export function findWeeklyQuotaTier<T extends QuotaDisplayTier>(tiers: T[]): T | undefined {
+  return knownQuotaTiers(tiers).find((tier) => tier.name === GROK_WEEKLY_TIER_NAME);
 }
 
 /**

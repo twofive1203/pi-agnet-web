@@ -1590,6 +1590,9 @@ function GrokUsageView({
 }) {
   const monthly = result?.monthly ?? null;
   const monthlyUtilization = monthly?.utilization ?? null;
+  const weekly = result?.weekly ?? null;
+  const weeklyUtilization = weekly?.creditUsagePercent ?? null;
+  const weeklyCountdown = weekly ? formatResetCountdown(weekly.billingPeriodEnd) : null;
 
   return (
     <div style={{ border: "1px solid var(--border)", borderRadius: 6, background: "var(--bg-panel)", padding: 12, display: "flex", flexDirection: "column", gap: 10 }}>
@@ -1621,7 +1624,38 @@ function GrokUsageView({
         <div style={{ fontSize: 12, color: "#f87171", lineHeight: 1.5 }}>{result.error}</div>
       )}
 
-      {monthly ? (
+      {/* Weekly first — same primary window emphasis as ChatGPT's 7d tier. */}
+      {weekly ? (
+        <div style={{
+          display: "grid", gridTemplateColumns: "36px 1fr auto", alignItems: "center", gap: 10,
+          padding: 9, borderRadius: 9, border: "1px solid var(--border)", background: "rgba(148,163,184,0.08)",
+        }}>
+          <span style={{
+            width: 30, height: 30, borderRadius: "50%", flexShrink: 0,
+            background: `conic-gradient(${quotaColor(weeklyUtilization ?? 0)} ${(weeklyUtilization ?? 0) * 3.6}deg, rgba(148,163,184,0.18) 0deg)`,
+            border: "1px solid rgba(148,163,184,0.35)",
+            display: "inline-flex", alignItems: "center", justifyContent: "center", boxSizing: "border-box",
+          }}>
+            <span style={{ width: 12, height: 12, borderRadius: "50%", background: "var(--bg-panel)", opacity: 0.92 }} />
+          </span>
+          <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
+            <span style={{ color: "var(--text)", fontSize: 12, fontWeight: 700 }}>{QUOTA_TIER_LABELS.seven_day} window</span>
+            <span style={{ color: "var(--text-dim)", fontSize: 10 }}>
+              {weeklyCountdown ? `Resets in ${weeklyCountdown}` : "Reset time unknown"}
+            </span>
+          </div>
+          <span style={{ color: quotaColor(weeklyUtilization ?? 0), fontSize: 15, fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>
+            {Math.round(weeklyUtilization ?? 0)}%
+          </span>
+        </div>
+      ) : !loading && !result?.error && !monthly ? (
+        <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.5 }}>
+          Click refresh to query Grok CLI billing.
+          {!result?.configured && !result?.envBypass && <> Make sure Grok CLI is logged in.</>}
+        </div>
+      ) : null}
+
+      {monthly && (
         <div style={{
           display: "grid", gridTemplateColumns: "36px 1fr auto", alignItems: "center", gap: 10,
           padding: 9, borderRadius: 9, border: "1px solid var(--border)", background: "rgba(148,163,184,0.08)",
@@ -1635,7 +1669,7 @@ function GrokUsageView({
             <span style={{ width: 12, height: 12, borderRadius: "50%", background: "var(--bg-panel)", opacity: 0.92 }} />
           </span>
           <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
-            <span style={{ color: "var(--text)", fontSize: 12, fontWeight: 700 }}>Monthly</span>
+            <span style={{ color: "var(--text)", fontSize: 12, fontWeight: 700 }}>Monthly credits</span>
             <span style={{ color: "var(--text-dim)", fontSize: 10 }}>
               Used: {monthly.used.toLocaleString()} · Limit: {monthly.monthlyLimit.toLocaleString()} · Remaining: {monthly.remaining.toLocaleString()}
               {monthly.billingPeriodEnd && <> · Reset: {new Date(monthly.billingPeriodEnd).toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</>}
@@ -1643,36 +1677,6 @@ function GrokUsageView({
           </div>
           <span style={{ color: quotaColor(monthlyUtilization ?? 0), fontSize: 15, fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>
             {Math.round(monthlyUtilization ?? 0)}%
-          </span>
-        </div>
-      ) : !loading && !result?.error && (
-        <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.5 }}>
-          Click refresh to query Grok CLI billing.
-          {!result?.configured && !result?.envBypass && <> Make sure Grok CLI is logged in.</>}
-        </div>
-      )}
-
-      {result?.weekly && (
-        <div style={{
-          display: "grid", gridTemplateColumns: "36px 1fr auto", alignItems: "center", gap: 10,
-          padding: 9, borderRadius: 9, border: "1px solid var(--border)", background: "rgba(148,163,184,0.08)",
-        }}>
-          <span style={{
-            width: 30, height: 30, borderRadius: "50%", flexShrink: 0,
-            background: `conic-gradient(${quotaColor(result.weekly.creditUsagePercent)} ${result.weekly.creditUsagePercent * 3.6}deg, rgba(148,163,184,0.18) 0deg)`,
-            border: "1px solid rgba(148,163,184,0.35)",
-            display: "inline-flex", alignItems: "center", justifyContent: "center", boxSizing: "border-box",
-          }}>
-            <span style={{ width: 12, height: 12, borderRadius: "50%", background: "var(--bg-panel)", opacity: 0.92 }} />
-          </span>
-          <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
-            <span style={{ color: "var(--text)", fontSize: 12, fontWeight: 700 }}>Weekly</span>
-            <span style={{ color: "var(--text-dim)", fontSize: 10 }}>
-              {result.weekly.billingPeriodEnd && <>Reset: {new Date(result.weekly.billingPeriodEnd).toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</>}
-            </span>
-          </div>
-          <span style={{ color: quotaColor(result.weekly.creditUsagePercent), fontSize: 15, fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>
-            {Math.round(result.weekly.creditUsagePercent)}%
           </span>
         </div>
       )}
@@ -1685,14 +1689,24 @@ function GrokUsageView({
 }
 
 
-function accountQuotaResetText(account: OAuthAccountSummary): string {
-  const resetCreditsAvailableCount = account.quotaCache?.resetCreditsAvailableCount;
+function accountQuotaResetText(account: OAuthAccountSummary, options?: { grokWeeklyOnly?: boolean }): string {
+  const cache = account.quotaCache;
+  if (cache?.error) return cache.error;
+
+  const resetCreditsAvailableCount = cache?.resetCreditsAvailableCount;
   const resetCreditsText = typeof resetCreditsAvailableCount === "number" ? `Credits ${resetCreditsAvailableCount}` : null;
-  const tiers = knownQuotaTiers(account.quotaCache?.tiers ?? []).filter((tier) => tier.resetsAt);
-  if (tiers.length === 0) return resetCreditsText ?? (account.quotaCache?.queriedAt ? "No reset time" : "No quota cache");
+  const tiers = knownQuotaTiers(cache?.tiers ?? []).filter((tier) => tier.resetsAt);
+  if (tiers.length === 0) {
+    if (options?.grokWeeklyOnly) {
+      if (cache?.queriedAt) return "Weekly unavailable — click refresh to retry";
+      return "Weekly not queried — click refresh";
+    }
+    return resetCreditsText ?? (cache?.queriedAt ? "No reset time" : "No quota cache");
+  }
   const windowsText = tiers.map((tier) => {
     const countdown = formatResetCountdown(tier.resetsAt);
-    return `${QUOTA_TIER_LABELS[tier.name]} ${countdown ?? "due"}`;
+    const usage = options?.grokWeeklyOnly ? ` ${Math.round(tier.utilization)}%` : "";
+    return `${QUOTA_TIER_LABELS[tier.name]}${usage} ${countdown ?? "due"}`;
   }).join(" · ");
   return resetCreditsText ? `${windowsText} · ${resetCreditsText}` : windowsText;
 }
@@ -1725,6 +1739,7 @@ function OAuthAccountsView({
   loading,
   error,
   supportsQuota,
+  supportsAccountUsage,
   activatingAccountId,
   savingLabelAccountId,
   savingExtraInfoAccountId,
@@ -1745,6 +1760,8 @@ function OAuthAccountsView({
   loading: boolean;
   error: string | null;
   supportsQuota: boolean;
+  /** Per-account usage pies/refresh without Codex warmup/view/reset chrome. */
+  supportsAccountUsage: boolean;
   activatingAccountId: string | null;
   savingLabelAccountId: string | null;
   savingExtraInfoAccountId: string | null;
@@ -1761,6 +1778,7 @@ function OAuthAccountsView({
   onDelete: (account: OAuthAccountSummary) => void;
   onWarmup: () => void;
 }) {
+  const showAccountUsage = supportsQuota || supportsAccountUsage;
   return (
     <SettingsSurface className="models-account-card">
       <SettingsActionRow>
@@ -1812,10 +1830,12 @@ function OAuthAccountsView({
                   <span style={{ fontSize: 12, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{account.displayName}</span>
                   <span style={{ fontSize: 10, color: "var(--text-dim)", fontFamily: "var(--font-mono)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{account.maskedAccountId}</span>
                   {account.extraInfo && <span style={{ fontSize: 11, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{account.extraInfo}</span>}
-                  {supportsQuota && (
+                  {showAccountUsage && (
                     <div style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0, fontSize: 10, color: account.quotaCache?.error ? "#fb923c" : "var(--text-dim)" }}>
-                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>
-                        Reset: {accountQuotaResetText(account)}{account.quotaCache?.queriedAt ? ` · ${formatQuotaQueriedAt(account.quotaCache.queriedAt)}` : ""}
+                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }} title={accountQuotaResetText(account, { grokWeeklyOnly: supportsAccountUsage && !supportsQuota })}>
+                        {supportsQuota
+                          ? <>Reset: {accountQuotaResetText(account)}{account.quotaCache?.queriedAt ? ` · ${formatQuotaQueriedAt(account.quotaCache.queriedAt)}` : ""}</>
+                          : <>{accountQuotaResetText(account, { grokWeeklyOnly: true })}{account.quotaCache?.queriedAt ? ` · ${formatQuotaQueriedAt(account.quotaCache.queriedAt)}` : ""}</>}
                       </span>
                       <AccountQuotaMiniCharts account={account} />
                     </div>
@@ -1864,12 +1884,12 @@ function OAuthAccountsView({
                     </button>
                   </>
                 )}
-                {supportsQuota && (
+                {showAccountUsage && (
                   <button
                     onClick={() => onRefreshQuota(account)}
                     disabled={Boolean(refreshingQuotaAccountId) || quotaResetting}
-                    title="Refresh this account quota reset time"
-                    aria-label="Refresh this account quota reset time"
+                    title={supportsQuota ? "Refresh this account quota reset time" : "Refresh this account weekly usage"}
+                    aria-label={supportsQuota ? "Refresh this account quota reset time" : "Refresh this account weekly usage"}
                     style={{ width: 28, height: 28, padding: 0, background: "none", border: "1px solid var(--border)", borderRadius: 4, color: quotaRefreshing || quotaResetting ? "var(--text-dim)" : "var(--accent)", cursor: refreshingQuotaAccountId || quotaResetting ? "default" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
                   >
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -2159,9 +2179,11 @@ function AddAccountDialog({
 function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefresh: () => void }) {
   const { t } = useI18n();
   const isGrokProvider = provider.id === "grok-cli" || provider.id === "xai";
-  // Multi-account store is available for codex and grok; per-account quota tooling is codex-only.
+  // Multi-account store is available for codex and grok; Codex owns full quota chrome,
+  // while Grok/xAI only shows per-account weekly usage pies.
   const supportsAccounts = provider.id === "openai-codex" || isGrokProvider;
   const supportsQuota = provider.id === "openai-codex";
+  const supportsAccountUsage = isGrokProvider;
   const [loginState, setLoginState] = useState<OAuthLoginState>({ phase: "idle" });
   const [inputValue, setInputValue] = useState("");
   const [quota, setQuota] = useState<SubscriptionQuota | null>(null);
@@ -2292,10 +2314,14 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
     setGrokUsageLoading(true);
     try {
       const mode = forceRefresh ? "refresh" : "cache";
-      const res = await fetch(`/api/auth/usage/grok-cli?mode=${mode}`);
+      const res = await fetch(`/api/auth/usage/grok-cli?mode=${mode}${forceRefresh ? `&_=${Date.now()}` : ""}`, {
+        cache: "no-store",
+      });
       const data = await res.json().catch(() => ({})) as GrokUsageResult & { error?: string };
       if (data.success && data.monthly) {
         setGrokUsage(data);
+        // Active refresh also writes weekly quotaCache onto the active saved account.
+        if (forceRefresh) void loadAccounts();
         return;
       }
       // Keep previous successful result in memory when a live refresh fails.
@@ -2338,7 +2364,7 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
     } finally {
       setGrokUsageLoading(false);
     }
-  }, [provider.id, provider.loggedIn]);
+  }, [provider.id, provider.loggedIn, loadAccounts]);
 
   useEffect(() => {
     setGrokUsage(null);
@@ -2544,6 +2570,25 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
     setRefreshingQuotaAccountId(account.accountId);
     setAccountsError(null);
     try {
+      if (isGrokProvider) {
+        // cache: 'no-store' avoids browser reusing an empty/error GET body and looking like a cache hit.
+        const res = await fetch(
+          `/api/auth/usage/grok-cli?mode=refresh&provider=${encodeURIComponent(provider.id)}&accountId=${encodeURIComponent(account.accountId)}&_=${Date.now()}`,
+          { cache: "no-store" },
+        );
+        const data = await res.json().catch(() => ({})) as GrokUsageResult & { error?: string };
+        if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+        if (account.active && data.success && data.monthly) setGrokUsage(data);
+        await loadAccounts();
+        setLoginState({
+          phase: data.success && data.weekly ? "success" : "error",
+          message: data.success
+            ? (data.weekly ? "Account weekly usage refreshed." : "Live refresh ok, but weekly usage was unavailable.")
+            : (data.error ?? "Grok usage query failed."),
+        });
+        return;
+      }
+
       const res = await fetch(`/api/auth/quota/${encodeURIComponent(provider.id)}?accountId=${encodeURIComponent(account.accountId)}`);
       const data = await res.json().catch(() => ({})) as SubscriptionQuota & { error?: string };
       if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
@@ -2557,7 +2602,7 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
     } finally {
       setRefreshingQuotaAccountId(null);
     }
-  }, [loadAccounts, provider.id, quotaResetting, selectedQuotaAccountId]);
+  }, [isGrokProvider, loadAccounts, provider.id, quotaResetting, selectedQuotaAccountId]);
 
   const handleResetQuota = useCallback(async () => {
     const quotaAccountId = selectedQuotaAccountId;
@@ -2773,6 +2818,7 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
           loading={accountsLoading}
           error={accountsError}
           supportsQuota={supportsQuota}
+          supportsAccountUsage={supportsAccountUsage}
           activatingAccountId={activatingAccountId}
           savingLabelAccountId={savingLabelAccountId}
           savingExtraInfoAccountId={savingExtraInfoAccountId}

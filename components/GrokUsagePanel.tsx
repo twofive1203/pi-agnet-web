@@ -1,12 +1,29 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { formatQuotaQueriedAt, quotaColor } from "@/lib/quota-display";
+import { useI18n } from "@/components/I18nProvider";
+import { useAppDialog } from "@/components/AppDialogProvider";
+import {
+  findWeeklyQuotaTier,
+  formatQuotaQueriedAt,
+  formatResetCountdown,
+  knownQuotaTiers,
+  quotaColor,
+  QUOTA_TIER_LABELS,
+  type QuotaDisplayTier,
+} from "@/lib/quota-display";
 import type { GrokUsageResult } from "@/lib/grok-usage";
 
 // Grok credentials may live under either provider key; list and activate both stores.
 const GROK_ACCOUNT_PROVIDERS = ["grok-cli", "xai"] as const;
+
+interface GrokAccountQuotaCache {
+  success: boolean;
+  tiers: Array<{ name: string; utilization: number; resetsAt: string | null }>;
+  error: string | null;
+  queriedAt: number | null;
+}
 
 interface GrokAccountSummary {
   accountId: string;
@@ -16,6 +33,7 @@ interface GrokAccountSummary {
   maskedAccountId: string;
   active: boolean;
   provider: string;
+  quotaCache?: GrokAccountQuotaCache;
 }
 
 interface GrokAccountsResponse {
@@ -25,23 +43,73 @@ interface GrokAccountsResponse {
   error?: string;
 }
 
-function UsagePie({ utilization, size = 18 }: { utilization: number | null; size?: number }) {
-  const pct = utilization !== null ? Math.min(Math.max(utilization, 0), 100) : 0;
-  const color = utilization !== null ? quotaColor(pct) : "var(--text-dim)";
-  const background = utilization !== null
-    ? `conic-gradient(${color} ${pct * 3.6}deg, rgba(148,163,184,0.18) 0deg)`
+interface SchedulerStatus {
+  enabled: boolean;
+  running: boolean;
+  lockOwned: boolean;
+  nextRunAt: number | null;
+  lastRunStartedAt: number | null;
+  lastRunFinishedAt: number | null;
+  lastError: string | null;
+  lastAccountId: string | null;
+  lastAccountError: string | null;
+  lock: {
+    path: string;
+    exists: boolean;
+    ownedByCurrentProcess: boolean;
+    stale: boolean;
+    staleAfterMs: number;
+    ageMs: number | null;
+    error?: string;
+  };
+  error?: string;
+}
+
+const ACCOUNT_CACHE_POLL_INTERVAL_MS = 30_000;
+
+function formatTime(value: number | null): string {
+  if (!value) return "—";
+  return new Date(value).toLocaleString();
+}
+
+function UsagePie({ tier, label, size = 18 }: { tier: QuotaDisplayTier | null; label?: string; size?: number }) {
+  const utilization = tier ? Math.min(Math.max(tier.utilization, 0), 100) : 0;
+  const color = tier ? quotaColor(utilization) : "var(--text-dim)";
+  const background = tier
+    ? `conic-gradient(${color} ${utilization * 3.6}deg, rgba(148,163,184,0.18) 0deg)`
     : "conic-gradient(rgba(148,163,184,0.25) 0deg, rgba(148,163,184,0.25) 360deg)";
 
   return (
-    <span title={utilization !== null ? `Grok ${Math.round(pct)}% used` : "Unknown usage"} className="usage-pie-wrap">
+    <span title={tier ? `${label ?? tier.name} ${Math.round(utilization)}% used` : "Unknown usage"} className="usage-pie-wrap">
       <span className="usage-pie" style={{ width: size, height: size, background }}>
         <span className="usage-pie-center" style={{ width: Math.max(6, Math.floor(size * 0.48)), height: Math.max(6, Math.floor(size * 0.48)) }} />
       </span>
+      {label && <span className="usage-pie-label">{label}</span>}
     </span>
   );
 }
 
+function accountQuotaSummary(account: GrokAccountSummary): string {
+  const cache = account.quotaCache;
+  if (!cache?.queriedAt) return "No quota cache";
+  if (cache.error) return cache.error;
+  const tiers = knownQuotaTiers(cache.tiers ?? []);
+  if (tiers.length === 0) return formatQuotaQueriedAt(cache.queriedAt);
+  return tiers.map((tier) => `${QUOTA_TIER_LABELS[tier.name]} ${Math.round(tier.utilization)}%`).join(" · ");
+}
+
+function weeklyTierFromUsage(result: GrokUsageResult | null): QuotaDisplayTier | null {
+  if (!result?.weekly) return null;
+  return {
+    name: "seven_day",
+    utilization: result.weekly.creditUsagePercent,
+    resetsAt: result.weekly.billingPeriodEnd,
+  };
+}
+
 export function GrokUsagePanel() {
+  const { t } = useI18n();
+  const appDialog = useAppDialog();
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -52,6 +120,9 @@ export function GrokUsagePanel() {
   const [accounts, setAccounts] = useState<GrokAccountSummary[]>([]);
   const [accountsError, setAccountsError] = useState<string | null>(null);
   const [activatingAccountId, setActivatingAccountId] = useState<string | null>(null);
+  const [schedulerStatus, setSchedulerStatus] = useState<SchedulerStatus | null>(null);
+  const [schedulerError, setSchedulerError] = useState<string | null>(null);
+  const [repairingLock, setRepairingLock] = useState(false);
 
   const updatePanelPosition = useCallback(() => {
     const rect = triggerRef.current?.getBoundingClientRect();
@@ -62,16 +133,35 @@ export function GrokUsagePanel() {
     });
   }, []);
 
+  const loadAccounts = useCallback(async () => {
+    try {
+      const lists = await Promise.all(GROK_ACCOUNT_PROVIDERS.map(async (providerId) => {
+        const res = await fetch(`/api/auth/accounts/${providerId}`);
+        const data = await res.json().catch(() => ({})) as GrokAccountsResponse;
+        if (!res.ok || data.error) throw new Error(data.error ?? `HTTP ${res.status}`);
+        return (data.accounts ?? []).map((account) => ({ ...account, provider: providerId }));
+      }));
+      setAccountsError(null);
+      setAccounts(lists.flat());
+    } catch (err) {
+      setAccountsError(err instanceof Error ? err.message : "Failed to load Grok accounts");
+    }
+  }, []);
+
   const loadUsage = useCallback(async (forceRefresh = false) => {
     setLoading(true);
     setError(null);
     try {
       const mode = forceRefresh ? "refresh" : "cache";
-      const res = await fetch(`/api/auth/usage/grok-cli?mode=${mode}`);
+      const res = await fetch(`/api/auth/usage/grok-cli?mode=${mode}${forceRefresh ? `&_=${Date.now()}` : ""}`, {
+        cache: "no-store",
+      });
       const data = await res.json() as GrokUsageResult & { error?: string };
       if (data.success && data.monthly) {
         setError(null);
         setUsageResult(data);
+        // Active refresh writes weekly quotaCache onto the active saved account.
+        if (forceRefresh) void loadAccounts();
         return;
       }
       // Keep previous successful result in memory on live failure / empty cache.
@@ -86,25 +176,24 @@ export function GrokUsagePanel() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [loadAccounts]);
 
   // Load cache on mount
   useEffect(() => {
     void loadUsage(false);
   }, [loadUsage]);
 
-  const loadAccounts = useCallback(async () => {
+  const loadSchedulerStatus = useCallback(async (signal?: AbortSignal) => {
+    setSchedulerError(null);
     try {
-      const lists = await Promise.all(GROK_ACCOUNT_PROVIDERS.map(async (providerId) => {
-        const res = await fetch(`/api/auth/accounts/${providerId}`);
-        const data = await res.json().catch(() => ({})) as GrokAccountsResponse;
-        if (!res.ok || data.error) throw new Error(data.error ?? `HTTP ${res.status}`);
-        return (data.accounts ?? []).map((account) => ({ ...account, provider: providerId }));
-      }));
-      setAccountsError(null);
-      setAccounts(lists.flat());
+      const res = await fetch("/api/grok/usage-refresh/status", { signal });
+      const data = await res.json().catch(() => ({})) as SchedulerStatus;
+      if (!res.ok || data.error) throw new Error(data.error ?? `HTTP ${res.status}`);
+      setSchedulerStatus(data);
     } catch (err) {
-      setAccountsError(err instanceof Error ? err.message : "Failed to load Grok accounts");
+      if ((err as { name?: string }).name === "AbortError") return;
+      setSchedulerError(err instanceof Error ? err.message : String(err));
+      setSchedulerStatus(null);
     }
   }, []);
 
@@ -129,12 +218,59 @@ export function GrokUsagePanel() {
     }
   }, [loadAccounts, loadUsage]);
 
+  const repairLock = useCallback(async () => {
+    const ok = await appDialog.confirm({ message: t("panels.grok.fixLockConfirm"), tone: "danger" });
+    if (!ok) return;
+    setRepairingLock(true);
+    setSchedulerError(null);
+    try {
+      const res = await fetch("/api/grok/usage-refresh/repair-lock", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirm: true }),
+      });
+      const data = await res.json().catch(() => ({})) as SchedulerStatus;
+      if (!res.ok || data.error) throw new Error(data.error ?? `HTTP ${res.status}`);
+      setSchedulerStatus(data);
+    } catch (err) {
+      setSchedulerError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRepairingLock(false);
+    }
+  }, [appDialog, t]);
+
   useEffect(() => {
     // Models can refresh the shared cache while this long-lived top-bar component stays mounted.
     if (!open) return;
     void loadUsage(false);
     void loadAccounts();
-  }, [open, loadAccounts, loadUsage]);
+    void loadSchedulerStatus();
+  }, [open, loadAccounts, loadUsage, loadSchedulerStatus]);
+
+  useEffect(() => {
+    if (!open) return;
+    let controller: AbortController | null = null;
+    const refreshSilently = () => {
+      if (document.hidden) return;
+      controller?.abort();
+      controller = new AbortController();
+      void loadAccounts();
+      void loadUsage(false);
+      void loadSchedulerStatus(controller.signal);
+    };
+    const interval = window.setInterval(refreshSilently, ACCOUNT_CACHE_POLL_INTERVAL_MS);
+    const handleVisibilityChange = () => {
+      if (!document.hidden) refreshSilently();
+    };
+    window.addEventListener("focus", refreshSilently);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      window.clearInterval(interval);
+      controller?.abort();
+      window.removeEventListener("focus", refreshSilently);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [open, loadAccounts, loadUsage, loadSchedulerStatus]);
 
   useEffect(() => {
     if (!open) return;
@@ -173,12 +309,23 @@ export function GrokUsagePanel() {
     };
   }, [open, updatePanelPosition]);
 
-  // Data for compact display
+  const activeAccount = useMemo(
+    () => accounts.find((account) => account.active) ?? null,
+    [accounts],
+  );
+  // Prefer live weekly; fall back to active account's cached seven_day tier (same path as GPT).
+  const weeklyTier = useMemo(() => {
+    const fromLive = weeklyTierFromUsage(usageResult);
+    if (fromLive) return fromLive;
+    return findWeeklyQuotaTier(activeAccount?.quotaCache?.tiers ?? []) ?? null;
+  }, [usageResult, activeAccount]);
+  const knownTiers = useMemo(() => (weeklyTier ? [weeklyTier] : []), [weeklyTier]);
   const monthly = usageResult?.monthly ?? null;
-  const weekly = usageResult?.weekly ?? null;
-  const monthlyUtilization = monthly?.utilization ?? null;
-  const weeklyUtilization = weekly?.creditUsagePercent ?? null;
-  const refreshText = usageResult?.queriedAt ? formatQuotaQueriedAt(usageResult.queriedAt) : "Not queried";
+  const refreshText = usageResult?.queriedAt
+    ? formatQuotaQueriedAt(usageResult.queriedAt)
+    : activeAccount?.quotaCache?.queriedAt
+      ? formatQuotaQueriedAt(activeAccount.quotaCache.queriedAt)
+      : "Not queried";
   const compactStatus = loading ? "Loading" : error ? "Error" : refreshText;
 
   return (
@@ -199,7 +346,9 @@ export function GrokUsagePanel() {
         <span className="usage-panel-trigger-name">Grok</span>
         <span className="usage-panel-trigger-status">{compactStatus}</span>
         <span className="usage-panel-pies">
-          {monthly && <UsagePie utilization={monthlyUtilization} />}
+          {knownTiers.length > 0 ? knownTiers.map((tier) => (
+            <UsagePie key={tier.name} tier={tier} label={QUOTA_TIER_LABELS[tier.name]} />
+          )) : <UsagePie tier={null} />}
         </span>
       </button>
 
@@ -238,19 +387,53 @@ export function GrokUsagePanel() {
             <div className="usage-text-danger">{error}</div>
           )}
 
-          {!monthly ? (
+          {activeAccount && (
+            <div className="usage-card">
+              <div className="usage-card-header">
+                <span style={{ color: "var(--text)", fontSize: 12, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{activeAccount.displayName}</span>
+                <span style={{ color: "#22c55e", fontSize: 10, fontWeight: 800, flexShrink: 0 }}>Active</span>
+              </div>
+              <code style={{ color: "var(--text-dim)", fontSize: 10, fontFamily: "var(--font-mono)", overflowWrap: "anywhere" }}>{activeAccount.provider} · {activeAccount.maskedAccountId}</code>
+              {activeAccount.extraInfo && <div style={{ color: "var(--text-dim)", fontSize: 11, lineHeight: 1.45, whiteSpace: "pre-wrap" }}>{activeAccount.extraInfo}</div>}
+            </div>
+          )}
+
+          {knownTiers.length === 0 ? (
             <div className="usage-card usage-card-row">
-              <UsagePie utilization={null} size={34} />
+              <UsagePie tier={null} size={34} />
               <div style={{ color: "var(--text-dim)", fontSize: 12, lineHeight: 1.45 }}>
-                Grok CLI usage not available. Click refresh to query xAI billing.
+                Weekly usage unknown. Click refresh to query xAI billing.
                 {!usageResult?.configured && !usageResult?.envBypass && (
                   <> Make sure Grok is logged in via Models → xAI or Grok CLI, or set GROK_CLI_OAUTH_TOKEN.</>
                 )}
               </div>
             </div>
-          ) : monthly && (
+          ) : (
+            <div className="usage-card-list">
+              {knownTiers.map((tier) => {
+                const utilization = Math.min(Math.max(tier.utilization, 0), 100);
+                const color = quotaColor(utilization);
+                const countdown = formatResetCountdown(tier.resetsAt);
+                return (
+                  <div key={tier.name} className="usage-quota-row">
+                    <UsagePie tier={tier} label={QUOTA_TIER_LABELS[tier.name]} size={30} />
+                    <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
+                      <span style={{ color: "var(--text)", fontSize: 12, fontWeight: 700 }}>{QUOTA_TIER_LABELS[tier.name]} window</span>
+                      <span style={{ color: "var(--text-dim)", fontSize: 10 }}>{countdown ? `Resets in ${countdown}` : "Reset time unknown"}</span>
+                    </div>
+                    <span style={{ color, fontSize: 15, fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>{Math.round(utilization)}%</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {monthly && (
             <div className="usage-quota-row">
-              <UsagePie utilization={monthlyUtilization} size={30} />
+              <UsagePie
+                tier={{ name: "monthly", utilization: monthly.utilization, resetsAt: monthly.billingPeriodEnd }}
+                size={30}
+              />
               <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
                 <span style={{ color: "var(--text)", fontSize: 12, fontWeight: 700 }}>Monthly credits</span>
                 <span style={{ color: "var(--text-dim)", fontSize: 10 }}>
@@ -260,23 +443,8 @@ export function GrokUsagePanel() {
                   )}
                 </span>
               </div>
-              <span style={{ color: quotaColor(monthlyUtilization ?? 0), fontSize: 15, fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>
-                {Math.round(monthlyUtilization ?? 0)}%
-              </span>
-            </div>
-          )}
-
-          {weekly && (
-            <div className="usage-quota-row">
-              <UsagePie utilization={weeklyUtilization} size={30} />
-              <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
-                <span style={{ color: "var(--text)", fontSize: 12, fontWeight: 700 }}>Weekly credits</span>
-                <span style={{ color: "var(--text-dim)", fontSize: 10 }}>
-                  {weekly.billingPeriodEnd && `Resets ${new Date(weekly.billingPeriodEnd).toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}`}
-                </span>
-              </div>
-              <span style={{ color: quotaColor(weeklyUtilization ?? 0), fontSize: 15, fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>
-                {Math.round(weeklyUtilization ?? 0)}%
+              <span style={{ color: quotaColor(monthly.utilization), fontSize: 15, fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>
+                {Math.round(monthly.utilization)}%
               </span>
             </div>
           )}
@@ -292,6 +460,7 @@ export function GrokUsagePanel() {
                   <span style={{ color: "var(--text)", fontSize: 12, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.displayName}</span>
                   <code style={{ color: "var(--text-dim)", fontSize: 10, fontFamily: "var(--font-mono)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.provider} · {item.maskedAccountId}</code>
                   {item.extraInfo && <span style={{ color: "var(--text-dim)", fontSize: 10, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.extraInfo}</span>}
+                  <span style={{ color: item.quotaCache?.error ? "#fb923c" : "var(--text-dim)", fontSize: 10, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{accountQuotaSummary(item)}</span>
                 </div>
                 {item.active ? <span style={{ color: "#22c55e", fontSize: 11, fontWeight: 800 }}>active</span> : (
                   <button type="button" onClick={() => void activateAccount(item)} disabled={Boolean(activatingAccountId)} style={{ padding: "5px 9px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg)", color: activatingAccountId === item.accountId ? "var(--text-dim)" : "var(--accent)", cursor: activatingAccountId ? "default" : "pointer", fontSize: 11, fontWeight: 700 }}>
@@ -302,12 +471,28 @@ export function GrokUsagePanel() {
             ))}
           </div>
 
-          <div style={{ color: "var(--text-dim)", fontSize: 10, lineHeight: 1.5 }}>
-            {usageResult?.envBypass && (
-              <div style={{ color: "#fb923c", marginTop: 4 }}>Using GROK_CLI_OAUTH_TOKEN environment variable. No automatic refresh.</div>
-            )}
-            Only manual refresh available. No auto-refresh scheduler.
+          <div style={{ padding: 9, borderRadius: 9, border: "1px solid var(--border)", background: "rgba(148,163,184,0.06)", display: "flex", flexDirection: "column", gap: 6 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
+              <span style={{ color: "var(--text)", fontSize: 12, fontWeight: 800 }}>Auto refresh</span>
+              <button type="button" onClick={() => void loadSchedulerStatus()} style={{ border: "1px solid var(--border)", borderRadius: 6, background: "var(--bg)", color: "var(--text-muted)", cursor: "pointer", fontSize: 11, padding: "4px 7px" }}>Reload</button>
+            </div>
+            {schedulerError && <div style={{ color: "#f87171", fontSize: 11, lineHeight: 1.45 }}>{schedulerError}</div>}
+            {schedulerStatus ? (
+              <div style={{ color: "var(--text-dim)", fontSize: 11, lineHeight: 1.55 }}>
+                <div>Enabled: {schedulerStatus.enabled ? "yes" : "no"} · Running: {schedulerStatus.running ? "yes" : "no"} · Lock: {schedulerStatus.lockOwned ? "owned" : schedulerStatus.lock.stale ? "stale" : schedulerStatus.lock.exists ? "held" : "none"}</div>
+                <div>Next: {formatTime(schedulerStatus.nextRunAt)} · Last: {formatTime(schedulerStatus.lastRunFinishedAt)}</div>
+                {schedulerStatus.lastError && <div style={{ color: "#f87171" }}>Last error: {schedulerStatus.lastError}</div>}
+                {schedulerStatus.lastAccountError && <div style={{ color: "#fb923c" }}>Account error: {schedulerStatus.lastAccountError}</div>}
+              </div>
+            ) : <div style={{ color: "var(--text-dim)", fontSize: 11 }}>Scheduler status unavailable.</div>}
+            <button type="button" onClick={() => void repairLock()} disabled={repairingLock} style={{ alignSelf: "flex-start", padding: "5px 9px", borderRadius: 6, border: "1px solid rgba(239,68,68,0.35)", background: "transparent", color: repairingLock ? "var(--text-dim)" : "#f87171", cursor: repairingLock ? "default" : "pointer", fontSize: 11, fontWeight: 700 }}>
+              {repairingLock ? "Repairing…" : "故障处理：修复刷新锁"}
+            </button>
           </div>
+
+          {usageResult?.envBypass && (
+            <div style={{ color: "#fb923c", fontSize: 10, lineHeight: 1.5 }}>Using GROK_CLI_OAUTH_TOKEN environment variable. Env bypass is not auto-refreshed per saved account.</div>
+          )}
         </div>
       ), document.body)}
     </div>

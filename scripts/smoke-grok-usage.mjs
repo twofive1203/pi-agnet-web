@@ -10,6 +10,54 @@ async function main() {
     /if \(!open\) return;\s+void loadUsage\(false\);\s+void loadAccounts\(\);/,
     "opening the top-bar Grok panel must reload the latest cached usage before rendering quotas",
   );
+  assert.match(
+    panelSource,
+    /label=\{QUOTA_TIER_LABELS\[tier\.name\]\}/,
+    "Grok top-bar pies must use the shared 7d tier labels like ChatGPT",
+  );
+  assert.match(
+    panelSource,
+    /weeklyTierFromUsage|findWeeklyQuotaTier/,
+    "Grok compact trigger must prefer weekly/7d usage over monthly",
+  );
+  assert.match(
+    panelSource,
+    /\/api\/grok\/usage-refresh\/status/,
+    "Grok panel must surface backend auto-refresh scheduler status",
+  );
+
+  const schedulerSource = await readFile(new URL("../lib/grok-usage-refresh-scheduler.ts", import.meta.url), "utf8");
+  assert.match(schedulerSource, /export async function ensureGrokUsageRefreshScheduler/);
+  assert.match(schedulerSource, /getGrokAccountUsage/);
+  assert.match(schedulerSource, /grok-usage-refresh\.lock/);
+
+  const modelsSource = await readFile(new URL("../components/ModelsConfig.tsx", import.meta.url), "utf8");
+  assert.match(
+    modelsSource,
+    /supportsAccountUsage/,
+    "Models xAI/Grok account list must enable per-account weekly usage chrome",
+  );
+  assert.match(
+    modelsSource,
+    /mode=refresh&provider=.*accountId=|accountId=.*mode=refresh/,
+    "Models must refresh Grok weekly usage per saved account",
+  );
+  assert.match(
+    modelsSource,
+    /QUOTA_TIER_LABELS\.seven_day\} window/,
+    "Models Grok usage card must label weekly as the shared 7d window",
+  );
+
+  const routeSource = await readFile(new URL("../app/api/auth/usage/grok-cli/route.ts", import.meta.url), "utf8");
+  assert.match(routeSource, /getGrokAccountUsage/, "usage route must support per-account Grok queries");
+
+  const usageSource = await readFile(new URL("../lib/grok-usage.ts", import.meta.url), "utf8");
+  assert.match(usageSource, /export async function getGrokAccountUsage/);
+  assert.match(usageSource, /name: "seven_day"/);
+
+  const quotaDisplaySource = await readFile(new URL("../lib/quota-display.ts", import.meta.url), "utf8");
+  assert.match(quotaDisplaySource, /seven_day:\s*"7d"/);
+  assert.match(quotaDisplaySource, /LEGACY_GROK_WEEKLY_TIER_NAME|weekly.*seven_day/);
 
   const originalFetch = globalThis.fetch;
   try {

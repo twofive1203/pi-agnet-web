@@ -6,6 +6,7 @@ import {
 } from "@/lib/pi-web-config";
 import { ensureOpenAICodexWarmupScheduler } from "@/lib/openai-codex-warmup-scheduler";
 import { ensureChatGptUsageRefreshScheduler } from "@/lib/chatgpt-usage-refresh-scheduler";
+import { ensureGrokUsageRefreshScheduler } from "@/lib/grok-usage-refresh-scheduler";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -14,6 +15,7 @@ export async function GET() {
   ensureOpenAICodexWarmupScheduler();
   const result = readPiWebConfigForApi();
   if (result.config.chatgpt.autoRefreshEnabled) await ensureChatGptUsageRefreshScheduler();
+  if (result.config.grok.autoRefreshEnabled) await ensureGrokUsageRefreshScheduler();
   return NextResponse.json(result);
 }
 
@@ -32,6 +34,7 @@ export async function PUT(req: Request) {
     const result = writePiWebConfigPatch(body);
     ensureOpenAICodexWarmupScheduler();
     await ensureChatGptUsageRefreshScheduler(true);
+    await ensureGrokUsageRefreshScheduler(true);
     return NextResponse.json({ success: true, ...result });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

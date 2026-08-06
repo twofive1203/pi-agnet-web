@@ -76,6 +76,7 @@ PI_CODING_AGENT_DIR=/path/to/pi-agent-data spi
 | `settings.json` | pi settings, including default model. |
 | `pi-web.json` | Web UI settings, including WorkTree defaults, Usage scope, Web Terminal settings, ChatGPT panel/auto-refresh settings, Grok usage panel toggle, Editor settings, and SnFlow panel preferences. Unknown legacy root keys such as `trellis` are ignored and preserved on disk. |
 | `chatgpt-usage-refresh.lock` | Backend ChatGPT usage auto-refresh lock file; stale locks can be repaired from the ChatGPT panel fault handler. |
+| `grok-usage-refresh.lock` | Backend Grok usage auto-refresh lock file; stale locks can be repaired from the Grok panel fault handler. |
 
 Session path format:
 
