@@ -378,8 +378,11 @@ export function SessionChangesFloatingPanel({ sessionId, agentRunning, refreshKe
               position: "absolute",
               right: 0,
               bottom: "calc(100% + 8px)",
-              width: "min(420px, calc(100vw - 48px))",
-              maxHeight: 360,
+              display: "flex",
+              flexDirection: "column",
+              width: "min(480px, calc(100vw - 48px))",
+              maxWidth: "calc(100vw - 48px)",
+              maxHeight: "min(480px, calc(100dvh - 120px))",
               overflow: "hidden",
               border: "1px solid var(--border)",
               borderRadius: 14,
@@ -389,8 +392,8 @@ export function SessionChangesFloatingPanel({ sessionId, agentRunning, refreshKe
               backdropFilter: "blur(12px)",
             }}
           >
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "10px 12px", borderBottom: "1px solid var(--border)" }}>
-              <div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexShrink: 0, padding: "10px 12px", borderBottom: "1px solid var(--border)" }}>
+              <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: 13, fontWeight: 800 }}>Changed files</div>
                 <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
                   Session edit/write changes · <span style={{ color: "#16a34a" }}>+{totals.additions}</span> <span style={{ color: "#dc2626" }}>-{totals.deletions}</span>
@@ -400,13 +403,13 @@ export function SessionChangesFloatingPanel({ sessionId, agentRunning, refreshKe
                 type="button"
                 onClick={() => setOpen(false)}
                 aria-label="Close changed files panel"
-                style={{ border: 0, background: "transparent", color: "var(--text-muted)", cursor: "pointer", fontSize: 18, lineHeight: 1 }}
+                style={{ border: 0, background: "transparent", color: "var(--text-muted)", cursor: "pointer", fontSize: 18, lineHeight: 1, flexShrink: 0 }}
               >
                 ×
               </button>
             </div>
 
-            <div style={{ maxHeight: 288, overflowY: "auto", padding: 6 }}>
+            <div style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: "auto", padding: 6 }}>
               {initialLoading && files.length === 0 ? (
                 <div style={{ padding: 10, color: "var(--text-muted)", fontSize: 12 }}>Loading changed files…</div>
               ) : error ? (
@@ -421,9 +424,10 @@ export function SessionChangesFloatingPanel({ sessionId, agentRunning, refreshKe
                     type="button"
                     onClick={() => file.diffAvailable ? setSelectedFile(file) : undefined}
                     aria-disabled={file.diffAvailable ? undefined : true}
-                    title={file.diffAvailable ? undefined : (file.reason ?? "metadata only")}
+                    title={file.diffAvailable ? file.path : (file.reason ?? "metadata only")}
                     style={{
-                      width: "100%",
+                      width: "max-content",
+                      minWidth: "100%",
                       display: "flex",
                       alignItems: "center",
                       gap: 9,
@@ -441,9 +445,9 @@ export function SessionChangesFloatingPanel({ sessionId, agentRunning, refreshKe
                     <span style={{ width: 20, height: 20, borderRadius: 6, display: "inline-flex", alignItems: "center", justifyContent: "center", color: badge.color, background: "var(--bg-subtle)", fontSize: 11, fontWeight: 900, flexShrink: 0 }}>
                       {badge.label}
                     </span>
-                    <span style={{ minWidth: 0, flex: 1 }}>
-                      <span style={{ display: "block", fontFamily: "var(--font-mono)", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{file.path}</span>
-                      {!file.diffAvailable && <span style={{ display: "block", marginTop: 2, fontSize: 10, color: "var(--text-dim)" }}>{file.reason ?? "metadata only"}</span>}
+                    <span style={{ minWidth: 0, flex: "1 1 auto" }}>
+                      <span style={{ display: "block", fontFamily: "var(--font-mono)", fontSize: 12, whiteSpace: "nowrap" }}>{file.path}</span>
+                      {!file.diffAvailable && <span style={{ display: "block", marginTop: 2, fontSize: 10, color: "var(--text-dim)", whiteSpace: "nowrap" }}>{file.reason ?? "metadata only"}</span>}
                     </span>
                     <span style={{ flexShrink: 0, fontFamily: "var(--font-mono)", fontSize: 11 }}>
                       <span style={{ color: "#16a34a" }}>+{file.additions}</span>{" "}
@@ -495,6 +499,7 @@ export function SessionChangesFloatingPanel({ sessionId, agentRunning, refreshKe
           sessionId={sessionId}
           file={selectedFile}
           onClose={() => setSelectedFile(null)}
+          contained={false}
         />
       )}
     </>

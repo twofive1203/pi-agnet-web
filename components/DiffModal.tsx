@@ -3,6 +3,7 @@
 import { useI18n } from "@/components/I18nProvider";
 
 import { useEffect, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { DiffView, type DiffMode } from "./DiffView";
 
 interface Props {
@@ -14,6 +15,11 @@ interface Props {
   fallback: ReactNode;
   onClose: () => void;
   loadingLabel?: string;
+  /**
+   * true: absolute overlay inside the nearest positioned ancestor (compact host).
+   * false: full-viewport fixed overlay; always portaled to document.body so parent
+   * overflow/transform/backdrop-filter cannot trap the dialog inside a narrow panel.
+   */
   contained?: boolean;
 }
 
@@ -49,6 +55,11 @@ export function DiffModal({
     unified: t("panels.diff.unified"),
   };
   const [mode, setMode] = useState<DiffMode>("side-by-side");
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -60,7 +71,7 @@ export function DiffModal({
 
   const hasDiff = Boolean(diff);
 
-  return (
+  const dialog = (
     <div
       role="dialog"
       aria-modal="true"
@@ -101,4 +112,13 @@ export function DiffModal({
       </div>
     </div>
   );
+
+  // Full-viewport diffs must leave transformed/filtered/overflow-clipped hosts
+  // (inspector drawer, glass panels, chat root) or position:fixed is trapped.
+  if (!contained) {
+    if (!mounted || typeof document === "undefined") return null;
+    return createPortal(dialog, document.body);
+  }
+
+  return dialog;
 }

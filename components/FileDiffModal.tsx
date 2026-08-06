@@ -9,9 +9,9 @@ interface Props {
   file: SessionChangedFileSummary;
   onClose: () => void;
   /**
-   * true: render the overlay inside the nearest positioned ancestor (floating panel).
-   * false: full-viewport fixed overlay like the Git panel diff modal; callers should
-   * portal it to document.body so it escapes narrow/clipped containers.
+   * true: render the overlay inside the nearest positioned ancestor (compact host).
+   * false (recommended for file diffs): full-viewport fixed overlay. DiffModal portals
+   * non-contained dialogs to document.body so inspector/chat hosts cannot trap them.
    */
   contained?: boolean;
 }
@@ -38,7 +38,7 @@ function reasonLabel(reason: SessionFileDiffResponse["reason"]): string {
   }
 }
 
-export function FileDiffModal({ sessionId, file, onClose, contained = true }: Props) {
+export function FileDiffModal({ sessionId, file, onClose, contained = false }: Props) {
   const [data, setData] = useState<SessionFileDiffResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
