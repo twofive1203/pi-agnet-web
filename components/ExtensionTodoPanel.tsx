@@ -1,7 +1,7 @@
 "use client";
 
 import { createPortal } from "react-dom";
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent } from "react";
 import { useI18n } from "@/components/I18nProvider";
 import type { ExtensionWidgetItem } from "@/lib/types";
 
@@ -143,30 +143,44 @@ function useIsMobile(): boolean {
   return isMobile;
 }
 
+function todoPercent(model: TodoModel): number {
+  if (model.total <= 0) return 0;
+  return Math.min(100, Math.max(0, (model.completed / model.total) * 100));
+}
+
 function TodoEntryRow({ entry }: { entry: TodoEntry }) {
-  const stateClass = entry.completed ? "is-completed" : entry.active ? "is-active" : "";
+  const { t } = useI18n();
+  const stateClass = entry.completed ? "is-completed" : entry.active ? "is-active" : "is-pending";
   return (
-    <div className={`extension-todo-entry ${stateClass}`.trim()}>
-      <span className="extension-todo-checkbox" aria-hidden="true">
-        {entry.completed ? "\u2713" : entry.active ? "\u2022" : ""}
-      </span>
-      <span className="extension-todo-entry-label">{entry.label}</span>
+    <div className={`extension-todo-entry ${stateClass}`}>
+      <span className="extension-todo-marker" aria-hidden="true" />
+      <div className="extension-todo-entry-body">
+        <span className="extension-todo-entry-label">{entry.label}</span>
+        {entry.active && <span className="extension-todo-entry-tag">{t("chat.todoInProgress")}</span>}
+      </div>
     </div>
   );
 }
 
 function TodoProgress({ model }: { model: TodoModel }) {
   const { t } = useI18n();
-  const percent = model.total > 0 ? Math.min(100, Math.max(0, (model.completed / model.total) * 100)) : 0;
-  const complete = percent === 100;
+  const percent = todoPercent(model);
+  const complete = model.total > 0 && model.completed >= model.total;
   return (
-    <div className="extension-todo-progress">
+    <div className={complete ? "extension-todo-progress is-complete" : "extension-todo-progress"}>
       <div className="extension-todo-progress-meta">
         <span>{t("chat.progress")}</span>
-        <span className={complete ? "extension-todo-count is-complete" : "extension-todo-count"}>{model.completed}/{model.total}</span>
+        <span className="extension-todo-count">{model.completed}/{model.total}</span>
       </div>
-      <div className="extension-todo-progress-track">
-        <div className={complete ? "extension-todo-progress-value is-complete" : "extension-todo-progress-value"} style={{ width: `${percent}%` }} />
+      <div
+        className="extension-todo-progress-track"
+        role="progressbar"
+        aria-valuenow={model.completed}
+        aria-valuemin={0}
+        aria-valuemax={model.total}
+        aria-label={t("chat.progress")}
+      >
+        <div className="extension-todo-progress-value" style={{ width: `${percent}%` }} />
       </div>
     </div>
   );
@@ -174,21 +188,32 @@ function TodoProgress({ model }: { model: TodoModel }) {
 
 function TodoPanelBody({ model, onClose, mobile }: { model: TodoModel; onClose: () => void; mobile?: boolean }) {
   const { t } = useI18n();
-  const complete = model.completed === model.total && model.total > 0;
+  const complete = model.total > 0 && model.completed >= model.total;
+  const activeEntry = model.entries.find((entry) => entry.active);
+  const subtitle = complete
+    ? t("chat.todoAllDone")
+    : activeEntry?.label || `${model.completed}/${model.total}`;
+
   return (
     <div
-      className={mobile ? "extension-todo-panel is-mobile" : "extension-todo-panel"}
+      className={[
+        "extension-todo-panel",
+        mobile ? "is-mobile" : "",
+        complete ? "is-complete" : "",
+        activeEntry ? "has-active" : "",
+      ].filter(Boolean).join(" ")}
       role="dialog"
       aria-label={t("chat.todoList")}
       aria-modal={mobile ? true : undefined}
       onClick={(event) => event.stopPropagation()}
     >
       <div className="extension-todo-header">
-        <span className={complete ? "extension-todo-icon is-complete" : "extension-todo-icon"} aria-hidden="true">{"\u2611"}</span>
+        <span className="extension-todo-icon" aria-hidden="true" />
         <div className="extension-todo-title-wrap">
-          <div className="extension-todo-title">{model.title}</div>
-          <div className="extension-todo-source">extension widget / todo-list</div>
+          <div className="extension-todo-title">{t("chat.todoList")}</div>
+          <div className="extension-todo-subtitle" title={subtitle}>{subtitle}</div>
         </div>
+        <span className="extension-todo-header-count">{model.completed}/{model.total}</span>
         <button
           type="button"
           onClick={onClose}
@@ -206,9 +231,7 @@ function TodoPanelBody({ model, onClose, mobile }: { model: TodoModel; onClose: 
             {model.entries.map((entry) => <TodoEntryRow key={entry.id} entry={entry} />)}
           </div>
         ) : (
-          <pre className="extension-todo-empty">
-            {model.title}
-          </pre>
+          <div className="extension-todo-empty">{model.title}</div>
         )}
       </div>
     </div>
@@ -229,6 +252,8 @@ interface TodoCapsuleProps {
 function TodoCapsule({ model, open, dragging, onClick, onPointerDown, onPointerMove, onPointerUp, onPointerCancel }: TodoCapsuleProps) {
   const { t } = useI18n();
   const complete = model.total > 0 && model.completed >= model.total;
+  const hasActive = model.entries.some((entry) => entry.active);
+  const percent = todoPercent(model);
   return (
     <button
       type="button"
@@ -243,13 +268,19 @@ function TodoCapsule({ model, open, dragging, onClick, onPointerDown, onPointerM
       className={[
         "extension-todo-capsule",
         complete ? "is-complete" : "",
+        hasActive ? "has-active" : "",
+        open ? "is-open" : "",
         dragging ? "is-dragging" : "",
       ].filter(Boolean).join(" ")}
     >
-      <span className="extension-todo-capsule-icon" aria-hidden="true">{"\u2611"}</span>
-      <span>{t("chat.todo")}</span>
-      <span className="extension-todo-capsule-count">{model.completed}/{model.total}</span>
-      <span className="extension-todo-capsule-chevron" aria-hidden="true">{open ? "\u2212" : "\u2304"}</span>
+      <span className="extension-todo-capsule-icon" aria-hidden="true">
+        <span className="extension-todo-capsule-ring" style={{ "--todo-progress": `${percent}%` } as CSSProperties} />
+      </span>
+      <span className="extension-todo-capsule-copy">
+        <span className="extension-todo-capsule-label">{t("chat.todo")}</span>
+        <span className="extension-todo-capsule-count">{model.completed}/{model.total}</span>
+      </span>
+      <span className="extension-todo-capsule-chevron" aria-hidden="true" />
     </button>
   );
 }
