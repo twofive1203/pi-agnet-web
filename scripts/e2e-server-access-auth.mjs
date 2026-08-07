@@ -45,6 +45,46 @@ function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+function waitForExit(child, timeoutMs) {
+  if (child.exitCode != null) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    let settled = false;
+    let timer;
+    const finish = (exited) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      child.off("exit", onExit);
+      resolve(exited);
+    };
+    const onExit = () => finish(true);
+    timer = setTimeout(() => finish(child.exitCode != null), timeoutMs);
+    child.once("exit", onExit);
+  });
+}
+
+async function stopProcessTree(child) {
+  if (child.exitCode != null) return;
+
+  if (process.platform === "win32" && child.pid) {
+    await new Promise((resolve) => {
+      const killer = spawn(
+        "taskkill",
+        ["/PID", String(child.pid), "/T", "/F"],
+        { stdio: "ignore", windowsHide: true },
+      );
+      killer.once("error", resolve);
+      killer.once("exit", resolve);
+    });
+  } else {
+    child.kill("SIGTERM");
+  }
+
+  if (await waitForExit(child, 5_000)) return;
+  child.kill("SIGKILL");
+  await waitForExit(child, 2_000);
+}
+
 /**
  * @param {string[]} args
  * @param {Record<string, string>} env
@@ -71,6 +111,7 @@ function startLauncher(args, env) {
   });
   let stdout = "";
   let stderr = "";
+  let stopPromise = null;
   child.stdout.on("data", (c) => {
     stdout += c.toString();
   });
@@ -126,15 +167,8 @@ function startLauncher(args, env) {
       }
     },
     async stop() {
-      if (child.exitCode != null) return;
-      child.kill("SIGTERM");
-      const start = Date.now();
-      while (child.exitCode == null && Date.now() - start < 15_000) {
-        await sleep(100);
-      }
-      if (child.exitCode == null) {
-        child.kill("SIGKILL");
-      }
+      stopPromise ??= stopProcessTree(child);
+      await stopPromise;
     },
   };
 }
