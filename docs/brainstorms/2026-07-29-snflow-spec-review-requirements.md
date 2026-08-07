@@ -1,9 +1,13 @@
 ---
 date: 2026-07-29
 topic: snflow-spec-review
+status: implemented
+plan: docs/plans/2026-07-29-001-feat-snflow-spec-review-plan.md
 ---
 
 # SnFlow 项目规范沉淀命令
+
+> 已实施。交付与验收记录见 [`docs/plans/2026-07-29-001-feat-snflow-spec-review-plan.md`](../plans/2026-07-29-001-feat-snflow-spec-review-plan.md)；本文保留为需求来源，不是活动设计输入。
 
 ## Problem Frame
 

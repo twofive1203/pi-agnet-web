@@ -1,11 +1,13 @@
 ---
 title: "feat: Add MCP configuration to WebUI settings"
 type: feat
-status: active
+status: completed
 date: 2026-07-29
 ---
 
 # feat: Add MCP configuration to WebUI settings
+
+> Delivered in commit `0ea5a5b` (`feat(settings): add safe MCP configuration management`). The implementation lives in `lib/mcp-config.ts`, `app/api/mcp/config/route.ts`, and `components/McpConfig.tsx`; focused regression coverage is available through `npm run test:mcp`.
 
 ## Overview
 
@@ -167,7 +169,7 @@ flowchart TB
   U4 --> U5
 ```
 
-- [ ] U1. **Build the safe MCP configuration domain**
+- [x] U1. **Build the safe MCP configuration domain**
 
 **Goal:** 建立 adapter-compatible、scope-aware、secret-safe 的配置读取与定点写入层。
 
@@ -210,7 +212,7 @@ flowchart TB
 
 ---
 
-- [ ] U2. **Expose a local MCP configuration API**
+- [x] U2. **Expose a local MCP configuration API**
 
 **Goal:** 为 Settings 提供 browser-safe 的 discovery/read/update contract。
 
@@ -247,7 +249,7 @@ flowchart TB
 
 ---
 
-- [ ] U3. **Add the MCP Settings experience**
+- [x] U3. **Add the MCP Settings experience**
 
 **Goal:** 提供可理解多来源配置、无需手写 JSON 的 MCP 管理界面。
 
@@ -291,7 +293,7 @@ flowchart TB
 
 ---
 
-- [ ] U4. **Clarify runtime activation and package diagnostics**
+- [x] U4. **Clarify runtime activation and package diagnostics**
 
 **Goal:** 让用户准确理解“已配置”和“当前会话已加载”的区别，同时保持现有 runtime 不变。
 
@@ -324,7 +326,7 @@ flowchart TB
 
 ---
 
-- [ ] U5. **Complete documentation and regression validation**
+- [x] U5. **Complete documentation and regression validation**
 
 **Goal:** 固化 MCP 配置边界、文件归属和验证入口。
 

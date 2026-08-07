@@ -1,7 +1,14 @@
+---
+title: "feat: Optimize Lightweight Browser Control"
+type: feat
+status: active
+date: 2026-03-10
+remaining: part-3-release-hardening
+---
+
 # feat: Optimize Lightweight Browser Control
 
-Created: 2026-03-10
-Status: Part 1 complete; Part 2 complete; Part 3 pending
+> Parts 1–2 are complete. Part 3 remains active: U7 frame contexts are conditional and may be deferred without blocking release; U8 release hardening remains pending.
 
 ## Problem Frame
 

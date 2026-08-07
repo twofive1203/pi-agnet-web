@@ -1,7 +1,7 @@
 ---
 title: "refactor: Iteration 3 — 统一聊天消息与 Composer 视觉"
 type: refactor
-status: active
+status: completed
 date: 2026-08-01
 origin: docs/plans/2026-08-01-001-refactor-frontend-visual-system-plan.md
 iteration: 3
@@ -9,6 +9,8 @@ depends_on: docs/plans/2026-08-01-002-refactor-theme-foundation-plan.md
 ---
 
 # refactor: Iteration 3 — 统一聊天消息与 Composer 视觉
+
+> 实现交付已完成（commit `18229fd`）。跨主题、固定视口与键盘人工矩阵统一由仍在进行的 Iteration 8 计划收口，不再把本计划视为活动实施项。
 
 ## Overview
 

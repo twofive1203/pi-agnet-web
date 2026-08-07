@@ -1,12 +1,16 @@
 # Session Archive — 设计文档
 
-## 目标
+> 状态：已实施；本文保留为历史设计输入，不再作为当前实现规范。权威行为见 [`docs/architecture/overview.md`](../architecture/overview.md)、[`docs/modules/api.md`](../modules/api.md) 和 [`docs/modules/frontend.md`](../modules/frontend.md)。
+>
+> 最终实现补充：归档/取消归档会移动父 JSONL 及其 path-derived companion artifacts；不会修改 JSONL 内容或重写 `parentSession`。活动与归档列表均已支持分页，前端由 `hooks/useSessionBrowser.ts` 管理。
+
+## 历史目标
 
 为 pi-web 增加 session 归档功能：将不再活跃的会话从主列表中移除，但保留文件供日后查看。
 
 归档方式：将 session JSONL 文件从 `~/.pi/agent/sessions/<cwd>/` 移动到 `~/.pi/agent/sessions-archive/<cwd>/`（镜像目录结构）。
 
-## 核心问题
+## 历史问题与设计取舍
 
 ### 问题 1：项目可见性
 
@@ -20,7 +24,7 @@
 
 **解决方案：** 当某个 cwd 被选中时，如果该 cwd 有归档 session，在 session 列表底部显示一个"已归档（N）"折叠区域，点击展开可查看归档 session，支持取消归档（恢复到主列表）。
 
-## 架构设计
+## 历史架构设计
 
 ### 存储结构
 
@@ -61,7 +65,7 @@
 3. 计算目标路径：把 `sessions/` 替换为 `sessions-archive/`
 4. `mkdirSync` 目标目录，`renameSync` 移动文件
 5. 清除 session path cache
-6. 级联处理：将引用该 session 作为 `parentSession` 的子 session 的 `parentSession` 路径也更新到新位置
+6. 历史方案曾考虑重写子 session 的 `parentSession` 路径；最终实现没有采用该步骤，JSONL 元数据保持不变
 
 #### `POST /api/sessions/unarchive`
 
@@ -263,10 +267,10 @@ hover 时显示: [✏️ Rename] [📦 Archive] [🗑 Delete]
 ## 安全性
 
 - 归档操作是可逆的（取消归档即可恢复），不需要 `trash` CLI
-- 不修改 session JSONL 文件内容，只移动文件位置
-- `parentSession` 路径在归档时更新（避免悬挂引用），取消归档时还原
+- 不修改 session JSONL 文件内容；父 JSONL 与 path-derived companion artifacts 在活动/归档根之间移动
+- `parentSession` 仅保留为原始展示元数据，不在归档或取消归档时重写
 
-## 实现顺序
+## 历史实现顺序（已完成）
 
 1. **Phase 1 — 后端核心**
    - `lib/session-reader.ts`：新增归档/取消归档函数、归档目录扫描

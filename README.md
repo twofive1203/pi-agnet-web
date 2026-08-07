@@ -134,6 +134,10 @@ docs/         # 架构、模块、部署和运维文档
 
 更多部署、发布和运行细节见 [`docs/deployment/README.md`](docs/deployment/README.md)。
 
+## MCP configuration
+
+Settings → **MCP** safely edits `pi-mcp-adapter` native user/project configuration files with redacted secrets, revision-conflict protection, and explicit `/reload` guidance. The adapter remains optional and is not bundled as a WebUI transport; see [`docs/integrations/README.md`](docs/integrations/README.md#mcp-adapter-configuration-pi-mcp-adapter) and run `npm run test:mcp` for focused validation.
+
 ## Automation
 
 Scheduled Agent Automation is available from the top-right **A** drawer. Tasks use five-field cron + IANA timezone, run only while Snail Pi Web is online, and keep transcripts outside ordinary project sessions. Chinese setup and trial instructions are in [`docs/automation-user-guide.zh-CN.md`](docs/automation-user-guide.zh-CN.md). See [`docs/architecture/decisions/automation-scheduler.md`](docs/architecture/decisions/automation-scheduler.md) for architecture and run `npm run test:automation` for the smoke suite.

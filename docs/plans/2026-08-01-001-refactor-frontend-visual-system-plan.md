@@ -2,10 +2,13 @@
 title: "refactor: 统一前端视觉系统并完成主题细节优化"
 type: refactor
 status: active
+remaining: iteration-8-browser-matrix
 date: 2026-08-01
 ---
 
 # refactor: 统一前端视觉系统并完成主题细节优化
+
+> 当前仅剩 Iteration 8 的固定浏览器矩阵、代表主题对比度与焦点顺序人工确认；Iteration 1–7 的实现交付均已完成。
 
 ## Overview
 

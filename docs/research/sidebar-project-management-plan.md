@@ -1,8 +1,12 @@
 # 左侧项目管理（Session Sidebar）续优需求规划
 
-> 状态：已实施（API 分页 + parent 闭包 + 前端 Load more + useSessionBrowser / tree 抽离）  
-> 范围：WebUI 左侧栏「项目管理 / 会话浏览 / WorkTree / Explorer」  
-> 背景提交：`fbe6e8e perf(sessions): lazy-load project history`（后端懒加载已落地，前端消费仍不完整）  
+> 状态：已实施并归档为历史规划；正文中的未勾选项描述实施前状态，不是当前 backlog。
+>
+> 交付：`fbe6e8e` 完成后端懒加载主路径，`2fbe0f4` 完成分页消费、树/数据层拆分和会话索引等收口。
+>
+> 当前权威说明：[`docs/architecture/overview.md`](../architecture/overview.md)、[`docs/modules/frontend.md`](../modules/frontend.md)、[`docs/modules/api.md`](../modules/api.md)。剩余性能与体验建议统一进入 [`PERFORMANCE_AND_POLISH_ROADMAP.md`](../../PERFORMANCE_AND_POLISH_ROADMAP.md)。
+>
+> 范围：WebUI 左侧栏「项目管理 / 会话浏览 / WorkTree / Explorer」
 > 相关代码：
 >
 > - `components/SessionSidebar.tsx`
@@ -32,9 +36,9 @@
 
 ---
 
-## 2. 现状摘要
+## 2. 实施前快照（历史）
 
-### 2.1 已完成（后端懒加载主路径）
+### 2.1 当时已完成（后端懒加载主路径）
 
 | 能力 | 实现 |
 | --- | --- |
@@ -45,7 +49,7 @@
 | 竞态防护（前端部分） | `AbortController` + `projectSessionsCwd` 绑定，切项目先清空再加载 |
 | 回归冒烟 | `scripts/smoke-lazy-session-load.ts` |
 
-### 2.2 未完成 / 半截体验
+### 2.2 当时未完成（现已关闭或转入统一 backlog）
 
 | 缺口 | 说明 |
 | --- | --- |
@@ -57,7 +61,7 @@
 | i18n / 空状态 | 部分文案仍硬编码英文（如 `Loading...`、`No sessions found`） |
 | 计数语义混用 | `sessionCount`（候选文件数）与 `projectSessionTotal` / archive-all 展示可能不一致 |
 
-### 2.3 当前数据流
+### 2.3 实施前数据流
 
 ```text
 Browser                         Server
@@ -286,7 +290,7 @@ hooks/
 
 ---
 
-## 5. 分阶段实施计划
+## 5. 历史分阶段实施计划
 
 ### Phase 0 — 文档与契约冻结（0.5d）
 
@@ -390,7 +394,7 @@ hooks/
 
 ---
 
-## 9. 建议排期与优先级
+## 9. 历史排期与优先级
 
 | 优先级 | 项 | Phase |
 | --- | --- | --- |
@@ -408,9 +412,9 @@ hooks/
 
 ---
 
-## 10. 待决问题
+## 10. 已决事项
 
-实施前需确认（若无异议则按括号内默认）：
+最终实现采用复合 `before` 游标、受限 parent 闭包和默认 10 条活动会话页；本文已归档到 `docs/research/`。以下列表保留原始决策上下文：
 
 1. 分页游标用 `before` 复合游标还是 `offset`？（**默认 `before`**，更稳）
 2. parent 缺失时自动补节点还是 UI 占位？（**默认自动补一层 parent 摘要，深链超出上限再占位**）
@@ -419,10 +423,11 @@ hooks/
 
 ---
 
-## 11. 参考：关键代码锚点
+## 11. 当前代码锚点
 
-- 前端加载：`components/SessionSidebar.tsx` 中 `loadProjectSummaries` / `loadProjectSessions` / `loadSessions` / 选中补丁 `useEffect`
-- 树构建：`buildSessionTree`
-- 项目排序与 picker：`getOrderedCwds` / `buildCwdPickerRows` / `groupCwdPickerRows` / `filterCwdPickerGroups`
-- 后端：`listProjectSummaries`、`listRecentSessionsForCwd`、`findSessionFileById`
+- 前端数据层：`hooks/useSessionBrowser.ts`
+- 侧栏组合：`components/SessionSidebar.tsx` 与 `components/sidebar/*`
+- 树构建：`lib/sidebar-session-tree.ts`
+- 项目排序与 picker：`components/sidebar/sidebar-utils.ts`
+- 后端：`lib/session-reader.ts`、`lib/session-index.ts`、`app/api/sessions/route.ts`
 - 常量：`RECENT_SESSIONS_LIMIT = 10`（`lib/session-reader-constants.ts`）

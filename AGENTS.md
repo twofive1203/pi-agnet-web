@@ -14,12 +14,23 @@ npm run dev     # http://localhost:62666
 | `npm run dev` | Start the dev server on port 62666. |
 | `npm run lint` | Run ESLint. |
 | `node_modules/.bin/tsc --noEmit` | Type-check without emitting. |
+| `npm run test:browser` | Browser binding protocol/manager and Chrome extension artifact smoke suite. |
 | `npm run test:agent-stream` | Agent token-stream coalescing and lifecycle ordering smoke suite. |
 | `npm run test:session-changes` | Async session changed-file projection and serialization smoke suite. |
 | `npm run test:session-stats` | Parent-session lifetime token/cost aggregation smoke suite. |
 | `npm run test:snflow` | SnFlow setup/store/session-link/spec-review smoke suite. |
 | `npm run test:automation` | Automation store/schedule/policy/runner/API smoke suite. |
 | `npm run test:mcp` | MCP configuration domain/API smoke suite (adapter-native files, secrets, revisions). |
+| `npm run test:i18n` | zh/en catalog parity and i18n contract checks. |
+| `npm run test:bundled-extensions` | Bundled Pi extension registry/loading smoke suite. |
+| `npm run test:web-tools-config` | Web Search provider/secret configuration smoke suite. |
+| `npm run test:ui-theme` | Theme registry, semantic Token, responsive, focus, and motion contract checks. |
+| `npm run test:subagent-observability` | Subagent summaries, metrics, and observation projections. |
+| `npm run test:runtime` | Runtime packaging and published launcher invariants. |
+| `npm run test:open-folder` | Local project-folder opening policy and route checks. |
+| `npm run test:cwd-browse` | Workspace directory browsing policy and route checks. |
+| `npm run test:cwd-native-pick` | Native folder-picker policy and route checks. |
+| `npm run test:api-protection` | Local API mutation protection smoke suite. |
 | `npm run build` | Production/release build through `scripts/build-next.js`. Do not use for routine dev work. |
 | `npm run start` | Start the production server on port 62666. |
 
@@ -36,6 +47,8 @@ npm run dev     # http://localhost:62666
 | Change shared logic | `docs/modules/library.md` | Relevant file in `lib/` and all callers |
 | Change session lifecycle, branching, JSONL, or SSE | `docs/architecture/overview.md` | `lib/rpc-manager.ts`, `lib/session-reader.ts`, `hooks/useAgentSession.ts` |
 | Change Automation schedules/runs | `docs/architecture/decisions/automation-scheduler.md` | `lib/automation-*.ts`, `app/api/automations/**`, `components/AutomationPanel.tsx` |
+| Operate or trial Automation | `docs/automation-user-guide.zh-CN.md` | Automation panel, task approval, run history, and troubleshooting |
+| Pick up planned/backlog work | `docs/plans/README.md` | `PERFORMANCE_AND_POLISH_ROADMAP.md`, then the linked plan/current code |
 | Change code/comment/test conventions | `docs/standards/code-style.md` | Existing nearby code and `.pi/snflows/spec/` when SnFlow is active |
 | Deploy, publish, or debug runtime | `docs/deployment/README.md` | `docs/operations/troubleshooting.md`, `ecosystem.config.cjs`, proxy scripts |
 | Change dependencies or pi SDK integration | `docs/integrations/README.md` | `package.json`, installed pi docs under `node_modules/@earendil-works/pi-coding-agent/` |
@@ -54,7 +67,7 @@ npm run dev     # http://localhost:62666
 | `public/` | Static assets. | Inspect files directly. |
 | `docs/` | Project knowledge base and archive target. | This file's archive rules. |
 | `.pi/` | Local workflow/runtime state (SnFlow tasks, extensions, skills); not project docs. | Read when the active SnFlow/skill workflow requires it. |
-| `.trellis/` | Legacy repository workflow data only; not the supported coding-spec source. | Do not treat as active product docs; final archive/removal is a separate migration task. |
+| `.trellis/` (removed) | Historical repository workflow assets are no longer present or supported. | Only serialized `trellis_subagent` records and unknown `pi-web.json.trellis` keys retain compatibility; no active code reads/writes `.trellis/`. |
 
 ## Module Entry Points
 
@@ -142,6 +155,8 @@ All durable project knowledge belongs under `docs/`. Add or update docs first, t
 | Third-party components, external services, SDK usage | `docs/integrations/` |
 | Operations, logs, troubleshooting, runbooks | `docs/operations/` |
 | Research, analysis, future improvements | `docs/research/` |
+| Implementation plans and delivery status | `docs/plans/` |
+| Requirement/brainstorm source records | `docs/brainstorms/` |
 | Important technical decisions | `docs/architecture/decisions/` |
 | Agent skill notes | `docs/` flat file with a descriptive name, unless a closer docs category fits |
 
@@ -157,8 +172,10 @@ Current docs index:
 - `docs/integrations/README.md` — dependency and pi SDK integration entry point.
 - `docs/operations/troubleshooting.md` — runtime and development troubleshooting.
 - `docs/operations/ui-visual-validation.md` — representative-theme, viewport, keyboard, Portal, contrast, motion, and screenshot validation runbook.
-- `docs/research/README.md` — archive location for investigation notes and future research.
-- `docs/SKILL_find_skills.md` — instructions for discovering/installing agent skills.
+- `docs/automation-user-guide.zh-CN.md` — Automation setup, approval, run, promotion, and troubleshooting guide.
+- `docs/plans/README.md` — implementation-plan status index and delivery pointers.
+- `docs/research/README.md` — implemented/superseded investigations and open-research index.
+- `PERFORMANCE_AND_POLISH_ROADMAP.md` — active performance and functional-polish backlog.
 
 ## AI Working Conventions
 

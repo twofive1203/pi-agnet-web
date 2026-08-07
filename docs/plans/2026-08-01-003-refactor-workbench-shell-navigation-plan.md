@@ -1,7 +1,7 @@
 ---
 title: "refactor: Iteration 2 — 优化工作台骨架与左侧导航"
 type: refactor
-status: active
+status: completed
 date: 2026-08-01
 origin: docs/plans/2026-08-01-001-refactor-frontend-visual-system-plan.md
 iteration: 2
@@ -9,6 +9,8 @@ depends_on: docs/plans/2026-08-01-002-refactor-theme-foundation-plan.md
 ---
 
 # refactor: Iteration 2 — 优化工作台骨架与左侧导航
+
+> 实现交付已完成（commit `34a75f8`）。跨主题、固定视口与键盘人工矩阵统一由仍在进行的 Iteration 8 计划收口，不再把本计划视为活动实施项。
 
 ## Overview
 

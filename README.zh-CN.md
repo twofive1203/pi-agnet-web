@@ -149,6 +149,10 @@ docs/         # 架构、模块、部署和运维文档
 
 更多架构、开发、部署和运行说明见 [`docs/`](docs/)；部署与发布细节见 [`docs/deployment/README.md`](docs/deployment/README.md)。
 
+## MCP 配置
+
+Settings → **MCP** 可安全编辑 `pi-mcp-adapter` 原生的用户级/项目级配置文件，敏感字段只返回脱敏状态，并提供 revision 冲突保护和明确的 `/reload` 生效提示。adapter 是可选 Pi package，不是 WebUI 内置 transport；详见 [`docs/integrations/README.md`](docs/integrations/README.md#mcp-adapter-configuration-pi-mcp-adapter)，聚焦验证命令为 `npm run test:mcp`。
+
 ## 自动化（Automation）
 
 右上角 **A** 抽屉可管理定时 Agent 任务。使用五段 cron 与 IANA 时区；仅在 Snail Pi Web 服务在线时调度；运行记录不进入普通项目会话列表。
