@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useI18n } from "@/components/I18nProvider";
 import {
   SettingsActionRow,
   SettingsBadge,
@@ -72,10 +73,11 @@ function CountPill({ label, count }: { label: string; count: number }) {
 }
 
 function Section({ title, count, children, empty }: { title: string; count: number; children: ReactNode; empty?: string }) {
+  const { t } = useI18n();
   return (
     <SettingsSection className="resource-section">
       <SettingsSectionHeader title={title} meta={`${count}`} />
-      {count === 0 ? <SettingsState title={empty ?? "None"} /> : children}
+      {count === 0 ? <SettingsState title={empty ?? t("panels.extensions.none")} /> : children}
     </SettingsSection>
   );
 }
@@ -105,6 +107,7 @@ function SettingEditor({
   source: ExtensionSettingValueRow["source"];
   onChange: (next: string) => void;
 }) {
+  const { t } = useI18n();
   const label = definition?.label ?? definition?.id ?? value;
   const values = definition?.values;
   const options = definition?.options;
@@ -133,14 +136,14 @@ function SettingEditor({
               className="settings-button-mono"
               onClick={() => onChange(item)}
             >
-              {JSON.stringify(item).slice(1, -1) || "(empty)"}
+              {JSON.stringify(item).slice(1, -1) || t("panels.extensions.emptyValue")}
             </SettingsButton>
           ))}
-          <SettingsButton size="sm" variant="ghost" onClick={() => onChange(cycleValue(value, values))}>Cycle</SettingsButton>
+          <SettingsButton size="sm" variant="ghost" onClick={() => onChange(cycleValue(value, values))}>{t("panels.extensions.cycle")}</SettingsButton>
         </div>
       ) : options && options.length > 0 ? (
         <div className="extension-setting-options">
-          <div className="settings-surface-muted">Ordered multi-select (comma-separated ids). Toggle items below; order follows the value.</div>
+          <div className="settings-surface-muted">{t("panels.extensions.multiSelectHint")}</div>
           <div className="settings-chip-group">
             {options.map((option) => {
               const active = selectedOptions.includes(option.id);
@@ -168,6 +171,7 @@ function SettingEditor({
 
 /** Modal for inspecting loaded Pi packages/resources and editing extension settings. */
 export function ExtensionsConfig({ cwd, onClose, embed }: { cwd: string | null; onClose: () => void; embed?: boolean }) {
+  const { t } = useI18n();
   const [tab, setTab] = useState<TabId>("resources");
   const [resources, setResources] = useState<ResourcesPayload | null>(null);
   const [settings, setSettings] = useState<SettingsPayload | null>(null);
@@ -288,60 +292,60 @@ export function ExtensionsConfig({ cwd, onClose, embed }: { cwd: string | null; 
       const data = (await res.json()) as SettingsPayload & { ok?: boolean };
       if (!res.ok || data.error) throw new Error(data.error ?? `HTTP ${res.status}`);
       applySettingsPayload(data);
-      setSaveMessage(`Saved ${patch.length} setting${patch.length === 1 ? "" : "s"}.`);
+      setSaveMessage(t("panels.extensions.savedCount", { count: patch.length }));
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
       setSaving(false);
     }
-  }, [applySettingsPayload, dirtyKeys, draft, effectiveCwd]);
+  }, [applySettingsPayload, dirtyKeys, draft, effectiveCwd, t]);
 
   const loading = tab === "resources" ? loadingResources : loadingSettings;
   const panelContent = (
     <div className="resource-config-shell">
       <div className="resource-config-header">
         <div className="pi-modal-header-copy">
-          <div className="pi-modal-title">Extensions</div>
+          <div className="pi-modal-title">{t("panels.extensions.title")}</div>
           <div className="pi-modal-subtitle resource-path">cwd: {shortenPath(effectiveCwd)}</div>
         </div>
-        <SettingsTabs aria-label="Extension panel">
-          <SettingsTab active={tab === "resources"} onClick={() => setTab("resources")}>Resources</SettingsTab>
-          <SettingsTab active={tab === "settings"} onClick={() => setTab("settings")}>Settings</SettingsTab>
+        <SettingsTabs aria-label={t("panels.extensions.panelAria")}>
+          <SettingsTab active={tab === "resources"} onClick={() => setTab("resources")}>{t("panels.extensions.resources")}</SettingsTab>
+          <SettingsTab active={tab === "settings"} onClick={() => setTab("settings")}>{t("panels.extensions.settings")}</SettingsTab>
         </SettingsTabs>
-        <SettingsButton size="sm" onClick={() => void (tab === "resources" ? loadResources() : loadSettings())} busy={loading}>Refresh</SettingsButton>
-        {!embed && <SettingsButton size="sm" variant="ghost" onClick={onClose}>Close</SettingsButton>}
+        <SettingsButton size="sm" onClick={() => void (tab === "resources" ? loadResources() : loadSettings())} busy={loading}>{t("panels.extensions.refresh")}</SettingsButton>
+        {!embed && <SettingsButton size="sm" variant="ghost" onClick={onClose}>{t("panels.extensions.close")}</SettingsButton>}
       </div>
 
       {(error || saveMessage) && <SettingsNotice tone={error ? "danger" : "success"} className="resource-config-notice">{error ?? saveMessage}</SettingsNotice>}
 
       <div className="resource-config-content">
-        {loading && tab === "resources" && !resources && <SettingsState kind="loading" title="Loading resources…" />}
-        {loading && tab === "settings" && !settings && <SettingsState kind="loading" title="Discovering extension settings…" />}
+        {loading && tab === "resources" && !resources && <SettingsState kind="loading" title={t("panels.extensions.loadingResources")} />}
+        {loading && tab === "settings" && !settings && <SettingsState kind="loading" title={t("panels.extensions.discoveringSettings")} />}
 
         {tab === "resources" && resources && (
           <>
             <div className="resource-count-grid">
-              <CountPill label="Packages" count={resources.packages?.length ?? 0} />
-              <CountPill label="Extensions" count={resources.extensions?.length ?? 0} />
-              <CountPill label="Tools" count={resources.tools?.length ?? 0} />
-              <CountPill label="Commands" count={resources.commands?.length ?? 0} />
-              <CountPill label="Skills" count={resources.skills?.length ?? 0} />
-              <CountPill label="Prompts" count={resources.prompts?.length ?? 0} />
-              <CountPill label="Diagnostics" count={resources.diagnostics?.length ?? 0} />
+              <CountPill label={t("panels.extensions.packages")} count={resources.packages?.length ?? 0} />
+              <CountPill label={t("panels.extensions.title")} count={resources.extensions?.length ?? 0} />
+              <CountPill label={t("panels.extensions.tools")} count={resources.tools?.length ?? 0} />
+              <CountPill label={t("panels.extensions.commands")} count={resources.commands?.length ?? 0} />
+              <CountPill label={t("panels.extensions.skills")} count={resources.skills?.length ?? 0} />
+              <CountPill label={t("panels.extensions.prompts")} count={resources.prompts?.length ?? 0} />
+              <CountPill label={t("panels.extensions.diagnostics")} count={resources.diagnostics?.length ?? 0} />
             </div>
             {resources.agentDir && <div className="resource-path">agentDir: {shortenPath(resources.agentDir)}</div>}
 
-            <Section title="Packages" count={resources.packages?.length ?? 0} empty="No packages configured in settings.json.">
-              <div className="resource-list">{(resources.packages ?? []).map((pkg) => <ListRow key={`${pkg.scope}:${pkg.source}`} title={pkg.source} subtitle={pkg.installedPath ? shortenPath(pkg.installedPath) : undefined} badge={`${pkg.scope}${pkg.filtered ? " · filtered" : ""}`} />)}</div>
+            <Section title={t("panels.extensions.packages")} count={resources.packages?.length ?? 0} empty={t("panels.extensions.noPackages")}>
+              <div className="resource-list">{(resources.packages ?? []).map((pkg) => <ListRow key={`${pkg.scope}:${pkg.source}`} title={pkg.source} subtitle={pkg.installedPath ? shortenPath(pkg.installedPath) : undefined} badge={`${pkg.scope}${pkg.filtered ? ` · ${t("panels.extensions.filtered")}` : ""}`} />)}</div>
             </Section>
-            <Section title="Loaded extensions" count={resources.extensions?.length ?? 0}>
+            <Section title={t("panels.extensions.loadedExtensions")} count={resources.extensions?.length ?? 0}>
               <div className="resource-list">{(resources.extensions ?? []).map((extension) => <ListRow key={extension.resolvedPath || extension.path} title={shortenPath(extension.resolvedPath || extension.path)} subtitle={extension.path !== extension.resolvedPath ? extension.path : undefined} badge={extension.sourceInfo?.scope || extension.sourceInfo?.source || "ext"} />)}</div>
             </Section>
-            <Section title="Tools" count={resources.tools?.length ?? 0}><div className="resource-list">{(resources.tools ?? []).map((tool) => <ListRow key={tool.name} title={tool.name} subtitle={tool.description} />)}</div></Section>
-            <Section title="Extension commands" count={resources.commands?.length ?? 0}><div className="resource-list">{(resources.commands ?? []).map((command) => <ListRow key={command.name} title={`/${command.name}`} subtitle={command.description} />)}</div></Section>
-            <Section title="Skills" count={resources.skills?.length ?? 0}><div className="resource-list">{(resources.skills ?? []).map((skill) => <ListRow key={skill.name} title={skill.name} subtitle={skill.description} />)}</div></Section>
-            <Section title="Prompts" count={resources.prompts?.length ?? 0}><div className="resource-list">{(resources.prompts ?? []).map((prompt) => <ListRow key={prompt.name} title={`/${prompt.name}`} subtitle={prompt.description} />)}</div></Section>
-            <Section title="Diagnostics" count={resources.diagnostics?.length ?? 0} empty="No load diagnostics.">
+            <Section title={t("panels.extensions.tools")} count={resources.tools?.length ?? 0}><div className="resource-list">{(resources.tools ?? []).map((tool) => <ListRow key={tool.name} title={tool.name} subtitle={tool.description} />)}</div></Section>
+            <Section title={t("panels.extensions.extensionCommands")} count={resources.commands?.length ?? 0}><div className="resource-list">{(resources.commands ?? []).map((command) => <ListRow key={command.name} title={`/${command.name}`} subtitle={command.description} />)}</div></Section>
+            <Section title={t("panels.extensions.skills")} count={resources.skills?.length ?? 0}><div className="resource-list">{(resources.skills ?? []).map((skill) => <ListRow key={skill.name} title={skill.name} subtitle={skill.description} />)}</div></Section>
+            <Section title={t("panels.extensions.prompts")} count={resources.prompts?.length ?? 0}><div className="resource-list">{(resources.prompts ?? []).map((prompt) => <ListRow key={prompt.name} title={`/${prompt.name}`} subtitle={prompt.description} />)}</div></Section>
+            <Section title={t("panels.extensions.diagnostics")} count={resources.diagnostics?.length ?? 0} empty={t("panels.extensions.noDiagnostics")}>
               <div className="resource-list">{(resources.diagnostics ?? []).map((item, index) => <ListRow key={`${item.type}-${index}-${item.message.slice(0, 24)}`} title={item.message} subtitle={item.path} badge={item.type} />)}</div>
             </Section>
           </>
@@ -350,26 +354,26 @@ export function ExtensionsConfig({ cwd, onClose, embed }: { cwd: string | null; 
         {tab === "settings" && settings && (
           <>
             <SettingsActionRow className="resource-filter-row">
-              <SettingsInput type="search" value={filter} onChange={(event) => setFilter(event.target.value)} placeholder="Filter settings…" />
+              <SettingsInput type="search" value={filter} onChange={(event) => setFilter(event.target.value)} placeholder={t("panels.extensions.filterPlaceholder")} />
               <SettingsButton variant="primary" onClick={() => void saveSettings()} disabled={dirtyKeys.length === 0} busy={saving}>
-                {saving ? "Saving…" : dirtyKeys.length > 0 ? `Save ${dirtyKeys.length}` : "Saved"}
+                {saving ? t("panels.extensions.saving") : dirtyKeys.length > 0 ? t("panels.extensions.saveCount", { count: dirtyKeys.length }) : t("panels.extensions.saved")}
               </SettingsButton>
             </SettingsActionRow>
-            <div className="resource-path">{settings.settingsPath ? shortenPath(settings.settingsPath) : "settings-extensions.json"} · {settings.groups?.length ?? 0} registered groups · {settings.values?.length ?? 0} settings</div>
+            <div className="resource-path">{settings.settingsPath ? shortenPath(settings.settingsPath) : "settings-extensions.json"} · {t("panels.extensions.groupsSummary", { groups: settings.groups?.length ?? 0, settings: settings.values?.length ?? 0 })}</div>
 
             {(settings.diagnostics?.length ?? 0) > 0 && (
-              <Section title="Discovery diagnostics" count={settings.diagnostics?.length ?? 0}>
+              <Section title={t("panels.extensions.discoveryDiagnostics")} count={settings.diagnostics?.length ?? 0}>
                 <div className="resource-list">{(settings.diagnostics ?? []).map((item, index) => <ListRow key={`diag-${index}`} title={item.message} subtitle={item.path} badge={item.type} />)}</div>
               </Section>
             )}
 
             {(settings.values?.length ?? 0) === 0 ? (
-              <SettingsState title="No extension settings registered." description={<>Ensure <code>pi-extension-settings</code> loads before consumer extensions in <code>settings.json</code> packages.</>} />
+              <SettingsState title={t("panels.extensions.noSettingsRegistered")} description={t("panels.extensions.noSettingsRegisteredHint")} />
             ) : groupedFiltered.length === 0 ? (
-              <SettingsState title="No settings match the filter." />
+              <SettingsState title={t("panels.extensions.noSettingsMatch")} />
             ) : groupedFiltered.map(([extensionName, rows]) => (
               <SettingsSection key={extensionName} className="extension-settings-group">
-                <SettingsSectionHeader title={extensionName} meta={`${rows.length} setting${rows.length === 1 ? "" : "s"}`} />
+                <SettingsSectionHeader title={extensionName} meta={t("panels.extensions.settingsCount", { count: rows.length })} />
                 <div className="resource-list">
                   {rows.map((row) => {
                     const key = draftKey(row.extensionName, row.settingId);
@@ -386,7 +390,7 @@ export function ExtensionsConfig({ cwd, onClose, embed }: { cwd: string | null; 
 
   if (embed) return panelContent;
   return (
-    <div className="pi-modal-overlay" role="dialog" aria-modal="true" aria-label="Pi extensions" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <div className="pi-modal-overlay" role="dialog" aria-modal="true" aria-label={t("panels.extensions.dialogAria")} onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <div className="pi-modal-panel pi-modal-panel-large resource-config-panel">{panelContent}</div>
     </div>
   );

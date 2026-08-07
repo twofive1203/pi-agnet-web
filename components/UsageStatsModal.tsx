@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useI18n } from "@/components/I18nProvider";
 import { SettingsButton, SettingsInput, SettingsNotice, SettingsTab, SettingsTabs } from "@/components/ui/SettingsPrimitives";
 import type { UsageStatsResult, UsageTotals } from "@/lib/usage-stats";
 
@@ -79,6 +80,7 @@ function totalTokens(totals: UsageTotals): number {
  * @returns 用于查看费用统计的 React 节点。
  */
 export function UsageStatsModal({ cwd, onClose }: UsageStatsModalProps) {
+  const { t } = useI18n();
   const defaults = useMemo(() => getDefaultInputRange(), []);
   const [from, setFrom] = useState(defaults.from);
   const [to, setTo] = useState(defaults.to);
@@ -124,7 +126,7 @@ export function UsageStatsModal({ cwd, onClose }: UsageStatsModalProps) {
       className="pi-modal-overlay"
       role="dialog"
       aria-modal="true"
-      aria-label="Usage statistics"
+      aria-label={t("panels.usage.ariaLabel")}
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -138,12 +140,12 @@ export function UsageStatsModal({ cwd, onClose }: UsageStatsModalProps) {
               <line x1="12" y1="1" x2="12" y2="23" />
               <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7H14a3.5 3.5 0 0 1 0 7H6" />
             </svg>
-            <div className="pi-modal-title">Usage</div>
+            <div className="pi-modal-title">{t("panels.usage.shortTitle")}</div>
           </div>
 
           <div className="usage-modal-controls">
             <label className="usage-filter-label">
-              From
+              {t("panels.usage.from")}
               <SettingsInput
                 type="date"
                 value={from}
@@ -152,7 +154,7 @@ export function UsageStatsModal({ cwd, onClose }: UsageStatsModalProps) {
               />
             </label>
             <label className="usage-filter-label">
-              To
+              {t("panels.usage.to")}
               <SettingsInput
                 type="date"
                 value={to}
@@ -160,16 +162,16 @@ export function UsageStatsModal({ cwd, onClose }: UsageStatsModalProps) {
                 className="usage-date-input"
               />
             </label>
-            <SettingsTabs aria-label="Usage scope">
-              {(["all", "cwd"] as UsageScope[]).map((item) => <SettingsTab key={item} active={scope === item} disabled={item === "cwd" && !cwd} onClick={() => setScope(item)}>{item === "all" ? "All" : "Cwd"}</SettingsTab>)}
+            <SettingsTabs aria-label={t("panels.usage.scopeAria")}>
+              {(["all", "cwd"] as UsageScope[]).map((item) => <SettingsTab key={item} active={scope === item} disabled={item === "cwd" && !cwd} onClick={() => setScope(item)}>{item === "all" ? t("panels.usage.scopeAll") : t("panels.usage.scopeCwd")}</SettingsTab>)}
             </SettingsTabs>
-            <SettingsButton size="icon" onClick={() => void loadStats()} disabled={loading} busy={loading} title="Refresh" aria-label="Refresh usage statistics">
+            <SettingsButton size="icon" onClick={() => void loadStats()} disabled={loading} busy={loading} title={t("panels.usage.refresh")} aria-label={t("panels.usage.refreshAria")}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M21 12a9 9 0 1 1-2.64-6.36" />
                 <polyline points="21 3 21 9 15 9" />
               </svg>
             </SettingsButton>
-            <button type="button" onClick={onClose} className="pi-modal-close" title="Close" aria-label="Close usage statistics">
+            <button type="button" onClick={onClose} className="pi-modal-close" title={t("panels.usage.close")} aria-label={t("panels.usage.closeAria")}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <line x1="18" y1="6" x2="6" y2="18" />
                 <line x1="6" y1="6" x2="18" y2="18" />
@@ -184,20 +186,20 @@ export function UsageStatsModal({ cwd, onClose }: UsageStatsModalProps) {
           ) : (
             <>
               <div className="usage-metric-grid">
-                <Metric label="Cost" value={formatCost(stats?.totals.cost ?? 0)} strong />
-                <Metric label="Main cost" value={formatCost(stats?.mainTotals.cost ?? 0)} />
-                <Metric label="Subagent cost" value={formatCost(stats?.subagentTotals.cost ?? 0)} />
-                <Metric label="Tokens" value={`${formatTokens(totalTokens(stats?.totals ?? zeroTotals))} (${formatTokensM(totalTokens(stats?.totals ?? zeroTotals))})`} />
-                <Metric label="Calls" value={formatTokens(stats?.totals.calls ?? 0)} />
-                <Metric label="Sessions" value={`${stats?.bySession.length ?? 0}/${stats?.matchedSessions ?? 0}`} />
-                <Metric label="Subagent sessions" value={formatTokens(stats?.subagentSessions ?? 0)} />
-                <Metric label="Scanned active/archive" value={`${stats?.scannedActiveSessions ?? 0}/${stats?.scannedArchivedSessions ?? 0}`} />
-                <Metric label="Matched active/archive" value={`${stats?.matchedActiveSessions ?? 0}/${stats?.matchedArchivedSessions ?? 0}`} />
+                <Metric label={t("panels.usage.totalCost")} value={formatCost(stats?.totals.cost ?? 0)} strong />
+                <Metric label={t("panels.usage.mainCost")} value={formatCost(stats?.mainTotals.cost ?? 0)} />
+                <Metric label={t("panels.usage.subagentCost")} value={formatCost(stats?.subagentTotals.cost ?? 0)} />
+                <Metric label={t("panels.usage.tokens")} value={`${formatTokens(totalTokens(stats?.totals ?? zeroTotals))} (${formatTokensM(totalTokens(stats?.totals ?? zeroTotals))})`} />
+                <Metric label={t("panels.usage.calls")} value={formatTokens(stats?.totals.calls ?? 0)} />
+                <Metric label={t("panels.usage.sessions")} value={`${stats?.bySession.length ?? 0}/${stats?.matchedSessions ?? 0}`} />
+                <Metric label={t("panels.usage.subagentSessions")} value={formatTokens(stats?.subagentSessions ?? 0)} />
+                <Metric label={t("panels.usage.scannedActiveArchive")} value={`${stats?.scannedActiveSessions ?? 0}/${stats?.scannedArchivedSessions ?? 0}`} />
+                <Metric label={t("panels.usage.matchedActiveArchive")} value={`${stats?.matchedActiveSessions ?? 0}/${stats?.matchedArchivedSessions ?? 0}`} />
               </div>
 
               <div className="usage-content-grid">
                 <section className="usage-stats-card">
-                  <SectionTitle title="Daily" right={loading ? "Loading" : stats ? `${stats.from} - ${stats.to} · ${stats.scope.includeArchived ? "with archive" : "active only"}` : ""} />
+                  <SectionTitle title={t("panels.usage.daily")} right={loading ? t("panels.usage.loading") : stats ? `${stats.from} - ${stats.to} · ${stats.scope.includeArchived ? t("panels.usage.withArchive") : t("panels.usage.activeOnly")}` : ""} />
                   <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
                     {(stats?.byDay ?? []).length === 0 ? (
                       <EmptyState />
@@ -217,18 +219,18 @@ export function UsageStatsModal({ cwd, onClose }: UsageStatsModalProps) {
                 </section>
 
                 <section className="usage-stats-card">
-                  <SectionTitle title="Tokens" />
+                  <SectionTitle title={t("panels.usage.tokens")} />
                   <TokenRows totals={stats?.totals ?? zeroTotals} />
                 </section>
               </div>
 
               <div className="usage-content-grid usage-content-grid-spaced">
-                <Breakdown title="Models" rows={(stats?.byModel ?? []).slice(0, 8).map((row) => ({ label: `${row.provider}/${row.model}`, totals: row.totals }))} />
-                <Breakdown title="Providers" rows={(stats?.byProvider ?? []).map((row) => ({ label: row.provider, totals: row.totals }))} />
+                <Breakdown title={t("panels.usage.models")} rows={(stats?.byModel ?? []).slice(0, 8).map((row) => ({ label: `${row.provider}/${row.model}`, totals: row.totals }))} />
+                <Breakdown title={t("panels.usage.providers")} rows={(stats?.byProvider ?? []).map((row) => ({ label: row.provider, totals: row.totals }))} />
               </div>
 
               <section className="usage-stats-card usage-stats-card-spaced">
-                <SectionTitle title="Sessions" right={`${stats?.skippedEntries ?? 0} skipped`} />
+                <SectionTitle title={t("panels.usage.sessions")} right={t("panels.usage.skipped", { count: stats?.skippedEntries ?? 0 })} />
                 <div style={{ display: "flex", flexDirection: "column" }}>
                   {(stats?.bySession ?? []).length === 0 ? (
                     <EmptyState />
@@ -243,7 +245,11 @@ export function UsageStatsModal({ cwd, onClose }: UsageStatsModalProps) {
                         </div>
                         {session.subagentSessions > 0 && (
                           <div style={{ fontSize: 10, color: "var(--text-dim)", marginTop: 2 }}>
-                            Main {formatCost(session.mainTotals.cost)} · Subagents {formatCost(session.subagentTotals.cost)} ({session.subagentSessions})
+                            {t("panels.usage.mainSubagents", {
+                              main: formatCost(session.mainTotals.cost),
+                              sub: formatCost(session.subagentTotals.cost),
+                              count: session.subagentSessions,
+                            })}
                           </div>
                         )}
                       </div>
@@ -300,11 +306,12 @@ function SectionTitle({ title, right }: { title: string; right?: string }) {
  * @returns token 明细 React 节点。
  */
 function TokenRows({ totals }: { totals: UsageTotals }) {
+  const { t } = useI18n();
   const rows = [
-    ["Input", totals.input],
-    ["Output", totals.output],
-    ["Cache read", totals.cacheRead],
-    ["Cache write", totals.cacheWrite],
+    [t("panels.usage.input"), totals.input],
+    [t("panels.usage.output"), totals.output],
+    [t("panels.usage.cacheRead"), totals.cacheRead],
+    [t("panels.usage.cacheWrite"), totals.cacheWrite],
   ] as const;
   return (
     <div style={{ display: "flex", flexDirection: "column" }}>
@@ -352,5 +359,6 @@ function Breakdown({ title, rows }: { title: string; rows: { label: string; tota
  * @returns 空状态 React 节点。
  */
 function EmptyState() {
-  return <div className="usage-stats-empty">No usage in range</div>;
+  const { t } = useI18n();
+  return <div className="usage-stats-empty">{t("panels.usage.noUsageInRange")}</div>;
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect, useMemo, useReducer } from "react";
+import { useI18n } from "@/components/I18nProvider";
 import type {
   AgentMessage,
   ExtensionDialogRequest,
@@ -555,6 +556,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     chatInputRef,
     autoScrollEnabled = true,
   } = opts;
+  const { t } = useI18n();
   const isNew = session === null && newSessionCwd !== null;
 
   const [data, setData] = useState<SessionData | null>(null);
@@ -1342,8 +1344,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
 
   const handleContinueAfterFailure = useCallback(() => {
     if (agentRunning) return;
-    void handleSend("继续");
-  }, [agentRunning, handleSend]);
+    void handleSend(t("chat.continuePrompt"));
+  }, [agentRunning, handleSend, t]);
 
   const dismissAgentFailure = useCallback(() => {
     pendingAgentErrorRef.current = null;

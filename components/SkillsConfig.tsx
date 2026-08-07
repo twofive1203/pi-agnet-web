@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { SkillSearchResult } from "@/app/api/skills/search/route";
+import { useI18n } from "@/components/I18nProvider";
 import {
   SettingsActionRow,
   SettingsBadge,
@@ -26,11 +27,13 @@ interface Skill {
   sourceInfo: { source?: string; scope?: string };
 }
 
+type SourceKind = "bundled" | "global" | "project" | "path";
+
 function shortenPath(path: string): string {
   return path.replace(/^\/(?:Users|home)\/[^/]+/, "~");
 }
 
-function sourceLabel(skill: Skill): string {
+function sourceKind(skill: Skill): SourceKind {
   const source = skill.sourceInfo?.source;
   const scope = skill.sourceInfo?.scope;
   if (source?.startsWith("webui-bundled:")) return "bundled";
@@ -52,12 +55,20 @@ function SkillDetail({
   toggling: boolean;
   saveError: string | null;
 }) {
-  const label = sourceLabel(skill);
+  const { t } = useI18n();
+  const kind = sourceKind(skill);
   const enabled = !skill.disableModelInvocation;
-  const bundled = label === "bundled";
-  const displayPath = label === "project" && skill.filePath.startsWith(cwd)
+  const bundled = kind === "bundled";
+  const displayPath = kind === "project" && skill.filePath.startsWith(cwd)
     ? `./${skill.filePath.slice(cwd.length).replace(/^[/\\]/, "")}`
     : shortenPath(skill.filePath);
+  const label = kind === "bundled"
+    ? t("panels.skills.scopeBundled")
+    : kind === "global"
+      ? t("panels.skills.scopeGlobal")
+      : kind === "project"
+        ? t("panels.skills.scopeProject")
+        : t("panels.skills.scopePath");
 
   return (
     <SettingsSection className="skill-detail">
@@ -65,30 +76,31 @@ function SkillDetail({
         title={skill.name}
         description={skill.description}
         meta={<code className="resource-path">{displayPath}</code>}
-        action={<SettingsBadge tone={label === "project" ? "accent" : "neutral"}>{label}</SettingsBadge>}
+        action={<SettingsBadge tone={kind === "project" ? "accent" : "neutral"}>{label}</SettingsBadge>}
       />
       <SettingsToggle
-        label="Available to the model"
+        label={t("panels.skills.availableToModel")}
         description={bundled
-          ? "Bundled skills are read-only here. Disable the owning package in Settings → Extensions."
+          ? t("panels.skills.bundledReadonly")
           : enabled
-            ? "This skill is included in the model prompt."
-            : "This skill is hidden from the model prompt."}
+            ? t("panels.skills.includedInPrompt")
+            : t("panels.skills.hiddenFromPrompt")}
         checked={enabled}
         disabled={toggling || bundled}
         onChange={() => onToggle(skill)}
       />
       {saveError && <SettingsNotice tone="danger">{saveError}</SettingsNotice>}
       <SettingsSurface>
-        <span className="settings-surface-title">Skill source</span>
+        <span className="settings-surface-title">{t("panels.skills.skillSource")}</span>
         <code className="resource-path">{displayPath}</code>
-        <span className="settings-surface-muted">Base directory: {shortenPath(skill.baseDir)}</span>
+        <span className="settings-surface-muted">{t("panels.skills.baseDirectory", { path: shortenPath(skill.baseDir) })}</span>
       </SettingsSurface>
     </SettingsSection>
   );
 }
 
 function AddSkillPanel({ cwd, onInstalled }: { cwd: string; onInstalled: () => void }) {
+  const { t } = useI18n();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SkillSearchResult[]>([]);
   const [searching, setSearching] = useState(false);
@@ -118,13 +130,13 @@ function AddSkillPanel({ cwd, onInstalled }: { cwd: string; onInstalled: () => v
         return;
       }
       setResults(payload.results ?? []);
-      if ((payload.results ?? []).length === 0) setSearchError("No skills found");
+      if ((payload.results ?? []).length === 0) setSearchError(t("panels.skills.noSkills"));
     } catch (reason) {
       setSearchError(String(reason));
     } finally {
       setSearching(false);
     }
-  }, []);
+  }, [t]);
 
   const install = useCallback(async (pkg: string) => {
     setInstalling(pkg);
@@ -153,7 +165,16 @@ function AddSkillPanel({ cwd, onInstalled }: { cwd: string; onInstalled: () => v
 
   return (
     <SettingsSection className="skill-add-panel">
-      <SettingsSectionHeader title="Add Skill" description={<>Search <a href="https://skills.sh" target="_blank" rel="noreferrer">skills.sh</a> and install into the selected scope.</>} />
+      <SettingsSectionHeader
+        title={t("panels.skills.addSkill")}
+        description={
+          <>
+            {t("panels.skills.addSkillHintBefore")}
+            <a href="https://skills.sh" target="_blank" rel="noreferrer">skills.sh</a>
+            {t("panels.skills.addSkillHintAfter")}
+          </>
+        }
+      />
       <SettingsActionRow className="skill-search-row">
         <SettingsInput
           ref={inputRef}
@@ -161,16 +182,16 @@ function AddSkillPanel({ cwd, onInstalled }: { cwd: string; onInstalled: () => v
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           onKeyDown={(event) => { if (event.key === "Enter") void search(query); }}
-          placeholder="e.g. react, testing, deploy"
+          placeholder={t("panels.skills.searchPlaceholder")}
         />
         <SettingsButton variant="primary" onClick={() => void search(query)} disabled={!query.trim()} busy={searching}>
-          {searching ? "Searching…" : "Search"}
+          {searching ? t("panels.skills.searching") : t("panels.skills.search")}
         </SettingsButton>
       </SettingsActionRow>
       <SettingsActionRow>
-        <SettingsTabs aria-label="Install scope">
-          <SettingsTab active={scope === "global"} onClick={() => setScope("global")}>Global</SettingsTab>
-          <SettingsTab active={scope === "project"} onClick={() => setScope("project")}>Project</SettingsTab>
+        <SettingsTabs aria-label={t("panels.skills.installScopeAria")}>
+          <SettingsTab active={scope === "global"} onClick={() => setScope("global")}>{t("panels.skills.scopeGlobal")}</SettingsTab>
+          <SettingsTab active={scope === "project"} onClick={() => setScope("project")}>{t("panels.skills.scopeProject")}</SettingsTab>
         </SettingsTabs>
         <code className="resource-path">→ {installPath}</code>
       </SettingsActionRow>
@@ -179,7 +200,7 @@ function AddSkillPanel({ cwd, onInstalled }: { cwd: string; onInstalled: () => v
       {installError && <SettingsNotice tone="danger">{installError}</SettingsNotice>}
 
       {searching ? (
-        <SettingsState kind="loading" title="Searching skills…" />
+        <SettingsState kind="loading" title={t("panels.skills.searchSkills")} />
       ) : results.length > 0 ? (
         <div className="skill-search-results">
           {results.map((result) => {
@@ -194,7 +215,7 @@ function AddSkillPanel({ cwd, onInstalled }: { cwd: string; onInstalled: () => v
                   <div className="resource-list-title">{name}</div>
                   <div className="skill-result-meta">
                     <code>{repository}</code>
-                    <span>{result.installs} installs</span>
+                    <span>{t("panels.skills.installsCount", { count: result.installs })}</span>
                     {result.url && <a href={result.url} target="_blank" rel="noreferrer">skills.sh ↗</a>}
                   </div>
                 </div>
@@ -205,20 +226,21 @@ function AddSkillPanel({ cwd, onInstalled }: { cwd: string; onInstalled: () => v
                   busy={isInstalling}
                   onClick={() => { if (!installed && !isInstalling) void install(result.package); }}
                 >
-                  {installed ? "✓ Installed" : isInstalling ? "Installing…" : "Install"}
+                  {installed ? t("panels.skills.installedCheck") : isInstalling ? t("panels.skills.installing") : t("panels.skills.install")}
                 </SettingsButton>
               </div>
             );
           })}
         </div>
       ) : !searchError ? (
-        <SettingsState title="Search for a skill to install." description="Results include package source and install count before you choose a scope." />
+        <SettingsState title={t("panels.skills.searchToInstall")} description={t("panels.skills.searchToInstallHint")} />
       ) : null}
     </SettingsSection>
   );
 }
 
 export function SkillsConfig({ cwd, onClose, embed }: { cwd: string; onClose: () => void; embed?: boolean }) {
+  const { t } = useI18n();
   const [skills, setSkills] = useState<Skill[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -275,14 +297,22 @@ export function SkillsConfig({ cwd, onClose, embed }: { cwd: string; onClose: ()
   }, []);
 
   const selectedSkill = skills.find((skill) => skill.filePath === selected) ?? null;
-  const groups = ["project", "global", "path"].map((label) => ({ label, skills: skills.filter((skill) => sourceLabel(skill) === label) })).filter((group) => group.skills.length > 0);
+  const groupOrder: SourceKind[] = ["project", "global", "path"];
+  const groupLabel = (kind: SourceKind) => (
+    kind === "global" ? t("panels.skills.scopeGlobal")
+      : kind === "project" ? t("panels.skills.scopeProject")
+        : t("panels.skills.scopePath")
+  );
+  const groups = groupOrder
+    .map((kind) => ({ kind, label: groupLabel(kind), skills: skills.filter((skill) => sourceKind(skill) === kind) }))
+    .filter((group) => group.skills.length > 0);
 
   const panelContent = (
         <div className={embed ? "resource-split-body skills-embed-body" : "pi-modal-split-body resource-split-body"}>
-          <aside className="resource-split-nav" aria-label="Installed skills">
+          <aside className="resource-split-nav" aria-label={t("panels.skills.installedListAria")}>
             <div className="resource-split-list">
-              {loading ? <SettingsState kind="loading" title="Loading skills…" /> : error ? <SettingsState kind="error" title="Could not load skills" description={error} /> : skills.length === 0 ? <SettingsState title="No skills found" /> : groups.map((group) => (
-                <div key={group.label} className="resource-nav-group">
+              {loading ? <SettingsState kind="loading" title={t("panels.skills.loading")} /> : error ? <SettingsState kind="error" title={t("panels.skills.loadFailed")} description={error} /> : skills.length === 0 ? <SettingsState title={t("panels.skills.noSkills")} /> : groups.map((group) => (
+                <div key={group.kind} className="resource-nav-group">
                   <div className="resource-nav-group-title">{group.label}</div>
                   {group.skills.map((skill) => {
                     const active = !addMode && selected === skill.filePath;
@@ -303,7 +333,7 @@ export function SkillsConfig({ cwd, onClose, embed }: { cwd: string; onClose: ()
               ))}
             </div>
             <div className="resource-split-nav-footer">
-              <SettingsButton variant={addMode ? "primary" : "secondary"} onClick={() => setAddMode(true)}>+ Add skill</SettingsButton>
+              <SettingsButton variant={addMode ? "primary" : "secondary"} onClick={() => setAddMode(true)}>{t("panels.skills.addSkillPlus")}</SettingsButton>
             </div>
           </aside>
 
@@ -313,7 +343,7 @@ export function SkillsConfig({ cwd, onClose, embed }: { cwd: string; onClose: ()
             ) : loading ? null : selectedSkill ? (
               <SkillDetail key={selectedSkill.filePath} skill={selectedSkill} cwd={cwd} onToggle={toggle} toggling={toggling.has(selectedSkill.filePath)} saveError={saveError} />
             ) : (
-              <SettingsState title="Select a skill" />
+              <SettingsState title={t("panels.skills.selectSkill")} />
             )}
           </main>
         </div>
@@ -325,15 +355,15 @@ export function SkillsConfig({ cwd, onClose, embed }: { cwd: string; onClose: ()
       <div className="pi-modal-panel pi-modal-panel-large resource-split-panel">
         <div className="pi-modal-header">
           <div className="pi-modal-header-copy">
-            <div id="skills-config-title" className="pi-modal-title">Skills</div>
+            <div id="skills-config-title" className="pi-modal-title">{t("panels.skills.title")}</div>
             <div className="pi-modal-subtitle resource-path">{shortenPath(cwd)}</div>
           </div>
-          <button type="button" onClick={onClose} className="pi-modal-close" aria-label="Close skills">×</button>
+          <button type="button" onClick={onClose} className="pi-modal-close" aria-label={t("panels.skills.closeAria")}>×</button>
         </div>
 
         {panelContent}
 
-        <div className="pi-modal-footer"><SettingsButton onClick={onClose}>Close</SettingsButton></div>
+        <div className="pi-modal-footer"><SettingsButton onClick={onClose}>{t("panels.skills.close")}</SettingsButton></div>
       </div>
     </div>
   );

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useI18n } from "@/components/I18nProvider";
 import type { SessionChangedFileSummary, SessionChangesSummaryResponse } from "@/lib/types";
 import { FileDiffModal } from "./FileDiffModal";
 
@@ -30,6 +31,7 @@ const POLL_INTERVAL_MS = 8_000;
  * rendered as a full-height file list with per-file diffs.
  */
 export function InspectorChangesPanel({ sessionId, agentRunning, refreshKey }: Props) {
+  const { t } = useI18n();
   const [files, setFiles] = useState<SessionChangedFileSummary[]>([]);
   const [initialLoading, setInitialLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -119,7 +121,7 @@ export function InspectorChangesPanel({ sessionId, agentRunning, refreshKey }: P
   if (!sessionId) {
     return (
       <div className="inspector-state inspector-state-empty">
-        打开一个会话后显示本次会话的编辑/写入文件变更。
+        {t("panels.sessionChanges.needSession")}
       </div>
     );
   }
@@ -128,26 +130,26 @@ export function InspectorChangesPanel({ sessionId, agentRunning, refreshKey }: P
     <div className="inspector-content inspector-changes-content">
       <div className="inspector-stat-grid">
         <div className="inspector-stat-card">
-          <div className="inspector-stat-label">Files</div>
+          <div className="inspector-stat-label">{t("panels.sessionChanges.files")}</div>
           <div className="inspector-stat-value">{files.length}</div>
         </div>
         <div className="inspector-stat-card">
-          <div className="inspector-stat-label">Added</div>
+          <div className="inspector-stat-label">{t("panels.sessionChanges.added")}</div>
           <div className="inspector-stat-value is-success">+{totals.additions}</div>
         </div>
         <div className="inspector-stat-card">
-          <div className="inspector-stat-label">Removed</div>
+          <div className="inspector-stat-label">{t("panels.sessionChanges.removed")}</div>
           <div className="inspector-stat-value is-danger">-{totals.deletions}</div>
         </div>
       </div>
 
       <div className="inspector-scroll inspector-file-list">
         {initialLoading && files.length === 0 ? (
-          <div className="inspector-state inspector-state-loading">加载变更文件…</div>
+          <div className="inspector-state inspector-state-loading">{t("panels.sessionChanges.loading")}</div>
         ) : error ? (
           <div className="inspector-state inspector-state-error" role="alert">{error}</div>
         ) : files.length === 0 ? (
-          <div className="inspector-state inspector-state-empty">暂无跟踪的编辑/写入变更。</div>
+          <div className="inspector-state inspector-state-empty">{t("panels.sessionChanges.emptyTracked")}</div>
         ) : files.map((file) => {
           const badge = statusBadge(file);
           return (
@@ -156,7 +158,7 @@ export function InspectorChangesPanel({ sessionId, agentRunning, refreshKey }: P
               type="button"
               onClick={() => file.diffAvailable ? setSelectedFile(file) : undefined}
               aria-disabled={file.diffAvailable ? undefined : true}
-              title={file.diffAvailable ? file.path : (file.reason ?? "metadata only")}
+              title={file.diffAvailable ? file.path : (file.reason ?? t("panels.sessionChanges.metadataOnly"))}
               className={`inspector-list-row inspector-file-row${file.diffAvailable ? "" : " is-unavailable"}`}
             >
               <span className={`inspector-badge inspector-file-badge ${badge.tone}`}>
@@ -165,7 +167,7 @@ export function InspectorChangesPanel({ sessionId, agentRunning, refreshKey }: P
               <span className="inspector-file-main">
                 <span className="inspector-file-path">{file.path}</span>
                 {!file.diffAvailable && (
-                  <span className="inspector-file-reason">{file.reason ?? "metadata only"}</span>
+                  <span className="inspector-file-reason">{file.reason ?? t("panels.sessionChanges.metadataOnly")}</span>
                 )}
               </span>
               <span className="inspector-file-metrics">

@@ -72,7 +72,7 @@ function formatTime(value: number | null): string {
   return new Date(value).toLocaleString();
 }
 
-function UsagePie({ tier, label, size = 18 }: { tier: QuotaDisplayTier | null; label?: string; size?: number }) {
+function UsagePie({ tier, label, size = 18, title }: { tier: QuotaDisplayTier | null; label?: string; size?: number; title?: string }) {
   const utilization = tier ? Math.min(Math.max(tier.utilization, 0), 100) : 0;
   const color = tier ? quotaColor(utilization) : "var(--text-dim)";
   const background = tier
@@ -80,7 +80,7 @@ function UsagePie({ tier, label, size = 18 }: { tier: QuotaDisplayTier | null; l
     : "conic-gradient(rgba(148,163,184,0.25) 0deg, rgba(148,163,184,0.25) 360deg)";
 
   return (
-    <span title={tier ? `${label ?? tier.name} ${Math.round(utilization)}% used` : "Unknown usage"} className="usage-pie-wrap">
+    <span title={title} className="usage-pie-wrap">
       <span className="usage-pie" style={{ width: size, height: size, background }}>
         <span className="usage-pie-center" style={{ width: Math.max(6, Math.floor(size * 0.48)), height: Math.max(6, Math.floor(size * 0.48)) }} />
       </span>
@@ -89,9 +89,12 @@ function UsagePie({ tier, label, size = 18 }: { tier: QuotaDisplayTier | null; l
   );
 }
 
-function accountQuotaSummary(account: GrokAccountSummary): string {
+function accountQuotaSummary(
+  account: GrokAccountSummary,
+  t: (key: string, params?: Record<string, string | number>) => string,
+): string {
   const cache = account.quotaCache;
-  if (!cache?.queriedAt) return "No quota cache";
+  if (!cache?.queriedAt) return t("panels.grok.noQuotaCache");
   if (cache.error) return cache.error;
   const tiers = knownQuotaTiers(cache.tiers ?? []);
   if (tiers.length === 0) return formatQuotaQueriedAt(cache.queriedAt);
@@ -144,9 +147,9 @@ export function GrokUsagePanel() {
       setAccountsError(null);
       setAccounts(lists.flat());
     } catch (err) {
-      setAccountsError(err instanceof Error ? err.message : "Failed to load Grok accounts");
+      setAccountsError(err instanceof Error ? err.message : t("panels.grok.loadAccountsFailed"));
     }
-  }, []);
+  }, [t]);
 
   const loadUsage = useCallback(async (forceRefresh = false) => {
     setLoading(true);
@@ -325,8 +328,8 @@ export function GrokUsagePanel() {
     ? formatQuotaQueriedAt(usageResult.queriedAt)
     : activeAccount?.quotaCache?.queriedAt
       ? formatQuotaQueriedAt(activeAccount.quotaCache.queriedAt)
-      : "Not queried";
-  const compactStatus = loading ? "Loading" : error ? "Error" : refreshText;
+      : t("panels.grok.notQueried");
+  const compactStatus = loading ? t("panels.grok.loading") : error ? t("panels.grok.error") : refreshText;
 
   return (
     <div className="usage-panel-anchor">
@@ -337,8 +340,8 @@ export function GrokUsagePanel() {
           if (!open) updatePanelPosition();
           setOpen((value) => !value);
         }}
-        title="Grok usage"
-        aria-label="Grok usage"
+        title={t("panels.grok.title")}
+        aria-label={t("panels.grok.title")}
         aria-expanded={open}
         aria-controls="grok-usage-popover"
         className="usage-panel-trigger"
@@ -347,8 +350,13 @@ export function GrokUsagePanel() {
         <span className="usage-panel-trigger-status">{compactStatus}</span>
         <span className="usage-panel-pies">
           {knownTiers.length > 0 ? knownTiers.map((tier) => (
-            <UsagePie key={tier.name} tier={tier} label={QUOTA_TIER_LABELS[tier.name]} />
-          )) : <UsagePie tier={null} />}
+            <UsagePie
+              key={tier.name}
+              tier={tier}
+              label={QUOTA_TIER_LABELS[tier.name]}
+              title={t("panels.grok.usedPercent", { label: QUOTA_TIER_LABELS[tier.name], n: Math.round(tier.utilization) })}
+            />
+          )) : <UsagePie tier={null} title={t("panels.grok.unknownUsage")} />}
         </span>
       </button>
 
@@ -358,20 +366,20 @@ export function GrokUsagePanel() {
           id="grok-usage-popover"
           className="grok-usage-popover usage-popover"
           role="dialog"
-          aria-label="Grok usage details"
+          aria-label={t("panels.grok.detailsAria")}
           style={{ top: panelPosition.top, right: panelPosition.right, maxHeight: `min(650px, calc(100dvh - ${panelPosition.top + 8}px))` }}
         >
           <div className="usage-popover-header">
             <div className="resource-list-copy">
-              <div className="usage-popover-title">Grok usage</div>
-              <div className="usage-popover-meta">{loading ? "Loading…" : `Updated: ${refreshText}`}</div>
+              <div className="usage-popover-title">{t("panels.grok.title")}</div>
+              <div className="usage-popover-meta">{loading ? t("panels.grok.loading") : t("panels.grok.updated", { time: refreshText })}</div>
             </div>
             <button
               type="button"
               onClick={() => void loadUsage(true)}
               disabled={loading}
-              title="Refresh Grok usage"
-              aria-label="Refresh Grok usage"
+              title={t("panels.grok.refreshAria")}
+              aria-label={t("panels.grok.refreshAria")}
               className="usage-icon-button"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -391,7 +399,7 @@ export function GrokUsagePanel() {
             <div className="usage-card">
               <div className="usage-card-header">
                 <span style={{ color: "var(--text)", fontSize: 12, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{activeAccount.displayName}</span>
-                <span style={{ color: "#22c55e", fontSize: 10, fontWeight: 800, flexShrink: 0 }}>Active</span>
+                <span style={{ color: "#22c55e", fontSize: 10, fontWeight: 800, flexShrink: 0 }}>{t("panels.grok.active")}</span>
               </div>
               <code style={{ color: "var(--text-dim)", fontSize: 10, fontFamily: "var(--font-mono)", overflowWrap: "anywhere" }}>{activeAccount.provider} · {activeAccount.maskedAccountId}</code>
               {activeAccount.extraInfo && <div style={{ color: "var(--text-dim)", fontSize: 11, lineHeight: 1.45, whiteSpace: "pre-wrap" }}>{activeAccount.extraInfo}</div>}
@@ -400,11 +408,11 @@ export function GrokUsagePanel() {
 
           {knownTiers.length === 0 ? (
             <div className="usage-card usage-card-row">
-              <UsagePie tier={null} size={34} />
+              <UsagePie tier={null} size={34} title={t("panels.grok.unknownUsage")} />
               <div style={{ color: "var(--text-dim)", fontSize: 12, lineHeight: 1.45 }}>
-                Weekly usage unknown. Click refresh to query xAI billing.
+                {t("panels.grok.weeklyUnknown")}
                 {!usageResult?.configured && !usageResult?.envBypass && (
-                  <> Make sure Grok is logged in via Models → xAI or Grok CLI, or set GROK_CLI_OAUTH_TOKEN.</>
+                  <> {t("panels.grok.loginHint")}</>
                 )}
               </div>
             </div>
@@ -416,10 +424,15 @@ export function GrokUsagePanel() {
                 const countdown = formatResetCountdown(tier.resetsAt);
                 return (
                   <div key={tier.name} className="usage-quota-row">
-                    <UsagePie tier={tier} label={QUOTA_TIER_LABELS[tier.name]} size={30} />
+                    <UsagePie
+                      tier={tier}
+                      label={QUOTA_TIER_LABELS[tier.name]}
+                      size={30}
+                      title={t("panels.grok.usedPercent", { label: QUOTA_TIER_LABELS[tier.name], n: Math.round(utilization) })}
+                    />
                     <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
-                      <span style={{ color: "var(--text)", fontSize: 12, fontWeight: 700 }}>{QUOTA_TIER_LABELS[tier.name]} window</span>
-                      <span style={{ color: "var(--text-dim)", fontSize: 10 }}>{countdown ? `Resets in ${countdown}` : "Reset time unknown"}</span>
+                      <span style={{ color: "var(--text)", fontSize: 12, fontWeight: 700 }}>{t("panels.grok.windowLabel", { label: QUOTA_TIER_LABELS[tier.name] })}</span>
+                      <span style={{ color: "var(--text-dim)", fontSize: 10 }}>{countdown ? t("panels.grok.resetsIn", { countdown }) : t("panels.grok.resetTimeUnknown")}</span>
                     </div>
                     <span style={{ color, fontSize: 15, fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>{Math.round(utilization)}%</span>
                   </div>
@@ -433,13 +446,18 @@ export function GrokUsagePanel() {
               <UsagePie
                 tier={{ name: "monthly", utilization: monthly.utilization, resetsAt: monthly.billingPeriodEnd }}
                 size={30}
+                title={t("panels.grok.monthlyCredits")}
               />
               <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
-                <span style={{ color: "var(--text)", fontSize: 12, fontWeight: 700 }}>Monthly credits</span>
+                <span style={{ color: "var(--text)", fontSize: 12, fontWeight: 700 }}>{t("panels.grok.monthlyCredits")}</span>
                 <span style={{ color: "var(--text-dim)", fontSize: 10 }}>
-                  Used {monthly.used.toLocaleString()} · Limit {monthly.monthlyLimit.toLocaleString()} · Remaining {monthly.remaining.toLocaleString()}
+                  {t("panels.grok.monthlyLine", {
+                    used: monthly.used.toLocaleString(),
+                    limit: monthly.monthlyLimit.toLocaleString(),
+                    remaining: monthly.remaining.toLocaleString(),
+                  })}
                   {monthly.billingPeriodEnd && (
-                    <> · Resets {new Date(monthly.billingPeriodEnd).toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</>
+                    <> · {t("panels.grok.resetsAt", { date: new Date(monthly.billingPeriodEnd).toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) })}</>
                   )}
                 </span>
               </div>
@@ -450,21 +468,21 @@ export function GrokUsagePanel() {
           )}
 
           <div className="usage-section">
-            <div className="usage-section-title">Accounts</div>
+            <div className="usage-section-title">{t("panels.grok.accounts")}</div>
             {accountsError && <div style={{ color: "#f87171", fontSize: 11, lineHeight: 1.45 }}>{accountsError}</div>}
             {accounts.length === 0 ? (
-              <div style={{ color: "var(--text-dim)", fontSize: 12, lineHeight: 1.45 }}>No saved accounts. Add one in Models → Grok CLI / xAI.</div>
+              <div style={{ color: "var(--text-dim)", fontSize: 12, lineHeight: 1.45 }}>{t("panels.grok.noSavedAccounts")}</div>
             ) : accounts.map((item) => (
               <div key={`${item.provider}:${item.accountId}`} className={`usage-account-row${item.active ? " usage-account-row-active" : ""}`}>
                 <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
                   <span style={{ color: "var(--text)", fontSize: 12, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.displayName}</span>
                   <code style={{ color: "var(--text-dim)", fontSize: 10, fontFamily: "var(--font-mono)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.provider} · {item.maskedAccountId}</code>
                   {item.extraInfo && <span style={{ color: "var(--text-dim)", fontSize: 10, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.extraInfo}</span>}
-                  <span style={{ color: item.quotaCache?.error ? "#fb923c" : "var(--text-dim)", fontSize: 10, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{accountQuotaSummary(item)}</span>
+                  <span style={{ color: item.quotaCache?.error ? "#fb923c" : "var(--text-dim)", fontSize: 10, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{accountQuotaSummary(item, t)}</span>
                 </div>
-                {item.active ? <span style={{ color: "#22c55e", fontSize: 11, fontWeight: 800 }}>active</span> : (
+                {item.active ? <span style={{ color: "#22c55e", fontSize: 11, fontWeight: 800 }}>{t("panels.grok.active")}</span> : (
                   <button type="button" onClick={() => void activateAccount(item)} disabled={Boolean(activatingAccountId)} style={{ padding: "5px 9px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg)", color: activatingAccountId === item.accountId ? "var(--text-dim)" : "var(--accent)", cursor: activatingAccountId ? "default" : "pointer", fontSize: 11, fontWeight: 700 }}>
-                    {activatingAccountId === item.accountId ? "Switching…" : "Activate"}
+                    {activatingAccountId === item.accountId ? t("panels.grok.switching") : t("panels.grok.activate")}
                   </button>
                 )}
               </div>
@@ -473,25 +491,25 @@ export function GrokUsagePanel() {
 
           <div style={{ padding: 9, borderRadius: 9, border: "1px solid var(--border)", background: "rgba(148,163,184,0.06)", display: "flex", flexDirection: "column", gap: 6 }}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
-              <span style={{ color: "var(--text)", fontSize: 12, fontWeight: 800 }}>Auto refresh</span>
-              <button type="button" onClick={() => void loadSchedulerStatus()} style={{ border: "1px solid var(--border)", borderRadius: 6, background: "var(--bg)", color: "var(--text-muted)", cursor: "pointer", fontSize: 11, padding: "4px 7px" }}>Reload</button>
+              <span style={{ color: "var(--text)", fontSize: 12, fontWeight: 800 }}>{t("panels.grok.autoRefresh")}</span>
+              <button type="button" onClick={() => void loadSchedulerStatus()} style={{ border: "1px solid var(--border)", borderRadius: 6, background: "var(--bg)", color: "var(--text-muted)", cursor: "pointer", fontSize: 11, padding: "4px 7px" }}>{t("panels.grok.reload")}</button>
             </div>
             {schedulerError && <div style={{ color: "#f87171", fontSize: 11, lineHeight: 1.45 }}>{schedulerError}</div>}
             {schedulerStatus ? (
               <div style={{ color: "var(--text-dim)", fontSize: 11, lineHeight: 1.55 }}>
-                <div>Enabled: {schedulerStatus.enabled ? "yes" : "no"} · Running: {schedulerStatus.running ? "yes" : "no"} · Lock: {schedulerStatus.lockOwned ? "owned" : schedulerStatus.lock.stale ? "stale" : schedulerStatus.lock.exists ? "held" : "none"}</div>
-                <div>Next: {formatTime(schedulerStatus.nextRunAt)} · Last: {formatTime(schedulerStatus.lastRunFinishedAt)}</div>
-                {schedulerStatus.lastError && <div style={{ color: "#f87171" }}>Last error: {schedulerStatus.lastError}</div>}
-                {schedulerStatus.lastAccountError && <div style={{ color: "#fb923c" }}>Account error: {schedulerStatus.lastAccountError}</div>}
+                <div>{t("panels.grok.enabled")}: {schedulerStatus.enabled ? t("panels.grok.yes") : t("panels.grok.no")} · {t("panels.grok.running")}: {schedulerStatus.running ? t("panels.grok.yes") : t("panels.grok.no")} · {t("panels.grok.lock")}: {schedulerStatus.lockOwned ? t("panels.grok.lockOwned") : schedulerStatus.lock.stale ? t("panels.grok.lockStale") : schedulerStatus.lock.exists ? t("panels.grok.lockHeld") : t("panels.grok.lockNone")}</div>
+                <div>{t("panels.grok.next")}: {formatTime(schedulerStatus.nextRunAt)} · {t("panels.grok.last")}: {formatTime(schedulerStatus.lastRunFinishedAt)}</div>
+                {schedulerStatus.lastError && <div style={{ color: "#f87171" }}>{t("panels.grok.lastError", { error: schedulerStatus.lastError })}</div>}
+                {schedulerStatus.lastAccountError && <div style={{ color: "#fb923c" }}>{t("panels.grok.accountError", { error: schedulerStatus.lastAccountError })}</div>}
               </div>
-            ) : <div style={{ color: "var(--text-dim)", fontSize: 11 }}>Scheduler status unavailable.</div>}
+            ) : <div style={{ color: "var(--text-dim)", fontSize: 11 }}>{t("panels.grok.schedulerUnavailable")}</div>}
             <button type="button" onClick={() => void repairLock()} disabled={repairingLock} style={{ alignSelf: "flex-start", padding: "5px 9px", borderRadius: 6, border: "1px solid rgba(239,68,68,0.35)", background: "transparent", color: repairingLock ? "var(--text-dim)" : "#f87171", cursor: repairingLock ? "default" : "pointer", fontSize: 11, fontWeight: 700 }}>
-              {repairingLock ? "Repairing…" : "故障处理：修复刷新锁"}
+              {repairingLock ? t("panels.grok.repairing") : t("panels.grok.fixLock")}
             </button>
           </div>
 
           {usageResult?.envBypass && (
-            <div style={{ color: "#fb923c", fontSize: 10, lineHeight: 1.5 }}>Using GROK_CLI_OAUTH_TOKEN environment variable. Env bypass is not auto-refreshed per saved account.</div>
+            <div style={{ color: "#fb923c", fontSize: 10, lineHeight: 1.5 }}>{t("panels.grok.envBypassHint")}</div>
           )}
         </div>
       ), document.body)}

@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
+import { useI18n } from "@/components/I18nProvider";
 
 export interface ToolEntry {
   name: string;
@@ -27,15 +28,16 @@ interface Props {
   onClose: () => void;
 }
 
-const PRESETS: { id: ToolPreset; label: string; desc: string }[] = [
-  { id: "all", label: "All", desc: "All currently loaded tools" },
-  { id: "read-only", label: "Read-only", desc: "read · grep · find · ls, if available" },
-  { id: "none", label: "Off", desc: "No tools" },
-];
-
 export function ToolPanel({ tools, onPreset, onClose }: Props) {
+  const { t } = useI18n();
   const panelRef = useRef<HTMLDivElement>(null);
   const current = getPresetFromTools(tools);
+
+  const presets = useMemo(() => ([
+    { id: "all" as const, label: t("chat.toolPresetAll"), desc: t("chat.toolPresetAllDesc") },
+    { id: "read-only" as const, label: t("chat.toolPresetReadOnly"), desc: t("chat.toolPresetReadOnlyDesc") },
+    { id: "none" as const, label: t("chat.toolPresetOff"), desc: t("chat.toolPresetOffDesc") },
+  ]), [t]);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -47,12 +49,12 @@ export function ToolPanel({ tools, onPreset, onClose }: Props) {
     return () => document.removeEventListener("mousedown", handler);
   }, [onClose]);
 
-  const currentIndex = PRESETS.findIndex(p => p.id === current);
+  const currentIndex = presets.findIndex(p => p.id === current);
 
   return (
     <div ref={panelRef} className="tool-preset-panel">
       <div className="tool-preset-segments">
-        {PRESETS.map((preset) => {
+        {presets.map((preset) => {
           const isActive = current === preset.id;
           return (
             <button
@@ -67,17 +69,17 @@ export function ToolPanel({ tools, onPreset, onClose }: Props) {
       </div>
 
       <div className="tool-preset-description">
-        {currentIndex >= 0 ? PRESETS[currentIndex].desc || "No tools enabled" : ""}
-        {current === "none" && <span> — agent will not use any tools</span>}
+        {currentIndex >= 0 ? presets[currentIndex].desc : ""}
+        {current === "none" && <span>{t("chat.toolPresetNoneExtra")}</span>}
       </div>
 
       <div className="tool-preset-track">
-        {PRESETS.map((_, i) => (
+        {presets.map((_, i) => (
           <div key={i} className={i <= currentIndex ? "tool-preset-track-step is-complete" : "tool-preset-track-step"} />
         ))}
       </div>
 
-      <div className="tool-preset-footnote">takes effect on next turn</div>
+      <div className="tool-preset-footnote">{t("chat.toolPresetFootnote")}</div>
     </div>
   );
 }

@@ -70,38 +70,38 @@ function isSuppressedSubagentWidget(item: { key: string }): boolean {
   return key === "subagent-fleet-status" || key === "subagent-async";
 }
 
-function phaseLabel(phase: AgentPhase): string {
-  if (phase?.kind === "running_tools") {
-    const names = phase.tools.map((t) => t.name);
-    if (names.length === 0) return "Running tool...";
-    if (names.length === 1) return `Running ${names[0]}...`;
-    if (names.length <= 3) return `Running ${names.join(", ")}...`;
-    return `Running ${names.slice(0, 2).join(", ")} (+${names.length - 2})...`;
-  }
-  if (phase?.kind === "waiting_model") return "Waiting for model...";
-  return "Thinking...";
-}
+const TYPEWRITER_KEYS = [
+  "chat.typewriter01",
+  "chat.typewriter02",
+  "chat.typewriter03",
+  "chat.typewriter04",
+  "chat.typewriter05",
+  "chat.typewriter06",
+  "chat.typewriter07",
+  "chat.typewriter08",
+  "chat.typewriter09",
+  "chat.typewriter10",
+  "chat.typewriter11",
+  "chat.typewriter12",
+  "chat.typewriter13",
+  "chat.typewriter14",
+  "chat.typewriter15",
+  "chat.typewriter16",
+  "chat.typewriter17",
+  "chat.typewriter18",
+] as const;
 
-const TYPEWRITER_PHRASES = [
-  "ready when you are.",
-  "ask me anything.",
-  "let's build something cool.",
-  "explore your codebase.",
-  "draft an email.",
-  "summarize that paper.",
-  "plan your weekend.",
-  "explain it like I'm five.",
-  "pair-program with me.",
-  "fix that pesky bug.",
-  "translate to 中文.",
-  "write a haiku.",
-  "brainstorm ideas.",
-  "review my pull request.",
-  "what should we cook tonight?",
-  "ship it.",
-  "make it pretty.",
-  "rubber-duck with me.",
-];
+function phaseLabel(phase: AgentPhase, t: (key: string, params?: Record<string, string | number>) => string): string {
+  if (phase?.kind === "running_tools") {
+    const names = phase.tools.map((tool) => tool.name);
+    if (names.length === 0) return t("chat.phaseRunningTool");
+    if (names.length === 1) return t("chat.phaseRunningNamed", { name: names[0] });
+    if (names.length <= 3) return t("chat.phaseRunningList", { names: names.join(", ") });
+    return t("chat.phaseRunningMore", { names: names.slice(0, 2).join(", "), count: names.length - 2 });
+  }
+  if (phase?.kind === "waiting_model") return t("chat.phaseWaitingModel");
+  return t("chat.phaseThinking");
+}
 
 function Typewriter({ phrases }: { phrases: string[] }) {
   const [phraseIdx, setPhraseIdx] = useState(() => Math.floor(Math.random() * phrases.length));
@@ -139,6 +139,10 @@ function Typewriter({ phrases }: { phrases: string[] }) {
 
 export const ChatWindow = memo(function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSubagentChange, onSessionStatsChange, onContextUsageChange, onAgentRunningChange, onTodoActiveChange }: Props) {
   const { t } = useI18n();
+  const typewriterPhrases = useMemo(
+    () => TYPEWRITER_KEYS.map((key) => t(key)),
+    [t],
+  );
   const { autoScrollEnabled, onAutoScrollToggle } = useAutoScroll();
   const {
     loading, error, messages, entryIds, streamState,
@@ -370,7 +374,7 @@ export const ChatWindow = memo(function ChatWindow({ session, newSessionCwd, onA
               <div className="chat-empty-title-row">
                 <Image className="chat-empty-logo" src="/snail-pi-logo.svg" alt={t("app.productName")} width={42} height={42} priority />
                 <span className="chat-empty-product">{t("app.productName")}</span>
-                <span className="chat-empty-prompt"><Typewriter phrases={TYPEWRITER_PHRASES} /></span>
+                <span className="chat-empty-prompt"><Typewriter phrases={typewriterPhrases} /></span>
               </div>
               <div className="chat-empty-versions">
                 <span>web <strong>v{process.env.NEXT_PUBLIC_APP_VERSION ?? "0.0.0"}</strong></span>
@@ -461,7 +465,7 @@ export const ChatWindow = memo(function ChatWindow({ session, newSessionCwd, onA
 
             {agentRunning && !streamState.streamingMessage && (
               <div className="py-2 text-[13px] text-text-muted">
-                <span className="animate-[pulse_1.5s_infinite]">{phaseLabel(agentPhase)}</span>
+                <span className="animate-[pulse_1.5s_infinite]">{phaseLabel(agentPhase, t)}</span>
               </div>
             )}
 

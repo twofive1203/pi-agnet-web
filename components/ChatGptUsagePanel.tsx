@@ -72,7 +72,7 @@ interface SchedulerStatus {
 
 const ACCOUNT_CACHE_POLL_INTERVAL_MS = 30_000;
 
-function UsagePie({ tier, label, size = 18 }: { tier: QuotaDisplayTier | null; label?: string; size?: number }) {
+function UsagePie({ tier, label, size = 18, title }: { tier: QuotaDisplayTier | null; label?: string; size?: number; title?: string }) {
   const utilization = tier ? Math.min(Math.max(tier.utilization, 0), 100) : 0;
   const color = tier ? quotaColor(utilization) : "var(--text-dim)";
   const background = tier
@@ -80,7 +80,7 @@ function UsagePie({ tier, label, size = 18 }: { tier: QuotaDisplayTier | null; l
     : "conic-gradient(rgba(148,163,184,0.25) 0deg, rgba(148,163,184,0.25) 360deg)";
 
   return (
-    <span title={tier ? `${label ?? tier.name} ${Math.round(utilization)}% used` : "Unknown usage"} className="usage-pie-wrap">
+    <span title={title} className="usage-pie-wrap">
       <span className="usage-pie" style={{ width: size, height: size, background }}>
         <span className="usage-pie-center" style={{ width: Math.max(6, Math.floor(size * 0.48)), height: Math.max(6, Math.floor(size * 0.48)) }} />
       </span>
@@ -93,11 +93,16 @@ function selectActiveAccount(data: OAuthAccountsResponse): OAuthAccountSummary |
   return data.accounts.find((account) => account.active) ?? data.accounts.find((account) => account.accountId === data.activeAccountId) ?? null;
 }
 
-function accountQuotaSummary(account: OAuthAccountSummary): string {
+function accountQuotaSummary(
+  account: OAuthAccountSummary,
+  t: (key: string, params?: Record<string, string | number>) => string,
+): string {
   const cache = account.quotaCache;
-  if (!cache?.queriedAt) return "No quota cache";
+  if (!cache?.queriedAt) return t("panels.chatgpt.noQuotaCache");
   if (cache.error) return cache.error;
-  const resetCreditsText = typeof cache.resetCreditsAvailableCount === "number" ? `Credits ${cache.resetCreditsAvailableCount}` : null;
+  const resetCreditsText = typeof cache.resetCreditsAvailableCount === "number"
+    ? t("panels.chatgpt.credits", { count: cache.resetCreditsAvailableCount })
+    : null;
   const tiers = knownQuotaTiers(cache.tiers ?? []);
   if (tiers.length === 0) return resetCreditsText ? `${formatQuotaQueriedAt(cache.queriedAt)} · ${resetCreditsText}` : formatQuotaQueriedAt(cache.queriedAt);
   const tiersText = tiers.map((tier) => `${QUOTA_TIER_LABELS[tier.name]} ${Math.round(tier.utilization)}%`).join(" · ");
@@ -353,8 +358,16 @@ export function ChatGptUsagePanel() {
   const quotaCache = account?.quotaCache ?? null;
   const displayedQuota = quotaResult?.success ? quotaResult : quotaCache;
   const knownTiers = useMemo(() => knownQuotaTiers(displayedQuota?.tiers ?? []), [displayedQuota?.tiers]);
-  const refreshText = displayedQuota?.queriedAt ? formatQuotaQueriedAt(displayedQuota.queriedAt) : "Unknown";
-  const compactStatus = accountsLoading ? "Loading" : accountsError ? "Error" : !account ? "No account" : displayedQuota?.error ? "Error" : refreshText;
+  const refreshText = displayedQuota?.queriedAt ? formatQuotaQueriedAt(displayedQuota.queriedAt) : t("panels.chatgpt.unknown");
+  const compactStatus = accountsLoading
+    ? t("panels.chatgpt.loading")
+    : accountsError
+      ? t("panels.chatgpt.error")
+      : !account
+        ? t("panels.chatgpt.noAccount")
+        : displayedQuota?.error
+          ? t("panels.chatgpt.error")
+          : refreshText;
   const resetCreditsAvailableCount = displayedQuota?.resetCreditsAvailableCount ?? null;
   const resetCredits = displayedQuota?.resetCredits ?? [];
   const resetCreditsError = displayedQuota?.resetCreditsError ?? null;
@@ -370,8 +383,8 @@ export function ChatGptUsagePanel() {
           if (!open) updatePanelPosition();
           setOpen((value) => !value);
         }}
-        title="ChatGPT usage"
-        aria-label="ChatGPT usage"
+        title={t("panels.chatgpt.title")}
+        aria-label={t("panels.chatgpt.title")}
         aria-expanded={open}
         aria-controls="chatgpt-usage-popover"
         className="usage-panel-trigger"
@@ -380,8 +393,13 @@ export function ChatGptUsagePanel() {
         <span className="usage-panel-trigger-status">{compactStatus}</span>
         <span className="usage-panel-pies">
           {knownTiers.length > 0 ? knownTiers.map((tier) => (
-            <UsagePie key={tier.name} tier={tier} label={QUOTA_TIER_LABELS[tier.name]} />
-          )) : <UsagePie tier={null} />}
+            <UsagePie
+              key={tier.name}
+              tier={tier}
+              label={QUOTA_TIER_LABELS[tier.name]}
+              title={t("panels.chatgpt.usedPercent", { label: QUOTA_TIER_LABELS[tier.name], n: Math.round(tier.utilization) })}
+            />
+          )) : <UsagePie tier={null} title={t("panels.chatgpt.unknownUsage")} />}
         </span>
       </button>
 
@@ -391,53 +409,59 @@ export function ChatGptUsagePanel() {
           id="chatgpt-usage-popover"
           className="chatgpt-usage-popover usage-popover"
           role="dialog"
-          aria-label="ChatGPT usage details"
+          aria-label={t("panels.chatgpt.detailsAria")}
           style={{ top: panelPosition.top, right: panelPosition.right, maxHeight: `min(680px, calc(100dvh - ${panelPosition.top + 8}px))` }}
         >
           <div className="usage-popover-header">
             <div className="resource-list-copy">
-              <div className="usage-popover-title">ChatGPT usage</div>
-              <div className="usage-popover-meta">Updated: {refreshText}</div>
+              <div className="usage-popover-title">{t("panels.chatgpt.title")}</div>
+              <div className="usage-popover-meta">{t("panels.chatgpt.updated", { time: refreshText })}</div>
             </div>
             <div className="settings-action-group">
               {account && (resetCreditsAvailableCount ?? 0) > 0 && (
-                <button type="button" onClick={resetQuota} disabled={refreshing || resetting} title={resetExpiresCountdown ? `Consumes one reset credit. Earliest expires in ${resetExpiresCountdown}` : "Consumes one Codex reset credit"} style={{ height: 30, padding: "0 9px", border: "1px solid rgba(34,197,94,0.45)", borderRadius: 7, background: "var(--bg)", color: refreshing || resetting ? "var(--text-dim)" : "#22c55e", cursor: refreshing || resetting ? "default" : "pointer", fontSize: 11, fontWeight: 800, flexShrink: 0 }}>
-                  {resetting ? "Resetting…" : "Reset limit"}
+                <button type="button" onClick={resetQuota} disabled={refreshing || resetting} title={resetExpiresCountdown ? t("panels.chatgpt.resetCreditCountdown", { countdown: resetExpiresCountdown }) : t("panels.chatgpt.resetCreditTitle")} style={{ height: 30, padding: "0 9px", border: "1px solid rgba(34,197,94,0.45)", borderRadius: 7, background: "var(--bg)", color: refreshing || resetting ? "var(--text-dim)" : "#22c55e", cursor: refreshing || resetting ? "default" : "pointer", fontSize: 11, fontWeight: 800, flexShrink: 0 }}>
+                  {resetting ? t("panels.chatgpt.resetting") : t("panels.chatgpt.resetLimit")}
                 </button>
               )}
-              <button type="button" onClick={refreshQuota} disabled={refreshing || resetting} title="Refresh active account usage" aria-label="Refresh active account usage" className="usage-icon-button">
+              <button type="button" onClick={refreshQuota} disabled={refreshing || resetting} title={t("panels.chatgpt.refreshActive")} aria-label={t("panels.chatgpt.refreshActive")} className="usage-icon-button">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 0 1-9 9 8.8 8.8 0 0 1-6.36-2.64" /><path d="M3 12a9 9 0 0 1 9-9 8.8 8.8 0 0 1 6.36 2.64" /><path d="M3 4v8h8" /><path d="M21 20v-8h-8" /></svg>
               </button>
             </div>
           </div>
 
-          {accountsLoading ? <div className="usage-popover-meta">Loading cached accounts…</div> : accountsError ? <div className="usage-text-danger">{accountsError}</div> : !account ? <div className="usage-popover-empty">No active ChatGPT/Codex saved account. Add or activate one in Models.</div> : (
+          {accountsLoading ? <div className="usage-popover-meta">{t("panels.chatgpt.loadingAccounts")}</div> : accountsError ? <div className="usage-text-danger">{accountsError}</div> : !account ? <div className="usage-popover-empty">{t("panels.chatgpt.noActiveAccount")}</div> : (
             <>
               <div className="usage-card">
                 <div className="usage-card-header">
                   <span style={{ color: "var(--text)", fontSize: 12, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{account.displayName}</span>
-                  <span style={{ color: "#22c55e", fontSize: 10, fontWeight: 800, flexShrink: 0 }}>Active</span>
+                  <span style={{ color: "#22c55e", fontSize: 10, fontWeight: 800, flexShrink: 0 }}>{t("panels.chatgpt.active")}</span>
                 </div>
                 <code style={{ color: "var(--text-dim)", fontSize: 10, fontFamily: "var(--font-mono)", overflowWrap: "anywhere" }}>{account.maskedAccountId}</code>
-                {account.label && <div style={{ color: "var(--text-muted)", fontSize: 11, lineHeight: 1.4 }}>备注：{account.label}</div>}
+                {account.label && <div style={{ color: "var(--text-muted)", fontSize: 11, lineHeight: 1.4 }}>{t("panels.chatgpt.noteLabel", { label: account.label })}</div>}
                 {account.extraInfo && <div style={{ color: "var(--text-dim)", fontSize: 11, lineHeight: 1.45, whiteSpace: "pre-wrap" }}>{account.extraInfo}</div>}
               </div>
 
-              {quotaResult && !quotaResult.success && <div style={{ color: quotaResult.credentialStatus === "expired" ? "#fb923c" : "#f87171", fontSize: 12, lineHeight: 1.45 }}>{quotaResult.error ?? quotaResult.credentialMessage ?? "Usage query failed."}</div>}
+              {quotaResult && !quotaResult.success && <div style={{ color: quotaResult.credentialStatus === "expired" ? "#fb923c" : "#f87171", fontSize: 12, lineHeight: 1.45 }}>{quotaResult.error ?? quotaResult.credentialMessage ?? t("panels.chatgpt.usageQueryFailed")}</div>}
               {quotaCache?.error && <div style={{ color: "#fb923c", fontSize: 12, lineHeight: 1.45 }}>{quotaCache.error}</div>}
               {resetCreditsAvailableCount !== null && (
                 <div style={{ padding: 9, borderRadius: 9, border: "1px solid var(--border)", background: "rgba(148,163,184,0.08)", display: "flex", flexDirection: "column", gap: 2 }}>
-                  <span style={{ color: "var(--text)", fontSize: 12, fontWeight: 800 }}>Reset credits: {resetCreditsAvailableCount}</span>
+                  <span style={{ color: "var(--text)", fontSize: 12, fontWeight: 800 }}>{t("panels.chatgpt.resetCreditsCount", { count: resetCreditsAvailableCount })}</span>
                   <span style={{ color: resetCreditsError ? "#fb923c" : "var(--text-dim)", fontSize: 10, lineHeight: 1.4 }}>
-                    {resetCreditsError ? resetCreditsError : resetExpiresCountdown ? `Earliest expires in ${resetExpiresCountdown}` : resetExpiresAt ? `Earliest expires ${new Date(resetExpiresAt).toLocaleDateString()}` : "No credit expiration details"}
+                    {resetCreditsError
+                      ? resetCreditsError
+                      : resetExpiresCountdown
+                        ? t("panels.chatgpt.earliestExpiresIn", { countdown: resetExpiresCountdown })
+                        : resetExpiresAt
+                          ? t("panels.chatgpt.earliestExpiresAt", { date: new Date(resetExpiresAt).toLocaleDateString() })
+                          : t("panels.chatgpt.noCreditExpiry")}
                   </span>
                 </div>
               )}
 
               {knownTiers.length === 0 ? (
                 <div className="usage-card usage-card-row">
-                  <UsagePie tier={null} size={34} />
-                  <div style={{ color: "var(--text-dim)", fontSize: 12, lineHeight: 1.45 }}>Usage unknown. Click refresh to query the active account.</div>
+                  <UsagePie tier={null} size={34} title={t("panels.chatgpt.unknownUsage")} />
+                  <div style={{ color: "var(--text-dim)", fontSize: 12, lineHeight: 1.45 }}>{t("panels.chatgpt.usageUnknownHint")}</div>
                 </div>
               ) : (
                 <div className="usage-card-list">
@@ -447,10 +471,15 @@ export function ChatGptUsagePanel() {
                     const countdown = formatResetCountdown(tier.resetsAt);
                     return (
                       <div key={tier.name} className="usage-quota-row">
-                        <UsagePie tier={tier} label={QUOTA_TIER_LABELS[tier.name]} size={30} />
+                        <UsagePie
+                          tier={tier}
+                          label={QUOTA_TIER_LABELS[tier.name]}
+                          size={30}
+                          title={t("panels.chatgpt.usedPercent", { label: QUOTA_TIER_LABELS[tier.name], n: Math.round(utilization) })}
+                        />
                         <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
-                          <span style={{ color: "var(--text)", fontSize: 12, fontWeight: 700 }}>{QUOTA_TIER_LABELS[tier.name]} window</span>
-                          <span style={{ color: "var(--text-dim)", fontSize: 10 }}>{countdown ? `Resets in ${countdown}` : "Reset time unknown"}</span>
+                          <span style={{ color: "var(--text)", fontSize: 12, fontWeight: 700 }}>{t("panels.chatgpt.windowLabel", { label: QUOTA_TIER_LABELS[tier.name] })}</span>
+                          <span style={{ color: "var(--text-dim)", fontSize: 10 }}>{countdown ? t("panels.chatgpt.resetsIn", { countdown }) : t("panels.chatgpt.resetTimeUnknown")}</span>
                         </div>
                         <span style={{ color, fontSize: 15, fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>{Math.round(utilization)}%</span>
                       </div>
@@ -462,17 +491,17 @@ export function ChatGptUsagePanel() {
           )}
 
           <div className="usage-section">
-            <div className="usage-section-title">Accounts</div>
-            {accounts.length === 0 && !accountsLoading ? <div style={{ color: "var(--text-dim)", fontSize: 12 }}>No saved accounts.</div> : accounts.map((item) => (
+            <div className="usage-section-title">{t("panels.chatgpt.accounts")}</div>
+            {accounts.length === 0 && !accountsLoading ? <div style={{ color: "var(--text-dim)", fontSize: 12 }}>{t("panels.chatgpt.noSavedAccounts")}</div> : accounts.map((item) => (
               <div key={item.accountId} className={`usage-account-row${item.active ? " usage-account-row-active" : ""}`}>
                 <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
                   <span style={{ color: "var(--text)", fontSize: 12, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.displayName}</span>
                   <code style={{ color: "var(--text-dim)", fontSize: 10, fontFamily: "var(--font-mono)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.maskedAccountId}</code>
-                  <span style={{ color: item.quotaCache?.error ? "#fb923c" : "var(--text-dim)", fontSize: 10, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{accountQuotaSummary(item)}</span>
+                  <span style={{ color: item.quotaCache?.error ? "#fb923c" : "var(--text-dim)", fontSize: 10, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{accountQuotaSummary(item, t)}</span>
                 </div>
-                {item.active ? <span style={{ color: "#22c55e", fontSize: 11, fontWeight: 800 }}>active</span> : (
+                {item.active ? <span style={{ color: "#22c55e", fontSize: 11, fontWeight: 800 }}>{t("panels.chatgpt.active")}</span> : (
                   <button type="button" onClick={() => void activateAccount(item.accountId)} disabled={Boolean(activatingAccountId)} style={{ padding: "5px 9px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg)", color: activatingAccountId === item.accountId ? "var(--text-dim)" : "var(--accent)", cursor: activatingAccountId ? "default" : "pointer", fontSize: 11, fontWeight: 700 }}>
-                    {activatingAccountId === item.accountId ? "Switching…" : "Activate"}
+                    {activatingAccountId === item.accountId ? t("panels.chatgpt.switching") : t("panels.chatgpt.activate")}
                   </button>
                 )}
               </div>
@@ -481,20 +510,20 @@ export function ChatGptUsagePanel() {
 
           <div style={{ padding: 9, borderRadius: 9, border: "1px solid var(--border)", background: "rgba(148,163,184,0.06)", display: "flex", flexDirection: "column", gap: 6 }}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
-              <span style={{ color: "var(--text)", fontSize: 12, fontWeight: 800 }}>Auto refresh</span>
-              <button type="button" onClick={() => void loadSchedulerStatus()} style={{ border: "1px solid var(--border)", borderRadius: 6, background: "var(--bg)", color: "var(--text-muted)", cursor: "pointer", fontSize: 11, padding: "4px 7px" }}>Reload</button>
+              <span style={{ color: "var(--text)", fontSize: 12, fontWeight: 800 }}>{t("panels.chatgpt.autoRefresh")}</span>
+              <button type="button" onClick={() => void loadSchedulerStatus()} style={{ border: "1px solid var(--border)", borderRadius: 6, background: "var(--bg)", color: "var(--text-muted)", cursor: "pointer", fontSize: 11, padding: "4px 7px" }}>{t("panels.chatgpt.reload")}</button>
             </div>
             {schedulerError && <div style={{ color: "#f87171", fontSize: 11, lineHeight: 1.45 }}>{schedulerError}</div>}
             {schedulerStatus ? (
               <div style={{ color: "var(--text-dim)", fontSize: 11, lineHeight: 1.55 }}>
-                <div>Enabled: {schedulerStatus.enabled ? "yes" : "no"} · Running: {schedulerStatus.running ? "yes" : "no"} · Lock: {schedulerStatus.lockOwned ? "owned" : schedulerStatus.lock.stale ? "stale" : schedulerStatus.lock.exists ? "held" : "none"}</div>
-                <div>Next: {formatTime(schedulerStatus.nextRunAt)} · Last: {formatTime(schedulerStatus.lastRunFinishedAt)}</div>
-                {schedulerStatus.lastError && <div style={{ color: "#f87171" }}>Last error: {schedulerStatus.lastError}</div>}
-                {schedulerStatus.lastAccountError && <div style={{ color: "#fb923c" }}>Account error: {schedulerStatus.lastAccountError}</div>}
+                <div>{t("panels.chatgpt.enabled")}: {schedulerStatus.enabled ? t("panels.chatgpt.yes") : t("panels.chatgpt.no")} · {t("panels.chatgpt.running")}: {schedulerStatus.running ? t("panels.chatgpt.yes") : t("panels.chatgpt.no")} · {t("panels.chatgpt.lock")}: {schedulerStatus.lockOwned ? t("panels.chatgpt.lockOwned") : schedulerStatus.lock.stale ? t("panels.chatgpt.lockStale") : schedulerStatus.lock.exists ? t("panels.chatgpt.lockHeld") : t("panels.chatgpt.lockNone")}</div>
+                <div>{t("panels.chatgpt.next")}: {formatTime(schedulerStatus.nextRunAt)} · {t("panels.chatgpt.last")}: {formatTime(schedulerStatus.lastRunFinishedAt)}</div>
+                {schedulerStatus.lastError && <div style={{ color: "#f87171" }}>{t("panels.chatgpt.lastError", { error: schedulerStatus.lastError })}</div>}
+                {schedulerStatus.lastAccountError && <div style={{ color: "#fb923c" }}>{t("panels.chatgpt.accountError", { error: schedulerStatus.lastAccountError })}</div>}
               </div>
-            ) : <div style={{ color: "var(--text-dim)", fontSize: 11 }}>Scheduler status unavailable.</div>}
+            ) : <div style={{ color: "var(--text-dim)", fontSize: 11 }}>{t("panels.chatgpt.schedulerUnavailable")}</div>}
             <button type="button" onClick={() => void repairLock()} disabled={repairingLock} style={{ alignSelf: "flex-start", padding: "5px 9px", borderRadius: 6, border: "1px solid rgba(239,68,68,0.35)", background: "transparent", color: repairingLock ? "var(--text-dim)" : "#f87171", cursor: repairingLock ? "default" : "pointer", fontSize: 11, fontWeight: 700 }}>
-              {repairingLock ? "Repairing…" : "故障处理：修复刷新锁"}
+              {repairingLock ? t("panels.chatgpt.repairing") : t("panels.chatgpt.fixLock")}
             </button>
           </div>
         </div>

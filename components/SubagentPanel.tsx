@@ -1,12 +1,16 @@
 "use client";
 
 import { useState, useCallback, useEffect, useMemo, useReducer, useRef } from "react";
+import { useI18n } from "@/components/I18nProvider";
 import type {
   SubagentActivityState,
   SubagentProgressSnapshot,
   SubagentRecentTool,
   SubagentRun,
 } from "@/hooks/useAgentSession";
+import type { MessageParams } from "@/lib/i18n";
+
+type TranslateFn = (key: string, params?: MessageParams) => string;
 
 interface Props {
   runs: readonly SubagentRun[];
@@ -120,6 +124,7 @@ function useSubagentDetailCache() {
 type DetailCache = ReturnType<typeof useSubagentDetailCache>;
 
 export function SubagentPanel({ runs }: Props) {
+  const { t } = useI18n();
   const detailCache = useSubagentDetailCache();
   const running = runs.filter((run) => run.status === "running");
   const completed = runs.filter((run) => run.status !== "running");
@@ -128,20 +133,20 @@ export function SubagentPanel({ runs }: Props) {
   ));
 
   if (runs.length === 0) {
-    return <div className="inspector-state inspector-state-empty">No subagent activity yet.</div>;
+    return <div className="inspector-state inspector-state-empty">{t("panels.subagents.emptyYet")}</div>;
   }
 
   return (
     <div className="subagent-panel-root inspector-content">
       {running.length > 0 && (
         <>
-          <div className="subagent-section-title">Running <span>({running.length})</span></div>
+          <div className="subagent-section-title">{t("panels.subagents.running")} <span>({running.length})</span></div>
           {renderRuns(running)}
         </>
       )}
       {completed.length > 0 && (
         <>
-          <div className={`subagent-section-title${running.length > 0 ? " has-leading-section" : ""}`}>Completed <span>({completed.length})</span></div>
+          <div className={`subagent-section-title${running.length > 0 ? " has-leading-section" : ""}`}>{t("panels.subagents.completed")} <span>({completed.length})</span></div>
           {renderRuns(completed)}
         </>
       )}
@@ -212,6 +217,7 @@ function RunItem({
   depth: number;
   detailCache: DetailCache;
 }) {
+  const { t } = useI18n();
   const indent = depth * 16;
   const progress = run.progress;
   const isDetached = progress?.status === "detached";
@@ -220,11 +226,17 @@ function RunItem({
   const activityState = progress?.activityState;
   const statusTone = resolveStatusTone({ isRunning, isFailed, isDetached, activityState });
   const statusIcon = isDetached ? "◌" : isRunning ? "○" : isFailed ? "✕" : "✓";
-  const statusLabel = isDetached ? "Detached" : isRunning ? "Running" : isFailed ? "Failed" : "Done";
+  const statusLabel = isDetached
+    ? t("panels.subagents.detached")
+    : isRunning
+      ? t("panels.subagents.running")
+      : isFailed
+        ? t("panels.subagents.failed")
+        : t("panels.subagents.done");
 
   const taskDisplay = run.task
     ? run.task.split("\n")[0].slice(0, 120)
-    : "(no task)";
+    : t("panels.subagents.noTask");
 
   const detail = detailState?.detail;
   const terminalPreview = run.status !== "running" ? run.result : undefined;
@@ -232,17 +244,17 @@ function RunItem({
     ? detail?.output ?? terminalPreview ?? run.partialOutput
     : terminalPreview ?? detail?.output ?? run.partialOutput;
   const outputTruncated = detail?.outputTruncated ?? run.outputTruncated ?? false;
-  const routingLabel = formatRouting(run.routing);
-  const metadata = getRunMetadata(run.routing);
+  const routingLabel = formatRouting(run.routing, t);
+  const metadata = getRunMetadata(run.routing, t);
   const metadataTitle = routingLabel ?? metadata.map((item) => `${item.label}: ${item.value}`).join(" · ");
   const hasSessionFile = !!run.sessionFile;
   const canLoadDetail = hasSessionFile && depth < MAX_SUBAGENT_DETAIL_DEPTH;
   const childrenRuns = detail?.children ?? [];
   const hasChildren = childrenRuns.length > 0;
   const recentTools = progress?.recentTools?.slice(-MAX_RECENT_TOOLS_DISPLAY) ?? [];
-  const progressSummary = progress ? formatProgressActivity(progress, isRunning && !isDetached) : null;
-  const progressStats = progress ? formatProgressStats(progress) : null;
-  const activityBadge = formatActivityBadge(activityState);
+  const progressSummary = progress ? formatProgressActivity(progress, isRunning && !isDetached, t) : null;
+  const progressStats = progress ? formatProgressStats(progress, t) : null;
+  const activityBadge = formatActivityBadge(activityState, t);
 
   return (
     <div>
@@ -267,7 +279,7 @@ function RunItem({
           <RunMetadataChips items={metadata} title={metadataTitle} />
         )}
         {canLoadDetail && !hasChildren && isExpanded && (
-          <span className="subagent-inline-state">{detailState?.status === "loading" ? "loading..." : detailState?.status === "error" ? "detail unavailable" : "no children"}</span>
+          <span className="subagent-inline-state">{detailState?.status === "loading" ? t("panels.subagents.loadingInline") : detailState?.status === "error" ? t("panels.subagents.detailUnavailable") : t("panels.subagents.noChildren")}</span>
         )}
         <span className={`subagent-status-label ${statusTone}`}>{statusLabel}</span>
         <span className="subagent-row-chevron">{isExpanded ? "▲" : "▼"}</span>
@@ -300,7 +312,7 @@ function RunItem({
         <div className="subagent-detail" style={{ paddingLeft: 16 + indent + 22 }}>
           {recentTools.length > 0 && (
             <div className="subagent-detail-section">
-              <div className="subagent-detail-title">Recent tools <span>({recentTools.length})</span></div>
+              <div className="subagent-detail-title">{t("panels.subagents.recentTools")} <span>({recentTools.length})</span></div>
               <div className="subagent-tool-list">
                 {recentTools.map((tool, index) => (
                   <div
@@ -319,7 +331,7 @@ function RunItem({
           {/* Load exactly one nested level per expansion. */}
           {hasChildren && (
             <div className="subagent-detail-section">
-              <div className="subagent-detail-title">Subagents <span>({childrenRuns.length}{detail?.childrenTruncated ? "+" : ""})</span></div>
+              <div className="subagent-detail-title">{t("panels.subagents.title")} <span>({childrenRuns.length}{detail?.childrenTruncated ? "+" : ""})</span></div>
               {childrenRuns.map((child) => (
                 <ObservedRunItem
                   key={`${child.sessionFile ?? child.id}-${child.id}`}
@@ -331,22 +343,22 @@ function RunItem({
             </div>
           )}
           {detailState?.status === "loading" && !detail && canLoadDetail && (
-            <div className="subagent-detail-state">Loading details...</div>
+            <div className="subagent-detail-state">{t("panels.subagents.loadingDetails")}</div>
           )}
           {depth >= MAX_SUBAGENT_DETAIL_DEPTH && hasSessionFile && (
-            <div className="subagent-detail-state">Nested detail depth limit reached.</div>
+            <div className="subagent-detail-state">{t("panels.subagents.depthLimit")}</div>
           )}
           {/* Output */}
           {displayOutput && (
             <div className="subagent-output">
               {displayOutput}
               {outputTruncated && (
-                <div className="subagent-output-truncated">Output truncated to the most recent bounded preview.</div>
+                <div className="subagent-output-truncated">{t("panels.subagents.outputTruncated")}</div>
               )}
             </div>
           )}
           {!displayOutput && !hasChildren && recentTools.length === 0 && (
-            <div className="subagent-detail-state">Waiting for output...</div>
+            <div className="subagent-detail-state">{t("panels.subagents.waitingOutput")}</div>
           )}
         </div>
       )}
@@ -358,9 +370,9 @@ function RunItem({
  * A nested child run displayed within a parent's expanded section.
  * Clickable to show its own output via inline toggle.
  */
-function formatRouting(routing: SubagentRun["routing"]): string | null {
+function formatRouting(routing: SubagentRun["routing"], t: TranslateFn): string | null {
   if (!routing?.source) return null;
-  const target = routing.model ?? (routing.source === "piDefault" ? "Pi default" : null);
+  const target = routing.model ?? (routing.source === "piDefault" ? t("panels.subagents.piDefault") : null);
   const thinking = routing.thinking ? `:${routing.thinking}` : "";
   const route = routing.modality && routing.tier ? ` ${routing.modality}/${routing.tier}` : "";
   const confidence = typeof routing.confidence === "number" ? ` ${(routing.confidence * 100).toFixed(0)}%` : "";
@@ -368,12 +380,12 @@ function formatRouting(routing: SubagentRun["routing"]): string | null {
   return routing.fallbackReason ? `${base} (${routing.fallbackReason})` : base;
 }
 
-function getRunMetadata(routing: SubagentRun["routing"]): { label: string; value: string }[] {
+function getRunMetadata(routing: SubagentRun["routing"], t: TranslateFn): { label: string; value: string }[] {
   if (!routing) return [];
-  const model = routing.model ?? (routing.source === "piDefault" ? "Pi default" : null);
+  const model = routing.model ?? (routing.source === "piDefault" ? t("panels.subagents.piDefault") : null);
   return [
-    ...(model ? [{ label: "Model", value: model }] : []),
-    ...(routing.thinking ? [{ label: "Thinking", value: routing.thinking }] : []),
+    ...(model ? [{ label: t("panels.subagents.model"), value: model }] : []),
+    ...(routing.thinking ? [{ label: t("panels.subagents.thinking"), value: routing.thinking }] : []),
   ];
 }
 
@@ -404,11 +416,16 @@ export function formatDurationMs(durationMs: number): string | null {
   return remMinutes > 0 ? `${hours}h ${remMinutes}m` : `${hours}h`;
 }
 
-export function formatProgressStats(progress: Pick<SubagentProgressSnapshot, "toolCount" | "turnCount" | "tokens" | "durationMs">): string | null {
+export function formatProgressStats(
+  progress: Pick<SubagentProgressSnapshot, "toolCount" | "turnCount" | "tokens" | "durationMs">,
+  t?: TranslateFn,
+): string | null {
   const parts: string[] = [];
-  if (progress.toolCount > 0) parts.push(`${progress.toolCount} tool${progress.toolCount === 1 ? "" : "s"}`);
+  if (progress.toolCount > 0) {
+    parts.push(t ? t("panels.subagents.toolsCount", { count: progress.toolCount }) : `${progress.toolCount} tool${progress.toolCount === 1 ? "" : "s"}`);
+  }
   if (typeof progress.turnCount === "number" && progress.turnCount > 0) {
-    parts.push(`${progress.turnCount} turn${progress.turnCount === 1 ? "" : "s"}`);
+    parts.push(t ? t("panels.subagents.turnsCount", { count: progress.turnCount }) : `${progress.turnCount} turn${progress.turnCount === 1 ? "" : "s"}`);
   }
   const tokens = formatTokenCount(progress.tokens);
   if (tokens) parts.push(tokens);
@@ -420,13 +437,18 @@ export function formatProgressStats(progress: Pick<SubagentProgressSnapshot, "to
 export function formatProgressActivity(
   progress: SubagentProgressSnapshot,
   active: boolean,
+  t?: TranslateFn,
 ): { label: string; title: string } | null {
   if (progress.status === "detached") {
-    return { label: "Detached", title: "Subagent detached from parent wait" };
+    return {
+      label: t ? t("panels.subagents.detached") : "Detached",
+      title: t ? t("panels.subagents.detachedTitle") : "Subagent detached from parent wait",
+    };
   }
   if (progress.status === "failed") {
-    const detail = progress.failedTool || progress.error || "failed";
-    return { label: `Failed · ${truncateText(detail, CURRENT_TOOL_ARGS_PREVIEW)}`, title: progress.error ?? detail };
+    const detail = progress.failedTool || progress.error || (t ? t("panels.subagents.failed") : "failed");
+    const failedLabel = t ? t("panels.subagents.failed") : "Failed";
+    return { label: `${failedLabel} · ${truncateText(detail, CURRENT_TOOL_ARGS_PREVIEW)}`, title: progress.error ?? detail };
   }
   if (progress.currentTool) {
     const args = progress.currentToolArgs ? ` ${truncateText(progress.currentToolArgs, CURRENT_TOOL_ARGS_PREVIEW)}` : "";
@@ -437,19 +459,30 @@ export function formatProgressActivity(
     return { label, title };
   }
   if (active && (progress.status === "pending" || progress.status === "running")) {
-    return { label: "thinking…", title: "Waiting for model / next tool" };
+    return {
+      label: t ? t("panels.subagents.thinkingEllipsis") : "thinking…",
+      title: t ? t("panels.subagents.waitingModel") : "Waiting for model / next tool",
+    };
   }
   if (progress.status === "completed") {
-    return { label: "Completed", title: "Progress snapshot completed" };
+    return {
+      label: t ? t("panels.subagents.completed") : "Completed",
+      title: t ? t("panels.subagents.snapshotCompleted") : "Progress snapshot completed",
+    };
   }
   return null;
 }
 
 export function formatActivityBadge(
   activityState: SubagentActivityState | undefined,
+  t?: TranslateFn,
 ): { label: string; tone: string } | null {
-  if (activityState === "needs_attention") return { label: "Needs attention", tone: "is-danger" };
-  if (activityState === "active_long_running") return { label: "Long-running", tone: "is-warning" };
+  if (activityState === "needs_attention") {
+    return { label: t ? t("panels.subagents.needsAttention") : "Needs attention", tone: "is-danger" };
+  }
+  if (activityState === "active_long_running") {
+    return { label: t ? t("panels.subagents.longRunning") : "Long-running", tone: "is-warning" };
+  }
   return null;
 }
 
@@ -471,10 +504,12 @@ function formatRecentToolTitle(tool: SubagentRecentTool): string {
 }
 
 function RunMetadataChips({ items, title }: { items: { label: string; value: string }[]; title?: string | null }) {
+  const { t } = useI18n();
+  const modelLabel = t("panels.subagents.model");
   return (
     <span title={title ?? undefined} className="subagent-metadata-chips">
       {items.map((item) => (
-        <span key={item.label} className={`subagent-metadata-chip${item.label === "Model" ? " is-model" : ""}`}>
+        <span key={item.label} className={`subagent-metadata-chip${item.label === modelLabel || item.label === "Model" ? " is-model" : ""}`}>
           <span>{item.label}: </span>{item.value}
         </span>
       ))}
