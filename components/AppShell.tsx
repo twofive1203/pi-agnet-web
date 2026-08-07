@@ -181,6 +181,8 @@ export function AppShell() {
   const [usageStatsOpen, setUsageStatsOpen] = useState(false);
   const [settingsConfigOpen, setSettingsConfigOpen] = useState(false);
   const [webConfig, setWebConfig] = useState<PiWebConfig | null>(null);
+  const [serverAuthRequired, setServerAuthRequired] = useState(false);
+  const [logoutBusy, setLogoutBusy] = useState(false);
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [terminalCollapsed, setTerminalCollapsed] = useState(false);
   const [terminalDockCwd, setTerminalDockCwd] = useState<string | null>(null);
@@ -209,6 +211,41 @@ export function AppShell() {
     void loadWebConfig(controller.signal);
     return () => controller.abort();
   }, [loadWebConfig]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const res = await fetch("/api/server-auth/status", {
+          signal: controller.signal,
+          credentials: "same-origin",
+        });
+        if (!res.ok) return;
+        const data = await res.json() as { authRequired?: boolean };
+        if (data.authRequired === true) setServerAuthRequired(true);
+      } catch {
+        // local/default: hide logout
+      }
+    })();
+    return () => controller.abort();
+  }, []);
+
+  const handleServerLogout = useCallback(async () => {
+    if (logoutBusy) return;
+    setLogoutBusy(true);
+    try {
+      await fetch("/api/server-auth/logout", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+    } catch {
+      // still leave the UI
+    } finally {
+      window.location.replace("/unlock");
+    }
+  }, [logoutBusy]);
 
   // Branch navigator state — populated by ChatWindow via onBranchDataChange
   const [branchTree, setBranchTree] = useState<SessionTreeNode[]>([]);
@@ -1221,6 +1258,25 @@ export function AppShell() {
                     <span>{t("automation.title")}</span>
                     {automationUnread > 0 && <span className="top-more-menu-badge">{automationUnread > 9 ? "9+" : automationUnread}</span>}
                   </button>
+                  {serverAuthRequired && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="top-more-menu-item"
+                      disabled={logoutBusy}
+                      onClick={() => {
+                        setActiveTopPanel(null);
+                        void handleServerLogout();
+                      }}
+                    >
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                        <polyline points="16 17 21 12 16 7" />
+                        <line x1="21" y1="12" x2="9" y2="12" />
+                      </svg>
+                      <span>{logoutBusy ? t("access.loggingOut") : t("access.logout")}</span>
+                    </button>
+                  )}
                 </div>
               )}
             </div>

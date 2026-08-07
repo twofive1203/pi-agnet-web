@@ -1,4 +1,5 @@
 import type { Locale, MessageTree } from "../types";
+import { accessEn, accessZh } from "./access";
 import { appEn, appZh } from "./app";
 import { automationEn, automationZh } from "./automation";
 import { chatEn, chatZh } from "./chat";
@@ -20,6 +21,7 @@ export const zhMessages = {
   workflow: workflowZh,
   settings: settingsZh,
   automation: automationZh,
+  access: accessZh,
   errors: errorsZh,
 } as const satisfies MessageTree;
 
@@ -33,6 +35,7 @@ export const enMessages = {
   workflow: workflowEn,
   settings: settingsEn,
   automation: automationEn,
+  access: accessEn,
   errors: errorsEn,
 } as const satisfies MessageTree;
 

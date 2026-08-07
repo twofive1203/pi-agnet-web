@@ -25,5 +25,6 @@ Status vocabulary:
 | [`2026-08-01-008-refactor-resource-config-surfaces-plan.md`](2026-08-01-008-refactor-resource-config-surfaces-plan.md) | completed | Models, Extensions, Skills, and resource surfaces. |
 | [`2026-08-01-009-refactor-ui-quality-regression-plan.md`](2026-08-01-009-refactor-ui-quality-regression-plan.md) | active | Static contracts/docs complete; fixed browser matrix and representative-theme confirmation remain. |
 | [`2026-08-07-001-refactor-i18n-coverage-plan.md`](2026-08-07-001-refactor-i18n-coverage-plan.md) | completed | Wave A–C product chrome coverage; residual typed keys/API codes remain ordinary backlog. |
+| [`2026-08-07-002-feat-server-access-authentication-plan.md`](2026-08-07-002-feat-server-access-authentication-plan.md) | completed | Safe loopback defaults, server access key/session gate, global Proxy protection, production E2E, and deployment docs delivered. |
 
 The cross-cutting performance and functional backlog lives in [`../../PERFORMANCE_AND_POLISH_ROADMAP.md`](../../PERFORMANCE_AND_POLISH_ROADMAP.md). Historical investigations and implemented design inputs live under [`../research/`](../research/README.md).

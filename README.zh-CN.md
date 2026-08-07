@@ -33,17 +33,23 @@ npm install -g @twofive/snail-pi-web
 spi
 ```
 
-启动后打开 [http://localhost:62666](http://localhost:62666)。CLI 会在服务就绪后尝试自动打开浏览器。
+默认仅监听回环地址 [http://127.0.0.1:62666](http://127.0.0.1:62666)，本机免认证。CLI 会在服务就绪后尝试自动打开浏览器。
+
+> **安全说明：** 官方入口不再默认继承 `0.0.0.0`。远程/局域网访问必须使用 `spi --server`（或等价环境变量）；非回环监听会强制启用全局访问密钥认证。HTTP 只提供访问控制、不加密传输，公网请放在 HTTPS 反向代理后面。
 
 ## 启动参数
 
 ```bash
-spi --port 8080              # 自定义端口
-spi --hostname 127.0.0.1     # 仅本机访问
-spi -p 8080 -H 127.0.0.1     # 组合使用
-PORT=8080 spi                # 也支持环境变量
-spi --proxy http://127.0.0.1:7897                 # HTTP/HTTPS 代理
-spi --socks-proxy socks5://127.0.0.1:7897         # ALL_PROXY/SOCKS 代理
+spi                              # 本机回环，免认证
+spi --port 8080                  # 自定义端口
+spi --server                     # 服务器模式：0.0.0.0 + 访问密钥认证
+spi --server -H 127.0.0.1        # 回环后端 + 认证（给 Nginx/Caddy 反代）
+spi --server --rotate-access-key # 轮换访问密钥并失效全部会话
+spi -H 0.0.0.0                   # 非回环监听会自动启用认证
+PORT=8080 spi
+PI_WEB_HOSTNAME=10.0.0.5 spi     # 显式监听地址（勿用系统 HOSTNAME）
+spi --proxy http://127.0.0.1:7897
+spi --socks-proxy socks5://127.0.0.1:7897
 ```
 
 `npx` 运行时也可以传参：
@@ -77,6 +83,7 @@ PI_CODING_AGENT_DIR=/path/to/pi-agent-data spi
 | `sessions/` | 会话 JSONL 文件，按工作目录归档。 |
 | `models.json` | 模型提供商和模型列表配置。 |
 | `settings.json` | pi agent 设置，包括默认模型。 |
+| `server-access.json` | 服务器模式访问密钥校验信息与会话哈希（无明文密钥）。 |
 | `pi-web.json` | Web UI 设置，例如 WorkTree、Usage、Web Terminal、ChatGPT/Grok 面板、编辑器和 SnFlow 偏好。 |
 
 会话文件路径形如：

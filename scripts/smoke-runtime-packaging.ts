@@ -22,6 +22,62 @@ function checkServerExternals(): void {
   );
 }
 
+/** Minimum Next.js 16.2 security baseline required for Proxy auth (July 2026 advisory). */
+const MIN_NEXT_PATCH = [16, 2, 11] as const;
+
+function parseSemver(version: string): [number, number, number] | null {
+  const m = /^(\d+)\.(\d+)\.(\d+)/.exec(version.trim());
+  if (!m) return null;
+  return [Number(m[1]), Number(m[2]), Number(m[3])];
+}
+
+function isAtLeast(version: string, min: readonly [number, number, number]): boolean {
+  const parsed = parseSemver(version);
+  if (!parsed) return false;
+  for (let i = 0; i < 3; i += 1) {
+    if (parsed[i]! > min[i]!) return true;
+    if (parsed[i]! < min[i]!) return false;
+  }
+  return true;
+}
+
+function checkNextSecurityBaseline(): void {
+  const pkg = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")) as {
+    dependencies?: Record<string, string>;
+    devDependencies?: Record<string, string>;
+  };
+  const declaredNext = pkg.dependencies?.next ?? "";
+  assert(
+    isAtLeast(declaredNext, MIN_NEXT_PATCH),
+    `package.json next must be >= ${MIN_NEXT_PATCH.join(".")} for server-access Proxy auth (got ${declaredNext})`,
+  );
+  const declaredEslint = pkg.devDependencies?.["eslint-config-next"] ?? "";
+  assert(
+    isAtLeast(declaredEslint, MIN_NEXT_PATCH),
+    `eslint-config-next must track next >= ${MIN_NEXT_PATCH.join(".")} (got ${declaredEslint})`,
+  );
+
+  const installedNext = JSON.parse(
+    readFileSync(join(ROOT, "node_modules", "next", "package.json"), "utf8"),
+  ) as { version?: string };
+  assert(
+    typeof installedNext.version === "string" && isAtLeast(installedNext.version, MIN_NEXT_PATCH),
+    `installed next must be >= ${MIN_NEXT_PATCH.join(".")} (got ${installedNext.version ?? "missing"})`,
+  );
+
+  // Ensure next start still accepts -p / -H used by the launcher.
+  const help = spawnSync(process.execPath, [join(ROOT, "node_modules", "next", "dist", "bin", "next"), "start", "--help"], {
+    cwd: ROOT,
+    encoding: "utf8",
+    env: process.env,
+  });
+  const helpText = `${help.stdout ?? ""}\n${help.stderr ?? ""}`;
+  assert(help.status === 0 || helpText.length > 0, "next start --help must be runnable");
+  assert(/-p|\bport\b/i.test(helpText), "next start must document port flag");
+  assert(/-H|\bhostname\b/i.test(helpText), "next start must document hostname flag");
+  console.log(`NEXT_SECURITY_BASELINE_OK version=${installedNext.version}`);
+}
+
 function checkPublishedLauncher(): void {
   const launcher = readFileSync(join(ROOT, "bin", "pi-web.js"), "utf8");
   const executableSource = launcher
@@ -30,6 +86,15 @@ function checkPublishedLauncher(): void {
     .join("\n");
   assert(!/shell\s*:\s*true/.test(executableSource), "published launcher must not spawn with shell: true");
   assert(launcher.includes('"explorer.exe"'), "Windows browser launch must use explorer.exe directly");
+
+  const runtimeOptions = join(ROOT, "bin", "runtime-options.js");
+  assert(existsSync(runtimeOptions), "bin/runtime-options.js must ship with the launcher");
+  const pm2 = join(ROOT, "ecosystem.config.cjs");
+  assert(existsSync(pm2), "ecosystem.config.cjs must exist for single-process server deploys");
+  const pm2Body = readFileSync(pm2, "utf8");
+  assert(/instances\s*:\s*1/.test(pm2Body), "PM2 config must pin single instance");
+  assert(/--server/.test(pm2Body), "PM2 config must enable server mode");
+  assert(/exec_mode\s*:\s*['"]fork['"]/.test(pm2Body) || /exec_mode:\s*"fork"/.test(pm2Body), "PM2 must use fork mode");
 }
 
 /**
@@ -158,6 +223,7 @@ function checkAutomationWorkerArtifact(): void {
 }
 
 checkServerExternals();
+checkNextSecurityBaseline();
 checkPublishedLauncher();
 checkAutomationWorkerArtifact();
 console.log("runtime packaging smoke checks passed");

@@ -76,6 +76,9 @@ API routes live under `app/api/`. When adding, removing, or changing routes, upd
 | `workflows/tasks/[taskId]/archive/` | POST | Archive a completed/cancelled SnFlow task by moving it to `.pi/snflows/archived/<task-id>/`. |
 | `default-cwd/` | POST | Create and return `~/pi-cwd-<YYYYMMDD>`. |
 | `home/` | GET | Return `os.homedir()`. |
+| `server-auth/status/` | GET | Public probe: `{ authRequired, httpWarning }` only — no project/session metadata. |
+| `server-auth/login/` | POST | Exchange access key for a 7-day HttpOnly session cookie (server mode). Same-origin + rate-limited; generic errors. |
+| `server-auth/logout/` | POST | Revoke current server session hash and clear cookie (idempotent). |
 | `usage/` | GET | Aggregate persisted token/cost usage across active-only or active-plus-archived parent sessions and their nested native subagent sessions, including main/subagent splits. |
 | `auth/providers/` | GET | List OAuth/subscription providers. `loggedIn` is true only when the active auth is OAuth (API-key-only credentials on dual-auth providers like `xai` do not count). |
 | `auth/all-providers/` | GET | List API-key-capable built-in providers (excludes primary OAuth-only ids and `models.json` custom keys). `configured` is true only for non-OAuth auth so an xAI subscription login does not also surface a separate active "xAI" API-key row. |

@@ -29,6 +29,7 @@ Project discovery and per-cwd candidate collection are accelerated by a rebuilda
 
 ## Key Boundaries
 
+- **Instance access gate:** root `proxy.ts` enforces optional global access-key authentication when `PI_WEB_SERVER_MODE=1` (set by `--server`, non-loopback bind, or env). Unauthenticated page requests redirect to `/unlock`; API/SSE return `401`. Opaque HttpOnly sessions live in `server-access.json` (verifier + token hashes only). This gate is independent of and does **not** relax Automation, native picker, or browser-bridge loopback-only policies.
 - Session browsing does not create an AgentSession: API routes read `.jsonl` files through `lib/session-reader.ts`; the only write side effect is pruning stale sessions whose cwd points at a deleted WorkTree.
 - Sending commands creates or reuses an in-process AgentSession through `lib/rpc-manager.ts`.
 - Session detail/context routes reuse the live wrapper's already-parsed `SessionManager` when its canonical session file matches, avoiding another synchronous JSONL parse during active-chat refreshes; inactive sessions still open from disk as the source of truth.
@@ -36,6 +37,13 @@ Project discovery and per-cwd candidate collection are accelerated by a rebuilda
 - File viewing and workspace metadata use explicit API routes under `app/api/files/`, `app/api/cwd/`, and `app/api/git/`. The standalone `/file?path=...&line=...` page reuses the same `FileViewer` and API authorization; it never reads arbitrary paths directly. Historical root-level Windows links (`/D:/.../File.java:11`) are compatibility redirects only.
 
 ## Project Invariants
+
+### Server access authentication
+
+- Official launchers default to `127.0.0.1` with auth off; any official non-loopback listen enables auth. Explicit `--server` enables auth even on loopback (reverse-proxy layout).
+- Server mode must fail closed when auth state is missing/corrupt — never silently open the instance.
+- Access keys are shown once; only scrypt verifiers and session hashes are persisted. Logout, expiry, and key rotation invalidate server-side sessions.
+- Trusted proxy headers (`X-Forwarded-Proto`) are ignored unless `PI_WEB_TRUST_PROXY=1` **and** the backend bind is loopback; headers never decide whether auth is required.
 
 ### AgentSession lifecycle
 

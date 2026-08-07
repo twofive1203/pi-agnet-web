@@ -3,9 +3,23 @@
 ## Common Checks
 
 - Confirm the server is on port `62666` unless `--port` or `PORT` overrides it.
+- Confirm bind address: default is `127.0.0.1` (not LAN). Remote access needs `--server` or a non-loopback hostname.
 - Confirm `PI_CODING_AGENT_DIR` when sessions or config appear missing.
 - Check `~/.pi/agent/sessions/` for raw session JSONL files.
-- For PM2 deployments, inspect `logs/pi-web-out.log` and `logs/pi-web-error.log`.
+- For PM2 deployments, inspect process logs; ensure single-instance fork mode.
+
+## Server access authentication
+
+- **Cannot reach from another machine after upgrade:** intentional. Default bind is loopback. Use `spi --server` (or `PI_WEB_SERVER_MODE=1` / non-loopback `-H`).
+- **Access key not printed on restart:** expected. The key is shown only on first server init or `--rotate-access-key`. It is never stored in plaintext in `server-access.json`.
+- **Lost access key:** run `spi --server --rotate-access-key` (or with your usual non-loopback bind). A new key is printed once; all old sessions die immediately.
+- **Corrupt `server-access.json`:** server mode fails closed (boot error or `503`). Recover with `--rotate-access-key` after fixing permissions; do not hand-edit the verifier.
+- **Stuck on unlock page after login:** cookie blocked? Prefer same host you typed in the browser. Behind HTTPS proxy set `PI_WEB_TRUST_PROXY=1` only with loopback backend so `Secure` cookies work. Plain HTTP cookies intentionally omit `Secure`.
+- **HTTP warning on unlock page:** expected for direct HTTP. Prefer Caddy/Nginx TLS termination. The warning is suppressed when trusted proxy reports `https`.
+- **429 on login:** short in-process rate limit; wait and retry. Restart clears the counter (single-instance behavior).
+- **Everyone logged out after ops change:** access key was rotated, or Agent data dir was not persisted (new empty `server-access.json`).
+- **Container loses key every deploy:** mount a persistent volume for `PI_CODING_AGENT_DIR`.
+- **Logged-in remote still cannot use Automation / native folder picker / browser bridge:** correct — those remain loopback-only and are not authorized by the global access key.
 
 ## Development Safety
 

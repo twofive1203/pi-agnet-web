@@ -47,6 +47,8 @@ npm run test:session-stats   # parent-session lifetime token/cost aggregation sm
 npm run test:snflow       # SnFlow setup/store/session-link/spec-review smokes
 npm run test:runtime      # Next server externals + published launcher invariants
 npm run test:automation   # Automation store/schedule/policy/runner/API/security smokes
+npm run test:server-auth  # Access-key domain + Proxy policy + launcher options
+npm run test:server-auth:e2e  # Post-build production auth matrix (requires npm run build)
 npm run test:mcp          # MCP adapter-native config domain/API smokes (secrets, revisions, JSONC)
 npm run test:ui-theme     # theme registry/boot/Picker + semantic Token contract smoke
 ```

@@ -27,12 +27,14 @@ npm run dev     # http://localhost:62666
 | `npm run test:ui-theme` | Theme registry, semantic Token, responsive, focus, and motion contract checks. |
 | `npm run test:subagent-observability` | Subagent summaries, metrics, and observation projections. |
 | `npm run test:runtime` | Runtime packaging and published launcher invariants. |
+| `npm run test:server-auth` | Server access-key domain, launcher options, and Proxy policy smokes. |
+| `npm run test:server-auth:e2e` | Post-build production E2E for access auth (first key, login, SSE/API gate, restart, rotation, trusted proxy). |
 | `npm run test:open-folder` | Local project-folder opening policy and route checks. |
 | `npm run test:cwd-browse` | Workspace directory browsing policy and route checks. |
 | `npm run test:cwd-native-pick` | Native folder-picker policy and route checks. |
 | `npm run test:api-protection` | Local API mutation protection smoke suite. |
 | `npm run build` | Production/release build through `scripts/build-next.js`. Do not use for routine dev work. |
-| `npm run start` | Start the production server on port 62666. |
+| `npm run start` | Start the production server on port 62666 via `bin/pi-web.js` (loopback default). |
 
 > Never run `next build` directly during development. It pollutes `.next/` and can break `npm run dev`; use `npm run build` only for release/publish validation.
 
@@ -99,6 +101,7 @@ Keep this section short and operational; detailed rationale belongs in `docs/arc
 - Automation is independent of SnFlow and ordinary project sessions: data lives under `getAgentDir()/automations/`; Automation JSONL must not appear in default `/api/sessions` lists.
 - Automation effective tools are snapshot ∩ live policy and never fall back to dynamic `all`; unapproved extensions must not be imported by the scheduled loader.
 - `/api/automations/**` is local-only (direct loopback + control session); sensitive mutations require trusted UI confirmation (browser challenge or `ctx.ui.confirm`).
+- Official launchers default to loopback bind without auth; `--server`, `PI_WEB_SERVER_MODE=1`, or any non-loopback listen enables global access-key auth via root `proxy.ts`. Auth success never relaxes Automation/native-picker/browser-bridge loopback gates.
 
 ## Standards and Validation
 
@@ -138,6 +141,7 @@ node_modules/.bin/tsc --noEmit
 | Model config | `~/.pi/agent/models.json` |
 | Settings/default model/native subagents | `~/.pi/agent/settings.json`, project override `<cwd>/.pi/settings.json` |
 | Web UI settings (WorkTree, Usage, Web Terminal, ChatGPT panel, Grok panel, Editor, bundled core-extension toggles, SnFlow panel). Unknown legacy root keys such as `trellis` are ignored and left on disk | `~/.pi/agent/pi-web.json` |
+| Server access auth state (scrypt verifier + session hashes; no plaintext key) | `~/.pi/agent/server-access.json` |
 | Bundled Web Search provider/API key/base URL config | XDG-aware `~/.config/rpiv-web-tools/config.json` (or `XDG_CONFIG_HOME`) |
 | WebUI SnFlow tasks | `<cwd>/.pi/snflows/tasks/<task-id>/` (archived: `<cwd>/.pi/snflows/archived/<task-id>/`; version/assets: `.pi/snflows/.version`, `.pi/extensions/snflow/`, `.pi/skills/snflow-dev/`, `.pi/agents/snflow-*.md`) |
 | Automation tasks/runs/sessions | `~/.pi/agent/automations/` (`tasks.json`, locks, claims, runs, promotions, audit, sessions); default cwd `~/pi-automation-cwd` (canonical path persisted once) |

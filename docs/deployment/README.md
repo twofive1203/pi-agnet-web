@@ -36,17 +36,26 @@ npm install -g @twofive/snail-pi-web
 spi
 ```
 
-Default URL: `http://localhost:62666`. The CLI attempts to open the browser after the server is ready.
+Default URL: `http://127.0.0.1:62666` (loopback only, no authentication). The CLI attempts to open the browser after the server is ready.
+
+**Security defaults:** official launchers no longer inherit Next.js `0.0.0.0`. Any official non-loopback listen, or explicit `--server` / `PI_WEB_SERVER_MODE=1`, enables global access-key authentication. HTTP is allowed but does **not** encrypt the access key or session cookie — put an HTTPS reverse proxy in front for untrusted networks.
 
 ### CLI Options
 
 ```bash
-spi --port 8080              # custom port
-spi --hostname 127.0.0.1     # bind to localhost only
-spi -p 8080 -H 127.0.0.1     # short options
-PORT=8080 spi                # environment variable is also supported
-spi --proxy http://127.0.0.1:7897                 # HTTP_PROXY/HTTPS_PROXY
-spi --socks-proxy socks5://127.0.0.1:7897         # ALL_PROXY/SOCKS proxy
+spi                              # loopback, auth off
+spi --port 8080                  # custom port
+spi --server                     # 0.0.0.0 + access-key auth
+spi --server -H 127.0.0.1        # loopback backend + auth (HTTPS reverse proxy)
+spi --server --rotate-access-key # mint a new access key; invalidate all sessions
+spi -H 0.0.0.0                   # non-loopback bind auto-enables auth
+spi --no-open                    # do not open a browser on Ready
+PORT=8080 spi
+PI_WEB_HOSTNAME=10.0.0.5 spi     # listen host (do not use system HOSTNAME)
+PI_WEB_SERVER_MODE=1 spi         # force auth (defaults bind 0.0.0.0 when host unset)
+PI_WEB_TRUST_PROXY=1 spi --server -H 127.0.0.1   # trust X-Forwarded-Proto for Secure cookies
+spi --proxy http://127.0.0.1:7897
+spi --socks-proxy socks5://127.0.0.1:7897
 ```
 
 `npx` accepts the same options:
@@ -75,6 +84,7 @@ PI_CODING_AGENT_DIR=/path/to/pi-agent-data spi
 | `models.json` | Model provider/model configuration. |
 | `settings.json` | pi settings, including default model. |
 | `pi-web.json` | Web UI settings, including WorkTree defaults, Usage scope, Web Terminal settings, ChatGPT panel/auto-refresh settings, Grok usage panel toggle, Editor settings, and SnFlow panel preferences. Unknown legacy root keys such as `trellis` are ignored and preserved on disk. |
+| `server-access.json` | Server-mode access-key verifier (scrypt) + opaque session hashes. No plaintext access key. Persist this directory across container/PM2 restarts. Restrict file permissions; first-start key may also appear in process logs. |
 | `chatgpt-usage-refresh.lock` | Backend ChatGPT usage auto-refresh lock file; stale locks can be repaired from the ChatGPT panel fault handler. |
 | `grok-usage-refresh.lock` | Backend Grok usage auto-refresh lock file; stale locks can be repaired from the Grok panel fault handler. |
 
@@ -109,28 +119,46 @@ npm run start    # serves on port 62666
 
 `npm run build` uses `scripts/build-next.js`, which sets `HOME` and `USERPROFILE` to `.next-build-home/` to avoid protected Windows home junction issues. Do not run `next build` directly for project validation.
 
-Runtime options are passed through Next.js:
+`npm run start` and `npm run dev` both go through `bin/pi-web.js` (same security defaults as `spi`):
 
 ```bash
 npm run start -- --port 8080
-npm run start -- --hostname 127.0.0.1
+npm run start -- --server -H 127.0.0.1
 PORT=8080 npm run start
 ```
 
+### HTTPS reverse proxy (recommended for remote access)
+
+1. Run the backend on loopback with auth enabled:
+
+```bash
+spi --server -H 127.0.0.1 -p 62666 --no-open
+# or: PI_WEB_TRUST_PROXY=1 spi --server -H 127.0.0.1 --no-open
+```
+
+2. Terminate TLS on Caddy/Nginx and proxy to `http://127.0.0.1:62666`.
+3. Only set `PI_WEB_TRUST_PROXY=1` when the proxy is trusted and the backend bind is loopback — this makes cookies `Secure` when `X-Forwarded-Proto: https`.
+4. Save the one-time access key printed on first server start; later restarts reuse the verifier and do not reprint it.
+5. If the key is lost or leaked: `spi --server --rotate-access-key` (invalidates every browser session).
+
+**Breaking change:** hosts that previously relied on implicit LAN exposure via Next's default `0.0.0.0` must migrate to `--server` (or an explicit non-loopback hostname).
+
 ## PM2
 
-`ecosystem.config.cjs` runs `node_modules/.bin/next start -p 62666` with:
+`ecosystem.config.cjs` runs the official launcher in **single-process fork** mode:
 
-- recommended process name `snail-pi-web` (existing generic `pi-web` setups may remain unchanged)
-- auto-restart enabled
-- max memory restart at 1 GB
-- logs under `logs/pi-web-out.log` and `logs/pi-web-error.log`
+- process name `snail-pi-web`
+- `instances: 1`, `exec_mode: "fork"` (cluster / multi-instance is unsupported — auth state is single-writer)
+- args: `--server --no-open -H 127.0.0.1 -p 62666` (auth on, loopback backend for HTTPS reverse proxy)
+- persist `PI_CODING_AGENT_DIR` so `server-access.json` survives restarts
 
 Start with:
 
 ```bash
 pm2 start ecosystem.config.cjs
 ```
+
+For direct LAN listen (still authenticated), change args to `--server --no-open -H 0.0.0.0 -p 62666`.
 
 ## Proxy Startup
 
@@ -164,7 +192,10 @@ Before publishing, authenticate and validate the release bundle:
 npm whoami
 npm run lint
 node_modules/.bin/tsc --noEmit
+npm run test:server-auth
+npm run test:runtime
 npm run build
+npm run test:server-auth:e2e
 npm pack --dry-run
 ```
 

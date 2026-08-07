@@ -42,9 +42,6 @@ yarn-error.log*
 next-env.d.ts
 .factory
 
-# pm2 deployment
-ecosystem.config.cjs
-
 # startup / update scripts
 start-pi-web-proxy.sh
 update-pi-web.sh
