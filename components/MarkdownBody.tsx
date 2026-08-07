@@ -1,5 +1,6 @@
 "use client";
 
+import { useI18n } from "@/components/I18nProvider";
 import { memo, useEffect, useMemo, useState, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
@@ -151,6 +152,7 @@ function normalizeDisplayMath(markdown: string): string {
 }
 
 function MermaidBlock({ code, isStreaming }: { code: string; isStreaming?: boolean }) {
+  const { t } = useI18n();
   const { isDark } = useTheme();
   const [showPreview, setShowPreview] = useState(false);
   const [svg, setSvg] = useState<string | null>(null);
@@ -219,9 +221,9 @@ function MermaidBlock({ code, isStreaming }: { code: string; isStreaming?: boole
 
   const body =
     failedKey === currentKey ? (
-      <div className="mermaid-block mermaid-block-error">Invalid Mermaid diagram</div>
+      <div className="mermaid-block mermaid-block-error">{t("panels.mermaid.invalid")}</div>
     ) : !svg || renderedKey !== currentKey ? (
-      <div className="mermaid-block mermaid-block-loading" aria-label="Rendering Mermaid diagram" />
+      <div className="mermaid-block mermaid-block-loading" aria-label={t("panels.mermaid.rendering")} />
     ) : (
       <div className="mermaid-block" dangerouslySetInnerHTML={{ __html: svg }} />
     );

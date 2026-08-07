@@ -247,7 +247,7 @@ P3 工程卫生
 
 ### Wave B — 高价值半接入面板
 
-- [ ] **U5. ModelsConfig 文案分批迁入**
+- [x] **U5. ModelsConfig 文案分批迁入**（主表单/发现/OAuth 导入/额度核心 chrome；仍可能有次要英文残留）
 
 **Goal:** Settings → Models 用户句子与表单 chrome 双语；消灭 locale 三元。
 
@@ -274,7 +274,7 @@ P3 工程卫生
 
 ---
 
-- [ ] **U6. FileViewer / Standalone 残留**
+- [x] **U6. FileViewer / Standalone 残留**
 
 **Goal:** 预览失败、磁盘冲突、word wrap、live sync 等双语。
 
@@ -295,7 +295,7 @@ P3 工程卫生
 
 ---
 
-- [ ] **U7. Warmup / Pricing / Extension dialog / Diff 错误态**
+- [x] **U7. Warmup / Pricing / Extension dialog / Diff 错误态**
 
 **Goal:** 次高频面板与弹层不再整页英文。
 

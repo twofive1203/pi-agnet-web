@@ -1,5 +1,6 @@
 "use client";
 
+import { useI18n } from "@/components/I18nProvider";
 import { useCallback, useEffect, useState } from "react";
 import type { SessionChangedFileSummary, SessionFileDiffResponse } from "@/lib/types";
 import { DiffModal } from "./DiffModal";
@@ -16,29 +17,30 @@ interface Props {
   contained?: boolean;
 }
 
-function statusLabel(status: SessionChangedFileSummary["status"]): string {
+function statusLabel(status: SessionChangedFileSummary["status"], t: (key: string) => string): string {
   switch (status) {
     case "added": return "Added";
     case "deleted": return "Deleted";
-    case "metadata-only": return "Metadata only";
+    case "metadata-only": return t("panels.diff.metadataOnly");
     case "modified":
     default:
       return "Modified";
   }
 }
 
-function reasonLabel(reason: SessionFileDiffResponse["reason"]): string {
+function reasonLabel(reason: SessionFileDiffResponse["reason"], t: (key: string) => string): string {
   switch (reason) {
-    case "binary": return "Binary file changes cannot be rendered as text.";
-    case "too-large": return "This file is too large to render a safe inline diff.";
-    case "outside-workspace": return "This file is outside the current workspace.";
-    case "unreadable": return "The file could not be read safely.";
-    case "unchanged": return "No cumulative text diff is currently available.";
-    default: return "No text diff is available for this change.";
+    case "binary": return t("panels.diff.binary");
+    case "too-large": return t("panels.diff.tooLarge");
+    case "outside-workspace": return t("panels.diff.outsideWorkspace");
+    case "unreadable": return t("panels.diff.unreadable");
+    case "unchanged": return t("panels.diff.noCumulative");
+    default: return t("panels.diff.noText");
   }
 }
 
 export function FileDiffModal({ sessionId, file, onClose, contained = false }: Props) {
+  const { t } = useI18n();
   const [data, setData] = useState<SessionFileDiffResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -71,14 +73,14 @@ export function FileDiffModal({ sessionId, file, onClose, contained = false }: P
       loading={loading}
       error={error}
       diff={diff}
-      fallback={reasonLabel(data?.reason ?? file.reason)}
+      fallback={reasonLabel(data?.reason ?? file.reason, t)}
       onClose={onClose}
       contained={contained}
       header={(
         <>
           <div className="diff-modal-path">{file.path}</div>
           <div className="diff-modal-meta">
-            <span>{statusLabel(display.status)}</span>
+            <span>{statusLabel(display.status, t)}</span>
             <span className="is-success">+{display.additions}</span>
             <span className="is-danger">-{display.deletions}</span>
             <span>via {display.toolNames.join(", ")}</span>

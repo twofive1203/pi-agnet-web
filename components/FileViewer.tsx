@@ -112,10 +112,11 @@ function DownloadLink({ filePath, label = "Download" }: { filePath: string; labe
 }
 
 function LiveIndicator({ watching }: { watching: boolean }) {
+  const { t } = useI18n();
   return (
     <span
       className={`file-viewer-live${watching ? " is-live" : ""}`}
-      title={watching ? "Live sync active" : "Not watching"}
+      title={watching ? t("panels.fileViewer.liveSyncActive") : t("panels.fileViewer.notWatching")}
     >
       <span className="file-viewer-live-dot" />
       {watching ? "live" : "static"}
@@ -359,6 +360,7 @@ function DiffView({ oldContent, newContent }: { oldContent: string; newContent: 
 }
 
 function ImageViewer({ filePath, cwd, onAddChat }: { filePath: string; cwd?: string; onAddChat?: Props["onAddChat"] }) {
+  const { t } = useI18n();
   const [watching, setWatching] = useState(false);
   const [bust, setBust] = useState(0);
   const [size, setSize] = useState<number | null>(null);
@@ -414,7 +416,7 @@ function ImageViewer({ filePath, cwd, onAddChat }: { filePath: string; cwd?: str
         {naturalSize && <span>{naturalSize.w} × {naturalSize.h}</span>}
         {formatSizeStr && <span>{formatSizeStr}</span>}
         {onAddChat && (
-          <button type="button" onClick={() => onAddChat(filePath)} title="Add to chat (⌘1)" className="file-viewer-action">
+          <button type="button" onClick={() => onAddChat(filePath)} title={t("panels.fileViewer.addToChat")} className="file-viewer-action">
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
             Chat
           </button>
@@ -433,7 +435,7 @@ function ImageViewer({ filePath, cwd, onAddChat }: { filePath: string; cwd?: str
               const img = e.currentTarget;
               setNaturalSize({ w: img.naturalWidth, h: img.naturalHeight });
             }}
-            onError={() => setError("Failed to load image")}
+            onError={() => setError(t("panels.fileViewer.failedImage"))}
             style={{
               maxWidth: "100%",
               maxHeight: "100%",
@@ -455,7 +457,9 @@ function formatDuration(seconds: number): string {
   return `${mins}:${String(secs).padStart(2, "0")}`;
 }
 
-function AudioViewer({ filePath, cwd, onAddChat }: { filePath: string; cwd?: string; onAddChat?: Props["onAddChat"] }) {
+function AudioViewer({
+  filePath, cwd, onAddChat }: { filePath: string; cwd?: string; onAddChat?: Props["onAddChat"] }) {
+  const { t } = useI18n();
   const [watching, setWatching] = useState(false);
   const [bust, setBust] = useState(0);
   const [size, setSize] = useState<number | null>(null);
@@ -511,7 +515,7 @@ function AudioViewer({ filePath, cwd, onAddChat }: { filePath: string; cwd?: str
         {duration != null && <span>{formatDuration(duration)}</span>}
         {size != null && <span>{formatSize(size)}</span>}
         {onAddChat && (
-          <button type="button" onClick={() => onAddChat(filePath)} title="Add to chat (⌘1)" className="file-viewer-action">
+          <button type="button" onClick={() => onAddChat(filePath)} title={t("panels.fileViewer.addToChat")} className="file-viewer-action">
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
             Chat
           </button>
@@ -527,7 +531,7 @@ function AudioViewer({ filePath, cwd, onAddChat }: { filePath: string; cwd?: str
             preload="metadata"
             src={src}
             onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
-            onError={() => setError("Failed to load audio")}
+            onError={() => setError(t("panels.fileViewer.failedAudio"))}
             style={{ width: "100%" }}
           />
         </div>
@@ -537,6 +541,7 @@ function AudioViewer({ filePath, cwd, onAddChat }: { filePath: string; cwd?: str
 }
 
 function DocumentViewer({ filePath, cwd, onAddChat }: { filePath: string; cwd?: string; onAddChat?: Props["onAddChat"] }) {
+  const { t } = useI18n();
   const [watching, setWatching] = useState(false);
   const [bust, setBust] = useState(0);
   const [size, setSize] = useState<number | null>(null);
@@ -568,7 +573,7 @@ function DocumentViewer({ filePath, cwd, onAddChat }: { filePath: string; cwd?: 
         if (typeof d.size === "number") {
           setSize(d.size);
           if (!isPdf && d.size > DOCX_PREVIEW_MAX_BYTES) {
-            setError("DOCX too large for preview (>10MB)");
+            setError(t("panels.fileViewer.docxTooLarge"));
           }
         }
       })
@@ -584,7 +589,7 @@ function DocumentViewer({ filePath, cwd, onAddChat }: { filePath: string; cwd?: 
         if (typeof d.size === "number") {
           setSize(d.size);
           if (!isPdf && d.size > DOCX_PREVIEW_MAX_BYTES) {
-            setError("DOCX too large for preview (>10MB)");
+            setError(t("panels.fileViewer.docxTooLarge"));
             return;
           }
         }
@@ -599,7 +604,7 @@ function DocumentViewer({ filePath, cwd, onAddChat }: { filePath: string; cwd?: 
       es.close();
       esRef.current = null;
     };
-  }, [encoded, isPdf]);
+  }, [encoded, isPdf, t]);
 
   return (
     <div className="file-viewer-shell">
@@ -608,7 +613,7 @@ function DocumentViewer({ filePath, cwd, onAddChat }: { filePath: string; cwd?: 
         <span className="file-viewer-meta-spacer">{ext === "docx" ? "docx preview" : "pdf"}</span>
         {size != null && <span>{formatSize(size)}</span>}
         {onAddChat && (
-          <button type="button" onClick={() => onAddChat(filePath)} title="Add to chat (⌘1)" className="file-viewer-action">
+          <button type="button" onClick={() => onAddChat(filePath)} title={t("panels.fileViewer.addToChat")} className="file-viewer-action">
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
             Chat
           </button>
@@ -681,7 +686,7 @@ function TextFileViewer({ filePath, cwd, initialLine, editorConfig, onAddChat, o
   const fetchContent = useCallback((filePath: string, isRefresh = false) => {
     if (isRefresh && dirtyRef.current) {
       setExternalChangePending(true);
-      setSaveError("File changed on disk while you have unsaved edits. Reload or resolve before saving.");
+      setSaveError(t("panels.fileViewer.conflictOnDisk"));
       return Promise.resolve(null);
     }
 
@@ -717,7 +722,7 @@ function TextFileViewer({ filePath, cwd, initialLine, editorConfig, onAddChat, o
         setError(String(e));
         return null;
       });
-  }, []);
+  }, [t]);
 
   const handleSave = useCallback(() => {
     if (!data || saving || !dirtyRef.current) return;
@@ -929,7 +934,7 @@ function TextFileViewer({ filePath, cwd, initialLine, editorConfig, onAddChat, o
           </span>
         )}
         {externalChangePending && (
-          <button type="button" onClick={handleReloadFromDisk} title="Discard local edits and reload from disk" className="file-viewer-action is-warning">
+          <button type="button" onClick={handleReloadFromDisk} title={t("panels.fileViewer.discardReloadTitle")} className="file-viewer-action is-warning">
             Reload disk
           </button>
         )}
@@ -937,7 +942,7 @@ function TextFileViewer({ filePath, cwd, initialLine, editorConfig, onAddChat, o
           type="button"
           onClick={handleSave}
           disabled={!dirty || saving}
-          title="Save file (⌘S)"
+          title={t("panels.fileViewer.saveFile")}
           className={`file-viewer-action${dirty ? " is-primary" : ""}`}
         >
           {saving ? "Saving..." : dirty ? "Save" : "Saved"}
@@ -948,7 +953,7 @@ function TextFileViewer({ filePath, cwd, initialLine, editorConfig, onAddChat, o
             type="button"
             onClick={handleFindDefinitions}
             disabled={!activeSymbol || implementationLoading}
-            title={activeSymbol ? `Go to definition for ${activeSymbol}` : "Place cursor on a symbol"}
+            title={activeSymbol ? t("panels.fileViewer.gotoDefinition", { symbol: activeSymbol }) : t("panels.fileViewer.placeCursorSymbol")}
             className="file-viewer-action"
           >
             Def
@@ -960,7 +965,7 @@ function TextFileViewer({ filePath, cwd, initialLine, editorConfig, onAddChat, o
             type="button"
             onClick={handleFindReferences}
             disabled={!activeSymbol || implementationLoading}
-            title={activeSymbol ? `Find references for ${activeSymbol} (⇧F12)` : "Place cursor on a symbol"}
+            title={activeSymbol ? t("panels.fileViewer.findReferences", { symbol: activeSymbol }) : t("panels.fileViewer.placeCursorSymbol")}
             className="file-viewer-action"
           >
             {implementationLoading ? "Finding..." : `Refs${activeSymbol ? `: ${activeSymbol}` : ""}`}
@@ -972,7 +977,7 @@ function TextFileViewer({ filePath, cwd, initialLine, editorConfig, onAddChat, o
             type="button"
             onClick={handleFindImplementations}
             disabled={!activeSymbol || implementationLoading}
-            title={activeSymbol ? `Find Java implementations for ${activeSymbol} (⌘/Ctrl+F12)` : "Place cursor on a Java symbol"}
+            title={activeSymbol ? t("panels.fileViewer.findImplementations", { symbol: activeSymbol }) : t("panels.fileViewer.placeCursorJava")}
             className="file-viewer-action"
           >
             {implementationLoading ? "Finding..." : `Impl${activeSymbol ? `: ${activeSymbol}` : ""}`}
@@ -988,7 +993,7 @@ function TextFileViewer({ filePath, cwd, initialLine, editorConfig, onAddChat, o
               setSelectedLines(null);
               window.getSelection()?.removeAllRanges();
             }}
-            title="Add to chat (⌘1)"
+            title={t("panels.fileViewer.addToChat")}
             className={`file-viewer-action${selectedLines ? " is-selected" : ""}`}
           >
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
@@ -1013,7 +1018,7 @@ function TextFileViewer({ filePath, cwd, initialLine, editorConfig, onAddChat, o
           <button
             type="button"
             onClick={() => setWrapLines((v) => !v)}
-            title={wrapLines ? "Disable word wrap" : "Enable word wrap"}
+            title={wrapLines ? t("panels.fileViewer.disableWrap") : t("panels.fileViewer.enableWrap")}
             className={`file-viewer-action${wrapLines ? " is-selected" : ""}`}
           >
             wrap
@@ -1069,7 +1074,7 @@ function TextFileViewer({ filePath, cwd, initialLine, editorConfig, onAddChat, o
             srcDoc={editorContent}
             sandbox="allow-scripts"
             style={{ width: "100%", height: "100%", border: "none", background: "var(--bg)" }}
-            title="HTML preview"
+            title={t("panels.fileViewer.htmlPreview")}
           />
         ) : isMarkdown && previewMode ? (
           <div className="markdown-body markdown-file-preview">

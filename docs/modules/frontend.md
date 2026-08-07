@@ -126,7 +126,7 @@ Portal stacking must use the `--z-*` layer Tokens in `app/globals.css`, not new 
 - **API**: `const { locale, setLocale, t } = useI18n()`; `t("key", { name })` interpolates `{name}` placeholders.
 - **Persistence**: `localStorage["pi-locale"]`; boot script in `app/layout.tsx` sets `document.documentElement.lang` early to reduce flash.
 - **Switcher**: top-bar `EN`/`中` button in `AppShell`, and Settings → Language section.
-- **Coverage status**: shell/chat/sidebar/git/terminal/diff, Skills/Extensions/Usage/Subagents/Tool presets/Inspector changes, Chat phase+typewriter+continue, and ChatGPT/Grok usage chrome are wired onto `lib/i18n/messages/*`. Remaining gaps: ModelsConfig bulk form copy, FileViewer leftovers, Warmup/Pricing/Diff error states, locale-aware date formatting, and API error localization (see `docs/plans/2026-08-07-001-refactor-i18n-coverage-plan.md`).
+- **Coverage status**: Wave A+B surfaces are largely wired onto `lib/i18n/messages/*` (shell/chat/sidebar, Skills/Extensions/Usage/Subagents/Tool/Inspector, Chat phase/typewriter/continue, ChatGPT/Grok usage, ModelsConfig main chrome, FileViewer, Warmup, Pricing catalog, Extension dialogs, Diff error reasons, Mermaid chrome). Remaining gaps: ModelsConfig secondary strings, locale-aware date formatting, API error localization, and type-safe keys (see `docs/plans/2026-08-07-001-refactor-i18n-coverage-plan.md` Wave C).
 
 ## Automation UI
 

@@ -1,5 +1,6 @@
 "use client";
 
+import { useI18n } from "@/components/I18nProvider";
 import { useCallback, useEffect, useState } from "react";
 import type { GitCommitChangedFile, GitCommitFileDiffResponse } from "@/lib/types";
 import { DiffModal } from "./DiffModal";
@@ -25,17 +26,18 @@ function statusLabel(status: GitCommitChangedFile["status"]): string {
   }
 }
 
-function reasonLabel(reason: GitCommitFileDiffResponse["reason"]): string {
+function reasonLabel(reason: GitCommitFileDiffResponse["reason"], t: (key: string) => string): string {
   switch (reason) {
-    case "binary": return "Binary file changes cannot be rendered as text.";
-    case "too-large": return "This diff is too large to render safely in the browser.";
+    case "binary": return t("panels.diff.binary");
+    case "too-large": return t("panels.diff.tooLargeBrowser");
     case "unavailable":
     default:
-      return "No text diff is available for this file in the selected commit.";
+      return t("panels.diff.noTextInCommit");
   }
 }
 
 export function GitCommitDiffModal({ cwd, hash, shortHash, file, onClose }: Props) {
+  const { t } = useI18n();
   const [data, setData] = useState<GitCommitFileDiffResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -70,7 +72,7 @@ export function GitCommitDiffModal({ cwd, hash, shortHash, file, onClose }: Prop
       loading={loading}
       error={error}
       diff={diff}
-      fallback={reasonLabel(data?.reason)}
+      fallback={reasonLabel(data?.reason, t)}
       onClose={onClose}
       header={(
         <>

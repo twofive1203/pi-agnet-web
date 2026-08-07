@@ -1,5 +1,6 @@
 "use client";
 
+import { useI18n } from "@/components/I18nProvider";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { SettingsButton, SettingsInput, SettingsState, SettingsTextarea } from "@/components/ui/SettingsPrimitives";
@@ -14,6 +15,7 @@ interface Props {
  * Application modal host for blocking Pi extension dialogs (confirm/select/input/editor).
  */
 export function ExtensionDialogHost({ dialog, onRespond }: Props) {
+  const { t } = useI18n();
   const [draft, setDraft] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
   const titleId = useId();
@@ -167,15 +169,15 @@ export function ExtensionDialogHost({ dialog, onRespond }: Props) {
 
   const title =
     dialog.method === "confirm" ? (dialog.title || "Confirm")
-      : dialog.method === "select" ? (dialog.title || "Select an option")
+      : dialog.method === "select" ? (dialog.title || t("panels.extensionUi.selectPlaceholder"))
         : dialog.method === "input" ? (dialog.title || "Input")
           : (dialog.title || "Edit");
 
   const ariaLabel =
-    dialog.method === "confirm" ? "Extension confirm dialog"
-      : dialog.method === "select" ? "Extension select dialog"
-        : dialog.method === "input" ? "Extension input dialog"
-          : "Extension editor dialog";
+    dialog.method === "confirm" ? t("panels.extensionUi.confirmDialog")
+      : dialog.method === "select" ? t("panels.extensionUi.selectDialog")
+        : dialog.method === "input" ? t("panels.extensionUi.inputDialog")
+          : t("panels.extensionUi.editorDialog");
 
   return createPortal(
     <div
@@ -194,7 +196,7 @@ export function ExtensionDialogHost({ dialog, onRespond }: Props) {
           <div className="pi-modal-header-copy">
             <div id={titleId} className="pi-modal-title">{title}</div>
           </div>
-          <button type="button" onClick={cancel} className="pi-modal-close" aria-label="Close">×</button>
+          <button type="button" onClick={cancel} className="pi-modal-close" aria-label={t("panels.extensionUi.close")}>×</button>
         </div>
 
         <div className="pi-modal-body">
@@ -207,7 +209,7 @@ export function ExtensionDialogHost({ dialog, onRespond }: Props) {
           {dialog.method === "select" && (
             <div ref={listRef} className="pi-dialog-options" role="listbox" aria-label={title}>
               {options.length === 0 ? (
-                <SettingsState title="No options available." />
+                <SettingsState title={t("panels.extensionUi.noOptions")} />
               ) : (
                 options.map((option, index) => {
                   const active = index === selectedIndex;
@@ -256,7 +258,7 @@ export function ExtensionDialogHost({ dialog, onRespond }: Props) {
         </div>
 
         <div className="pi-modal-footer">
-          <SettingsButton onClick={cancel}>Cancel</SettingsButton>
+          <SettingsButton onClick={cancel}>{t("panels.extensionUi.cancel")}</SettingsButton>
           {(dialog.method === "confirm" || dialog.method === "input" || dialog.method === "editor" || dialog.method === "select") && (
             <SettingsButton
               variant="primary"

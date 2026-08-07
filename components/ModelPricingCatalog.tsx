@@ -1,5 +1,6 @@
 "use client";
 
+import { useI18n } from "@/components/I18nProvider";
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { SettingsInput, SettingsSelect, SettingsState } from "@/components/ui/SettingsPrimitives";
@@ -33,12 +34,13 @@ function formatPrice(value: number): string {
   return `$${value}`;
 }
 
-function formatSyncedAt(value: number | null): string {
-  if (!value) return "Not synced";
+function formatSyncedAt(value: number | null, t: (key: string) => string): string {
+  if (!value) return t("panels.pricing.notSynced");
   return new Date(value).toLocaleString();
 }
 
 export function ModelPricingCatalog({ onClose }: Props) {
+  const { t } = useI18n();
   const [items, setItems] = useState<PricingCatalogItem[]>([]);
   const [syncedAt, setSyncedAt] = useState<number | null>(null);
   const [providerCount, setProviderCount] = useState(0);
@@ -104,12 +106,12 @@ export function ModelPricingCatalog({ onClose }: Props) {
       <div className="pi-modal-panel pi-modal-panel-wide pricing-catalog-panel">
         <div className="pi-modal-header">
           <div className="pi-modal-header-copy">
-            <div id="pricing-catalog-title" className="pi-modal-title">Pricing catalog</div>
+            <div id="pricing-catalog-title" className="pi-modal-title">{t("panels.pricing.title")}</div>
             <div className="pi-modal-subtitle">
-              {providerCount} providers · {modelCount} models · {formatSyncedAt(syncedAt)}
+              {providerCount} providers · {modelCount} models · {formatSyncedAt(syncedAt, t)}
             </div>
           </div>
-          <button type="button" onClick={onClose} aria-label="Close pricing catalog" className="pi-modal-close">×</button>
+          <button type="button" onClick={onClose} aria-label={t("panels.pricing.closeAria")} className="pi-modal-close">×</button>
         </div>
 
         <div className="pricing-catalog-filters">
@@ -117,26 +119,26 @@ export function ModelPricingCatalog({ onClose }: Props) {
             type="search"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search provider or model"
-            aria-label="Search pricing catalog"
+            placeholder={t("panels.pricing.searchPlaceholder")}
+            aria-label={t("panels.pricing.searchAria")}
           />
           <SettingsSelect
             value={provider}
             onChange={(event) => setProvider(event.target.value)}
-            aria-label="Filter pricing provider"
+            aria-label={t("panels.pricing.filterAria")}
           >
-            <option value="">All providers</option>
+            <option value="">{t("panels.pricing.allProviders")}</option>
             {providers.map((name) => <option key={name} value={name}>{name}</option>)}
           </SettingsSelect>
         </div>
 
         <div className="pricing-catalog-table-wrap">
           {loading ? (
-            <SettingsState kind="loading" title="Loading…" className="pricing-catalog-state" />
+            <SettingsState kind="loading" title={t("panels.pricing.loading")} className="pricing-catalog-state" />
           ) : error ? (
             <SettingsState kind="error" title={error} className="pricing-catalog-state" />
           ) : items.length === 0 ? (
-            <SettingsState title="No synced pricing catalog." className="pricing-catalog-state" />
+            <SettingsState title={t("panels.pricing.empty")} className="pricing-catalog-state" />
           ) : (
             <table className="pricing-catalog-table">
               <thead>

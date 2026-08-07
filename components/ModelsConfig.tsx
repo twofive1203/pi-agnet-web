@@ -377,6 +377,7 @@ function HeadersEditor({
   onChange: (headers: Record<string, string> | undefined) => void;
   hint?: string;
 }) {
+  const { t } = useI18n();
   const headersFingerprint = JSON.stringify(headers ?? {});
   const [rows, setRows] = useState<HeaderRow[]>(() => headersToRows(headers));
 
@@ -406,24 +407,24 @@ function HeadersEditor({
   return (
     <SettingsSurface className="models-headers-editor">
       <SettingsActionRow>
-        <SectionTitle>Custom headers</SectionTitle>
-        <SettingsButton size="sm" onClick={addRow}>+ Add header</SettingsButton>
+        <SectionTitle>{t("settings.models.customHeaders")}</SectionTitle>
+        <SettingsButton size="sm" onClick={addRow}>{t("settings.models.addHeader")}</SettingsButton>
       </SettingsActionRow>
       {hint && <div className="settings-surface-muted">{hint}</div>}
       {rows.length === 0 ? (
-        <div className="settings-surface-muted">No custom headers. Optional request headers such as <code>User-Agent</code> go here.</div>
+        <div className="settings-surface-muted">{t("settings.models.noCustomHeaders")}</div>
       ) : (
         <div className="models-header-list">
           {rows.map((row) => (
             <div key={row.id} className="models-header-row">
-              <TextInput value={row.key} onChange={(value) => updateRow(row.id, { key: value })} placeholder="Header name" mono />
-              <TextInput value={row.value} onChange={(value) => updateRow(row.id, { value })} placeholder="value, $ENV, or !command" mono />
-              <SettingsButton variant="ghost" size="icon" onClick={() => removeRow(row.id)} aria-label={`Remove header ${row.key || "row"}`} title="Remove header" className="models-danger-text">−</SettingsButton>
+              <TextInput value={row.key} onChange={(value) => updateRow(row.id, { key: value })} placeholder={t("settings.models.headerName")} mono />
+              <TextInput value={row.value} onChange={(value) => updateRow(row.id, { value })} placeholder={t("settings.models.headerValuePlaceholder")} mono />
+              <SettingsButton variant="ghost" size="icon" onClick={() => removeRow(row.id)} aria-label={`Remove header ${row.key || "row"}`} title={t("settings.models.removeHeader")} className="models-danger-text">−</SettingsButton>
             </div>
           ))}
         </div>
       )}
-      <div className="settings-surface-muted">Values support literals, <code>$ENV_VAR</code>, or shell commands prefixed with <code>!</code>.</div>
+      <div className="settings-surface-muted">{t("settings.models.headerValuesHint")}</div>
     </SettingsSurface>
   );
 }
@@ -451,6 +452,7 @@ function SecretTextInput({
   spellCheck?: boolean;
   style?: React.CSSProperties;
 }) {
+  const { t } = useI18n();
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
@@ -469,7 +471,7 @@ function SecretTextInput({
         autoComplete={autoComplete}
         spellCheck={spellCheck}
       />
-      <button type="button" onClick={() => setVisible((value) => !value)} aria-label={visible ? "Hide API key" : "Show API key"} title={visible ? "Hide API key" : "Show API key"} className="models-secret-toggle">
+      <button type="button" onClick={() => setVisible((value) => !value)} aria-label={visible ? t("settings.models.hideApiKey") : t("settings.models.showApiKey")} title={visible ? t("settings.models.hideApiKey") : t("settings.models.showApiKey")} className="models-secret-toggle">
         {visible ? (
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M17.94 17.94A10.94 10.94 0 0 1 12 20C7 20 2.73 16.89 1 12a18.45 18.45 0 0 1 5.06-6.94" />
@@ -593,6 +595,7 @@ function ProviderDetail({ name, provider, onChange, onRename, onDelete, onAddDis
   onAddDiscoveredModel: (candidate: DiscoveredModelCandidate) => DiscoveredModelChangeResult;
   onRemoveDiscoveredModel: (modelId: string) => DiscoveredModelChangeResult;
 }) {
+  const { t } = useI18n();
   const [editingName, setEditingName] = useState(name);
   const [discoveryState, setDiscoveryState] = useState<ModelDiscoveryState>({ phase: "idle" });
   useEffect(() => setEditingName(name), [name]);
@@ -617,11 +620,11 @@ function ProviderDetail({ name, provider, onChange, onRename, onDelete, onAddDis
   const providerModelIds = new Set((provider.models ?? []).map((model) => model.id).filter(Boolean));
   const isOpenAICompatible = provider.api === "openai-completions" || provider.api === "openai-responses";
   const discoveryDisabledReason = !isOpenAICompatible
-    ? "Model discovery is available for OpenAI-compatible providers only."
+    ? t("settings.models.discoveryOpenAIOnly")
     : !provider.baseUrl?.trim()
-      ? "Set a Base URL before fetching models."
+      ? t("settings.models.discoveryNeedBaseUrl")
       : !provider.apiKey?.trim()
-        ? "Set an API key before fetching models."
+        ? t("settings.models.discoveryNeedApiKey")
         : null;
   const discoveryModels = discoveryState.phase === "success" ? discoveryState.models : [];
   const discoverySearchQuery = discoveryState.phase === "success" ? discoveryState.searchQuery : "";
@@ -671,30 +674,30 @@ function ProviderDetail({ name, provider, onChange, onRename, onDelete, onAddDis
         models: data.models,
         searchQuery: "",
         collapsedGroups: {},
-        message: data.models.length === 0 ? "Fetched the model list, but no models were returned." : undefined,
+        message: data.models.length === 0 ? t("settings.models.discoveryEmptyFetched") : undefined,
       });
     } catch (error) {
       setDiscoveryState({ phase: "error", message: error instanceof Error ? error.message : String(error) });
     }
-  }, [discoveryDisabledReason, discoveryState.phase, formatDiscoveryFailure, name, provider]);
+  }, [discoveryDisabledReason, discoveryState.phase, formatDiscoveryFailure, name, provider, t]);
 
   const handleAddDiscoveredModel = useCallback((candidate: DiscoveredModelCandidate) => {
     if (discoveryState.phase !== "success") return;
     const result = onAddDiscoveredModel(candidate);
     setDiscoveryState((current) => current.phase === "success" ? {
       ...current,
-      message: result.message ?? (result.ok ? `Added ${candidate.id}. Click Save to persist it.` : "Could not add the selected model."),
+      message: result.message ?? (result.ok ? t("settings.models.discoveryAdded", { id: candidate.id }) : t("settings.models.discoveryCouldNotAdd")),
     } : current);
-  }, [discoveryState.phase, onAddDiscoveredModel]);
+  }, [discoveryState.phase, onAddDiscoveredModel, t]);
 
   const handleRemoveDiscoveredModel = useCallback((modelId: string) => {
     if (discoveryState.phase !== "success") return;
     const result = onRemoveDiscoveredModel(modelId);
     setDiscoveryState({
       ...discoveryState,
-      message: result.message ?? (result.ok ? `Removed ${modelId}. Click Save to persist it.` : "Could not remove the selected model."),
+      message: result.message ?? (result.ok ? t("settings.models.discoveryRemoved", { id: modelId }) : t("settings.models.discoveryCouldNotRemove")),
     });
-  }, [discoveryState, onRemoveDiscoveredModel]);
+  }, [discoveryState, onRemoveDiscoveredModel, t]);
 
   const setDiscoverySearchQuery = useCallback((query: string) => {
     setDiscoveryState((prev) => prev.phase === "success" ? { ...prev, searchQuery: query, message: undefined } : prev);
@@ -709,31 +712,31 @@ function ProviderDetail({ name, provider, onChange, onRename, onDelete, onAddDis
   return (
     <div className="models-detail-form">
       <SettingsActionRow>
-        <SectionTitle>Provider</SectionTitle>
-        <SettingsButton size="sm" variant="danger" onClick={onDelete}>Delete</SettingsButton>
+        <SectionTitle>{t("settings.models.provider")}</SectionTitle>
+        <SettingsButton size="sm" variant="danger" onClick={onDelete}>{t("settings.models.delete")}</SettingsButton>
       </SettingsActionRow>
 
-      <Field label="Provider name">
+      <Field label={t("settings.models.providerName")}>
         <TextInput value={editingName} onChange={setEditingName} placeholder="provider-name" mono />
         {editingName !== name && editingName.trim() && (
-          <SettingsButton size="sm" variant="primary" className="settings-align-start" onClick={() => onRename(editingName.trim())}>Rename</SettingsButton>
+          <SettingsButton size="sm" variant="primary" className="settings-align-start" onClick={() => onRename(editingName.trim())}>{t("settings.models.rename")}</SettingsButton>
         )}
       </Field>
 
-      <Field label="Base URL">
+      <Field label={t("settings.models.baseUrl")}>
         <TextInput value={provider.baseUrl ?? ""} onChange={(v) => set("baseUrl", v || undefined)}
           placeholder="https://api.example.com/v1" mono />
       </Field>
 
-      <Field label="API Key">
+      <Field label={t("settings.models.apiKey")}>
         <SecretTextInput value={provider.apiKey ?? ""} onChange={(v) => set("apiKey", v || undefined)}
-          placeholder="ENV_VAR_NAME, !shell-command, or literal key" mono />
+          placeholder={t("settings.models.apiKeyPlaceholder")} mono />
         <span style={{ fontSize: 10, color: "var(--text-dim)", marginTop: 2 }}>
-          Prefix with <code style={{ fontFamily: "var(--font-mono)" }}>!</code> to run a shell command, or use an env var name
+          {t("settings.models.apiKeyHint")}
         </span>
       </Field>
 
-      <Field label="API">
+      <Field label={t("settings.models.api")}>
         <Select
           value={provider.api ?? "openai-completions"}
           onChange={(v) => onChange(applyApiChangeHeaders(provider, v))}
@@ -744,15 +747,12 @@ function ProviderDetail({ name, provider, onChange, onRename, onDelete, onAddDis
 
       <SettingsSurface>
         <Check
-          label="Retry empty completed responses"
+          label={t("settings.models.retryEmptyCompleted")}
           checked={provider.emptyCompletedRetry === true}
           onChange={(enabled) => set("emptyCompletedRetry", enabled ? true : undefined)}
         />
         <div className="settings-surface-muted">
-          Some relay gateways finish a tool turn with an empty assistant message
-          (<code>stop/completed</code>, zero usage). When enabled for this provider,
-          WebUI rewrites that response into a normal Pi retryable error so the agent
-          can continue automatically. Applies to every model under this provider.
+          {t("settings.models.retryEmptyCompletedHint")}
         </div>
       </SettingsSurface>
 
@@ -760,13 +760,13 @@ function ProviderDetail({ name, provider, onChange, onRename, onDelete, onAddDis
         headers={provider.headers}
         onChange={(headers) => set("headers", headers)}
         hint={defaultUserAgentHint(provider.api, "provider")
-          ?? "Merged into every request for this provider. Useful for User-Agent, proxy auth, or gateway-required headers."}
+          ?? t("settings.models.headersHintProvider")}
       />
 
       <SettingsSurface className="models-discovery">
         <SettingsActionRow>
-          <div><SectionTitle>Discover models</SectionTitle><div className="settings-surface-muted">Fetches the provider&apos;s OpenAI-compatible model list. Additions stay staged until Save.</div></div>
-          <SettingsButton variant="primary" onClick={handleDiscoverModels} disabled={Boolean(discoveryDisabledReason)} busy={discoveryState.phase === "loading"}>{discoveryState.phase === "loading" ? "Fetching…" : "Fetch models"}</SettingsButton>
+          <div><SectionTitle>{t("settings.models.discoverModels")}</SectionTitle><div className="settings-surface-muted">{t("settings.models.discoverModelsHint")}</div></div>
+          <SettingsButton variant="primary" onClick={handleDiscoverModels} disabled={Boolean(discoveryDisabledReason)} busy={discoveryState.phase === "loading"}>{discoveryState.phase === "loading" ? t("settings.models.fetching") : t("settings.models.fetchModels")}</SettingsButton>
         </SettingsActionRow>
 
         {discoveryDisabledReason && (
@@ -774,7 +774,7 @@ function ProviderDetail({ name, provider, onChange, onRename, onDelete, onAddDis
         )}
 
         {discoveryState.phase === "loading" && (
-          <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5 }}>Fetching remote model list…</div>
+          <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5 }}>{t("settings.models.fetchingRemote")}</div>
         )}
 
         {discoveryState.phase === "error" && <SettingsNotice tone="danger">{discoveryState.message}</SettingsNotice>}
@@ -782,20 +782,20 @@ function ProviderDetail({ name, provider, onChange, onRename, onDelete, onAddDis
         {discoveryState.phase === "success" && (
           <>
             <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5 }}>
-              {discoveryModels.length === 0 ? "No models returned." : `Fetched ${discoveryModels.length} model${discoveryModels.length === 1 ? "" : "s"} from ${discoveryState.url}`}
+              {discoveryModels.length === 0 ? t("settings.models.noModelsReturnedShort") : t("settings.models.discoveryFetched", { count: discoveryModels.length, url: discoveryState.url })}
             </div>
             {discoveryModels.length > 0 && (
               <>
-                <Field label="Search models">
+                <Field label={t("settings.models.searchModels")}>
                   <TextInput
                     value={discoverySearchQuery}
                     onChange={setDiscoverySearchQuery}
-                    placeholder="Model ID, name, or owner"
+                    placeholder={t("settings.models.searchModelsPlaceholder")}
                     mono
                   />
                 </Field>
                 <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.4 }}>
-                  Showing {filteredDiscoveryModels.length} of {discoveryModels.length} model{discoveryModels.length === 1 ? "" : "s"}
+                  {t("settings.models.discoveryShowing", { shown: filteredDiscoveryModels.length, total: discoveryModels.length })}
                 </div>
                 {discoveryGroups.length === 0 ? (
                   <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.5 }}>No models match the search.</div>
@@ -1037,6 +1037,7 @@ function ModelDetail({
   onAutoAppliedPricingChange: (pricing: AutoAppliedPricing | null) => void;
   onDelete: () => void;
 }) {
+  const { t } = useI18n();
   const [testState, setTestState] = useState<ModelTestState>({ phase: "idle" });
   const mountedRef = useRef(true);
   useEffect(() => {
@@ -1074,7 +1075,7 @@ function ModelDetail({
   };
   const testSummary = (() => {
     if (testState.phase === "idle") return null;
-    if (testState.phase === "testing") return "Testing model connection...";
+    if (testState.phase === "testing") return t("settings.models.testingConnection");
     const meta = [
       testState.latencyMs !== undefined ? `${testState.latencyMs}ms` : null,
       testState.status !== undefined ? `HTTP ${testState.status}` : null,
@@ -1266,7 +1267,7 @@ function ModelDetail({
           <button
             onClick={handleTest}
             disabled={!model.id.trim() || testState.phase === "testing"}
-            title="Test model connection"
+            title={t("settings.models.testConnection")}
             style={{
               height: 24,
               padding: "0 8px",
@@ -1288,18 +1289,18 @@ function ModelDetail({
                 <polyline points="20 6 9 17 4 12" />
               </svg>
             )}
-            {testState.phase === "testing" ? "Testing…" : testState.phase === "success" ? "OK" : "Test"}
+            {testState.phase === "testing" ? t("settings.models.testing") : testState.phase === "success" ? "OK" : "Test"}
           </button>
           <SettingsButton size="sm" variant="danger" onClick={onDelete}>Remove</SettingsButton>
         </div>
       </SettingsActionRow>
 
       <div className="settings-grid">
-        <Field label="ID *"><TextInput value={model.id} onChange={(v) => set("id", v)} placeholder="model-id" mono /></Field>
-        <Field label="Name"><TextInput value={model.name ?? ""} onChange={(v) => set("name", v || undefined)} placeholder="Display name" /></Field>
+        <Field label={t("settings.models.modelIdRequired")}><TextInput value={model.id} onChange={(v) => set("id", v)} placeholder="model-id" mono /></Field>
+        <Field label={t("settings.models.modelName")}><TextInput value={model.name ?? ""} onChange={(v) => set("name", v || undefined)} placeholder={t("settings.models.displayName")} /></Field>
       </div>
 
-      <Field label="API override">
+      <Field label={t("settings.models.apiOverride")}>
         <Select
           value={model.api ?? ""}
           onChange={(v) => onChange(applyApiChangeHeaders(model, v || undefined))}
@@ -1311,19 +1312,19 @@ function ModelDetail({
         headers={model.headers}
         onChange={(headers) => set("headers", headers)}
         hint={defaultUserAgentHint(model.api, "model")
-          ?? "Optional per-model headers. Override provider headers with the same name."}
+          ?? t("settings.models.headersHintModel")}
       />
 
       <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
-        <Check label="Reasoning / thinking" checked={model.reasoning ?? false} onChange={(v) => set("reasoning", v || undefined)} />
-        <Check label="Image input" checked={model.input?.includes("image") ?? false}
+        <Check label={t("settings.models.reasoningThinking")} checked={model.reasoning ?? false} onChange={(v) => set("reasoning", v || undefined)} />
+        <Check label={t("settings.models.imageInput")} checked={model.input?.includes("image") ?? false}
           onChange={(v) => set("input", v ? ["text", "image"] : undefined)} />
       </div>
 
       {model.reasoning && (
         <>
           <Check
-            label="DeepSeek thinking compat"
+            label={t("settings.models.deepseekThinkingCompat")}
             checked={hasDeepseekCompat(model)}
             onChange={(v) => onChange(setDeepseekCompat(model, v))}
           />
@@ -1348,11 +1349,11 @@ function ModelDetail({
       )}
 
       <div className="settings-grid">
-        <Field label="Context window (tokens)">
+        <Field label={t("settings.models.contextWindow")}>
           <NumInput value={model.contextWindow !== undefined ? String(model.contextWindow) : ""}
             onChange={(v) => set("contextWindow", v ? parseInt(v) : undefined)} placeholder="128000" />
         </Field>
-        <Field label="Max output tokens">
+        <Field label={t("settings.models.maxOutputTokens")}>
           <NumInput value={model.maxTokens !== undefined ? String(model.maxTokens) : ""}
             onChange={(v) => set("maxTokens", v ? parseInt(v) : undefined)} placeholder="128000" />
         </Field>
@@ -1480,6 +1481,7 @@ function OAuthQuotaView({
   onRefresh: () => void;
   onReset: () => void;
 }) {
+  const { t } = useI18n();
   if (!quota && !loading && !account) return null;
 
   const displayedQuota = quota?.success ? quota : account?.quotaCache;
@@ -1500,7 +1502,7 @@ function OAuthQuotaView({
             {loading ? "Refreshing…" : `Updated ${formatQuotaQueriedAt(displayedQuota?.queriedAt ?? null)}`}
           </span>
         </div>
-        <SettingsButton size="icon" onClick={() => onRefresh()} disabled={resetting} busy={loading} title="Refresh usage" aria-label="Refresh usage">
+        <SettingsButton size="icon" onClick={() => onRefresh()} disabled={resetting} busy={loading} title={t("settings.models.refreshUsage")} aria-label={t("settings.models.refreshUsage")}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M21 12a9 9 0 0 1-9 9 8.8 8.8 0 0 1-6.36-2.64" />
             <path d="M3 12a9 9 0 0 1 9-9 8.8 8.8 0 0 1 6.36 2.64" />
@@ -1529,7 +1531,13 @@ function OAuthQuotaView({
           <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
             <span style={{ fontSize: 12, color: "var(--text)", fontWeight: 700 }}>Reset credits: {resetCreditsAvailableCount}</span>
             <span style={{ fontSize: 10, color: resetCreditsError ? "#fb923c" : "var(--text-dim)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {resetCreditsError ? resetCreditsError : resetExpiresCountdown ? `Earliest expires in ${resetExpiresCountdown}` : resetExpiresAt ? `Earliest expires ${new Date(resetExpiresAt).toLocaleDateString()}` : "No credit expiration details"}
+              {resetCreditsError
+                ? resetCreditsError
+                : resetExpiresCountdown
+                  ? t("settings.models.earliestExpiresIn", { countdown: resetExpiresCountdown })
+                  : resetExpiresAt
+                    ? t("settings.models.earliestExpiresAt", { date: new Date(resetExpiresAt).toLocaleDateString() })
+                    : t("settings.models.noCreditExpiry")}
             </span>
           </div>
           {canReset && (
@@ -1537,19 +1545,19 @@ function OAuthQuotaView({
               type="button"
               onClick={() => onReset()}
               disabled={loading || resetting}
-              title={resetExpiresCountdown ? `Consumes one reset credit. Earliest expires in ${resetExpiresCountdown}` : "Consumes one Codex reset credit"}
+              title={resetExpiresCountdown ? `Consumes one reset credit. Earliest expires in ${resetExpiresCountdown}` : t("settings.models.resetCreditTitle")}
               style={{ padding: "5px 10px", border: "1px solid rgba(34,197,94,0.45)", borderRadius: 5, background: "transparent", color: loading || resetting ? "var(--text-dim)" : "#22c55e", cursor: loading || resetting ? "default" : "pointer", fontSize: 11, fontWeight: 700, flexShrink: 0 }}
             >
-              {resetting ? "Resetting…" : "Reset limit"}
+              {resetting ? t("settings.models.resetting") : t("settings.models.resetLimit")}
             </button>
           )}
         </div>
       )}
 
-      {quota && quota.credentialStatus === "expired" && !quota.success && <SettingsNotice tone="warning">{quota.error ?? "Token expired. Please re-login."}</SettingsNotice>}
-      {quota && quota.credentialStatus === "parse_error" && <SettingsNotice tone="danger">{quota.error ?? "Failed to read OAuth credentials."}</SettingsNotice>}
+      {quota && quota.credentialStatus === "expired" && !quota.success && <SettingsNotice tone="warning">{quota.error ?? t("settings.models.tokenExpired")}</SettingsNotice>}
+      {quota && quota.credentialStatus === "parse_error" && <SettingsNotice tone="danger">{quota.error ?? t("settings.models.oauthCredsFailed")}</SettingsNotice>}
       {quota && quota.credentialStatus === "not_found" && <SettingsNotice tone="info">No OAuth credential found.</SettingsNotice>}
-      {quota && quota.credentialStatus === "valid" && !quota.success && <SettingsNotice tone="danger">{quota.error ?? "Usage query failed."}</SettingsNotice>}
+      {quota && quota.credentialStatus === "valid" && !quota.success && <SettingsNotice tone="danger">{quota.error ?? t("settings.models.usageQueryFailed")}</SettingsNotice>}
 
       {quota?.success && knownTiers.length === 0 && (
         <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.5 }}>No quota windows returned.</div>
@@ -1588,6 +1596,7 @@ function GrokUsageView({
   loading: boolean;
   onRefresh: () => void;
 }) {
+  const { t } = useI18n();
   const monthly = result?.monthly ?? null;
   const monthlyUtilization = monthly?.utilization ?? null;
   const weekly = result?.weekly ?? null;
@@ -1600,7 +1609,7 @@ function GrokUsageView({
         <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
           <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0 }}>Usage</span>
           <span style={{ fontSize: 11, color: "var(--text-dim)" }}>
-            {loading ? "Refreshing…" : result?.queriedAt ? `Updated ${formatQuotaQueriedAt(result.queriedAt)}` : "Not queried yet"}
+            {loading ? "Refreshing…" : result?.queriedAt ? `Updated ${formatQuotaQueriedAt(result.queriedAt)}` : t("settings.models.notQueriedYet")}
           </span>
         </div>
         <button
@@ -1778,6 +1787,7 @@ function OAuthAccountsView({
   onDelete: (account: OAuthAccountSummary) => void;
   onWarmup: () => void;
 }) {
+  const { t } = useI18n();
   const showAccountUsage = supportsQuota || supportsAccountUsage;
   return (
     <SettingsSurface className="models-account-card">
@@ -1880,7 +1890,7 @@ function OAuthAccountsView({
                       disabled={Boolean(deletingAccountId) || Boolean(activatingAccountId)}
                       style={{ padding: "4px 9px", background: "none", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 4, color: deletingAccountId === account.accountId ? "var(--text-dim)" : "#ef4444", cursor: deletingAccountId || activatingAccountId ? "default" : "pointer", fontSize: 11, fontWeight: 600 }}
                     >
-                      {deletingAccountId === account.accountId ? "Deleting…" : "Delete"}
+                      {deletingAccountId === account.accountId ? t("settings.models.deleting") : t("settings.models.delete")}
                     </button>
                   </>
                 )}
@@ -1920,6 +1930,7 @@ function ExtraInfoDialog({
   onSave: (account: OAuthAccountSummary, extraInfo: string) => void;
   onClose: () => void;
 }) {
+  const { t } = useI18n();
   const [value, setValue] = useState(account.extraInfo ?? "");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -1940,7 +1951,7 @@ function ExtraInfoDialog({
             <textarea ref={textareaRef} value={value} onChange={(event) => setValue(event.target.value)} disabled={saving} placeholder="Add notes such as subscription owner, renewal notes, usage hints…" className="settings-control settings-textarea models-account-notes" />
           </SettingsField>
         </div>
-        <div className="pi-modal-footer"><SettingsButton disabled={saving} onClick={onClose}>Cancel</SettingsButton><SettingsButton variant="primary" busy={saving} onClick={() => onSave(account, value)}>{saving ? "Saving…" : "Save"}</SettingsButton></div>
+        <div className="pi-modal-footer"><SettingsButton disabled={saving} onClick={onClose}>Cancel</SettingsButton><SettingsButton variant="primary" busy={saving} onClick={() => onSave(account, value)}>{saving ? t("settings.models.saving") : t("settings.models.save")}</SettingsButton></div>
       </div>
     </div>
   );
@@ -1961,7 +1972,7 @@ function AddAccountDialog({
   onImported: (accounts: OAuthAccountSummary[]) => void;
   onClose: () => void;
 }) {
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   const [mode, setMode] = useState<OAuthAccountImportMode>("raw");
   const [jsonText, setJsonText] = useState("");
   const [convertedJsonText, setConvertedJsonText] = useState("");
@@ -2102,19 +2113,11 @@ function AddAccountDialog({
             <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: 16, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(320px, 100%), 1fr))", gap: 14 }}>
               <div style={{ display: "flex", flexDirection: "column", gap: 10, minWidth: 0 }}>
                 <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5 }}>
-                  {locale === "zh" ? (
-                    <>请粘贴原始 credential 对象，或由 CPA/SUB2API 转换得到的 credential 数组。必填字段为 <code style={{ fontFamily: "var(--font-mono)" }}>type</code>、<code style={{ fontFamily: "var(--font-mono)" }}>access</code>、<code style={{ fontFamily: "var(--font-mono)" }}>refresh</code> 和 <code style={{ fontFamily: "var(--font-mono)" }}>expires</code>。账号会被保存，但不会自动切换为当前激活账号。</>
-                  ) : (
-                    <>Paste a raw credential object or a CPA/SUB2API-converted credential array. Required fields: <code style={{ fontFamily: "var(--font-mono)" }}>type</code>, <code style={{ fontFamily: "var(--font-mono)" }}>access</code>, <code style={{ fontFamily: "var(--font-mono)" }}>refresh</code>, and <code style={{ fontFamily: "var(--font-mono)" }}>expires</code>. Accounts are saved but not auto-activated.</>
-                  )}
+                  {t("settings.models.rawJsonGuide")}
                 </div>
                 <pre style={{ margin: 0, padding: 12, background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: 8, color: "var(--text)", fontSize: 11, lineHeight: 1.5, overflow: "auto", fontFamily: "var(--font-mono)" }}>{RAW_ACCOUNT_JSON_EXAMPLE}</pre>
                 <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.5 }}>
-                  {locale === "zh" ? (
-                    <>如果省略 <code style={{ fontFamily: "var(--font-mono)" }}>accountId</code>，蜗牛派会尝试从 access token 中解析，失败时使用稳定 fallback。账号显示名会按邮箱、手机号、accountId 的顺序自动补全。</>
-                  ) : (
-                    <>If <code style={{ fontFamily: "var(--font-mono)" }}>accountId</code> is omitted, Snail Pi tries to parse it from the access token and falls back stably on failure. Display names are filled from email, phone, then accountId.</>
-                  )}
+                  {t("settings.models.rawJsonAccountIdHint")}
                 </div>
               </div>
 
@@ -2135,7 +2138,7 @@ function AddAccountDialog({
                       style={{ minHeight: 150, resize: "vertical", padding: "9px 10px", background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: 8, color: "var(--text)", fontSize: 12, outline: "none", fontFamily: "var(--font-mono)", boxSizing: "border-box", lineHeight: 1.5 }}
                     />
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-                      <button type="button" disabled={submitting || !jsonText.trim()} onClick={convertSourceJson} style={{ padding: "6px 12px", background: !submitting && jsonText.trim() ? "var(--accent)" : "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: 6, color: !submitting && jsonText.trim() ? "#fff" : "var(--text-dim)", cursor: !submitting && jsonText.trim() ? "pointer" : "not-allowed", fontSize: 12, fontWeight: 700 }}>{locale === "zh" ? "转换 ↓" : "Convert ↓"}</button>
+                      <button type="button" disabled={submitting || !jsonText.trim()} onClick={convertSourceJson} style={{ padding: "6px 12px", background: !submitting && jsonText.trim() ? "var(--accent)" : "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: 6, color: !submitting && jsonText.trim() ? "#fff" : "var(--text-dim)", cursor: !submitting && jsonText.trim() ? "pointer" : "not-allowed", fontSize: 12, fontWeight: 700 }}>{t("settings.models.convertDown")}</button>
                       <span style={{ fontSize: 11, color: "var(--text-dim)" }}>{t("settings.models.convertToRaw", { label: converter.label })}</span>
                     </div>
                     <textarea
@@ -2987,6 +2990,7 @@ function DeepSeekBalanceView({
 }
 
 function ApiKeyDetail({ provider, onRefresh }: { provider: ApiKeyProvider; onRefresh: () => void }) {
+  const { t } = useI18n();
   const [apiKey, setApiKey] = useState("");
   const [saving, setSaving] = useState(false);
   const [removing, setRemoving] = useState(false);
@@ -3131,7 +3135,7 @@ function ApiKeyDetail({ provider, onRefresh }: { provider: ApiKeyProvider; onRef
                 <polyline points="20 6 9 17 4 12" />
               </svg>
             )}
-            {savedOk ? "Saved" : saving ? "Saving…" : "Save"}
+            {savedOk ? t("settings.models.saved") : saving ? t("settings.models.saving") : t("settings.models.save")}
           </button>
         </div>
       </Field>
@@ -3371,6 +3375,7 @@ type AutoPricingByProvider = Record<string, Record<number, AutoAppliedPricing>>;
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function ModelsConfig({ cwd: _cwd, onClose }: { cwd: string | null; onClose: () => void }) {
+  const { t } = useI18n();
   void _cwd;
   const [config, setConfig] = useState<ModelsJson>({ providers: {} });
   const [loading, setLoading] = useState(true);
@@ -3720,7 +3725,7 @@ export function ModelsConfig({ cwd: _cwd, onClose }: { cwd: string | null; onClo
             {saveError && <SettingsNotice tone="danger" className="models-save-error">{saveError}</SettingsNotice>}
             {savedOk && <SettingsBadge tone="success">Saved</SettingsBadge>}
             <SettingsButton onClick={onClose}>Cancel</SettingsButton>
-            <SettingsButton variant="primary" onClick={handleSave} disabled={savedOk} busy={saving}>{savedOk ? "Saved" : saving ? "Saving…" : "Save"}</SettingsButton>
+            <SettingsButton variant="primary" onClick={handleSave} disabled={savedOk} busy={saving}>{savedOk ? t("settings.models.saved") : saving ? t("settings.models.saving") : t("settings.models.save")}</SettingsButton>
           </div>
         </div>
       </div>
