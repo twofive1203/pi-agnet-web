@@ -60,7 +60,7 @@ export async function register() {
           );
         } else if (typeof process.env.PI_WEB_AUTH_BYPASS_CIDRS === "string") {
           console.warn(
-            "[server-access] PI_WEB_AUTH_BYPASS_CIDRS is set but yielded no valid entries (0.0.0.0/0 and ::/0 are rejected).",
+            "[server-access] PI_WEB_AUTH_BYPASS_CIDRS is set but yielded no valid entries (world-open and loopback rules are rejected).",
           );
         }
       }

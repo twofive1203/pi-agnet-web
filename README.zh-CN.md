@@ -35,23 +35,25 @@ spi
 
 默认仅监听回环地址 [http://127.0.0.1:62666](http://127.0.0.1:62666)，本机免认证。CLI 会在服务就绪后尝试自动打开浏览器。
 
-> **安全说明：** 官方入口不再默认继承 `0.0.0.0`。远程/局域网访问必须使用 `spi --server`（或等价环境变量）；非回环监听会强制启用全局访问密钥认证。HTTP 只提供访问控制、不加密传输，公网请放在 HTTPS 反向代理后面。
+> **安全说明：** 官方入口不再默认继承 `0.0.0.0`。远程/局域网访问必须使用 `spi --server`（或等价环境变量）；非回环监听会强制启用全局访问密钥认证。服务器模式默认要求 HTTPS 才能输入访问密钥；仅当传输已由 Tailscale 等可信网络加密时，才应显式启用 HTTP 兼容模式。
 
 ## 启动参数
 
 ```bash
 spi                              # 本机回环，免认证
 spi --port 8080                  # 自定义端口
-spi --server                     # 服务器模式：0.0.0.0 + 访问密钥认证
-spi --server -H 127.0.0.1        # 回环后端 + 认证（给 Nginx/Caddy 反代）
+spi --server                     # 服务器模式：0.0.0.0 + 认证（默认要求 HTTPS）
+spi --server -H 127.0.0.1        # 回环后端 + 认证（给 Nginx/Caddy HTTPS 反代）
 spi --server --rotate-access-key # 轮换访问密钥并失效全部会话
+spi --server --allow-insecure-http # 显式允许 HTTP 登录（仅限已有加密传输）
 spi -H 0.0.0.0                   # 非回环监听会自动启用认证
 PORT=8080 spi
 PI_WEB_HOSTNAME=10.0.0.5 spi     # 显式监听地址（勿用系统 HOSTNAME）
 # Tailscale 等可信客户端可免密钥：优先写配置文件 ~/.pi/agent/server-access-policy.json
 # { "version": 1, "authBypassCidrs": ["100.64.0.0/10"] }
-# 也可用环境变量覆盖（勿写 0.0.0.0/0）
+# 也可用环境变量覆盖；全网与回环地址规则均会被拒绝
 PI_WEB_AUTH_BYPASS_CIDRS=100.64.0.0/10 spi --server --no-open
+PI_WEB_ALLOW_INSECURE_HTTP=1 spi --server --no-open # 仅限已有加密传输
 spi --proxy http://127.0.0.1:7897
 spi --socks-proxy socks5://127.0.0.1:7897
 ```

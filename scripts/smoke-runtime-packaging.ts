@@ -94,6 +94,7 @@ function checkPublishedLauncher(): void {
   const pm2Body = readFileSync(pm2, "utf8");
   assert(/instances\s*:\s*1/.test(pm2Body), "PM2 config must pin single instance");
   assert(/--server/.test(pm2Body), "PM2 config must enable server mode");
+  assert(/PI_WEB_TRUST_PROXY\s*:\s*["']1["']/.test(pm2Body), "PM2 HTTPS proxy profile must trust forwarded protocol");
   assert(/exec_mode\s*:\s*['"]fork['"]/.test(pm2Body) || /exec_mode:\s*"fork"/.test(pm2Body), "PM2 must use fork mode");
 }
 

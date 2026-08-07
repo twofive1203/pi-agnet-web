@@ -2,7 +2,7 @@
  * Policy + synthetic gate smoke for server-access Proxy behavior.
  * Does not boot Next — validates path classification, cookie helpers, protocol trust.
  */
-import { mkdtempSync, readdirSync, rmSync, statSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,12 +12,16 @@ import {
   assertAuthRequestSameOrigin,
   buildSessionCookie,
   getAuthBypassEntries,
+  clientKeyFromRequest,
   getServerAccessPolicyPath,
   ipMatchesEntry,
   isApiPath,
   isClientIpAuthBypassed,
+  isInsecureHttpAllowed,
   isPublicPath,
+  isSecureTransportRequired,
   isServerAccessAuthEnabled,
+  isStateChangingMethod,
   parseAuthBypassEntries,
   readServerAccessPolicyFile,
   readSessionTokenFromCookieHeader,
@@ -52,6 +56,11 @@ function routeFileToPath(file: string): string {
 }
 
 function testPublicPaths(): void {
+  const proxySource = readFileSync(join(ROOT, "proxy.ts"), "utf8");
+  assert(
+    proxySource.includes("api/server-auth/login$"),
+    "exact login path bypasses Proxy body cloning so route streaming limit runs first",
+  );
   assert(isPublicPath("/unlock"), "unlock public");
   assert(isPublicPath("/unlock/"), "unlock slash");
   assert(isPublicPath("/api/server-auth/login"), "login public");
@@ -150,6 +159,19 @@ function testProtocolTrust(): void {
     }) === false,
     "no http warn behind trusted https proxy",
   );
+  assert(
+    !isSecureTransportRequired(trusted, {
+      PI_WEB_TRUST_PROXY: "1",
+      PI_WEB_HOSTNAME: "127.0.0.1",
+    }),
+    "trusted proxy https satisfies transport requirement",
+  );
+  assert(isSecureTransportRequired(httpReq, {}), "plain http blocked by default");
+  assert(
+    !isSecureTransportRequired(httpReq, { PI_WEB_ALLOW_INSECURE_HTTP: "1" }),
+    "explicit insecure HTTP override",
+  );
+  assert(isInsecureHttpAllowed({ PI_WEB_ALLOW_INSECURE_HTTP: "yes" }), "insecure env aliases");
 
   // Trust without loopback bind ignores header.
   assert(
@@ -188,6 +210,9 @@ function testSameOrigin(): void {
     blocked = true;
   }
   assert(blocked, "cross origin blocked");
+  assert(isStateChangingMethod("POST"), "post is state-changing");
+  assert(isStateChangingMethod("delete"), "delete is state-changing");
+  assert(!isStateChangingMethod("GET"), "get is not state-changing");
 
   let missing = false;
   try {
@@ -201,6 +226,14 @@ function testSameOrigin(): void {
     missing = true;
   }
   assert(missing, "missing origin blocked");
+  assert(
+    clientKeyFromRequest(ok, "::ffff:100.64.1.2") === "ip:100.64.1.2",
+    "rate-limit key uses normalized socket IP",
+  );
+  assert(
+    clientKeyFromRequest(ok, null) === "ip:unknown",
+    "missing socket context uses conservative shared bucket",
+  );
   console.log("OK same-origin");
 }
 
@@ -222,11 +255,16 @@ function testAuthBypassCidrs(): void {
   assert(ipMatchesEntry("::1", "::1"), "ipv6 exact");
   assert(ipMatchesEntry("2001:db8::1", "2001:db8::/32"), "ipv6 cidr");
 
-  const parsed = parseAuthBypassEntries("100.64.0.0/10, 100.1.2.3 0.0.0.0/0 ::/0");
+  const parsed = parseAuthBypassEntries(
+    "100.64.0.0/10, 100.1.2.3 0.0.0.0/0 ::/0 127.0.0.1 127.0.0.0/8 ::1",
+  );
   assert(parsed.includes("100.64.0.0/10"), "keeps tailscale");
   assert(parsed.includes("100.1.2.3"), "keeps host");
   assert(!parsed.includes("0.0.0.0/0"), "rejects world v4");
   assert(!parsed.includes("::/0"), "rejects world v6");
+  assert(!parsed.includes("127.0.0.1"), "rejects loopback host");
+  assert(!parsed.includes("127.0.0.0/8"), "rejects loopback cidr");
+  assert(!parsed.includes("::1"), "rejects ipv6 loopback");
 
   assert(
     isClientIpAuthBypassed("100.99.0.1", ["100.64.0.0/10"]),

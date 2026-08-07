@@ -20,11 +20,10 @@ import {
   __resetServerAccessRateLimitForTests,
   __setServerAccessClockForTests,
   bootstrapServerAccessAuth,
-  checkLoginRateLimit,
+  consumeLoginAttempt,
   createServerAccessSession,
   ensureServerAccessInitialized,
   getServerAccessStatePath,
-  recordLoginFailure,
   recordLoginSuccess,
   revokeServerAccessSession,
   rotateServerAccessKey,
@@ -35,6 +34,8 @@ import {
   classifyHostname,
   resolveRuntimeOptions,
 } from "../bin/runtime-options.js";
+import { withTestRemoteAddress } from "../lib/automation-connection-context";
+import { POST as loginRoutePost } from "../app/api/server-auth/login/route";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -154,6 +155,36 @@ async function testSessionCap(): Promise<void> {
   console.log("OK session-cap");
 }
 
+async function testConcurrentVerificationCap(): Promise<void> {
+  await withTempDir(async (dir) => {
+    __resetServerAccessRateLimitForTests();
+    try {
+      const { accessKeyOnce } = await ensureServerAccessInitialized(dir);
+      assert(accessKeyOnce, "concurrency test key");
+      const attempts = Array.from(
+        { length: SERVER_ACCESS_RATE_LIMIT.maxConcurrentVerifications + 1 },
+        () => createServerAccessSession(accessKeyOnce!, dir),
+      );
+      const settled = await Promise.allSettled(attempts);
+      const fulfilled = settled.filter((item) => item.status === "fulfilled");
+      const rejected = settled.filter((item) => item.status === "rejected");
+      assert(
+        fulfilled.length === SERVER_ACCESS_RATE_LIMIT.maxConcurrentVerifications,
+        "bounded verifier concurrency succeeds up to cap",
+      );
+      assert(rejected.length === 1, "excess verifier rejected instead of queued");
+      const reason = rejected[0]!.status === "rejected" ? rejected[0]!.reason : null;
+      assert(
+        reason instanceof ServerAccessError && reason.code === "rate_limited",
+        "excess verifier returns typed rate limit",
+      );
+    } finally {
+      __resetServerAccessRateLimitForTests();
+    }
+  });
+  console.log("OK concurrent-verification-cap");
+}
+
 async function testCorruptFailClosed(): Promise<void> {
   await withTempDir(async (dir) => {
     const path = getServerAccessStatePath(dir);
@@ -177,34 +208,84 @@ async function testCorruptFailClosed(): Promise<void> {
   console.log("OK corrupt-fail-closed");
 }
 
+async function testLoginRouteBoundaries(): Promise<void> {
+  await withTempDir(async (dir) => {
+    const previous = {
+      agentDir: process.env.PI_CODING_AGENT_DIR,
+      serverMode: process.env.PI_WEB_SERVER_MODE,
+      insecureHttp: process.env.PI_WEB_ALLOW_INSECURE_HTTP,
+    };
+    process.env.PI_CODING_AGENT_DIR = dir;
+    process.env.PI_WEB_SERVER_MODE = "1";
+    process.env.PI_WEB_ALLOW_INSECURE_HTTP = "1";
+    __resetServerAccessRateLimitForTests();
+    try {
+      const { accessKeyOnce } = await ensureServerAccessInitialized(dir);
+      assert(accessKeyOnce, "route test access key");
+      const url = "http://localhost:62666/api/server-auth/login";
+      const commonHeaders = {
+        "Content-Type": "application/json",
+        Origin: "http://localhost:62666",
+        Host: "localhost:62666",
+      };
+
+      const oversized = await withTestRemoteAddress("100.64.1.2", () =>
+        loginRoutePost(new Request(url, {
+          method: "POST",
+          headers: commonHeaders,
+          body: "x".repeat(5_000),
+        })),
+      );
+      assert(oversized.status === 400, "streamed oversized login body rejected");
+
+      const valid = await withTestRemoteAddress("100.64.1.2", () =>
+        loginRoutePost(new Request(url, {
+          method: "POST",
+          headers: commonHeaders,
+          body: JSON.stringify({ accessKey: accessKeyOnce }),
+        })),
+      );
+      assert(valid.status === 200, "valid bounded login body accepted");
+    } finally {
+      if (previous.agentDir == null) delete process.env.PI_CODING_AGENT_DIR;
+      else process.env.PI_CODING_AGENT_DIR = previous.agentDir;
+      if (previous.serverMode == null) delete process.env.PI_WEB_SERVER_MODE;
+      else process.env.PI_WEB_SERVER_MODE = previous.serverMode;
+      if (previous.insecureHttp == null) delete process.env.PI_WEB_ALLOW_INSECURE_HTTP;
+      else process.env.PI_WEB_ALLOW_INSECURE_HTTP = previous.insecureHttp;
+      __resetServerAccessRateLimitForTests();
+    }
+  });
+  console.log("OK login-route-boundaries");
+}
+
 async function testRateLimit(): Promise<void> {
   __resetServerAccessRateLimitForTests();
   let fakeNow = 5_000_000;
   __setServerAccessClockForTests(() => fakeNow);
   try {
     const client = "10.0.0.9";
-    for (let i = 0; i < SERVER_ACCESS_RATE_LIMIT.clientMaxFailures; i += 1) {
-      assert(checkLoginRateLimit(client).allowed, `client attempt ${i} allowed`);
-      recordLoginFailure(client);
+    for (let i = 0; i < SERVER_ACCESS_RATE_LIMIT.clientMaxAttempts; i += 1) {
+      assert(consumeLoginAttempt(client).allowed, `client attempt ${i} allowed`);
     }
-    const blocked = checkLoginRateLimit(client);
+    const blocked = consumeLoginAttempt(client);
     assert(!blocked.allowed, "client bucket trips");
     if (!blocked.allowed) {
       assert(blocked.retryAfterSec > 0, "retry-after present");
     }
 
-    // Other client still allowed until global trips.
-    const other = checkLoginRateLimit("10.0.0.10");
+    // A noisy client cannot consume another socket client's budget.
+    const other = consumeLoginAttempt("10.0.0.10");
     assert(other.allowed, "other client independent");
 
     // Advance past window — recovers.
     fakeNow += SERVER_ACCESS_RATE_LIMIT.clientWindowMs + 1;
-    assert(checkLoginRateLimit(client).allowed, "client recovers after window");
+    assert(consumeLoginAttempt(client).allowed, "client recovers after window");
 
-    // Success clears client bucket but does not reset global counter semantics.
-    recordLoginFailure("g1");
+    // A successful login clears only that client's attempt bucket.
+    assert(consumeLoginAttempt("g1").allowed, "success client attempt reserved");
     recordLoginSuccess("g1");
-    assert(checkLoginRateLimit("g1").allowed, "success clears client");
+    assert(consumeLoginAttempt("g1").allowed, "success clears client");
   } finally {
     __setServerAccessClockForTests(null);
     __resetServerAccessRateLimitForTests();
@@ -227,6 +308,17 @@ function testRuntimeOptions(): void {
     assert(r.hostname === "0.0.0.0", "server default wildcard");
     assert(r.serverMode === true, "server auth on");
     assert(r.openBrowser === false, "server no auto-open");
+    assert(r.allowInsecureHttp === false, "server requires https by default");
+    assert(r.envOverrides.PI_WEB_ALLOW_INSECURE_HTTP === "0", "strict transport env");
+  }
+  // Explicit HTTP compatibility escape hatch
+  {
+    const r = resolveRuntimeOptions({
+      argv: ["node", "spi", "--server", "--allow-insecure-http"],
+      env: {},
+    });
+    assert(r.allowInsecureHttp === true, "explicit insecure http enabled");
+    assert(r.envOverrides.PI_WEB_ALLOW_INSECURE_HTTP === "1", "insecure transport env");
   }
   // non-loopback auto auth
   {
@@ -271,6 +363,19 @@ function testRuntimeOptions(): void {
     });
     assert(r.serverMode === true, "PI_WEB_SERVER_MODE=1");
     assert(r.hostname === "0.0.0.0", "env server mode defaults wildcard bind like --server");
+  }
+  // Security-sensitive compatibility flags require server mode.
+  {
+    let threw = false;
+    try {
+      resolveRuntimeOptions({
+        argv: ["node", "spi", "--allow-insecure-http"],
+        env: {},
+      });
+    } catch {
+      threw = true;
+    }
+    assert(threw, "insecure HTTP without server mode rejected");
   }
   // rotate requires server mode
   {
@@ -325,7 +430,9 @@ async function main(): Promise<void> {
   await testSessionLifecycle();
   await testRotation();
   await testSessionCap();
+  await testConcurrentVerificationCap();
   await testCorruptFailClosed();
+  await testLoginRouteBoundaries();
   await testRateLimit();
   await testBootstrap();
   console.log("server-access-auth smoke checks passed");

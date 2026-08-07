@@ -9,7 +9,13 @@ type LoginResponse = {
   authRequired?: boolean;
 };
 
-export function ServerUnlockForm({ showHttpWarning }: { showHttpWarning: boolean }) {
+export function ServerUnlockForm({
+  showHttpWarning,
+  insecureHttpBlocked,
+}: {
+  showHttpWarning: boolean;
+  insecureHttpBlocked: boolean;
+}) {
   const { t } = useI18n();
   const inputId = useId();
   const errorId = useId();
@@ -39,6 +45,10 @@ export function ServerUnlockForm({ showHttpWarning }: { showHttpWarning: boolean
         data = (await res.json()) as LoginResponse;
       } catch {
         data = {};
+      }
+      if (res.status === 426) {
+        setError(t("access.httpsRequiredBody"));
+        return;
       }
       if (res.status === 429) {
         setError(t("access.rateLimited"));
@@ -75,8 +85,12 @@ export function ServerUnlockForm({ showHttpWarning }: { showHttpWarning: boolean
 
         {showHttpWarning && (
           <div className="server-unlock-warning" role="status">
-            <strong>{t("access.httpWarningTitle")}</strong>
-            <p>{t("access.httpWarningBody")}</p>
+            <strong>
+              {t(insecureHttpBlocked ? "access.httpsRequiredTitle" : "access.httpWarningTitle")}
+            </strong>
+            <p>
+              {t(insecureHttpBlocked ? "access.httpsRequiredBody" : "access.httpWarningBody")}
+            </p>
           </div>
         )}
 
@@ -95,7 +109,7 @@ export function ServerUnlockForm({ showHttpWarning }: { showHttpWarning: boolean
             placeholder={t("access.accessKeyPlaceholder")}
             value={accessKey}
             onChange={(e) => setAccessKey(e.target.value)}
-            disabled={busy}
+            disabled={busy || insecureHttpBlocked}
             aria-invalid={error ? true : undefined}
             aria-describedby={error ? errorId : undefined}
             required
@@ -105,7 +119,11 @@ export function ServerUnlockForm({ showHttpWarning }: { showHttpWarning: boolean
               {error}
             </p>
           )}
-          <button type="submit" className="server-unlock-submit" disabled={busy || !accessKey.trim()}>
+          <button
+            type="submit"
+            className="server-unlock-submit"
+            disabled={busy || insecureHttpBlocked || !accessKey.trim()}
+          >
             {busy ? t("access.unlocking") : t("access.unlock")}
           </button>
         </form>

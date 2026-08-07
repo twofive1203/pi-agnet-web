@@ -38,7 +38,7 @@ spi
 
 Default URL: `http://127.0.0.1:62666` (loopback only, no authentication). The CLI attempts to open the browser after the server is ready.
 
-**Security defaults:** official launchers no longer inherit Next.js `0.0.0.0`. Any official non-loopback listen, or explicit `--server` / `PI_WEB_SERVER_MODE=1`, enables global access-key authentication. HTTP is allowed but does **not** encrypt the access key or session cookie — put an HTTPS reverse proxy in front for untrusted networks.
+**Security defaults:** official launchers no longer inherit Next.js `0.0.0.0`. Any official non-loopback listen, or explicit `--server` / `PI_WEB_SERVER_MODE=1`, enables global access-key authentication. Server mode requires effective HTTPS for access-key login and authenticated requests by default. Use a trusted HTTPS reverse proxy; `--allow-insecure-http` is an explicit compatibility escape hatch only for transports already encrypted by another trusted layer.
 
 ### CLI Options
 
@@ -48,12 +48,14 @@ spi --port 8080                  # custom port
 spi --server                     # 0.0.0.0 + access-key auth
 spi --server -H 127.0.0.1        # loopback backend + auth (HTTPS reverse proxy)
 spi --server --rotate-access-key # mint a new access key; invalidate all sessions
-spi -H 0.0.0.0                   # non-loopback bind auto-enables auth
+spi --server --allow-insecure-http # explicit HTTP compatibility (trusted encrypted mesh only)
+spi -H 0.0.0.0                   # non-loopback bind auto-enables auth and requires HTTPS
 spi --no-open                    # do not open a browser on Ready
 PORT=8080 spi
 PI_WEB_HOSTNAME=10.0.0.5 spi     # listen host (do not use system HOSTNAME)
 PI_WEB_SERVER_MODE=1 spi         # force auth (defaults bind 0.0.0.0 when host unset)
 PI_WEB_TRUST_PROXY=1 spi --server -H 127.0.0.1   # trust X-Forwarded-Proto for Secure cookies
+PI_WEB_ALLOW_INSECURE_HTTP=1 spi --server          # explicit compatibility escape hatch
 # Optional one-shot env override (wins over the policy file when the var is set):
 PI_WEB_AUTH_BYPASS_CIDRS=100.64.0.0/10 spi --server --no-open
 spi --proxy http://127.0.0.1:7897
@@ -69,7 +71,7 @@ spi --socks-proxy socks5://127.0.0.1:7897
 }
 ```
 
-Bypass matches the **TCP socket remote address only** (not `X-Forwarded-For` / Host). LAN clients outside the list still need the access key. `0.0.0.0/0` and `::/0` are rejected. If `PI_WEB_AUTH_BYPASS_CIDRS` is set in the environment (even to empty), it overrides the file for that process.
+Bypass matches the **TCP socket remote address only** (not `X-Forwarded-For` / Host). LAN clients outside the list still need the access key. World-open rules and loopback rules (`127.0.0.0/8`, `::1`) are rejected: trusting loopback would also trust every client forwarded by a local reverse proxy. If `PI_WEB_AUTH_BYPASS_CIDRS` is set in the environment (even to empty), it overrides the file for that process.
 
 `npx` accepts the same options:
 
@@ -143,18 +145,17 @@ PORT=8080 npm run start
 
 ### HTTPS reverse proxy (recommended for remote access)
 
-1. Run the backend on loopback with auth enabled:
+1. Run the backend on loopback with auth enabled and trusted proxy protocol handling:
 
 ```bash
-spi --server -H 127.0.0.1 -p 62666 --no-open
-# or: PI_WEB_TRUST_PROXY=1 spi --server -H 127.0.0.1 --no-open
+PI_WEB_TRUST_PROXY=1 spi --server -H 127.0.0.1 -p 62666 --no-open
 ```
 
-2. Terminate TLS on Caddy/Nginx and proxy to `http://127.0.0.1:62666`.
-3. Only set `PI_WEB_TRUST_PROXY=1` when the proxy is trusted and the backend bind is loopback — this makes cookies `Secure` when `X-Forwarded-Proto: https`.
+2. Terminate TLS on Caddy/Nginx and proxy to `http://127.0.0.1:62666`; the proxy must overwrite `X-Forwarded-Proto` and `X-Forwarded-Host`.
+3. Only set `PI_WEB_TRUST_PROXY=1` when the proxy is trusted and the backend bind is loopback — this lets effective HTTPS pass the transport gate and makes cookies `Secure`.
 4. Save the one-time access key printed on first server start; later restarts reuse the verifier and do not reprint it.
 5. If the key is lost or leaked: `spi --server --rotate-access-key` (invalidates every browser session).
-6. **Tailscale / trusted mesh without unlock page:** bind with `--server` and put peers/CIDRs in `server-access-policy.json` (`authBypassCidrs`, e.g. `100.64.0.0/10`). Optional env override: `PI_WEB_AUTH_BYPASS_CIDRS`. Other networks still require the access key.
+6. **Tailscale / trusted mesh without unlock page:** bind directly with `--server` and put exact peers or the intended mesh CIDR in `server-access-policy.json` (`authBypassCidrs`, e.g. one device `/32`; use `100.64.0.0/10` only when every tailnet peer is trusted). Optional env override: `PI_WEB_AUTH_BYPASS_CIDRS`. Loopback entries are rejected and must never be used for a reverse proxy.
 
 **Breaking change:** hosts that previously relied on implicit LAN exposure via Next's default `0.0.0.0` must migrate to `--server` (or an explicit non-loopback hostname).
 
@@ -165,6 +166,7 @@ spi --server -H 127.0.0.1 -p 62666 --no-open
 - process name `snail-pi-web`
 - `instances: 1`, `exec_mode: "fork"` (cluster / multi-instance is unsupported — auth state is single-writer)
 - args: `--server --no-open -H 127.0.0.1 -p 62666` (auth on, loopback backend for HTTPS reverse proxy)
+- `PI_WEB_TRUST_PROXY=1` so the trusted proxy's HTTPS protocol passes the transport gate and produces Secure cookies
 - persist `PI_CODING_AGENT_DIR` so `server-access.json` survives restarts
 
 Start with:
@@ -173,16 +175,17 @@ Start with:
 pm2 start ecosystem.config.cjs
 ```
 
-For direct LAN listen (still authenticated), change args to `--server --no-open -H 0.0.0.0 -p 62666`.
+For direct LAN listen, change args to `--server --no-open -H 0.0.0.0 -p 62666` **and remove `PI_WEB_TRUST_PROXY`**; clients still need HTTPS unless they match an approved mesh CIDR or the deployment explicitly enables the insecure-HTTP compatibility escape hatch on an already encrypted transport.
 
 ## Proxy Startup
 
 - `scripts/start-pi-web-proxy.sh` starts Snail Pi Web with `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, and `NODE_OPTIONS=--use-env-proxy`.
 - `scripts/start-pi-web-proxy.ps1` provides the same proxy startup flow for PowerShell and accepts launcher flags directly:
   - `.\scripts\start-pi-web-proxy.ps1` — local loopback, auth off
-  - `.\scripts\start-pi-web-proxy.ps1 -Server -NoOpen` — server mode (auth on; default no browser)
+  - `.\scripts\start-pi-web-proxy.ps1 -Server -NoOpen` — server mode (auth on, HTTPS required; default no browser)
   - `.\scripts\start-pi-web-proxy.ps1 -Dev` — dev via official launcher
-  - `.\scripts\start-pi-web-proxy.ps1 -Server -AuthBypassCidrs "127.0.0.1,::1,100.64.0.0/10"` — one-shot bypass override
+  - `.\scripts\start-pi-web-proxy.ps1 -Server -AuthBypassCidrs "100.64.0.0/10"` — one-shot bypass override
+  - `.\scripts\start-pi-web-proxy.ps1 -Server -AllowInsecureHttp` — explicit HTTP compatibility for an already encrypted trusted mesh
 - Prefer durable bypass in `server-access-policy.json` over repeating `-AuthBypassCidrs`.
 - Legacy: `PI_WEB_CMD` still overrides the whole command when set.
 

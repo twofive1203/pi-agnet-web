@@ -57,6 +57,8 @@ function startLauncher(args, env) {
       // Keep local E2E off ambient HTTP proxies that rewrite Host/URL.
       NO_PROXY: "127.0.0.1,localhost,::1",
       no_proxy: "127.0.0.1,localhost,::1",
+      // Most lifecycle scenarios intentionally exercise the explicit HTTP compatibility mode.
+      PI_WEB_ALLOW_INSECURE_HTTP: "1",
       ...env,
       PI_WEB_LAUNCH_COMMAND: "start",
     },
@@ -238,6 +240,38 @@ async function main() {
       log("AE1 local mode ok");
     }
 
+    // ── Secure transport default: plaintext login and protected APIs are blocked ──
+    {
+      const strictDir = mkdtempSync(join(tmpdir(), "spi-e2e-auth-strict-"));
+      cleanups.push(async () => {
+        try { rmSync(strictDir, { recursive: true, force: true }); } catch { /* */ }
+      });
+      const strictPort = await getFreePort();
+      const proc = startLauncher(
+        ["--server", "-H", "127.0.0.1", "-p", String(strictPort), "--no-open"],
+        {
+          PI_CODING_AGENT_DIR: strictDir,
+          PI_WEB_ALLOW_INSECURE_HTTP: "0",
+          PORT: String(strictPort),
+        },
+      );
+      cleanups.push(() => proc.stop());
+      await proc.waitReady();
+      const strictKey = await proc.waitForAccessKey();
+      secrets.push(strictKey);
+      const base = `http://127.0.0.1:${strictPort}`;
+      const api = await fetchWithJar(`${base}/api/home`, createCookieJar());
+      assert(api.status === 426, `plain HTTP API blocked got ${api.status}`);
+      const login = await fetchWithJar(`${base}/api/server-auth/login`, createCookieJar(), {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Origin: base },
+        body: JSON.stringify({ accessKey: strictKey }),
+      });
+      assert(login.status === 426, `plain HTTP login blocked got ${login.status}`);
+      await proc.stop();
+      log("secure transport default ok");
+    }
+
     // ── AE2 / AE4: first server start + gate ──
     let accessKey;
     let port = await getFreePort();
@@ -281,6 +315,16 @@ async function main() {
       });
       assert(sse.status === 401, `sse 401 got ${sse.status}`);
 
+      const oversized = await fetchWithJar(`${base}/api/server-auth/login`, jar, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Origin: base,
+        },
+        body: "x".repeat(5_000),
+      });
+      assert(oversized.status === 400, `oversized login body rejected ${oversized.status}`);
+
       // Login with wrong key
       const bad = await fetchWithJar(`${base}/api/server-auth/login`, jar, {
         method: "POST",
@@ -307,6 +351,12 @@ async function main() {
       assert(!/Secure/i.test(setCookie), "HTTP cookie must not force Secure");
       const unlocked = await fetchWithJar(`${base}/api/home`, jar);
       assert(unlocked.status !== 401 && unlocked.status !== 503, `authed home ${unlocked.status}`);
+
+      const csrf = await fetchWithJar(`${base}/api/default-cwd`, jar, {
+        method: "POST",
+        headers: { Origin: `http://evil.localhost:${port}` },
+      });
+      assert(csrf.status === 403, `same-site cross-origin mutation blocked ${csrf.status}`);
 
       // Unlock HTML contains HTTP warning
       const unlockPage = await fetchWithJar(`${base}/unlock`, createCookieJar());
@@ -425,6 +475,7 @@ async function main() {
           PI_CODING_AGENT_DIR: agentDir,
           PORT: String(port),
           PI_WEB_TRUST_PROXY: "1",
+          PI_WEB_ALLOW_INSECURE_HTTP: "0",
         },
       );
       cleanups.push(() => proc.stop());

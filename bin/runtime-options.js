@@ -17,6 +17,7 @@
  * @property {boolean} rotateAccessKey
  * @property {boolean} openBrowser
  * @property {boolean} trustProxy
+ * @property {boolean} allowInsecureHttp
  * @property {string | null} httpProxy
  * @property {string | null} socksProxy
  * @property {string | null} noProxy
@@ -108,6 +109,10 @@ function resolveRuntimeOptions(input = {}) {
     }
     if (arg === "--rotate-access-key") {
       flags.rotateAccessKey = true;
+      continue;
+    }
+    if (arg === "--allow-insecure-http") {
+      flags.allowInsecureHttp = true;
       continue;
     }
     if (arg === "--no-open") {
@@ -228,11 +233,26 @@ function resolveRuntimeOptions(input = {}) {
     throw err;
   }
 
+  const allowInsecureHttp =
+    flags.allowInsecureHttp === true || envFlagEnabled(env.PI_WEB_ALLOW_INSECURE_HTTP);
+  if (allowInsecureHttp && !serverMode) {
+    const err = new Error(
+      "--allow-insecure-http requires server mode (--server, PI_WEB_SERVER_MODE=1, or a non-loopback hostname)",
+    );
+    // @ts-expect-error tag
+    err.code = "INSECURE_HTTP_REQUIRES_SERVER";
+    throw err;
+  }
+
   /** @type {string[]} */
   const warnings = [];
-  if (serverMode) {
+  if (serverMode && allowInsecureHttp) {
     warnings.push(
-      "Server access authentication is enabled. HTTP does not encrypt the access key or session cookie; use an HTTPS reverse proxy for any untrusted network.",
+      "Insecure HTTP login is explicitly enabled. Access keys and session cookies can be intercepted; use only on an already encrypted trusted transport.",
+    );
+  } else if (serverMode) {
+    warnings.push(
+      "HTTPS is required for access-key login. Put a trusted HTTPS reverse proxy in front, or explicitly pass --allow-insecure-http only on an already encrypted trusted transport.",
     );
   }
 
@@ -277,6 +297,7 @@ function resolveRuntimeOptions(input = {}) {
   } else {
     envOverrides.PI_WEB_TRUST_PROXY = "0";
   }
+  envOverrides.PI_WEB_ALLOW_INSECURE_HTTP = allowInsecureHttp ? "1" : "0";
 
   const nextArgs = [command, "-p", port, "-H", hostname];
 
@@ -287,6 +308,7 @@ function resolveRuntimeOptions(input = {}) {
     rotateAccessKey,
     openBrowser,
     trustProxy,
+    allowInsecureHttp,
     httpProxy: httpProxy ? String(httpProxy) : null,
     socksProxy: socksProxy ? String(socksProxy) : null,
     noProxy: noProxy ? String(noProxy) : null,
@@ -318,6 +340,8 @@ Options:
                             Implied by any non-loopback hostname.
   --rotate-access-key       Generate a new access key and invalidate
                             all sessions (requires server mode)
+  --allow-insecure-http     Explicitly allow access-key login over HTTP
+                            (unsafe unless transport is encrypted elsewhere)
   --no-open                 Do not open a browser on Ready
   --open                    Force open browser on Ready
   --proxy <url>             HTTP(S) proxy for the Node process
@@ -330,6 +354,8 @@ Environment:
   PI_WEB_HOSTNAME           Listen hostname (not system HOSTNAME)
   PI_WEB_SERVER_MODE=1      Force authentication on
   PI_WEB_TRUST_PROXY=1      Trust X-Forwarded-Proto when backend is loopback
+  PI_WEB_ALLOW_INSECURE_HTTP=1
+                            Explicitly allow access-key login over HTTP
   PI_WEB_AUTH_BYPASS_CIDRS  Optional env override for client IPs/CIDRs that
                             skip the access key (socket remote only).
                             Durable default lives in:
@@ -341,6 +367,7 @@ Environment:
 Security defaults:
   Local starts bind 127.0.0.1 and skip authentication.
   Any official non-loopback listen enables authentication.
+  Server-mode access-key login requires HTTPS by default.
   Access keys are shown once at first server start or rotation.
 `);
 }

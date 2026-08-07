@@ -6,11 +6,12 @@
 #   .\scripts\start-pi-web-proxy.ps1 -Server -NoOpen
 #   .\scripts\start-pi-web-proxy.ps1 -Dev
 #   .\scripts\start-pi-web-proxy.ps1 -Server -Port 8080
-#   .\scripts\start-pi-web-proxy.ps1 -Server -AuthBypassCidrs "127.0.0.1,::1,100.64.0.0/10"
+#   .\scripts\start-pi-web-proxy.ps1 -Server -AuthBypassCidrs "100.64.0.0/10"
+#   .\scripts\start-pi-web-proxy.ps1 -Server -AllowInsecureHttp  # trusted encrypted mesh only
 #
 # Tailscale / phone (recommended durable config, no env needed each time):
 #   1) Write %USERPROFILE%\.pi\agent\server-access-policy.json
-#        { "version": 1, "authBypassCidrs": ["127.0.0.1", "::1", "100.64.0.0/10"] }
+#        { "version": 1, "authBypassCidrs": ["100.64.0.0/10"] }
 #   2) .\scripts\start-pi-web-proxy.ps1 -Server -NoOpen
 #
 # Optional env overrides (still supported):
@@ -35,6 +36,9 @@ param(
 
   # Rotate access key on boot (requires -Server).
   [switch]$RotateAccessKey,
+
+  # Explicit compatibility escape hatch for HTTP access-key login.
+  [switch]$AllowInsecureHttp,
 
   [string]$Port,
   [Alias("H")]
@@ -88,6 +92,7 @@ if (-not $useLegacyCmd) {
   if ($Dev) { [void]$argList.Add("--dev") }
   if ($Server) { [void]$argList.Add("--server") }
   if ($RotateAccessKey) { [void]$argList.Add("--rotate-access-key") }
+  if ($AllowInsecureHttp) { [void]$argList.Add("--allow-insecure-http") }
   if ($NoOpen) {
     [void]$argList.Add("--no-open")
   } elseif ($Server -and -not $Open) {
@@ -130,7 +135,7 @@ Command: $displayCmd
 
 if ($Server) {
   Write-Host "Tip: durable Tailscale/local bypass -> %USERPROFILE%\.pi\agent\server-access-policy.json" -ForegroundColor DarkGray
-  Write-Host '     { "version": 1, "authBypassCidrs": ["127.0.0.1", "::1", "100.64.0.0/10"] }' -ForegroundColor DarkGray
+  Write-Host '     { "version": 1, "authBypassCidrs": ["100.64.0.0/10"] }' -ForegroundColor DarkGray
 }
 
 Set-Location -LiteralPath $RepoRoot

@@ -2,6 +2,7 @@ import { I18nProvider } from "@/components/I18nProvider";
 import { ServerUnlockForm } from "@/components/ServerUnlockForm";
 import { headers } from "next/headers";
 import {
+  isInsecureHttpAllowed,
   isServerAccessAuthEnabled,
   resolveEffectiveProtocol,
   shouldWarnPlainHttp,
@@ -39,11 +40,15 @@ export default async function UnlockPage() {
     },
   });
   const showHttpWarning = shouldWarnPlainHttp(direct);
+  const insecureHttpBlocked = showHttpWarning && !isInsecureHttpAllowed();
   void resolveEffectiveProtocol(synthetic);
 
   return (
     <I18nProvider>
-      <ServerUnlockForm showHttpWarning={showHttpWarning} />
+      <ServerUnlockForm
+        showHttpWarning={showHttpWarning}
+        insecureHttpBlocked={insecureHttpBlocked}
+      />
     </I18nProvider>
   );
 }

@@ -17,22 +17,28 @@ import {
 } from "./lib/server-access-auth";
 import {
   UNLOCK_PATH,
+  assertAuthRequestSameOrigin,
+  forbiddenJson,
   getAuthBypassEntries,
   isApiPath,
   isClientIpAuthBypassed,
   isPublicPath,
+  isSecureTransportRequired,
   isServerAccessAuthEnabled,
+  isStateChangingMethod,
   noStoreHeaders,
   readSessionTokenFromCookieHeader,
+  secureTransportRequiredJson,
   serviceUnavailableJson,
   unauthorizedJson,
 } from "./lib/server-access-policy";
 
 export const config = {
-  // Run on all paths except Next internals that are already allowlisted in isPublicPath.
-  // Matcher is a static constant as required by Next.js.
+  // Login is fully self-gated and excluded so Proxy cannot pre-buffer an oversized
+  // anonymous request body before the route's 4 KiB streaming limit runs.
+  // The end anchor avoids exempting any future subroute under the login path.
   matcher: [
-    "/((?!_next/static|_next/image).*)",
+    "/((?!_next/static|_next/image|api/server-auth/login$).*)",
     "/",
   ],
 };
@@ -69,13 +75,29 @@ export async function proxy(request: NextRequest): Promise<NextResponse | Respon
     return NextResponse.next();
   }
 
-  // Optional trusted-client bypass (e.g. Tailscale CGNAT / specific mesh peers).
+  // SameSite cookies still travel between sibling origins on the same site.
+  // Require an exact browser-facing origin for every state-changing business request.
+  if (isStateChangingMethod(request.method)) {
+    try {
+      assertAuthRequestSameOrigin(request);
+    } catch {
+      return forbiddenJson();
+    }
+  }
+
+  // Optional trusted-client bypass (e.g. exact Tailscale peers / mesh CIDRs).
+  // Loopback entries are rejected while parsing because they would also trust a reverse proxy.
   const bypassEntries = getAuthBypassEntries();
   if (bypassEntries.length > 0) {
     const remote = resolveSocketRemoteAddress();
     if (isClientIpAuthBypassed(remote, bypassEntries)) {
       return NextResponse.next();
     }
+  }
+
+  if (isSecureTransportRequired(request)) {
+    if (isApiPath(pathname)) return secureTransportRequiredJson();
+    return redirectToUnlock(request);
   }
 
   const token = readSessionTokenFromCookieHeader(request.headers.get("cookie"));

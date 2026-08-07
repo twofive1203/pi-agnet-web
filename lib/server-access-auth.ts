@@ -9,6 +9,7 @@
 import {
   createHash,
   randomBytes,
+  scrypt,
   scryptSync,
   timingSafeEqual,
 } from "node:crypto";
@@ -43,9 +44,8 @@ export const SERVER_ACCESS_SCRYPT = {
 
 export const SERVER_ACCESS_RATE_LIMIT = {
   clientWindowMs: 60_000,
-  clientMaxFailures: 10,
-  globalWindowMs: 60_000,
-  globalMaxFailures: 60,
+  clientMaxAttempts: 10,
+  maxConcurrentVerifications: 4,
   retryAfterSec: 30,
 };
 
@@ -178,6 +178,59 @@ function deriveVerifier(
     maxmem: params.maxmem,
   });
   return derived.toString("base64");
+}
+
+function deriveVerifierAsync(
+  accessKey: string,
+  saltB64: string,
+  params: ServerAccessState["scrypt"],
+): Promise<string> {
+  const salt = Buffer.from(saltB64, "base64");
+  return new Promise((resolve, reject) => {
+    scrypt(
+      accessKey,
+      salt,
+      params.keyLen,
+      {
+        N: params.N,
+        r: params.r,
+        p: params.p,
+        maxmem: params.maxmem,
+      },
+      (error, derived) => {
+        if (error) reject(error);
+        else resolve(derived.toString("base64"));
+      },
+    );
+  });
+}
+
+declare global {
+  var __piServerAccessActiveVerifications: number | undefined;
+}
+
+async function deriveLoginVerifier(
+  accessKey: string,
+  state: ServerAccessState,
+): Promise<string> {
+  const active = globalThis.__piServerAccessActiveVerifications ?? 0;
+  if (active >= SERVER_ACCESS_RATE_LIMIT.maxConcurrentVerifications) {
+    throw new ServerAccessError(
+      "rate_limited",
+      "Too many concurrent login verifications",
+      429,
+      SERVER_ACCESS_RATE_LIMIT.retryAfterSec,
+    );
+  }
+  globalThis.__piServerAccessActiveVerifications = active + 1;
+  try {
+    return await deriveVerifierAsync(accessKey, state.salt, state.scrypt);
+  } finally {
+    globalThis.__piServerAccessActiveVerifications = Math.max(
+      0,
+      (globalThis.__piServerAccessActiveVerifications ?? 1) - 1,
+    );
+  }
 }
 
 function safeEqualBase64(a: string, b: string): boolean {
@@ -450,15 +503,25 @@ export async function createServerAccessSession(
   accessKey: string,
   agentDir = getAgentDir(),
 ): Promise<CreateSessionResult> {
+  if (typeof accessKey !== "string" || accessKey.length === 0 || accessKey.length > 512) {
+    throw new ServerAccessError("invalid_credentials", "Invalid access key", 401);
+  }
+  const verifiedState = readServerAccessState(agentDir);
+  const candidate = await deriveLoginVerifier(accessKey, verifiedState);
+  if (!safeEqualBase64(candidate, verifiedState.verifier)) {
+    throw new ServerAccessError("invalid_credentials", "Invalid access key", 401);
+  }
+
   return enqueueWrite(() => {
-    if (typeof accessKey !== "string" || accessKey.length === 0 || accessKey.length > 512) {
-      throw new ServerAccessError("invalid_credentials", "Invalid access key", 401);
-    }
     const state = readServerAccessState(agentDir);
-    const candidate = deriveVerifier(accessKey, state.salt, state.scrypt);
-    if (!safeEqualBase64(candidate, state.verifier)) {
-      throw new ServerAccessError("invalid_credentials", "Invalid access key", 401);
+    const credentialChanged =
+      state.credentialGeneration !== verifiedState.credentialGeneration
+      || state.salt !== verifiedState.salt
+      || !safeEqualBase64(state.verifier, verifiedState.verifier);
+    if (credentialChanged) {
+      throw new ServerAccessError("invalid_credentials", "Access key changed", 401);
     }
+
     const now = nowMs();
     const token = randomBytes(32).toString("base64url");
     const tokenHash = hashSessionToken(token);
@@ -540,19 +603,16 @@ declare global {
   var __piServerAccessRateLimit:
     | {
         clients: Map<string, RateBucket>;
-        global: RateBucket;
       }
     | undefined;
 }
 
 function rateStore(): {
   clients: Map<string, RateBucket>;
-  global: RateBucket;
 } {
   if (!globalThis.__piServerAccessRateLimit) {
     globalThis.__piServerAccessRateLimit = {
       clients: new Map(),
-      global: { count: 0, windowStart: nowMs() },
     };
   }
   return globalThis.__piServerAccessRateLimit;
@@ -588,47 +648,31 @@ export type RateLimitDecision =
   | { allowed: true }
   | { allowed: false; retryAfterSec: number };
 
-export function checkLoginRateLimit(clientKey: string): RateLimitDecision {
+/**
+ * Atomically reserve one login attempt for a socket-derived client bucket.
+ * Counting before body reads prevents concurrent slow requests from bypassing the limit.
+ */
+export function consumeLoginAttempt(clientKey: string): RateLimitDecision {
   const store = rateStore();
   const now = nowMs();
   const key = clientKey.trim() || "unknown";
   trimClientBuckets(store.clients, now);
 
-  store.global = touchBucket(store.global, SERVER_ACCESS_RATE_LIMIT.globalWindowMs, now);
   const client = touchBucket(
     store.clients.get(key) ?? { count: 0, windowStart: now },
     SERVER_ACCESS_RATE_LIMIT.clientWindowMs,
     now,
   );
+  if (client.count >= SERVER_ACCESS_RATE_LIMIT.clientMaxAttempts) {
+    store.clients.set(key, client);
+    return { allowed: false, retryAfterSec: SERVER_ACCESS_RATE_LIMIT.retryAfterSec };
+  }
+  client.count += 1;
   store.clients.set(key, client);
-
-  if (store.global.count >= SERVER_ACCESS_RATE_LIMIT.globalMaxFailures) {
-    return { allowed: false, retryAfterSec: SERVER_ACCESS_RATE_LIMIT.retryAfterSec };
-  }
-  if (client.count >= SERVER_ACCESS_RATE_LIMIT.clientMaxFailures) {
-    return { allowed: false, retryAfterSec: SERVER_ACCESS_RATE_LIMIT.retryAfterSec };
-  }
   return { allowed: true };
 }
 
-export function recordLoginFailure(clientKey: string): void {
-  const store = rateStore();
-  const now = nowMs();
-  const key = clientKey.trim() || "unknown";
-  store.global = touchBucket(store.global, SERVER_ACCESS_RATE_LIMIT.globalWindowMs, now);
-  store.global.count += 1;
-  const client = touchBucket(
-    store.clients.get(key) ?? { count: 0, windowStart: now },
-    SERVER_ACCESS_RATE_LIMIT.clientWindowMs,
-    now,
-  );
-  client.count += 1;
-  store.clients.set(key, client);
-}
-
 export function recordLoginSuccess(clientKey: string): void {
-  // Successful login clears the client bucket but not the global one
-  // (plan: success does not bypass global limits).
   const store = rateStore();
   const key = clientKey.trim() || "unknown";
   store.clients.delete(key);
@@ -637,6 +681,7 @@ export function recordLoginSuccess(clientKey: string): void {
 /** Test-only reset. */
 export function __resetServerAccessRateLimitForTests(): void {
   globalThis.__piServerAccessRateLimit = undefined;
+  globalThis.__piServerAccessActiveVerifications = undefined;
 }
 
 /**

@@ -13,7 +13,10 @@ export const accessZh = {
   networkError: "网络错误，请重试。",
   httpWarningTitle: "明文传输风险",
   httpWarningBody:
-    "当前通过 HTTP 访问。访问密钥与登录会话不会被加密，不适合直接暴露到公网。请优先使用 HTTPS 反向代理。",
+    "当前通过 HTTP 访问。访问密钥与登录会话不会被加密，仅应在已由其他层加密的可信网络中使用。",
+  httpsRequiredTitle: "需要 HTTPS",
+  httpsRequiredBody:
+    "服务器已阻止通过明文 HTTP 输入访问密钥。请改用 HTTPS；仅在传输已由可信网络加密时，才能由运维者显式允许 HTTP。",
   logout: "退出登录",
   loggingOut: "正在退出…",
 } as const satisfies MessageTree;
@@ -31,7 +34,10 @@ export const accessEn = {
   networkError: "Network error. Please retry.",
   httpWarningTitle: "Unencrypted transport",
   httpWarningBody:
-    "You are using HTTP. The access key and login session are not encrypted and must not be exposed on the public internet. Prefer an HTTPS reverse proxy.",
+    "You are using HTTP. The access key and login session are not encrypted; use this only when another trusted layer already encrypts the transport.",
+  httpsRequiredTitle: "HTTPS required",
+  httpsRequiredBody:
+    "The server blocked access-key entry over plaintext HTTP. Use HTTPS; operators may explicitly allow HTTP only when a trusted network already encrypts the transport.",
   logout: "Log out",
   loggingOut: "Logging out…",
 } as const satisfies MessageTree;

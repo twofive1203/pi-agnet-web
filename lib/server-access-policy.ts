@@ -58,6 +58,17 @@ export function isTrustProxyEnabled(
   return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on";
 }
 
+export const ALLOW_INSECURE_HTTP_ENV = "PI_WEB_ALLOW_INSECURE_HTTP";
+
+export function isInsecureHttpAllowed(
+  env: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env,
+): boolean {
+  const v = env[ALLOW_INSECURE_HTTP_ENV];
+  if (v == null) return false;
+  const normalized = String(v).trim().toLowerCase();
+  return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on";
+}
+
 export function isLoopbackHostname(hostname: string | null | undefined): boolean {
   if (!hostname) return false;
   const h = hostname.trim().toLowerCase();
@@ -101,6 +112,14 @@ export function normalizeClientIp(address: string | null | undefined): string | 
   return value || null;
 }
 
+export function isLoopbackClientAddress(address: string | null | undefined): boolean {
+  const ip = normalizeClientIp(address);
+  if (!ip) return false;
+  if (ip === "::1") return true;
+  const v4 = parseIpv4ToInt(ip);
+  return v4 != null && (v4 >>> 24) === 127;
+}
+
 function parseIpv4ToInt(ip: string): number | null {
   const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(ip);
   if (!m) return null;
@@ -138,7 +157,8 @@ function expandIpv6(ip: string): number[] | null {
 }
 
 /**
- * Parse allowlist entries from env. Drops empty tokens and world-open CIDRs (0.0.0.0/0, ::/0).
+ * Parse allowlist entries from env. World-open and loopback rules are rejected.
+ * A loopback peer may actually be an HTTPS reverse proxy carrying arbitrary clients.
  */
 export function parseAuthBypassEntries(
   raw: string | null | undefined,
@@ -149,6 +169,7 @@ export function parseAuthBypassEntries(
     const entry = token.trim().toLowerCase();
     if (!entry) continue;
     if (entry === "0.0.0.0/0" || entry === "::/0") continue;
+    if (authBypassEntryIncludesLoopback(entry)) continue;
     out.push(entry);
   }
   return out;
@@ -296,6 +317,16 @@ export function ipMatchesEntry(ip: string, entry: string): boolean {
   return false;
 }
 
+function authBypassEntryIncludesLoopback(entry: string): boolean {
+  const rule = entry.trim().toLowerCase();
+  if (!rule.includes("/")) return isLoopbackClientAddress(rule);
+
+  const [netRaw] = rule.split("/");
+  const netV4 = netRaw ? parseIpv4ToInt(netRaw) : null;
+  if (netV4 != null && (netV4 >>> 24) === 127) return true;
+  return ipMatchesEntry("127.0.0.1", rule) || ipMatchesEntry("::1", rule);
+}
+
 /**
  * True when the socket remote address is on the configured allowlist.
  * Never consult Host / X-Forwarded-For here — callers must pass socket-derived IP only.
@@ -344,6 +375,13 @@ export function shouldWarnPlainHttp(
   return resolveEffectiveProtocol(req, env) !== "https";
 }
 
+export function isSecureTransportRequired(
+  req: Request,
+  env: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env,
+): boolean {
+  return !isInsecureHttpAllowed(env) && resolveEffectiveProtocol(req, env) !== "https";
+}
+
 /**
  * Public paths allowed without a session when auth is on.
  * Keep this minimal — never include business APIs or project pages.
@@ -369,6 +407,11 @@ export function isPublicPath(pathname: string): boolean {
 
 export function isApiPath(pathname: string): boolean {
   return pathname === "/api" || pathname.startsWith("/api/");
+}
+
+export function isStateChangingMethod(method: string | null | undefined): boolean {
+  const normalized = (method ?? "GET").trim().toUpperCase();
+  return normalized === "POST" || normalized === "PUT" || normalized === "PATCH" || normalized === "DELETE";
 }
 
 /**
@@ -483,14 +526,16 @@ export function assertAuthRequestSameOrigin(req: Request): void {
   throw new Error("missing_origin");
 }
 
-export function clientKeyFromRequest(req: Request): string {
-  // Default: do not trust forwarded IP. Use a coarse host bucket only.
-  try {
-    const url = new URL(req.url);
-    return `host:${url.host}`;
-  } catch {
-    return "host:unknown";
-  }
+export function clientKeyFromRequest(
+  req: Request,
+  socketRemoteAddress?: string | null,
+): string {
+  // Never trust forwarded IP headers. The socket address is captured by the Node server hook.
+  const clientIp = normalizeClientIp(socketRemoteAddress);
+  if (clientIp) return `ip:${clientIp}`;
+  void req;
+  // A shared fail-closed bucket is safer than a spoofable Host-derived identity.
+  return "ip:unknown";
 }
 
 export function noStoreHeaders(extra?: Record<string, string>): HeadersInit {
@@ -501,16 +546,27 @@ export function noStoreHeaders(extra?: Record<string, string>): HeadersInit {
   };
 }
 
-export function unauthorizedJson(message = "Authentication required"): Response {
-  return new Response(JSON.stringify({ error: message, code: "unauthorized" }), {
-    status: 401,
+function securityErrorJson(status: number, code: string, message: string): Response {
+  return new Response(JSON.stringify({ error: message, code }), {
+    status,
     headers: noStoreHeaders({ "Content-Type": "application/json; charset=utf-8" }),
   });
 }
 
+export function unauthorizedJson(message = "Authentication required"): Response {
+  return securityErrorJson(401, "unauthorized", message);
+}
+
+export function forbiddenJson(message = "Request origin is not allowed"): Response {
+  return securityErrorJson(403, "forbidden", message);
+}
+
+export function secureTransportRequiredJson(
+  message = "HTTPS is required for server access authentication",
+): Response {
+  return securityErrorJson(426, "secure_transport_required", message);
+}
+
 export function serviceUnavailableJson(message = "Server access authentication unavailable"): Response {
-  return new Response(JSON.stringify({ error: message, code: "auth_unavailable" }), {
-    status: 503,
-    headers: noStoreHeaders({ "Content-Type": "application/json; charset=utf-8" }),
-  });
+  return securityErrorJson(503, "auth_unavailable", message);
 }

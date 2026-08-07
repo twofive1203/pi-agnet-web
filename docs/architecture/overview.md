@@ -29,7 +29,7 @@ Project discovery and per-cwd candidate collection are accelerated by a rebuilda
 
 ## Key Boundaries
 
-- **Instance access gate:** root `proxy.ts` enforces optional global access-key authentication when `PI_WEB_SERVER_MODE=1` (set by `--server`, non-loopback bind, or env). Unauthenticated page requests redirect to `/unlock`; API/SSE return `401`. Opaque HttpOnly sessions live in `server-access.json` (verifier + token hashes only). This gate is independent of and does **not** relax Automation, native picker, or browser-bridge loopback-only policies.
+- **Instance access gate:** root `proxy.ts` enforces optional global access-key authentication when `PI_WEB_SERVER_MODE=1` (set by `--server`, non-loopback bind, or env). It rejects cross-origin state-changing requests, requires effective HTTPS by default, and returns `401` only after those security gates pass. Opaque HttpOnly sessions live in `server-access.json` (verifier + token hashes only). This gate is independent of and does **not** relax Automation, native picker, or browser-bridge loopback-only policies.
 - Session browsing does not create an AgentSession: API routes read `.jsonl` files through `lib/session-reader.ts`; the only write side effect is pruning stale sessions whose cwd points at a deleted WorkTree.
 - Sending commands creates or reuses an in-process AgentSession through `lib/rpc-manager.ts`.
 - Session detail/context routes reuse the live wrapper's already-parsed `SessionManager` when its canonical session file matches, avoiding another synchronous JSONL parse during active-chat refreshes; inactive sessions still open from disk as the source of truth.
@@ -41,9 +41,12 @@ Project discovery and per-cwd candidate collection are accelerated by a rebuilda
 ### Server access authentication
 
 - Official launchers default to `127.0.0.1` with auth off; any official non-loopback listen enables auth. Explicit `--server` enables auth even on loopback (reverse-proxy layout).
+- Server mode requires effective HTTPS unless `--allow-insecure-http` / `PI_WEB_ALLOW_INSECURE_HTTP=1` explicitly opts into compatibility. Auth-bypassed mesh clients do not transmit a key or session and may use their already encrypted transport.
 - Server mode must fail closed when auth state is missing/corrupt — never silently open the instance.
 - Access keys are shown once; only scrypt verifiers and session hashes are persisted. Logout, expiry, and key rotation invalidate server-side sessions.
-- Trusted proxy headers (`X-Forwarded-Proto`) are ignored unless `PI_WEB_TRUST_PROXY=1` **and** the backend bind is loopback; headers never decide whether auth is required.
+- Every state-changing protected request must have an exact browser-facing Origin/Referer match; SameSite alone does not protect against sibling-origin CSRF.
+- Auth bypass uses socket client IP only and rejects loopback/world-open rules so a local reverse proxy cannot become an authentication bypass.
+- Trusted proxy headers (`X-Forwarded-Proto`, `X-Forwarded-Host`) are ignored unless `PI_WEB_TRUST_PROXY=1` **and** the backend bind is loopback; headers never decide whether auth is required.
 
 ### AgentSession lifecycle
 

@@ -101,7 +101,7 @@ Keep this section short and operational; detailed rationale belongs in `docs/arc
 - Automation is independent of SnFlow and ordinary project sessions: data lives under `getAgentDir()/automations/`; Automation JSONL must not appear in default `/api/sessions` lists.
 - Automation effective tools are snapshot ∩ live policy and never fall back to dynamic `all`; unapproved extensions must not be imported by the scheduled loader.
 - `/api/automations/**` is local-only (direct loopback + control session); sensitive mutations require trusted UI confirmation (browser challenge or `ctx.ui.confirm`).
-- Official launchers default to loopback bind without auth; `--server`, `PI_WEB_SERVER_MODE=1`, or any non-loopback listen enables global access-key auth via root `proxy.ts`. Optional auth-bypass CIDRs live in `server-access-policy.json` (durable) or `PI_WEB_AUTH_BYPASS_CIDRS` (env override); match **socket** client IPs only (e.g. Tailscale `100.64.0.0/10`); never trust client `X-Forwarded-For`. Auth success never relaxes Automation/native-picker/browser-bridge loopback gates.
+- Official launchers default to loopback bind without auth; `--server`, `PI_WEB_SERVER_MODE=1`, or any non-loopback listen enables global access-key auth via root `proxy.ts`. Server mode requires effective HTTPS unless `--allow-insecure-http` / `PI_WEB_ALLOW_INSECURE_HTTP=1` explicitly opts into compatibility, and state-changing requests require exact same-origin. Optional auth-bypass CIDRs live in `server-access-policy.json` or `PI_WEB_AUTH_BYPASS_CIDRS`; match socket client IPs only, reject loopback/world-open rules, and never trust `X-Forwarded-For`. Auth success never relaxes Automation/native-picker/browser-bridge loopback gates.
 
 ## Standards and Validation
 

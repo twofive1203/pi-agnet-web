@@ -14,9 +14,10 @@
 - **Access key not printed on restart:** expected. The key is shown only on first server init or `--rotate-access-key`. It is never stored in plaintext in `server-access.json`.
 - **Lost access key:** run `spi --server --rotate-access-key` (or with your usual non-loopback bind). A new key is printed once; all old sessions die immediately.
 - **Corrupt `server-access.json`:** server mode fails closed (boot error or `503`). Recover with `--rotate-access-key` after fixing permissions; do not hand-edit the verifier.
-- **Stuck on unlock page after login:** cookie blocked? Prefer same host you typed in the browser. Behind HTTPS proxy set `PI_WEB_TRUST_PROXY=1` only with loopback backend so `Secure` cookies work. Plain HTTP cookies intentionally omit `Secure`.
-- **HTTP warning on unlock page:** expected for direct HTTP. Prefer Caddy/Nginx TLS termination. The warning is suppressed when trusted proxy reports `https`.
-- **429 on login:** short in-process rate limit; wait and retry. Restart clears the counter (single-instance behavior).
+- **Unlock page says HTTPS is required:** expected for server mode over plain HTTP. Terminate TLS at a trusted reverse proxy and set `PI_WEB_TRUST_PROXY=1` on a loopback backend. Only for a transport already encrypted by another trusted layer, restart with `--allow-insecure-http` or `PI_WEB_ALLOW_INSECURE_HTTP=1`.
+- **Stuck on unlock page behind HTTPS:** confirm the proxy overwrites `X-Forwarded-Proto: https` and `X-Forwarded-Host`, then set `PI_WEB_TRUST_PROXY=1` only with a loopback backend so the transport gate passes and cookies are `Secure`.
+- **HTTP warning on unlock page:** HTTP compatibility was explicitly enabled. The warning is suppressed when a trusted proxy reports `https`.
+- **429 on login:** the socket client IP exhausted its short in-process attempt bucket; wait and retry. Restart clears counters (single-instance behavior).
 - **Everyone logged out after ops change:** access key was rotated, or Agent data dir was not persisted (new empty `server-access.json`).
 - **Container loses key every deploy:** mount a persistent volume for `PI_CODING_AGENT_DIR`.
 - **Logged-in remote still cannot use Automation / native folder picker / browser bridge:** correct — those remain loopback-only and are not authorized by the global access key.
@@ -24,8 +25,8 @@
   ```json
   { "version": 1, "authBypassCidrs": ["100.64.0.0/10"] }
   ```
-  Or one-shot env `PI_WEB_AUTH_BYPASS_CIDRS=100.64.0.0/10` (overrides the file). Bypass uses socket `remoteAddress` only; forged `X-Forwarded-For` is ignored. Confirm the phone’s source IP (`tailscale status`).
-- **Bypass configured but still sees unlock:** process may still be on loopback-only bind, remote address unavailable to the gate, client IP outside the list, or an empty env override is clearing the file. Check boot log for `Auth bypass for socket clients (file|env):` and `netstat` for `0.0.0.0:62666`.
+  Prefer the device's exact `/32`; use the full `100.64.0.0/10` only if every tailnet peer is trusted. The env override `PI_WEB_AUTH_BYPASS_CIDRS` uses socket `remoteAddress` only; forged `X-Forwarded-For` is ignored.
+- **Bypass configured but still sees unlock:** loopback and world-open rules are intentionally rejected because loopback may be a reverse proxy carrying untrusted clients. Otherwise, the remote address may be unavailable/outside the list or an empty env override may be clearing the file. Check the boot log and `netstat`.
 
 ## Development Safety
 

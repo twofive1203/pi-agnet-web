@@ -1,16 +1,20 @@
 import {
-  checkLoginRateLimit,
+  consumeLoginAttempt,
   createServerAccessSession,
-  recordLoginFailure,
   recordLoginSuccess,
   ServerAccessError,
 } from "@/lib/server-access-auth";
+import {
+  getAutomationRemoteAddress,
+  installAutomationConnectionCapture,
+} from "@/lib/automation-connection-context";
 import {
   MAX_ACCESS_KEY_LENGTH,
   MAX_LOGIN_BODY_BYTES,
   assertAuthRequestSameOrigin,
   buildSessionCookie,
   clientKeyFromRequest,
+  isSecureTransportRequired,
   isServerAccessAuthEnabled,
   noStoreHeaders,
   resolveEffectiveProtocol,
@@ -33,10 +37,60 @@ function json(status: number, body: Record<string, unknown>, headers?: HeadersIn
   });
 }
 
+async function readBoundedRequestBody(req: Request): Promise<Buffer | null> {
+  const contentLength = req.headers.get("content-length");
+  if (contentLength && /^\d+$/.test(contentLength.trim())) {
+    const declared = Number(contentLength);
+    if (!Number.isSafeInteger(declared) || declared > MAX_LOGIN_BODY_BYTES) {
+      await req.body?.cancel("login body too large").catch(() => undefined);
+      return null;
+    }
+  }
+
+  if (!req.body) return Buffer.alloc(0);
+  const reader = req.body.getReader();
+  const chunks: Buffer[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > MAX_LOGIN_BODY_BYTES) {
+        await reader.cancel("login body too large").catch(() => undefined);
+        return null;
+      }
+      chunks.push(Buffer.from(value));
+    }
+  } catch {
+    return null;
+  } finally {
+    reader.releaseLock();
+  }
+  return Buffer.concat(chunks, total);
+}
+
+function socketRemoteAddress(): string | null {
+  try {
+    installAutomationConnectionCapture();
+  } catch {
+    // Missing socket context falls back to one shared fail-closed bucket, never forwarded headers.
+  }
+  return getAutomationRemoteAddress();
+}
+
 export async function POST(req: Request): Promise<Response> {
   if (!isServerAccessAuthEnabled()) {
     // Local mode: login is a no-op success so clients can be dumb.
     return json(200, { ok: true, authRequired: false });
+  }
+
+  if (isSecureTransportRequired(req)) {
+    return json(426, {
+      ok: false,
+      error: "HTTPS is required",
+      code: "secure_transport_required",
+    });
   }
 
   try {
@@ -45,8 +99,8 @@ export async function POST(req: Request): Promise<Response> {
     return json(403, { ok: false, error: "Request blocked" });
   }
 
-  const clientKey = clientKeyFromRequest(req);
-  const rate = checkLoginRateLimit(clientKey);
+  const clientKey = clientKeyFromRequest(req, socketRemoteAddress());
+  const rate = consumeLoginAttempt(clientKey);
   if (!rate.allowed) {
     return json(
       429,
@@ -57,27 +111,23 @@ export async function POST(req: Request): Promise<Response> {
 
   const contentType = req.headers.get("content-type") ?? "";
   if (!contentType.toLowerCase().includes("application/json")) {
-    recordLoginFailure(clientKey);
     return json(400, { ok: false, error: "Invalid request" });
   }
 
-  const raw = await req.arrayBuffer();
-  if (raw.byteLength > MAX_LOGIN_BODY_BYTES) {
-    recordLoginFailure(clientKey);
+  const raw = await readBoundedRequestBody(req);
+  if (!raw) {
     return json(400, { ok: false, error: "Invalid request" });
   }
 
   let body: LoginBody;
   try {
-    body = JSON.parse(Buffer.from(raw).toString("utf8")) as LoginBody;
+    body = JSON.parse(raw.toString("utf8")) as LoginBody;
   } catch {
-    recordLoginFailure(clientKey);
     return json(400, { ok: false, error: "Invalid request" });
   }
 
   const accessKey = typeof body.accessKey === "string" ? body.accessKey : "";
   if (!accessKey || accessKey.length > MAX_ACCESS_KEY_LENGTH) {
-    recordLoginFailure(clientKey);
     return json(401, { ok: false, error: "Invalid access key" });
   }
 
@@ -97,7 +147,6 @@ export async function POST(req: Request): Promise<Response> {
   } catch (error) {
     if (error instanceof ServerAccessError) {
       if (error.code === "invalid_credentials") {
-        recordLoginFailure(clientKey);
         return json(401, { ok: false, error: "Invalid access key" });
       }
       if (error.code === "rate_limited") {

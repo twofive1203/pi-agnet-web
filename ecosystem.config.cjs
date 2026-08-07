@@ -24,8 +24,8 @@ module.exports = {
       env: {
         NODE_ENV: "production",
         PI_WEB_SERVER_MODE: "1",
-        // Set PI_WEB_TRUST_PROXY=1 only when a trusted reverse proxy terminates HTTPS
-        // and forwards to this loopback backend.
+        // This official profile is specifically for a trusted HTTPS reverse proxy.
+        PI_WEB_TRUST_PROXY: "1",
       },
     },
   ],
