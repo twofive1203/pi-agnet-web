@@ -7507,7 +7507,7 @@ html:is([data-wallpaper="on"], [data-wallpaper="image"], [data-wallpaper="gradie
   border-radius: 16px 16px 0 0;
 }
 .extension-todo-panel.is-complete {
-  border-color: color-mix(in srgb, var(--status-success-border) 72%, var(--border-default));
+  border-color: color-mix(in srgb, var(--accent-border) 72%, var(--border-default));
 }
 .extension-todo-header {
   display: flex;
@@ -7541,9 +7541,9 @@ html:is([data-wallpaper="on"], [data-wallpaper="image"], [data-wallpaper="gradie
   transform: rotate(-45deg);
 }
 .extension-todo-panel.is-complete .extension-todo-icon {
-  border-color: var(--status-success-border);
-  background: var(--status-success-soft);
-  color: var(--status-success-foreground);
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--text-accent);
 }
 .extension-todo-title-wrap { flex: 1; min-width: 0; }
 .extension-todo-title {
@@ -7565,7 +7565,7 @@ html:is([data-wallpaper="on"], [data-wallpaper="image"], [data-wallpaper="gradie
   white-space: nowrap;
 }
 .extension-todo-panel.is-complete .extension-todo-subtitle {
-  color: var(--status-success-foreground);
+  color: var(--text-accent);
 }
 .extension-todo-header-count {
   flex-shrink: 0;
@@ -7580,9 +7580,9 @@ html:is([data-wallpaper="on"], [data-wallpaper="image"], [data-wallpaper="gradie
   line-height: 1.2;
 }
 .extension-todo-panel.is-complete .extension-todo-header-count {
-  border-color: var(--status-success-border);
-  background: var(--status-success-soft);
-  color: var(--status-success-foreground);
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--text-accent);
 }
 .extension-todo-close { width: 28px; height: 28px; font-size: 18px; }
 .extension-todo-content {
@@ -7600,8 +7600,8 @@ html:is([data-wallpaper="on"], [data-wallpaper="image"], [data-wallpaper="gradie
   background: color-mix(in srgb, var(--surface-subtle) 70%, transparent);
 }
 .extension-todo-progress.is-complete {
-  border-color: color-mix(in srgb, var(--status-success-border) 70%, var(--border-subtle));
-  background: color-mix(in srgb, var(--status-success-soft) 55%, transparent);
+  border-color: color-mix(in srgb, var(--accent-border) 70%, var(--border-subtle));
+  background: color-mix(in srgb, var(--accent-soft) 70%, transparent);
 }
 .extension-todo-progress-meta {
   display: flex;
@@ -7620,7 +7620,7 @@ html:is([data-wallpaper="on"], [data-wallpaper="image"], [data-wallpaper="gradie
   font-weight: 700;
 }
 .extension-todo-progress.is-complete .extension-todo-count {
-  color: var(--status-success-foreground);
+  color: var(--text-accent);
 }
 .extension-todo-progress-track {
   height: 3px;
@@ -7641,8 +7641,8 @@ html:is([data-wallpaper="on"], [data-wallpaper="image"], [data-wallpaper="gradie
 .extension-todo-progress.is-complete .extension-todo-progress-value {
   background: linear-gradient(
     90deg,
-    color-mix(in srgb, var(--status-success-foreground) 78%, transparent),
-    var(--status-success-foreground)
+    color-mix(in srgb, var(--accent-primary) 78%, transparent),
+    var(--accent-primary)
   );
 }
 .extension-todo-list {
@@ -7695,9 +7695,9 @@ html:is([data-wallpaper="on"], [data-wallpaper="image"], [data-wallpaper="gradie
   background: var(--text-accent);
 }
 .extension-todo-entry.is-completed .extension-todo-marker {
-  border-color: var(--status-success-border);
-  background: var(--status-success-soft);
-  color: var(--status-success-foreground);
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--text-accent);
 }
 .extension-todo-entry.is-completed .extension-todo-marker::before {
   content: "";
@@ -7785,7 +7785,7 @@ html:is([data-wallpaper="on"], [data-wallpaper="image"], [data-wallpaper="gradie
   border-color: color-mix(in srgb, var(--accent-border) 78%, var(--border-default));
 }
 .extension-todo-capsule.is-complete {
-  border-color: color-mix(in srgb, var(--status-success-border) 75%, var(--border-default));
+  border-color: color-mix(in srgb, var(--accent-border) 75%, var(--border-default));
 }
 .extension-todo-capsule:focus-visible {
   outline: var(--focus-ring-width) solid var(--focus-ring-color);
@@ -7804,8 +7804,8 @@ html:is([data-wallpaper="on"], [data-wallpaper="image"], [data-wallpaper="gradie
   color: var(--text-accent);
 }
 .extension-todo-capsule.is-complete .extension-todo-capsule-icon {
-  background: var(--status-success-soft);
-  color: var(--status-success-foreground);
+  background: var(--accent-soft);
+  color: var(--text-accent);
 }
 .extension-todo-capsule-ring {
   position: absolute;
@@ -7853,7 +7853,7 @@ html:is([data-wallpaper="on"], [data-wallpaper="image"], [data-wallpaper="gradie
   font-weight: 600;
 }
 .extension-todo-capsule.is-complete .extension-todo-capsule-count {
-  color: var(--status-success-foreground);
+  color: var(--text-accent);
 }
 .extension-todo-capsule-chevron {
   position: relative;
