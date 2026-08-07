@@ -1,5 +1,5 @@
+import { DEFAULT_LOCALE, formatDate, type Locale, type MessageParams } from "@/lib/i18n";
 import type { ProjectSummary, WorktreeInfo } from "@/lib/types";
-import type { MessageParams } from "@/lib/i18n";
 
 export const EXPLORER_HEIGHT_STORAGE_KEY = "pi-web-explorer-height-v1";
 export const DEFAULT_EXPLORER_HEIGHT = 240;
@@ -33,7 +33,8 @@ export function writeStoredExplorerHeight(height: number): void {
 
 export function formatRelativeTime(
   dateStr: string,
-  t: (key: string, params?: MessageParams) => string
+  t: (key: string, params?: MessageParams) => string,
+  locale: Locale = DEFAULT_LOCALE,
 ): string {
   const date = new Date(dateStr);
   const now = new Date();
@@ -45,7 +46,7 @@ export function formatRelativeTime(
   if (mins < 60) return t("sidebar.minutesAgo", { n: mins });
   if (hours < 24) return t("sidebar.hoursAgo", { n: hours });
   if (days < 7) return t("sidebar.daysAgo", { n: days });
-  return date.toLocaleDateString();
+  return formatDate(date, locale);
 }
 
 /** Return project cwds ordered by latest activity, keeping pinned entries first. */

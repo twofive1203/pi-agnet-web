@@ -3,6 +3,7 @@
 import { useCallback, useState } from "react";
 import { useAppDialog } from "@/components/AppDialogProvider";
 import { useI18n } from "@/components/I18nProvider";
+import { formatTime } from "@/lib/i18n";
 import {
   useBrowserBridgeStatus,
   type BrowserBindingStatusResponse,
@@ -32,7 +33,7 @@ export function BrowserBindingPanel({
   onSharedRefresh,
 }: Props) {
   const appDialog = useAppDialog();
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const [pairingCode, setPairingCode] = useState<string | null>(null);
   const [pairingExpiresAt, setPairingExpiresAt] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
@@ -220,7 +221,7 @@ export function BrowserBindingPanel({
           {pairingCode && (
             <div className="browser-binding-pairing">
               {t("panels.browser.pairingCode")}: <strong>{pairingCode}</strong>
-              {pairingExpiresAt ? ` · ${t("panels.browser.expires")} ${new Date(pairingExpiresAt).toLocaleTimeString()}` : ""}
+              {pairingExpiresAt ? ` · ${t("panels.browser.expires")} ${formatTime(pairingExpiresAt, locale)}` : ""}
               <div className="browser-binding-meta browser-binding-pairing-hint">
                 {t("panels.browser.pairingHint")} <code>extensions/chrome-tab-debug</code>
               </div>

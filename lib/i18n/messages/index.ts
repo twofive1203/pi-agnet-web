@@ -3,6 +3,7 @@ import { appEn, appZh } from "./app";
 import { automationEn, automationZh } from "./automation";
 import { chatEn, chatZh } from "./chat";
 import { commonEn, commonZh } from "./common";
+import { errorsEn, errorsZh } from "./errors";
 import { gitEn, gitZh } from "./git";
 import { panelsEn, panelsZh } from "./panels";
 import { settingsEn, settingsZh } from "./settings";
@@ -19,6 +20,7 @@ export const zhMessages = {
   workflow: workflowZh,
   settings: settingsZh,
   automation: automationZh,
+  errors: errorsZh,
 } as const satisfies MessageTree;
 
 export const enMessages = {
@@ -31,6 +33,7 @@ export const enMessages = {
   workflow: workflowEn,
   settings: settingsEn,
   automation: automationEn,
+  errors: errorsEn,
 } as const satisfies MessageTree;
 
 export const messagesByLocale: Record<Locale, MessageTree> = {

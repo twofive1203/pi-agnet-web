@@ -128,7 +128,7 @@ const ArchivedSessionItem = memo(function ArchivedSessionItem({
   onUnarchive: (id: string) => void;
   onDelete: (id: string) => void;
 }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const [deleting, setDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -228,7 +228,7 @@ const ArchivedSessionItem = memo(function ArchivedSessionItem({
               </div>
             </div>
             <div style={{ marginTop: 2, display: "flex", gap: 8, color: "var(--text-dim)", fontSize: 11 }}>
-              <span title={session.modified}>{formatRelativeTime(session.modified, t)}</span>
+              <span title={session.modified}>{formatRelativeTime(session.modified, t, locale)}</span>
               <span>{t("sidebar.archivedMessageCount", { count: session.messageCount })}</span>
             </div>
           </div>

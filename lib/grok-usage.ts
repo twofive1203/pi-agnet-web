@@ -1,3 +1,4 @@
+import { ERROR_CODES } from "@/lib/i18n/error-codes";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import { getAgentDir, readStoredCredential } from "@earendil-works/pi-coding-agent";
@@ -51,6 +52,8 @@ export interface GrokUsageResult {
   monthly: GrokMonthlyUsage | null;
   weekly: GrokWeeklyUsage | null;
   error: string | null;
+  /** Stable code for UI localization when present. */
+  errorCode?: string | null;
   queriedAt: number | null;
   envBypass: boolean;
 }
@@ -567,7 +570,8 @@ function notConfiguredResult(): GrokUsageResult {
     source: "live",
     monthly: null,
     weekly: null,
-    error: "Grok 未登录。请先在 Models → xAI 或 Grok CLI 完成 OAuth 登录，或设置 GROK_CLI_OAUTH_TOKEN 环境变量。",
+    error: "Grok is not logged in. Complete OAuth in Models → xAI or Grok CLI, or set GROK_CLI_OAUTH_TOKEN.",
+    errorCode: ERROR_CODES.grokNotLoggedIn,
     queriedAt: null,
     envBypass: false,
   };

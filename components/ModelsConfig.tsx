@@ -1,6 +1,7 @@
 "use client";
 
 import { useI18n } from "@/components/I18nProvider";
+import { localizeError } from "@/lib/i18n";
 import { useAppDialog } from "@/components/AppDialogProvider";
 
 import { useState, useEffect, useCallback, useRef } from "react";
@@ -2027,7 +2028,14 @@ function AddAccountDialog({
       setConvertedJsonText(JSON.stringify(converted, null, 2));
       setValidationMessage({ type: "success", text: t("settings.models.convertDone") });
     } catch (convertError) {
-      setError(convertError instanceof Error ? convertError.message : t("settings.models.convertFailed"));
+      const code = convertError && typeof convertError === "object" && "code" in convertError
+        ? (convertError as { code?: unknown }).code
+        : undefined;
+      setError(localizeError(t, {
+        code,
+        message: convertError instanceof Error ? convertError.message : undefined,
+        fallback: t("settings.models.convertFailed"),
+      }));
     }
   }, [converter, jsonText, t]);
 

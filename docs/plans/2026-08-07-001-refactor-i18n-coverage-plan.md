@@ -1,7 +1,7 @@
 ---
 title: "refactor: WebUI i18n 覆盖补齐（zh/en）"
 type: refactor
-status: in-progress
+status: completed
 date: 2026-08-07
 origin: session audit 2026-08-07
 related:
@@ -327,7 +327,7 @@ P3 工程卫生
 
 ### Wave C — 一致性与债清理
 
-- [ ] **U8. 词条对齐与质量**
+- [x] **U8. 词条对齐与质量**
 
 **Goal:** zh/en key 集合一致；减少「key 名当文案」。
 
@@ -350,7 +350,7 @@ P3 工程卫生
 
 ---
 
-- [ ] **U9. App locale 驱动的日期/数字格式**
+- [x] **U9. App locale 驱动的日期/数字格式**
 
 **Goal:** UI 语言与 `toLocaleString` 一致。
 
@@ -371,7 +371,7 @@ P3 工程卫生
 
 ---
 
-- [ ] **U10. API 错误展示试点（可选）**
+- [x] **U10. API 错误展示试点（可选）**
 
 **Goal:** 减少「中文 UI + 英文 API error」或反向混杂；不引入服务端 i18n 框架。
 
@@ -394,7 +394,7 @@ P3 工程卫生
 
 ---
 
-- [ ] **U11. 文档与收尾**
+- [x] **U11. 文档与收尾**
 
 **Goal:** 状态可被后续 agent 发现。
 

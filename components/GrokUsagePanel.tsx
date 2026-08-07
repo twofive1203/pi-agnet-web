@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useI18n } from "@/components/I18nProvider";
+import { formatDate, formatDateTime, formatNumber, localizeError } from "@/lib/i18n";
 import { useAppDialog } from "@/components/AppDialogProvider";
 import {
   findWeeklyQuotaTier,
@@ -67,9 +68,9 @@ interface SchedulerStatus {
 
 const ACCOUNT_CACHE_POLL_INTERVAL_MS = 30_000;
 
-function formatTime(value: number | null): string {
+function formatTime(value: number | null, locale: import("@/lib/i18n").Locale): string {
   if (!value) return "—";
-  return new Date(value).toLocaleString();
+  return formatDateTime(value, locale);
 }
 
 function UsagePie({ tier, label, size = 18, title }: { tier: QuotaDisplayTier | null; label?: string; size?: number; title?: string }) {
@@ -111,7 +112,7 @@ function weeklyTierFromUsage(result: GrokUsageResult | null): QuotaDisplayTier |
 }
 
 export function GrokUsagePanel() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const appDialog = useAppDialog();
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -168,18 +169,18 @@ export function GrokUsagePanel() {
         return;
       }
       // Keep previous successful result in memory on live failure / empty cache.
-      if (data.error) setError(data.error);
+      if (data.error) setError(localizeError(t, { code: (data as { errorCode?: string }).errorCode, message: data.error }));
       setUsageResult((prev) => {
         if (prev?.success && prev.monthly && forceRefresh) return prev;
         return data;
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Usage query failed");
+      setError(err instanceof Error ? err.message : t("panels.grok.error"));
       if (!forceRefresh) setUsageResult(null);
     } finally {
       setLoading(false);
     }
-  }, [loadAccounts]);
+  }, [loadAccounts, t]);
 
   // Load cache on mount
   useEffect(() => {
@@ -452,12 +453,12 @@ export function GrokUsagePanel() {
                 <span style={{ color: "var(--text)", fontSize: 12, fontWeight: 700 }}>{t("panels.grok.monthlyCredits")}</span>
                 <span style={{ color: "var(--text-dim)", fontSize: 10 }}>
                   {t("panels.grok.monthlyLine", {
-                    used: monthly.used.toLocaleString(),
-                    limit: monthly.monthlyLimit.toLocaleString(),
-                    remaining: monthly.remaining.toLocaleString(),
+                    used: formatNumber(monthly.used, locale),
+                    limit: formatNumber(monthly.monthlyLimit, locale),
+                    remaining: formatNumber(monthly.remaining, locale),
                   })}
                   {monthly.billingPeriodEnd && (
-                    <> · {t("panels.grok.resetsAt", { date: new Date(monthly.billingPeriodEnd).toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) })}</>
+                    <> · {t("panels.grok.resetsAt", { date: formatDate(monthly.billingPeriodEnd, locale, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) })}</>
                   )}
                 </span>
               </div>
@@ -498,7 +499,7 @@ export function GrokUsagePanel() {
             {schedulerStatus ? (
               <div style={{ color: "var(--text-dim)", fontSize: 11, lineHeight: 1.55 }}>
                 <div>{t("panels.grok.enabled")}: {schedulerStatus.enabled ? t("panels.grok.yes") : t("panels.grok.no")} · {t("panels.grok.running")}: {schedulerStatus.running ? t("panels.grok.yes") : t("panels.grok.no")} · {t("panels.grok.lock")}: {schedulerStatus.lockOwned ? t("panels.grok.lockOwned") : schedulerStatus.lock.stale ? t("panels.grok.lockStale") : schedulerStatus.lock.exists ? t("panels.grok.lockHeld") : t("panels.grok.lockNone")}</div>
-                <div>{t("panels.grok.next")}: {formatTime(schedulerStatus.nextRunAt)} · {t("panels.grok.last")}: {formatTime(schedulerStatus.lastRunFinishedAt)}</div>
+                <div>{t("panels.grok.next")}: {formatTime(schedulerStatus.nextRunAt, locale)} · {t("panels.grok.last")}: {formatTime(schedulerStatus.lastRunFinishedAt, locale)}</div>
                 {schedulerStatus.lastError && <div style={{ color: "#f87171" }}>{t("panels.grok.lastError", { error: schedulerStatus.lastError })}</div>}
                 {schedulerStatus.lastAccountError && <div style={{ color: "#fb923c" }}>{t("panels.grok.accountError", { error: schedulerStatus.lastAccountError })}</div>}
               </div>

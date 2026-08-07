@@ -1,3 +1,4 @@
+import { ERROR_CODES, codedError } from "@/lib/i18n/error-codes";
 export type OAuthAccountImportMode = "raw" | "cpa" | "sub2api";
 export type ConvertibleAccountImportMode = Exclude<OAuthAccountImportMode, "raw">;
 export type OAuthAccountCredentialImport = Record<string, unknown> | Record<string, unknown>[];
@@ -124,14 +125,14 @@ function assignOptionalStringFieldFromSources(raw: Record<string, unknown>, targ
 }
 
 export function convertCpaCredentialToRaw(credential: unknown): Record<string, unknown> {
-  if (!isJsonRecord(credential)) throw new Error("CPA JSON 必须是对象");
+  if (!isJsonRecord(credential)) throw codedError(ERROR_CODES.oauthCpaNotObject, "CPA JSON must be an object");
 
   const access = firstNonEmptyString(credential.access_token, credential.accessToken);
   const refresh = firstNonEmptyString(credential.refresh_token, credential.refreshToken);
   const expires = normalizeExpiresMs(credential.expired ?? credential.expires ?? credential.expires_at ?? credential.expiresAt);
-  if (!access) throw new Error("CPA JSON 缺少 access_token");
-  if (!refresh) throw new Error("CPA JSON 缺少 refresh_token");
-  if (expires === undefined) throw new Error("CPA JSON 缺少有效的 expired/expires 时间");
+  if (!access) throw codedError(ERROR_CODES.oauthCpaMissingAccess, "CPA JSON is missing access_token");
+  if (!refresh) throw codedError(ERROR_CODES.oauthCpaMissingRefresh, "CPA JSON is missing refresh_token");
+  if (expires === undefined) throw codedError(ERROR_CODES.oauthCpaMissingExpires, "CPA JSON is missing a valid expired/expires timestamp");
 
   const raw: Record<string, unknown> = {
     type: "oauth",
@@ -155,17 +156,17 @@ export function convertCpaCredentialToRaw(credential: unknown): Record<string, u
 }
 
 function convertSub2apiAccountToRaw(account: unknown, index?: number): Record<string, unknown> {
-  const label = index === undefined ? "SUB2API JSON" : `SUB2API JSON 第 ${index + 1} 个账号`;
-  if (!isJsonRecord(account)) throw new Error(`${label} 必须是对象`);
+  const label = index === undefined ? "SUB2API JSON" : `SUB2API JSON account #${index + 1}`;
+  if (!isJsonRecord(account)) throw codedError(ERROR_CODES.oauthSub2apiAccountNotObject, `${label} must be an object`);
 
   const credentials = isJsonRecord(account.credentials) ? account.credentials : account;
   const extra = isJsonRecord(account.extra) ? account.extra : undefined;
   const access = firstNonEmptyString(credentials.access_token, credentials.accessToken, credentials.access);
   const refresh = firstString(credentials.refresh_token, credentials.refreshToken, credentials.refresh);
   const expires = normalizeExpiresMs(credentials.expires_at ?? credentials.expiresAt ?? credentials.expires ?? account.expires_at ?? account.expiresAt ?? account.expires);
-  if (!access) throw new Error(`${label} 缺少 credentials.access_token`);
-  if (refresh === undefined) throw new Error(`${label} 缺少 credentials.refresh_token 字段`);
-  if (expires === undefined) throw new Error(`${label} 缺少有效的 expires_at/expires 时间`);
+  if (!access) throw codedError(ERROR_CODES.oauthSub2apiMissingAccess, `${label} is missing credentials.access_token`);
+  if (refresh === undefined) throw codedError(ERROR_CODES.oauthSub2apiMissingRefresh, `${label} is missing credentials.refresh_token`);
+  if (expires === undefined) throw codedError(ERROR_CODES.oauthSub2apiMissingExpires, `${label} is missing a valid expires_at/expires timestamp`);
 
   const raw: Record<string, unknown> = {
     type: "oauth",
@@ -186,10 +187,10 @@ function convertSub2apiAccountToRaw(account: unknown, index?: number): Record<st
 }
 
 export function convertSub2apiCredentialToRaw(credential: unknown): OAuthAccountCredentialImport {
-  if (!isJsonRecord(credential)) throw new Error("SUB2API JSON 必须是对象");
+  if (!isJsonRecord(credential)) throw codedError(ERROR_CODES.oauthSub2apiNotObject, "SUB2API JSON must be an object");
 
   if (Array.isArray(credential.accounts)) {
-    if (credential.accounts.length === 0) throw new Error("SUB2API JSON accounts 不能为空");
+    if (credential.accounts.length === 0) throw codedError(ERROR_CODES.oauthSub2apiAccountsEmpty, "SUB2API JSON accounts must not be empty");
     return credential.accounts.map((account, index) => convertSub2apiAccountToRaw(account, index));
   }
 

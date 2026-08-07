@@ -298,7 +298,7 @@ const SessionItem = memo(function SessionItem({
   selectedForArchive?: boolean;
   onToggleSelect?: (id: string) => void;
 }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -486,7 +486,7 @@ const SessionItem = memo(function SessionItem({
               </div>
               <WorktreeBadge worktree={session.worktree} />
               <span className="session-item-time" title={session.modified}>
-                {formatRelativeTime(session.modified, t)}
+                {formatRelativeTime(session.modified, t, locale)}
               </span>
             </div>
             <div style={{ marginTop: 3, color: "var(--text-2)", fontSize: 11.5, lineHeight: 1.35, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>

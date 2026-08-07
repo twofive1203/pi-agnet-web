@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useI18n } from "@/components/I18nProvider";
+import { formatNumber } from "@/lib/i18n";
 import { SettingsButton, SettingsInput, SettingsNotice, SettingsTab, SettingsTabs } from "@/components/ui/SettingsPrimitives";
 import type { UsageStatsResult, UsageTotals } from "@/lib/usage-stats";
 
@@ -55,12 +56,12 @@ function formatCost(value: number): string {
  * @param value 需要格式化的 token 数。
  * @returns 带千分位的 token 字符串。
  */
-function formatTokens(value: number): string {
-  return value.toLocaleString();
+function formatTokens(value: number, locale: import("@/lib/i18n").Locale): string {
+  return formatNumber(value, locale);
 }
 
-function formatTokensM(value: number): string {
-  return `${Math.round(value / 1_000_000).toLocaleString()}M`;
+function formatTokensM(value: number, locale: import("@/lib/i18n").Locale): string {
+  return `${formatNumber(Math.round(value / 1_000_000), locale)}M`;
 }
 
 /**
@@ -80,7 +81,7 @@ function totalTokens(totals: UsageTotals): number {
  * @returns 用于查看费用统计的 React 节点。
  */
 export function UsageStatsModal({ cwd, onClose }: UsageStatsModalProps) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const defaults = useMemo(() => getDefaultInputRange(), []);
   const [from, setFrom] = useState(defaults.from);
   const [to, setTo] = useState(defaults.to);
@@ -189,10 +190,10 @@ export function UsageStatsModal({ cwd, onClose }: UsageStatsModalProps) {
                 <Metric label={t("panels.usage.totalCost")} value={formatCost(stats?.totals.cost ?? 0)} strong />
                 <Metric label={t("panels.usage.mainCost")} value={formatCost(stats?.mainTotals.cost ?? 0)} />
                 <Metric label={t("panels.usage.subagentCost")} value={formatCost(stats?.subagentTotals.cost ?? 0)} />
-                <Metric label={t("panels.usage.tokens")} value={`${formatTokens(totalTokens(stats?.totals ?? zeroTotals))} (${formatTokensM(totalTokens(stats?.totals ?? zeroTotals))})`} />
-                <Metric label={t("panels.usage.calls")} value={formatTokens(stats?.totals.calls ?? 0)} />
+                <Metric label={t("panels.usage.tokens")} value={`${formatTokens(totalTokens(stats?.totals ?? zeroTotals), locale)} (${formatTokensM(totalTokens(stats?.totals ?? zeroTotals), locale)})`} />
+                <Metric label={t("panels.usage.calls")} value={formatTokens(stats?.totals.calls ?? 0, locale)} />
                 <Metric label={t("panels.usage.sessions")} value={`${stats?.bySession.length ?? 0}/${stats?.matchedSessions ?? 0}`} />
-                <Metric label={t("panels.usage.subagentSessions")} value={formatTokens(stats?.subagentSessions ?? 0)} />
+                <Metric label={t("panels.usage.subagentSessions")} value={formatTokens(stats?.subagentSessions ?? 0, locale)} />
                 <Metric label={t("panels.usage.scannedActiveArchive")} value={`${stats?.scannedActiveSessions ?? 0}/${stats?.scannedArchivedSessions ?? 0}`} />
                 <Metric label={t("panels.usage.matchedActiveArchive")} value={`${stats?.matchedActiveSessions ?? 0}/${stats?.matchedArchivedSessions ?? 0}`} />
               </div>
@@ -220,7 +221,7 @@ export function UsageStatsModal({ cwd, onClose }: UsageStatsModalProps) {
 
                 <section className="usage-stats-card">
                   <SectionTitle title={t("panels.usage.tokens")} />
-                  <TokenRows totals={stats?.totals ?? zeroTotals} />
+                  <TokenRows totals={stats?.totals ?? zeroTotals} locale={locale} />
                 </section>
               </div>
 
@@ -253,7 +254,7 @@ export function UsageStatsModal({ cwd, onClose }: UsageStatsModalProps) {
                           </div>
                         )}
                       </div>
-                      <span style={{ fontSize: 11, color: "var(--text-muted)", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{formatTokens(totalTokens(session.totals))}</span>
+                      <span style={{ fontSize: 11, color: "var(--text-muted)", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{formatTokens(totalTokens(session.totals), locale)}</span>
                       <span style={{ fontSize: 12, color: "var(--text)", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{formatCost(session.totals.cost)}</span>
                     </div>
                   ))}
@@ -305,7 +306,7 @@ function SectionTitle({ title, right }: { title: string; right?: string }) {
  * @param props totals 为 token 汇总对象。
  * @returns token 明细 React 节点。
  */
-function TokenRows({ totals }: { totals: UsageTotals }) {
+function TokenRows({ totals, locale }: { totals: UsageTotals; locale: import("@/lib/i18n").Locale }) {
   const { t } = useI18n();
   const rows = [
     [t("panels.usage.input"), totals.input],
@@ -318,8 +319,8 @@ function TokenRows({ totals }: { totals: UsageTotals }) {
       {rows.map(([label, value]) => (
         <div key={label} style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 96px 54px", gap: 8, alignItems: "center", padding: "6px 0", borderTop: "1px solid var(--border)", fontSize: 12 }}>
           <span style={{ color: "var(--text-muted)" }}>{label}</span>
-          <span style={{ color: "var(--text)", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{formatTokens(value)}</span>
-          <span style={{ color: "var(--text-dim)", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{formatTokensM(value)}</span>
+          <span style={{ color: "var(--text)", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{formatTokens(value, locale)}</span>
+          <span style={{ color: "var(--text-dim)", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{formatTokensM(value, locale)}</span>
         </div>
       ))}
     </div>
@@ -333,6 +334,7 @@ function TokenRows({ totals }: { totals: UsageTotals }) {
  * @returns 拆分面板 React 节点。
  */
 function Breakdown({ title, rows }: { title: string; rows: { label: string; totals: UsageTotals }[] }) {
+  const { locale } = useI18n();
   return (
     <section className="usage-stats-card">
       <SectionTitle title={title} />
@@ -343,7 +345,7 @@ function Breakdown({ title, rows }: { title: string; rows: { label: string; tota
           {rows.map((row) => (
             <div key={row.label} style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 72px 72px", gap: 8, alignItems: "center", padding: "7px 0", borderTop: "1px solid var(--border)", fontSize: 11 }}>
               <span style={{ color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.label}</span>
-              <span style={{ color: "var(--text-dim)", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{formatTokens(row.totals.calls)}</span>
+              <span style={{ color: "var(--text-dim)", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{formatTokens(row.totals.calls, locale)}</span>
               <span style={{ color: "var(--text)", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{formatCost(row.totals.cost)}</span>
             </div>
           ))}

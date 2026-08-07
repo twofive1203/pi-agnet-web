@@ -32,7 +32,7 @@ import {
   SettingsTextInput as TextInput,
   SettingsToggle as ToggleField,
 } from "@/components/ui/SettingsPrimitives";
-import type { Locale } from "@/lib/i18n";
+import { localizeError, type Locale } from "@/lib/i18n";
 import { BUNDLED_PI_EXTENSIONS } from "@/lib/bundled-pi-extension-registry";
 
 interface WebConfigResponse {
@@ -487,13 +487,19 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ cwd, raw: rawEnvImport }),
       });
-      const data = await res.json() as { env?: Record<string, string>; error?: string };
-      if (!res.ok || data.error || !data.env) throw new Error(data.error ?? `HTTP ${res.status}`);
+      const data = await res.json() as { env?: Record<string, string>; error?: string; code?: string };
+      if (!res.ok || data.error || !data.env) {
+        throw Object.assign(new Error(data.error ?? `HTTP ${res.status}`), { code: data.code });
+      }
       setTerminal((prev) => prev ? { ...prev, env: { ...prev.env, ...data.env } } : prev);
       setRawEnvImport("");
       setNotice(t("settings.envParsedAi"));
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      const code = err && typeof err === "object" && "code" in err ? (err as { code?: unknown }).code : undefined;
+      setError(localizeError(t, {
+        code,
+        message: err instanceof Error ? err.message : String(err),
+      }));
     } finally {
       setTerminalEnvAssistLoading(false);
     }

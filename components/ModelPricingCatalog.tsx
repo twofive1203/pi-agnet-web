@@ -1,6 +1,7 @@
 "use client";
 
 import { useI18n } from "@/components/I18nProvider";
+import { formatDateTime, formatNumber } from "@/lib/i18n";
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { SettingsInput, SettingsSelect, SettingsState } from "@/components/ui/SettingsPrimitives";
@@ -34,13 +35,13 @@ function formatPrice(value: number): string {
   return `$${value}`;
 }
 
-function formatSyncedAt(value: number | null, t: (key: string) => string): string {
+function formatSyncedAt(value: number | null, t: (key: string) => string, locale: import("@/lib/i18n").Locale): string {
   if (!value) return t("panels.pricing.notSynced");
-  return new Date(value).toLocaleString();
+  return formatDateTime(value, locale);
 }
 
 export function ModelPricingCatalog({ onClose }: Props) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const [items, setItems] = useState<PricingCatalogItem[]>([]);
   const [syncedAt, setSyncedAt] = useState<number | null>(null);
   const [providerCount, setProviderCount] = useState(0);
@@ -108,7 +109,7 @@ export function ModelPricingCatalog({ onClose }: Props) {
           <div className="pi-modal-header-copy">
             <div id="pricing-catalog-title" className="pi-modal-title">{t("panels.pricing.title")}</div>
             <div className="pi-modal-subtitle">
-              {providerCount} providers · {modelCount} models · {formatSyncedAt(syncedAt, t)}
+              {providerCount} providers · {modelCount} models · {formatSyncedAt(syncedAt, t, locale)}
             </div>
           </div>
           <button type="button" onClick={onClose} aria-label={t("panels.pricing.closeAria")} className="pi-modal-close">×</button>
@@ -155,7 +156,7 @@ export function ModelPricingCatalog({ onClose }: Props) {
                   <tr key={`${item.provider}:${item.model}`}>
                     <td className="pricing-cell-provider">{item.provider}</td>
                     <td className="pricing-cell-model">{item.model}</td>
-                    <td className="pricing-cell-number">{item.contextWindow?.toLocaleString() ?? "—"}</td>
+                    <td className="pricing-cell-number">{item.contextWindow != null ? formatNumber(item.contextWindow, locale) : "—"}</td>
                     {[item.input, item.output, item.cacheRead, item.cacheWrite].map((value, index) => (
                       <td key={index} className="pricing-cell-number">{formatPrice(value)}</td>
                     ))}

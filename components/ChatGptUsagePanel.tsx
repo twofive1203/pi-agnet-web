@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useI18n } from "@/components/I18nProvider";
+import { formatDateTime } from "@/lib/i18n";
 import { useAppDialog } from "@/components/AppDialogProvider";
 import { earliestResetCreditExpiration, formatQuotaQueriedAt, formatResetCountdown, knownQuotaTiers, quotaColor, QUOTA_TIER_LABELS, type CodexResetCreditDisplay, type QuotaDisplayTier } from "@/lib/quota-display";
 
@@ -109,13 +110,13 @@ function accountQuotaSummary(
   return resetCreditsText ? `${tiersText} · ${resetCreditsText}` : tiersText;
 }
 
-function formatTime(value: number | null): string {
+function formatTime(value: number | null, locale: import("@/lib/i18n").Locale): string {
   if (!value) return "—";
-  return new Date(value).toLocaleString();
+  return formatDateTime(value, locale);
 }
 
 export function ChatGptUsagePanel() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const appDialog = useAppDialog();
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -517,7 +518,7 @@ export function ChatGptUsagePanel() {
             {schedulerStatus ? (
               <div style={{ color: "var(--text-dim)", fontSize: 11, lineHeight: 1.55 }}>
                 <div>{t("panels.chatgpt.enabled")}: {schedulerStatus.enabled ? t("panels.chatgpt.yes") : t("panels.chatgpt.no")} · {t("panels.chatgpt.running")}: {schedulerStatus.running ? t("panels.chatgpt.yes") : t("panels.chatgpt.no")} · {t("panels.chatgpt.lock")}: {schedulerStatus.lockOwned ? t("panels.chatgpt.lockOwned") : schedulerStatus.lock.stale ? t("panels.chatgpt.lockStale") : schedulerStatus.lock.exists ? t("panels.chatgpt.lockHeld") : t("panels.chatgpt.lockNone")}</div>
-                <div>{t("panels.chatgpt.next")}: {formatTime(schedulerStatus.nextRunAt)} · {t("panels.chatgpt.last")}: {formatTime(schedulerStatus.lastRunFinishedAt)}</div>
+                <div>{t("panels.chatgpt.next")}: {formatTime(schedulerStatus.nextRunAt, locale)} · {t("panels.chatgpt.last")}: {formatTime(schedulerStatus.lastRunFinishedAt, locale)}</div>
                 {schedulerStatus.lastError && <div style={{ color: "#f87171" }}>{t("panels.chatgpt.lastError", { error: schedulerStatus.lastError })}</div>}
                 {schedulerStatus.lastAccountError && <div style={{ color: "#fb923c" }}>{t("panels.chatgpt.accountError", { error: schedulerStatus.lastAccountError })}</div>}
               </div>

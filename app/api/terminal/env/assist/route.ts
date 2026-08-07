@@ -1,3 +1,4 @@
+import { ERROR_CODES, codedError } from "@/lib/i18n/error-codes";
 import { NextRequest, NextResponse } from "next/server";
 import { completeSimple, type AssistantMessage } from "@earendil-works/pi-ai/compat";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
@@ -50,9 +51,9 @@ function reasoningForCandidate(candidate: AssistCandidate) {
 
 function parseAssistJson(raw: string): Record<string, string> {
   const jsonText = findJsonObject(raw);
-  if (!jsonText) throw new Error("模型没有返回 JSON 对象");
+  if (!jsonText) throw codedError(ERROR_CODES.terminalEnvNoJson, "The model did not return a JSON object");
   const parsed = JSON.parse(jsonText) as unknown;
-  if (!isRecord(parsed)) throw new Error("模型返回 JSON 根节点不是对象");
+  if (!isRecord(parsed)) throw codedError(ERROR_CODES.terminalEnvRootNotObject, "The model JSON root is not an object");
   const envRaw = isRecord(parsed.env) ? parsed.env : parsed;
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(envRaw)) {
@@ -60,7 +61,7 @@ function parseAssistJson(raw: string): Record<string, string> {
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(cleanKey)) continue;
     if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") env[cleanKey] = String(value);
   }
-  if (Object.keys(env).length === 0) throw new Error("模型没有解析出有效环境变量");
+  if (Object.keys(env).length === 0) throw codedError(ERROR_CODES.terminalEnvNoEnv, "The model did not produce any valid environment variables");
   return env;
 }
 
@@ -124,6 +125,15 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ error: "Terminal env assistant models failed to parse the input" }, { status: 502 });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 400 });
+    const code = error && typeof error === "object" && "code" in error
+      ? (error as { code?: unknown }).code
+      : undefined;
+    return NextResponse.json(
+      {
+        error: error instanceof Error ? error.message : String(error),
+        ...(typeof code === "string" ? { code } : {}),
+      },
+      { status: 400 },
+    );
   }
 }

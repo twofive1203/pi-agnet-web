@@ -126,7 +126,7 @@ Portal stacking must use the `--z-*` layer Tokens in `app/globals.css`, not new 
 - **API**: `const { locale, setLocale, t } = useI18n()`; `t("key", { name })` interpolates `{name}` placeholders.
 - **Persistence**: `localStorage["pi-locale"]`; boot script in `app/layout.tsx` sets `document.documentElement.lang` early to reduce flash.
 - **Switcher**: top-bar `EN`/`中` button in `AppShell`, and Settings → Language section.
-- **Coverage status**: Wave A+B surfaces are largely wired onto `lib/i18n/messages/*` (shell/chat/sidebar, Skills/Extensions/Usage/Subagents/Tool/Inspector, Chat phase/typewriter/continue, ChatGPT/Grok usage, ModelsConfig main chrome, FileViewer, Warmup, Pricing catalog, Extension dialogs, Diff error reasons, Mermaid chrome). Remaining gaps: ModelsConfig secondary strings, locale-aware date formatting, API error localization, and type-safe keys (see `docs/plans/2026-08-07-001-refactor-i18n-coverage-plan.md` Wave C).
+- **Coverage status**: Wave A–C complete for product chrome. Catalogs live under `lib/i18n/messages/*` (including `errors.ts`). App locale drives selected date/number formatting via `lib/i18n/format.ts`. Stable error codes (`lib/i18n/error-codes.ts`) cover OAuth import / Grok not-logged-in / terminal env assist pilots. Key parity check: `npx tsx scripts/check-i18n-keys.ts` (also `npm run test:i18n`). Residual: ModelsConfig secondary strings, broader API error codes, type-safe `t()` keys.
 
 ## Automation UI
 

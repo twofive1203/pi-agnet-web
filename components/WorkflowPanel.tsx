@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MarkdownBody } from "./MarkdownBody";
-import { useT } from "./I18nProvider";
+import { useI18n, useT } from "./I18nProvider";
+import { formatDateTime, type Locale } from "@/lib/i18n";
 import { sendAgentCommand } from "@/lib/agent-client";
 import { joinFilePath } from "@/lib/file-paths";
 import { buildStandaloneFileUrl } from "@/lib/file-viewer-url";
@@ -52,16 +53,11 @@ function shortPath(value: string, max = 48): string {
   return value.length > max ? `…${value.slice(-(max - 1))}` : value;
 }
 
-function formatTime(value?: string | null): string {
+function formatTime(value: string | null | undefined, locale: Locale): string {
   if (!value) return "—";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return formatDateTime(date, locale, { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
 export function WorkflowPanel({
@@ -996,6 +992,7 @@ function TaskListButton({
 
 function RunsList({ runs }: { runs: WorkflowRunRecord[] }) {
   const t = useT();
+  const { locale } = useI18n();
   if (runs.length === 0) return <div className="inspector-state inspector-state-empty">{t("workflow.noRuns")}</div>;
   return (
     <div className="workflow-run-list">
@@ -1003,7 +1000,7 @@ function RunsList({ runs }: { runs: WorkflowRunRecord[] }) {
         <div key={run.id} className="workflow-run-card">
           <div className="workflow-run-header">
             <div>{run.phase} · {run.agentName} · <span className={`workflow-status-text ${workflowStatusTone(run.state)}`}>{run.state}</span></div>
-            <time>{formatTime(run.createdAt)}</time>
+            <time>{formatTime(run.createdAt, locale)}</time>
           </div>
           <div className="workflow-run-id">{run.id}</div>
           <div className="workflow-run-meta" title={run.effectiveCwd}>cwd: {shortPath(run.effectiveCwd, 72)}</div>
