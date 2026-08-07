@@ -64,7 +64,9 @@ export async function PUT(request: Request): Promise<NextResponse> {
         400,
       );
     }
-    const unknownField = Object.keys(body).find((key) => !["expectedRevision", "provider", "apiKey", "baseUrl"].includes(key));
+    const unknownField = Object.keys(body).find(
+      (key) => !["expectedRevision", "provider", "credentialProvider", "apiKey", "baseUrl"].includes(key),
+    );
     if (unknownField) {
       throw new WebToolsConfigError("VALIDATION_ERROR", "Request contains an unsupported field", 400, unknownField);
     }
@@ -74,10 +76,21 @@ export async function PUT(request: Request): Promise<NextResponse> {
     if (typeof body.provider !== "string") {
       throw new WebToolsConfigError("VALIDATION_ERROR", "provider is required", 400, "provider");
     }
+    if (body.credentialProvider !== undefined && typeof body.credentialProvider !== "string") {
+      throw new WebToolsConfigError(
+        "VALIDATION_ERROR",
+        "credentialProvider must be a string",
+        400,
+        "credentialProvider",
+      );
+    }
 
     const snapshot = applyWebToolsConfig({
       expectedRevision: body.expectedRevision,
       provider: body.provider as WebToolsProviderId,
+      ...(body.credentialProvider === undefined
+        ? {}
+        : { credentialProvider: body.credentialProvider as WebToolsProviderId }),
       apiKey: parseOperation(body.apiKey, "apiKey"),
       ...(body.baseUrl === undefined
         ? {}

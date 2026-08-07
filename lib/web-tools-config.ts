@@ -117,6 +117,7 @@ export interface WebToolsPathOptions {
 export interface ApplyWebToolsConfigInput extends WebToolsPathOptions {
   expectedRevision: string;
   provider: WebToolsProviderId;
+  credentialProvider?: WebToolsProviderId;
   apiKey: WebToolsSecretOperation;
   baseUrl?: WebToolsValueOperation;
 }
@@ -383,6 +384,15 @@ export function applyWebToolsConfig(input: ApplyWebToolsConfigInput): WebToolsCo
   if (!isProviderId(input.provider)) {
     throw new WebToolsConfigError("VALIDATION_ERROR", "provider is not supported by the bundled package", 400, "provider");
   }
+  const credentialProvider = input.credentialProvider ?? input.provider;
+  if (!isProviderId(credentialProvider)) {
+    throw new WebToolsConfigError(
+      "VALIDATION_ERROR",
+      "credentialProvider is not supported by the bundled package",
+      400,
+      "credentialProvider",
+    );
+  }
   validateOperation(input.apiKey, "apiKey");
   if (input.baseUrl) validateOperation(input.baseUrl, "baseUrl");
 
@@ -410,24 +420,24 @@ export function applyWebToolsConfig(input: ApplyWebToolsConfigInput): WebToolsCo
   }
 
   const next: WebToolsNativeConfig = { ...current, provider: input.provider };
-  const nextApiKeys = applyMapOperation(current.apiKeys, input.provider, input.apiKey);
+  const nextApiKeys = applyMapOperation(current.apiKeys, credentialProvider, input.apiKey);
   if (nextApiKeys) next.apiKeys = nextApiKeys;
   else delete next.apiKeys;
 
-  if (input.provider === "brave" && input.apiKey.mode !== "preserve") {
+  if (credentialProvider === "brave" && input.apiKey.mode !== "preserve") {
     delete next.apiKey;
   }
 
-  const provider = WEB_TOOLS_PROVIDERS.find((item) => item.id === input.provider);
+  const provider = WEB_TOOLS_PROVIDERS.find((item) => item.id === credentialProvider);
   const supportsBaseUrl = provider && "baseUrlEnvVar" in provider;
   if (input.baseUrl && !supportsBaseUrl && input.baseUrl.mode !== "preserve") {
-    throw new WebToolsConfigError("VALIDATION_ERROR", `${input.provider} does not support a configurable base URL`, 400, "baseUrl");
+    throw new WebToolsConfigError("VALIDATION_ERROR", `${credentialProvider} does not support a configurable base URL`, 400, "baseUrl");
   }
   if (input.baseUrl && supportsBaseUrl) {
     const normalizedOperation: WebToolsValueOperation = input.baseUrl.mode === "replace"
       ? { mode: "replace", value: validateBaseUrl(input.baseUrl.value) }
       : input.baseUrl;
-    const nextBaseUrls = applyMapOperation(current.baseUrls, input.provider, normalizedOperation);
+    const nextBaseUrls = applyMapOperation(current.baseUrls, credentialProvider, normalizedOperation);
     if (nextBaseUrls) next.baseUrls = nextBaseUrls;
     else delete next.baseUrls;
   }

@@ -71,7 +71,8 @@ function operation(mode: OperationMode, value: string): { mode: OperationMode; v
 export function WebToolsConfig() {
   const { t } = useI18n();
   const [snapshot, setSnapshot] = useState<WebToolsConfigResponse | null>(null);
-  const [providerId, setProviderId] = useState<ProviderId>("brave");
+  const [defaultProviderId, setDefaultProviderId] = useState<ProviderId>("brave");
+  const [credentialProviderId, setCredentialProviderId] = useState<ProviderId>("brave");
   const [keyMode, setKeyMode] = useState<OperationMode>("preserve");
   const [keyValue, setKeyValue] = useState("");
   const [baseUrlMode, setBaseUrlMode] = useState<OperationMode>("preserve");
@@ -82,13 +83,13 @@ export function WebToolsConfig() {
   const [notice, setNotice] = useState<string | null>(null);
 
   const selectedProvider = useMemo(
-    () => snapshot?.providers.find((provider) => provider.id === providerId) ?? null,
-    [providerId, snapshot],
+    () => snapshot?.providers.find((provider) => provider.id === credentialProviderId) ?? null,
+    [credentialProviderId, snapshot],
   );
 
-  const resetDraft = useCallback((data: WebToolsConfigResponse, nextProvider = data.persistedProvider) => {
+  const resetCredentialDraft = useCallback((data: WebToolsConfigResponse, nextProvider = data.persistedProvider) => {
     const provider = data.providers.find((item) => item.id === nextProvider);
-    setProviderId(nextProvider);
+    setCredentialProviderId(nextProvider);
     setKeyMode("preserve");
     setKeyValue("");
     setBaseUrlMode("preserve");
@@ -103,14 +104,15 @@ export function WebToolsConfig() {
       const data = await response.json() as WebToolsConfigResponse;
       if (!response.ok || data.error) throw new Error(data.error ?? `HTTP ${response.status}`);
       setSnapshot(data);
-      resetDraft(data);
+      setDefaultProviderId(data.persistedProvider);
+      resetCredentialDraft(data);
     } catch (loadError) {
       if ((loadError as { name?: string }).name === "AbortError") return;
       setError(loadError instanceof Error ? loadError.message : String(loadError));
     } finally {
       setLoading(false);
     }
-  }, [resetDraft]);
+  }, [resetCredentialDraft]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -118,11 +120,11 @@ export function WebToolsConfig() {
     return () => controller.abort();
   }, [load]);
 
-  const changeProvider = useCallback((nextProvider: ProviderId) => {
+  const changeCredentialProvider = useCallback((nextProvider: ProviderId) => {
     if (!snapshot) return;
-    resetDraft(snapshot, nextProvider);
+    resetCredentialDraft(snapshot, nextProvider);
     setNotice(null);
-  }, [resetDraft, snapshot]);
+  }, [resetCredentialDraft, snapshot]);
 
   const save = useCallback(async () => {
     if (!snapshot || snapshot.parseError) return;
@@ -135,7 +137,8 @@ export function WebToolsConfig() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           expectedRevision: snapshot.revision,
-          provider: providerId,
+          provider: defaultProviderId,
+          credentialProvider: credentialProviderId,
           apiKey: operation(keyMode, keyValue),
           ...(selectedProvider?.baseUrlEnvVar
             ? { baseUrl: operation(baseUrlMode, baseUrlValue) }
@@ -145,14 +148,15 @@ export function WebToolsConfig() {
       const data = await response.json() as WebToolsConfigResponse & { success?: boolean };
       if (!response.ok || data.error) throw new Error(data.error ?? `HTTP ${response.status}`);
       setSnapshot(data);
-      resetDraft(data);
+      setDefaultProviderId(data.persistedProvider);
+      resetCredentialDraft(data, credentialProviderId);
       setNotice(t("settings.webTools.saved"));
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : String(saveError));
     } finally {
       setSaving(false);
     }
-  }, [baseUrlMode, baseUrlValue, keyMode, keyValue, providerId, resetDraft, selectedProvider?.baseUrlEnvVar, snapshot, t]);
+  }, [baseUrlMode, baseUrlValue, credentialProviderId, defaultProviderId, keyMode, keyValue, resetCredentialDraft, selectedProvider?.baseUrlEnvVar, snapshot, t]);
 
   if (loading) return <SettingsState kind="loading" title={t("settings.webTools.loading")} />;
   if (!snapshot) {
@@ -202,12 +206,32 @@ export function WebToolsConfig() {
       )}
 
       <SettingsField
-        label={t("settings.webTools.provider")}
-        description={t("settings.webTools.providerHint")}
+        label={t("settings.webTools.defaultProvider")}
+        description={t("settings.webTools.defaultProviderHint")}
       >
         <SettingsSelect
-          value={providerId}
-          onChange={(event) => changeProvider(event.target.value as ProviderId)}
+          value={defaultProviderId}
+          onChange={(event) => {
+            setDefaultProviderId(event.target.value as ProviderId);
+            setNotice(null);
+          }}
+          disabled={saving || !!snapshot.parseError}
+        >
+          {snapshot.providers.map((provider) => (
+            <option key={provider.id} value={provider.id}>
+              {provider.label} · {provider.roles.join(" + ")}
+            </option>
+          ))}
+        </SettingsSelect>
+      </SettingsField>
+
+      <SettingsField
+        label={t("settings.webTools.credentialProvider")}
+        description={t("settings.webTools.credentialProviderHint")}
+      >
+        <SettingsSelect
+          value={credentialProviderId}
+          onChange={(event) => changeCredentialProvider(event.target.value as ProviderId)}
           disabled={saving || !!snapshot.parseError}
         >
           {snapshot.providers.map((provider) => (

@@ -86,9 +86,26 @@ function main(): void {
     assert(preservedDisk.includes("keep guidance"), "guidance is preserved");
     assert(preservedDisk.includes("vendorField"), "unknown fields are preserved");
 
-    const replaced = applyWebToolsConfig({
+    const separated = applyWebToolsConfig({
       ...isolated,
       expectedRevision: preserved.revision,
+      provider: "tavily",
+      credentialProvider: "firecrawl",
+      apiKey: { mode: "replace", value: "firecrawl-secret" },
+    });
+    const separatedDisk = JSON.parse(readFileSync(canonicalPath, "utf8")) as {
+      provider?: string;
+      apiKeys?: Record<string, string>;
+    };
+    assert(separated.persistedProvider === "tavily", "credential updates do not change the default provider");
+    assert(separatedDisk.provider === "tavily", "separate default provider remains persisted");
+    assert(separatedDisk.apiKeys?.firecrawl === "firecrawl-secret", "credential update targets the selected provider");
+    assert(separatedDisk.apiKeys?.tavily === "tavily-secret", "credential update preserves other provider keys");
+    assert(!JSON.stringify(separated).includes("firecrawl-secret"), "separate credential update is not returned");
+
+    const replaced = applyWebToolsConfig({
+      ...isolated,
+      expectedRevision: separated.revision,
       provider: "searxng",
       apiKey: { mode: "replace", value: "searxng-secret" },
       baseUrl: { mode: "replace", value: "http://127.0.0.1:8888/" },
