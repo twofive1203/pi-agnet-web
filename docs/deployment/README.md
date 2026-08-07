@@ -178,8 +178,13 @@ For direct LAN listen (still authenticated), change args to `--server --no-open 
 ## Proxy Startup
 
 - `scripts/start-pi-web-proxy.sh` starts Snail Pi Web with `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, and `NODE_OPTIONS=--use-env-proxy`.
-- `scripts/start-pi-web-proxy.ps1` provides the same proxy startup flow for PowerShell.
-- The proxy scripts default to the production command `npm run start`; use `PI_WEB_CMD="npm run dev"` for development.
+- `scripts/start-pi-web-proxy.ps1` provides the same proxy startup flow for PowerShell and accepts launcher flags directly:
+  - `.\scripts\start-pi-web-proxy.ps1` — local loopback, auth off
+  - `.\scripts\start-pi-web-proxy.ps1 -Server -NoOpen` — server mode (auth on; default no browser)
+  - `.\scripts\start-pi-web-proxy.ps1 -Dev` — dev via official launcher
+  - `.\scripts\start-pi-web-proxy.ps1 -Server -AuthBypassCidrs "127.0.0.1,::1,100.64.0.0/10"` — one-shot bypass override
+- Prefer durable bypass in `server-access-policy.json` over repeating `-AuthBypassCidrs`.
+- Legacy: `PI_WEB_CMD` still overrides the whole command when set.
 
 Default proxy is `http://127.0.0.1:7897`; override with `PROXY_URL` or `SOCKS_PROXY_URL` where supported.
 
