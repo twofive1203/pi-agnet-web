@@ -20,6 +20,12 @@
 - **Everyone logged out after ops change:** access key was rotated, or Agent data dir was not persisted (new empty `server-access.json`).
 - **Container loses key every deploy:** mount a persistent volume for `PI_CODING_AGENT_DIR`.
 - **Logged-in remote still cannot use Automation / native folder picker / browser bridge:** correct — those remain loopback-only and are not authorized by the global access key.
+- **Want Tailscale phone access without typing the key:** start with `--server` and configure durable allowlist in `~/.pi/agent/server-access-policy.json`:
+  ```json
+  { "version": 1, "authBypassCidrs": ["100.64.0.0/10"] }
+  ```
+  Or one-shot env `PI_WEB_AUTH_BYPASS_CIDRS=100.64.0.0/10` (overrides the file). Bypass uses socket `remoteAddress` only; forged `X-Forwarded-For` is ignored. Confirm the phone’s source IP (`tailscale status`).
+- **Bypass configured but still sees unlock:** process may still be on loopback-only bind, remote address unavailable to the gate, client IP outside the list, or an empty env override is clearing the file. Check boot log for `Auth bypass for socket clients (file|env):` and `netstat` for `0.0.0.0:62666`.
 
 ## Development Safety
 

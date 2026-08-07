@@ -5,6 +5,14 @@
 #   $env:PROXY_URL="http://127.0.0.1:7897"; .\start-pi-web-proxy.ps1
 #   $env:SOCKS_PROXY_URL="socks5://127.0.0.1:7897"; .\start-pi-web-proxy.ps1
 #   $env:PI_WEB_CMD="npm run dev"; .\start-pi-web-proxy.ps1
+#
+# Tailscale / remote phone (listen all interfaces + access key, optional mesh bypass):
+#   Prefer durable file: %USERPROFILE%\.pi\agent\server-access-policy.json
+#     { "version": 1, "authBypassCidrs": ["100.64.0.0/10"] }
+#   $env:PI_WEB_CMD = "npm run start -- --server --no-open"
+#   # optional env override of the file:
+#   $env:PI_WEB_AUTH_BYPASS_CIDRS = "100.64.0.0/10"
+#   .\start-pi-web-proxy.ps1
 
 $PROXY_URL = if ($env:PROXY_URL) { $env:PROXY_URL } else { "http://127.0.0.1:20112" }
 $SOCKS_PROXY_URL = if ($env:SOCKS_PROXY_URL) { $env:SOCKS_PROXY_URL } else { "socks5://127.0.0.1:20112" }
@@ -30,6 +38,7 @@ HTTP_PROXY=$env:HTTP_PROXY
 HTTPS_PROXY=$env:HTTPS_PROXY
 ALL_PROXY=$env:ALL_PROXY
 NODE_OPTIONS=$env:NODE_OPTIONS
+PI_WEB_AUTH_BYPASS_CIDRS=$($env:PI_WEB_AUTH_BYPASS_CIDRS)
 Command: $PI_WEB_CMD
 "@
 

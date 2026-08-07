@@ -45,6 +45,25 @@ export async function register() {
       } else {
         console.log("[server-access] Authentication enabled (existing access key loaded).");
       }
+      {
+        const { resolveAuthBypassEntries } = await import("./lib/server-access-policy");
+        const bypass = resolveAuthBypassEntries();
+        if (bypass.entries.length > 0) {
+          console.log(
+            `[server-access] Auth bypass for socket clients (${bypass.source}): ${bypass.entries.join(", ")}`,
+          );
+          if (bypass.source === "file") {
+            console.log(`[server-access] Policy file: ${bypass.path}`);
+          }
+          console.log(
+            "[server-access] Bypass uses socket remoteAddress only (not X-Forwarded-For).",
+          );
+        } else if (typeof process.env.PI_WEB_AUTH_BYPASS_CIDRS === "string") {
+          console.warn(
+            "[server-access] PI_WEB_AUTH_BYPASS_CIDRS is set but yielded no valid entries (0.0.0.0/0 and ::/0 are rejected).",
+          );
+        }
+      }
       // Clear one-shot rotate env so hot reloads do not re-rotate.
       delete process.env.PI_WEB_ROTATE_ACCESS_KEY;
     } catch (error) {

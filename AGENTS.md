@@ -101,7 +101,7 @@ Keep this section short and operational; detailed rationale belongs in `docs/arc
 - Automation is independent of SnFlow and ordinary project sessions: data lives under `getAgentDir()/automations/`; Automation JSONL must not appear in default `/api/sessions` lists.
 - Automation effective tools are snapshot ∩ live policy and never fall back to dynamic `all`; unapproved extensions must not be imported by the scheduled loader.
 - `/api/automations/**` is local-only (direct loopback + control session); sensitive mutations require trusted UI confirmation (browser challenge or `ctx.ui.confirm`).
-- Official launchers default to loopback bind without auth; `--server`, `PI_WEB_SERVER_MODE=1`, or any non-loopback listen enables global access-key auth via root `proxy.ts`. Auth success never relaxes Automation/native-picker/browser-bridge loopback gates.
+- Official launchers default to loopback bind without auth; `--server`, `PI_WEB_SERVER_MODE=1`, or any non-loopback listen enables global access-key auth via root `proxy.ts`. Optional auth-bypass CIDRs live in `server-access-policy.json` (durable) or `PI_WEB_AUTH_BYPASS_CIDRS` (env override); match **socket** client IPs only (e.g. Tailscale `100.64.0.0/10`); never trust client `X-Forwarded-For`. Auth success never relaxes Automation/native-picker/browser-bridge loopback gates.
 
 ## Standards and Validation
 
@@ -142,6 +142,7 @@ node_modules/.bin/tsc --noEmit
 | Settings/default model/native subagents | `~/.pi/agent/settings.json`, project override `<cwd>/.pi/settings.json` |
 | Web UI settings (WorkTree, Usage, Web Terminal, ChatGPT panel, Grok panel, Editor, bundled core-extension toggles, SnFlow panel). Unknown legacy root keys such as `trellis` are ignored and left on disk | `~/.pi/agent/pi-web.json` |
 | Server access auth state (scrypt verifier + session hashes; no plaintext key) | `~/.pi/agent/server-access.json` |
+| Server access policy (optional auth-bypass CIDRs; env can override) | `~/.pi/agent/server-access-policy.json` |
 | Bundled Web Search provider/API key/base URL config | XDG-aware `~/.config/rpiv-web-tools/config.json` (or `XDG_CONFIG_HOME`) |
 | WebUI SnFlow tasks | `<cwd>/.pi/snflows/tasks/<task-id>/` (archived: `<cwd>/.pi/snflows/archived/<task-id>/`; version/assets: `.pi/snflows/.version`, `.pi/extensions/snflow/`, `.pi/skills/snflow-dev/`, `.pi/agents/snflow-*.md`) |
 | Automation tasks/runs/sessions | `~/.pi/agent/automations/` (`tasks.json`, locks, claims, runs, promotions, audit, sessions); default cwd `~/pi-automation-cwd` (canonical path persisted once) |

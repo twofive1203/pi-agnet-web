@@ -54,9 +54,22 @@ PORT=8080 spi
 PI_WEB_HOSTNAME=10.0.0.5 spi     # listen host (do not use system HOSTNAME)
 PI_WEB_SERVER_MODE=1 spi         # force auth (defaults bind 0.0.0.0 when host unset)
 PI_WEB_TRUST_PROXY=1 spi --server -H 127.0.0.1   # trust X-Forwarded-Proto for Secure cookies
+# Optional one-shot env override (wins over the policy file when the var is set):
+PI_WEB_AUTH_BYPASS_CIDRS=100.64.0.0/10 spi --server --no-open
 spi --proxy http://127.0.0.1:7897
 spi --socks-proxy socks5://127.0.0.1:7897
 ```
+
+**Preferred durable config** — create `~/.pi/agent/server-access-policy.json` (or under `PI_CODING_AGENT_DIR`):
+
+```json
+{
+  "version": 1,
+  "authBypassCidrs": ["100.64.0.0/10"]
+}
+```
+
+Bypass matches the **TCP socket remote address only** (not `X-Forwarded-For` / Host). LAN clients outside the list still need the access key. `0.0.0.0/0` and `::/0` are rejected. If `PI_WEB_AUTH_BYPASS_CIDRS` is set in the environment (even to empty), it overrides the file for that process.
 
 `npx` accepts the same options:
 
@@ -85,6 +98,7 @@ PI_CODING_AGENT_DIR=/path/to/pi-agent-data spi
 | `settings.json` | pi settings, including default model. |
 | `pi-web.json` | Web UI settings, including WorkTree defaults, Usage scope, Web Terminal settings, ChatGPT panel/auto-refresh settings, Grok usage panel toggle, Editor settings, and SnFlow panel preferences. Unknown legacy root keys such as `trellis` are ignored and preserved on disk. |
 | `server-access.json` | Server-mode access-key verifier (scrypt) + opaque session hashes. No plaintext access key. Persist this directory across container/PM2 restarts. Restrict file permissions; first-start key may also appear in process logs. |
+| `server-access-policy.json` | Optional durable auth policy (e.g. `authBypassCidrs` for Tailscale/mesh peers). Kept separate from `pi-web.json` so Settings UI cannot rewrite it. Env `PI_WEB_AUTH_BYPASS_CIDRS` overrides this file when set. |
 | `chatgpt-usage-refresh.lock` | Backend ChatGPT usage auto-refresh lock file; stale locks can be repaired from the ChatGPT panel fault handler. |
 | `grok-usage-refresh.lock` | Backend Grok usage auto-refresh lock file; stale locks can be repaired from the Grok panel fault handler. |
 
@@ -140,6 +154,7 @@ spi --server -H 127.0.0.1 -p 62666 --no-open
 3. Only set `PI_WEB_TRUST_PROXY=1` when the proxy is trusted and the backend bind is loopback — this makes cookies `Secure` when `X-Forwarded-Proto: https`.
 4. Save the one-time access key printed on first server start; later restarts reuse the verifier and do not reprint it.
 5. If the key is lost or leaked: `spi --server --rotate-access-key` (invalidates every browser session).
+6. **Tailscale / trusted mesh without unlock page:** bind with `--server` and put peers/CIDRs in `server-access-policy.json` (`authBypassCidrs`, e.g. `100.64.0.0/10`). Optional env override: `PI_WEB_AUTH_BYPASS_CIDRS`. Other networks still require the access key.
 
 **Breaking change:** hosts that previously relied on implicit LAN exposure via Next's default `0.0.0.0` must migrate to `--server` (or an explicit non-loopback hostname).
 

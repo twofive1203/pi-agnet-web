@@ -1,12 +1,32 @@
 /**
- * Pure policy helpers for server-access Proxy + auth route handlers.
- * No filesystem I/O — safe to unit-test with synthetic Request objects.
+ * Policy helpers for server-access Proxy + auth route handlers.
+ *
+ * Auth-bypass allowlists prefer durable config under the agent data dir
+ * (`server-access-policy.json`); env can override for one-shot/container use.
+ * Cookie/protocol helpers remain pure and testable without disk I/O.
  */
 
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
 import {
   SERVER_ACCESS_COOKIE_NAME,
   SERVER_ACCESS_SESSION_TTL_MS,
 } from "./server-access-auth";
+
+function getAgentDir(): string {
+  const override = process.env.PI_CODING_AGENT_DIR?.trim();
+  if (override) return override;
+  return join(homedir(), ".pi", "agent");
+}
 
 export { SERVER_ACCESS_COOKIE_NAME };
 
@@ -48,6 +68,246 @@ export function isLoopbackHostname(hostname: string | null | undefined): boolean
   if (v4) {
     const a = Number(v4[1]);
     return a === 127;
+  }
+  return false;
+}
+
+/** Env override: comma/space-separated IPs or CIDRs that skip access-key auth (socket remote only). */
+export const AUTH_BYPASS_CIDRS_ENV = "PI_WEB_AUTH_BYPASS_CIDRS";
+
+/** Durable policy file under the agent data dir (not pi-web.json — avoids settings UI rewrite). */
+export const SERVER_ACCESS_POLICY_FILENAME = "server-access-policy.json";
+export const SERVER_ACCESS_POLICY_VERSION = 1 as const;
+
+export type ServerAccessPolicyFile = {
+  version: typeof SERVER_ACCESS_POLICY_VERSION;
+  /** Socket client IPs/CIDRs that skip the access key when server auth is on. */
+  authBypassCidrs: string[];
+};
+
+export type AuthBypassResolution = {
+  entries: string[];
+  /** Where the effective list came from. */
+  source: "env" | "file" | "none";
+  path: string;
+};
+
+export function normalizeClientIp(address: string | null | undefined): string | null {
+  if (!address) return null;
+  let value = address.trim().toLowerCase();
+  if (value.startsWith("[") && value.endsWith("]")) value = value.slice(1, -1);
+  if (value.startsWith("::ffff:")) value = value.slice("::ffff:".length);
+  if (value === "0:0:0:0:0:0:0:1") value = "::1";
+  return value || null;
+}
+
+function parseIpv4ToInt(ip: string): number | null {
+  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(ip);
+  if (!m) return null;
+  const parts = [Number(m[1]), Number(m[2]), Number(m[3]), Number(m[4])];
+  if (parts.some((p) => !Number.isInteger(p) || p < 0 || p > 255)) return null;
+  return (((parts[0]! << 24) >>> 0) + (parts[1]! << 16) + (parts[2]! << 8) + parts[3]!) >>> 0;
+}
+
+function expandIpv6(ip: string): number[] | null {
+  const bare = ip.trim().toLowerCase();
+  if (!bare.includes(":")) return null;
+  if (bare.includes(".")) return null; // no embedded v4 forms beyond ::ffff handled upstream
+  const sides = bare.split("::");
+  if (sides.length > 2) return null;
+  const head = sides[0] ? sides[0].split(":").filter(Boolean) : [];
+  const tail = sides.length === 2 && sides[1] ? sides[1].split(":").filter(Boolean) : [];
+  const missing = 8 - head.length - tail.length;
+  if (sides.length === 1) {
+    if (missing !== 0) return null;
+  } else if (missing < 0) {
+    return null;
+  }
+  const parts = [
+    ...head,
+    ...(sides.length === 2 ? Array.from({ length: missing }, () => "0") : []),
+    ...tail,
+  ];
+  if (parts.length !== 8) return null;
+  const out: number[] = [];
+  for (const p of parts) {
+    if (!/^[0-9a-f]{1,4}$/.test(p)) return null;
+    out.push(parseInt(p, 16));
+  }
+  return out;
+}
+
+/**
+ * Parse allowlist entries from env. Drops empty tokens and world-open CIDRs (0.0.0.0/0, ::/0).
+ */
+export function parseAuthBypassEntries(
+  raw: string | null | undefined,
+): string[] {
+  if (!raw) return [];
+  const out: string[] = [];
+  for (const token of raw.split(/[,\s]+/)) {
+    const entry = token.trim().toLowerCase();
+    if (!entry) continue;
+    if (entry === "0.0.0.0/0" || entry === "::/0") continue;
+    out.push(entry);
+  }
+  return out;
+}
+
+export function getServerAccessPolicyPath(agentDir = getAgentDir()): string {
+  return join(agentDir, SERVER_ACCESS_POLICY_FILENAME);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function normalizeAuthBypassList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const out: string[] = [];
+  for (const item of value) {
+    if (typeof item !== "string") continue;
+    out.push(...parseAuthBypassEntries(item));
+  }
+  // De-dupe while preserving order.
+  return [...new Set(out)];
+}
+
+/**
+ * Read durable server-access policy. Missing/invalid file → empty allowlist (fail closed for bypass).
+ * Does not throw for corrupt files — bypass simply stays empty and auth remains required.
+ */
+export function readServerAccessPolicyFile(agentDir = getAgentDir()): ServerAccessPolicyFile {
+  const path = getServerAccessPolicyPath(agentDir);
+  if (!existsSync(path)) {
+    return { version: SERVER_ACCESS_POLICY_VERSION, authBypassCidrs: [] };
+  }
+  try {
+    const raw = JSON.parse(readFileSync(path, "utf8")) as unknown;
+    if (!isRecord(raw) || raw.version !== SERVER_ACCESS_POLICY_VERSION) {
+      return { version: SERVER_ACCESS_POLICY_VERSION, authBypassCidrs: [] };
+    }
+    return {
+      version: SERVER_ACCESS_POLICY_VERSION,
+      authBypassCidrs: normalizeAuthBypassList(raw.authBypassCidrs),
+    };
+  } catch {
+    return { version: SERVER_ACCESS_POLICY_VERSION, authBypassCidrs: [] };
+  }
+}
+
+/** Atomic write for durable policy (owner-only when the platform supports modes). */
+export function writeServerAccessPolicyFile(
+  policy: { authBypassCidrs: string[] },
+  agentDir = getAgentDir(),
+): ServerAccessPolicyFile {
+  const path = getServerAccessPolicyPath(agentDir);
+  const next: ServerAccessPolicyFile = {
+    version: SERVER_ACCESS_POLICY_VERSION,
+    authBypassCidrs: normalizeAuthBypassList(policy.authBypassCidrs),
+  };
+  mkdirSync(dirname(path), { recursive: true });
+  const tmp = `${path}.tmp.${process.pid}.${Date.now()}`;
+  const payload = `${JSON.stringify(next, null, 2)}\n`;
+  writeFileSync(tmp, payload, { encoding: "utf8", mode: 0o600 });
+  try {
+    renameSync(tmp, path);
+  } catch {
+    if (existsSync(path)) unlinkSync(path);
+    renameSync(tmp, path);
+  }
+  try {
+    chmodSync(path, 0o600);
+  } catch {
+    // best-effort on Windows
+  }
+  return next;
+}
+
+/**
+ * Resolve effective auth-bypass list.
+ * Precedence: non-empty env override → durable policy file → none.
+ */
+export function resolveAuthBypassEntries(options?: {
+  env?: NodeJS.ProcessEnv | Record<string, string | undefined>;
+  agentDir?: string;
+}): AuthBypassResolution {
+  const env = options?.env ?? process.env;
+  const agentDir = options?.agentDir ?? getAgentDir();
+  const path = getServerAccessPolicyPath(agentDir);
+  const envRaw = env[AUTH_BYPASS_CIDRS_ENV];
+  // Only treat env as an override when the variable is present (including empty → no bypass).
+  if (typeof envRaw === "string") {
+    const entries = parseAuthBypassEntries(envRaw);
+    return { entries, source: "env", path };
+  }
+  const file = readServerAccessPolicyFile(agentDir);
+  if (file.authBypassCidrs.length > 0) {
+    return { entries: file.authBypassCidrs, source: "file", path };
+  }
+  return { entries: [], source: "none", path };
+}
+
+export function getAuthBypassEntries(
+  env: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env,
+  agentDir?: string,
+): string[] {
+  return resolveAuthBypassEntries({ env, agentDir }).entries;
+}
+
+export function ipMatchesEntry(ip: string, entry: string): boolean {
+  const client = normalizeClientIp(ip);
+  const rule = entry.trim().toLowerCase();
+  if (!client || !rule) return false;
+
+  if (!rule.includes("/")) {
+    return client === normalizeClientIp(rule);
+  }
+
+  const [netRaw, bitsRaw] = rule.split("/");
+  const bits = Number(bitsRaw);
+  if (!netRaw || !Number.isInteger(bits) || bits < 0) return false;
+
+  const clientV4 = parseIpv4ToInt(client);
+  const netV4 = parseIpv4ToInt(netRaw);
+  if (clientV4 != null && netV4 != null) {
+    if (bits > 32) return false;
+    if (bits === 0) return false; // world-open rejected
+    const mask = bits === 32 ? 0xffffffff : ((0xffffffff << (32 - bits)) >>> 0);
+    return (clientV4 & mask) === (netV4 & mask);
+  }
+
+  const clientV6 = expandIpv6(client);
+  const netV6 = expandIpv6(netRaw);
+  if (clientV6 && netV6) {
+    if (bits > 128 || bits === 0) return false;
+    let remaining = bits;
+    for (let i = 0; i < 8; i += 1) {
+      const take = Math.min(16, remaining);
+      if (take === 0) break;
+      const shift = 16 - take;
+      const mask = take === 16 ? 0xffff : ((0xffff << shift) & 0xffff);
+      if ((clientV6[i]! & mask) !== (netV6[i]! & mask)) return false;
+      remaining -= take;
+    }
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * True when the socket remote address is on the configured allowlist.
+ * Never consult Host / X-Forwarded-For here — callers must pass socket-derived IP only.
+ */
+export function isClientIpAuthBypassed(
+  remoteAddress: string | null | undefined,
+  entries: string[] = getAuthBypassEntries(),
+): boolean {
+  const ip = normalizeClientIp(remoteAddress);
+  if (!ip || entries.length === 0) return false;
+  for (const entry of entries) {
+    if (ipMatchesEntry(ip, entry)) return true;
   }
   return false;
 }

@@ -48,6 +48,10 @@ spi --server --rotate-access-key # 轮换访问密钥并失效全部会话
 spi -H 0.0.0.0                   # 非回环监听会自动启用认证
 PORT=8080 spi
 PI_WEB_HOSTNAME=10.0.0.5 spi     # 显式监听地址（勿用系统 HOSTNAME）
+# Tailscale 等可信客户端可免密钥：优先写配置文件 ~/.pi/agent/server-access-policy.json
+# { "version": 1, "authBypassCidrs": ["100.64.0.0/10"] }
+# 也可用环境变量覆盖（勿写 0.0.0.0/0）
+PI_WEB_AUTH_BYPASS_CIDRS=100.64.0.0/10 spi --server --no-open
 spi --proxy http://127.0.0.1:7897
 spi --socks-proxy socks5://127.0.0.1:7897
 ```
@@ -84,6 +88,7 @@ PI_CODING_AGENT_DIR=/path/to/pi-agent-data spi
 | `models.json` | 模型提供商和模型列表配置。 |
 | `settings.json` | pi agent 设置，包括默认模型。 |
 | `server-access.json` | 服务器模式访问密钥校验信息与会话哈希（无明文密钥）。 |
+| `server-access-policy.json` | 可选：免密钥客户端 IP/CIDR 白名单（如 Tailscale）；环境变量可覆盖。 |
 | `pi-web.json` | Web UI 设置，例如 WorkTree、Usage、Web Terminal、ChatGPT/Grok 面板、编辑器和 SnFlow 偏好。 |
 
 会话文件路径形如：

@@ -2,7 +2,8 @@
  * Policy + synthetic gate smoke for server-access Proxy behavior.
  * Does not boot Next — validates path classification, cookie helpers, protocol trust.
  */
-import { readdirSync, statSync } from "node:fs";
+import { mkdtempSync, readdirSync, rmSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -10,12 +11,20 @@ import {
   UNLOCK_PATH,
   assertAuthRequestSameOrigin,
   buildSessionCookie,
+  getAuthBypassEntries,
+  getServerAccessPolicyPath,
+  ipMatchesEntry,
   isApiPath,
+  isClientIpAuthBypassed,
   isPublicPath,
   isServerAccessAuthEnabled,
+  parseAuthBypassEntries,
+  readServerAccessPolicyFile,
   readSessionTokenFromCookieHeader,
+  resolveAuthBypassEntries,
   resolveEffectiveProtocol,
   shouldWarnPlainHttp,
+  writeServerAccessPolicyFile,
 } from "../lib/server-access-policy";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -204,6 +213,77 @@ function testAuthFlag(): void {
   console.log("OK auth-flag");
 }
 
+function testAuthBypassCidrs(): void {
+  assert(ipMatchesEntry("100.64.1.2", "100.64.1.2"), "exact ip");
+  assert(ipMatchesEntry("100.64.1.2", "100.64.0.0/10"), "tailscale cgnat");
+  assert(!ipMatchesEntry("192.168.1.5", "100.64.0.0/10"), "lan not in tailscale");
+  assert(ipMatchesEntry("10.0.0.5", "10.0.0.0/8"), "class a");
+  assert(!ipMatchesEntry("11.0.0.5", "10.0.0.0/8"), "outside class a");
+  assert(ipMatchesEntry("::1", "::1"), "ipv6 exact");
+  assert(ipMatchesEntry("2001:db8::1", "2001:db8::/32"), "ipv6 cidr");
+
+  const parsed = parseAuthBypassEntries("100.64.0.0/10, 100.1.2.3 0.0.0.0/0 ::/0");
+  assert(parsed.includes("100.64.0.0/10"), "keeps tailscale");
+  assert(parsed.includes("100.1.2.3"), "keeps host");
+  assert(!parsed.includes("0.0.0.0/0"), "rejects world v4");
+  assert(!parsed.includes("::/0"), "rejects world v6");
+
+  assert(
+    isClientIpAuthBypassed("100.99.0.1", ["100.64.0.0/10"]),
+    "bypass match",
+  );
+  assert(
+    !isClientIpAuthBypassed("8.8.8.8", ["100.64.0.0/10"]),
+    "bypass miss",
+  );
+  assert(!isClientIpAuthBypassed(null, ["100.64.0.0/10"]), "null remote no bypass");
+  assert(
+    !isClientIpAuthBypassed("100.64.1.1", []),
+    "empty allowlist never bypasses",
+  );
+  // Forged XFF must not be consulted by this helper — only the IP argument matters.
+  assert(
+    !isClientIpAuthBypassed("192.168.0.8", getAuthBypassEntries({
+      PI_WEB_AUTH_BYPASS_CIDRS: "100.64.0.0/10",
+    })),
+    "lan still gated when only tailscale listed",
+  );
+
+  const dir = mkdtempSync(join(tmpdir(), "spi-auth-policy-"));
+  try {
+    assert(
+      resolveAuthBypassEntries({ env: {}, agentDir: dir }).source === "none",
+      "empty dir → none",
+    );
+    writeServerAccessPolicyFile({ authBypassCidrs: ["100.64.0.0/10", "10.0.0.5"] }, dir);
+    const path = getServerAccessPolicyPath(dir);
+    assert(path.endsWith("server-access-policy.json"), "policy filename");
+    const file = readServerAccessPolicyFile(dir);
+    assert(file.authBypassCidrs.includes("100.64.0.0/10"), "file stores cidr");
+    const fromFile = resolveAuthBypassEntries({ env: {}, agentDir: dir });
+    assert(fromFile.source === "file", "source=file");
+    assert(fromFile.entries.includes("10.0.0.5"), "file entries loaded");
+
+    // Env present overrides file (even when empty → no bypass).
+    const envOverride = resolveAuthBypassEntries({
+      env: { PI_WEB_AUTH_BYPASS_CIDRS: "100.1.2.3" },
+      agentDir: dir,
+    });
+    assert(envOverride.source === "env", "env overrides file");
+    assert(envOverride.entries.includes("100.1.2.3"), "env entries win");
+    assert(!envOverride.entries.includes("10.0.0.5"), "file entries not merged when env set");
+
+    const envEmpty = resolveAuthBypassEntries({
+      env: { PI_WEB_AUTH_BYPASS_CIDRS: "" },
+      agentDir: dir,
+    });
+    assert(envEmpty.source === "env" && envEmpty.entries.length === 0, "empty env disables bypass");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+  console.log("OK auth-bypass-cidrs");
+}
+
 function main(): void {
   testPublicPaths();
   testApiInventoryProtected();
@@ -211,6 +291,7 @@ function main(): void {
   testProtocolTrust();
   testSameOrigin();
   testAuthFlag();
+  testAuthBypassCidrs();
   console.log("server-access-proxy smoke checks passed");
 }
 

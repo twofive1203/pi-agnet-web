@@ -2,17 +2,24 @@
  * Next.js 16 Proxy — instance-level server access gate.
  *
  * When PI_WEB_SERVER_MODE is off, requests pass through with zero state I/O.
- * When on, every non-public path requires a valid opaque session cookie.
+ * When on, every non-public path requires a valid opaque session cookie,
+ * unless the socket remote address matches PI_WEB_AUTH_BYPASS_CIDRS.
  */
 
 import { NextResponse, type NextRequest } from "next/server";
+import {
+  getAutomationRemoteAddress,
+  installAutomationConnectionCapture,
+} from "./lib/automation-connection-context";
 import {
   validateServerAccessSession,
   ServerAccessError,
 } from "./lib/server-access-auth";
 import {
   UNLOCK_PATH,
+  getAuthBypassEntries,
   isApiPath,
+  isClientIpAuthBypassed,
   isPublicPath,
   isServerAccessAuthEnabled,
   noStoreHeaders,
@@ -41,6 +48,16 @@ function redirectToUnlock(req: NextRequest): NextResponse {
   return res;
 }
 
+function resolveSocketRemoteAddress(): string | null {
+  // Prefer the instrumentation-captured socket address. Never trust client XFF.
+  try {
+    installAutomationConnectionCapture();
+  } catch {
+    // ignore
+  }
+  return getAutomationRemoteAddress();
+}
+
 export async function proxy(request: NextRequest): Promise<NextResponse | Response> {
   if (!isServerAccessAuthEnabled()) {
     return NextResponse.next();
@@ -50,6 +67,15 @@ export async function proxy(request: NextRequest): Promise<NextResponse | Respon
 
   if (isPublicPath(pathname)) {
     return NextResponse.next();
+  }
+
+  // Optional trusted-client bypass (e.g. Tailscale CGNAT / specific mesh peers).
+  const bypassEntries = getAuthBypassEntries();
+  if (bypassEntries.length > 0) {
+    const remote = resolveSocketRemoteAddress();
+    if (isClientIpAuthBypassed(remote, bypassEntries)) {
+      return NextResponse.next();
+    }
   }
 
   const token = readSessionTokenFromCookieHeader(request.headers.get("cookie"));

@@ -330,6 +330,11 @@ Environment:
   PI_WEB_HOSTNAME           Listen hostname (not system HOSTNAME)
   PI_WEB_SERVER_MODE=1      Force authentication on
   PI_WEB_TRUST_PROXY=1      Trust X-Forwarded-Proto when backend is loopback
+  PI_WEB_AUTH_BYPASS_CIDRS  Optional env override for client IPs/CIDRs that
+                            skip the access key (socket remote only).
+                            Durable default lives in:
+                            <agentDir>/server-access-policy.json
+                            Example Tailscale range: 100.64.0.0/10
   PI_WEB_ROTATE_ACCESS_KEY=1  Rotate access key on boot
   PI_CODING_AGENT_DIR       Agent data directory (persists access key state)
 
