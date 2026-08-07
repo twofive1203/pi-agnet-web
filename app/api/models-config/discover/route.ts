@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { createModelRegistry } from "@/lib/pi-auth";
+import { createModelRegistry, toStringHeaders } from "@/lib/pi-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -198,7 +198,8 @@ export async function POST(req: Request) {
     if (!auth.ok) return NextResponse.json({ ok: false, error: auth.error });
     if (!auth.apiKey) return NextResponse.json({ ok: false, error: `No API key found for "${providerName}"` });
 
-    const requestHeaders = new Headers(auth.headers);
+    // 0.84+ ProviderHeaders may contain null deletion markers; Headers needs strings only.
+    const requestHeaders = new Headers(toStringHeaders(auth.headers));
     requestHeaders.set("Accept", "application/json");
     if (!requestHeaders.has("Authorization")) {
       requestHeaders.set("Authorization", `Bearer ${auth.apiKey}`);

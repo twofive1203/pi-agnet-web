@@ -7,7 +7,7 @@ See `package.json` for exact versions.
 | Dependency | Purpose |
 | --- | --- |
 | `next`, `react`, `react-dom` | Web application framework/runtime. |
-| `@earendil-works/pi-coding-agent`, `@earendil-works/pi-ai` | In-process pi AgentSession and AI provider integration. **Pinned to exact `0.83.0`**. Auth/catalog access goes through `ModelRuntime` (`lib/pi-auth.ts`); multi-account helpers use `FileCredentialStore` for `auth.json` because public `AuthStorage` was removed. |
+| `@earendil-works/pi-coding-agent`, `@earendil-works/pi-ai` | In-process pi AgentSession and AI provider integration. **Pinned to exact `0.84.1`**. Auth/catalog access goes through `ModelRuntime` (`lib/pi-auth.ts`); multi-account helpers use `FileCredentialStore` for `auth.json` because public `AuthStorage` was removed. Provider headers may include `null` deletion markers (`toStringHeaders` strips them for fetch). |
 | `pi-subagents@0.40.0`, `@juicesharp/rpiv-web-tools@2.3.1`, `pi-ask-user@0.13.1`, `pi-manage-todo-list@0.4.0` | Exact-version WebUI-bundled Pi extensions for subagents, web tools, structured user questions, and Todo management. Enabled by default for ordinary interactive Web sessions and individually disableable through `pi-web.json`; Automation does not inherit them. |
 | `typebox` | Tool parameter schemas used directly by first-party extensions. Pinned to Pi's `1.3.7` runtime version to keep schema objects compatible. |
 | `react-markdown`, `remark-gfm`, `remark-math`, `rehype-raw`, `rehype-sanitize`, `rehype-katex`, `katex` | Markdown, raw HTML sanitization, and math rendering. |

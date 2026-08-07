@@ -117,6 +117,29 @@ function isRecord(val: unknown): val is Record<string, unknown> {
   return typeof val === "object" && val !== null && !Array.isArray(val);
 }
 
+/**
+ * Resolve the assistant snapshot for streaming UI.
+ *
+ * In-process AgentSession.subscribe (0.84.1) still emits cumulative `message`
+ * on message_update. JSON/RPC wire events strip `message` and
+ * `assistantMessageEvent.partial` — fall back to `partial` when present so a
+ * future protocol alignment does not blank the stream.
+ */
+function resolveStreamingMessage(event: AgentEvent): Partial<AgentMessage> | undefined {
+  const message = event.message;
+  if (isRecord(message) && typeof message.role === "string") {
+    return message as Partial<AgentMessage>;
+  }
+  const assistantEvent = event.assistantMessageEvent;
+  if (isRecord(assistantEvent) && isRecord(assistantEvent.partial)) {
+    const partial = assistantEvent.partial;
+    if (typeof partial.role === "string") {
+      return partial as Partial<AgentMessage>;
+    }
+  }
+  return undefined;
+}
+
 function readFiniteNumber(val: unknown): number | undefined {
   return typeof val === "number" && Number.isFinite(val) ? val : undefined;
 }
@@ -1027,7 +1050,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         break;
       case "message_start":
       case "message_update": {
-        const msg = event.message as Partial<AgentMessage> | undefined;
+        const msg = resolveStreamingMessage(event);
         if (msg?.role === "user") {
           break;
         }

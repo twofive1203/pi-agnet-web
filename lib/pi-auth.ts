@@ -1,9 +1,14 @@
 /**
- * Auth/model helpers for pi-coding-agent 0.80.10+ (currently pinned to 0.83.0).
+ * Auth/model helpers for pi-coding-agent 0.80.10+ (currently pinned to 0.84.1).
  *
  * AuthStorage is no longer a public export. Prefer ModelRuntime for login,
  * logout, catalog, and request auth. Use FileCredentialStore only when the
  * Web UI must read/write auth.json credentials directly (multi-account).
+ *
+ * From 0.84.0, provider headers may include null deletion markers
+ * (`ProviderHeaders = Record<string, string | null>`). Callers that build
+ * fetch Headers or other string-only maps must drop nulls via
+ * `toStringHeaders()`; pi-ai stream options accept null markers unchanged.
  */
 import {
   ModelRegistry,
@@ -19,24 +24,40 @@ import type {
   AuthResult,
   Credential,
   OAuthCredential,
+  ProviderHeaders,
 } from "@earendil-works/pi-ai";
 import { InMemoryCredentialStore } from "@earendil-works/pi-ai";
 import { FileCredentialStore } from "@/lib/file-credential-store";
 
-export type { Credential, OAuthCredential, AuthInteraction, AuthResult };
+export type { Credential, OAuthCredential, AuthInteraction, AuthResult, ProviderHeaders };
 export { FileCredentialStore, InMemoryCredentialStore, ModelRegistry, ModelRuntime, readStoredCredential };
 
 export type ResolvedRequestAuth =
   | {
     ok: true;
     apiKey?: string;
+    /** String-only headers with null deletion markers removed (safe for fetch Headers). */
     headers?: Record<string, string>;
+    /** Raw provider headers including null markers (safe to pass to pi-ai streams). */
+    providerHeaders?: ProviderHeaders;
     env?: Record<string, string>;
   }
   | {
     ok: false;
     error: string;
   };
+
+/** Drop null header-deletion markers for fetch/HeadersInit consumers. */
+export function toStringHeaders(
+  headers: ProviderHeaders | Record<string, string> | undefined | null,
+): Record<string, string> | undefined {
+  if (!headers) return undefined;
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(headers)) {
+    if (typeof value === "string") out[key] = value;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
 
 export interface OAuthProviderSummary {
   id: string;
@@ -86,10 +107,12 @@ export async function getApiKeyAndHeaders(
     if (!auth?.auth?.apiKey) {
       return { ok: false, error: "No API key found for model" };
     }
+    const providerHeaders = auth.auth.headers as ProviderHeaders | undefined;
     return {
       ok: true,
       apiKey: auth.auth.apiKey,
-      headers: auth.auth.headers as Record<string, string> | undefined,
+      headers: toStringHeaders(providerHeaders),
+      providerHeaders,
       env: auth.env as Record<string, string> | undefined,
     };
   } catch (error) {

@@ -370,7 +370,7 @@ export function createBundledPiResourceLoader<T, O>(
   const originalReload = runtimeLoader.reload.bind(runtimeLoader);
   runtimeLoader.reload = async (reloadOptions?: unknown) => {
     refreshBundleSelection();
-    // Pi 0.83.0 stores this TypeScript-private field as a normal instance
+    // Pi 0.83+/0.84 stores this TypeScript-private field as a normal instance
     // property. Refresh it so Settings toggles take effect through /reload,
     // not only when a new AgentSession is constructed.
     (runtimeLoader as unknown as { additionalExtensionPaths: string[] }).additionalExtensionPaths = [

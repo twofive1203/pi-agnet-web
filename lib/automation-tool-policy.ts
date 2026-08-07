@@ -984,7 +984,8 @@ export async function probeModelAvailability(input: {
         }>;
       };
       ModelRegistry?: new (runtime: unknown) => {
-        refresh?: () => Promise<void>;
+        // 0.84+ returns ModelsRefreshResult; callers only need the promise to settle.
+        refresh?: () => Promise<unknown>;
         find?: (p: string, m: string) => unknown;
         getAll?: () => unknown[];
       };
@@ -1110,7 +1111,8 @@ export async function listModelsForTargetCwd(input: {
         }>;
       };
       ModelRegistry?: new (runtime: unknown) => {
-        refresh?: () => Promise<void>;
+        // 0.84+ returns ModelsRefreshResult; callers only need the promise to settle.
+        refresh?: () => Promise<unknown>;
         getAll?: () => Array<{ id?: string; provider?: string; name?: string }>;
       };
     };
