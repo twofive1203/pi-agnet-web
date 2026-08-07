@@ -57,8 +57,13 @@ function startLauncher(args, env) {
       // Keep local E2E off ambient HTTP proxies that rewrite Host/URL.
       NO_PROXY: "127.0.0.1,localhost,::1",
       no_proxy: "127.0.0.1,localhost,::1",
-      // Most lifecycle scenarios intentionally exercise the explicit HTTP compatibility mode.
+      // Isolate security-sensitive launcher defaults from the release shell.
+      PI_WEB_SERVER_MODE: "0",
+      PI_WEB_HOSTNAME: "127.0.0.1",
+      PI_WEB_TRUST_PROXY: "0",
       PI_WEB_ALLOW_INSECURE_HTTP: "1",
+      PI_WEB_ROTATE_ACCESS_KEY: "0",
+      PI_WEB_AUTH_BYPASS_CIDRS: "",
       ...env,
       PI_WEB_LAUNCH_COMMAND: "start",
     },
@@ -221,7 +226,7 @@ async function main() {
         ["-p", String(port), "--no-open"],
         {
           PI_CODING_AGENT_DIR: agentDir,
-          PI_WEB_SERVER_MODE: "0",
+          PI_WEB_ALLOW_INSECURE_HTTP: "0",
           PORT: String(port),
         },
       );
