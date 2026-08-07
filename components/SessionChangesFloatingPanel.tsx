@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
+import { useI18n } from "@/components/I18nProvider";
 import type { SessionChangedFileSummary, SessionChangesSummaryResponse } from "@/lib/types";
 import { FileDiffModal } from "./FileDiffModal";
 
@@ -10,19 +11,15 @@ interface Props {
   refreshKey?: number;
 }
 
-function statusBadge(file: SessionChangedFileSummary): { label: string; color: string } {
+function statusBadge(file: SessionChangedFileSummary): { label: string; tone: string } {
   switch (file.status) {
-    case "added": return { label: "A", color: "#16a34a" };
-    case "deleted": return { label: "D", color: "#dc2626" };
-    case "metadata-only": return { label: "?", color: "var(--text-muted)" };
+    case "added": return { label: "A", tone: "is-success" };
+    case "deleted": return { label: "D", tone: "is-danger" };
+    case "metadata-only": return { label: "?", tone: "is-muted" };
     case "modified":
     default:
-      return { label: "M", color: "var(--accent)" };
+      return { label: "M", tone: "is-accent" };
   }
-}
-
-function fileCountLabel(count: number): string {
-  return count === 1 ? "1 file changed" : `${count} files changed`;
 }
 
 /**
@@ -86,7 +83,17 @@ function writeStoredPosition(position: WidgetPosition): void {
   }
 }
 
+function DiffMetrics({ additions, deletions }: { additions: number; deletions: number }) {
+  return (
+    <span className="session-changes-metrics">
+      <span className="is-success">+{additions}</span>
+      <span className="is-danger">-{deletions}</span>
+    </span>
+  );
+}
+
 export function SessionChangesFloatingPanel({ sessionId, agentRunning, refreshKey }: Props) {
+  const { t } = useI18n();
   const [files, setFiles] = useState<SessionChangedFileSummary[]>([]);
   const [open, setOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<SessionChangedFileSummary | null>(null);
@@ -291,6 +298,7 @@ export function SessionChangesFloatingPanel({ sessionId, agentRunning, refreshKe
     }, parent, widget);
     const moved = Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY);
     if (moved > DRAG_THRESHOLD_PX) drag.dragged = true;
+    positionRef.current = next;
     setPosition(next);
   }, []);
 
@@ -349,113 +357,107 @@ export function SessionChangesFloatingPanel({ sessionId, agentRunning, refreshKe
     setOpen((value) => !value);
   }, []);
 
+  const close = useCallback(() => setOpen(false), []);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [open]);
+
   const totals = useMemo(() => files.reduce((acc, file) => ({
     additions: acc.additions + file.additions,
     deletions: acc.deletions + file.deletions,
   }), { additions: 0, deletions: 0 }), [files]);
 
+  const fileCountText = files.length === 1
+    ? t("panels.sessionChanges.capsuleOne")
+    : t("panels.sessionChanges.capsule", { count: files.length });
+
   if (files.length === 0 && !open) return null;
 
   const buttonTitle = refreshing
-    ? "Drag to move; refreshing changed files"
-    : "Drag to move; click to show changed files";
+    ? t("panels.sessionChanges.refreshingHint")
+    : t("panels.sessionChanges.dragHint");
 
   return (
     <>
       <div
         ref={wrapperRef}
-        style={{
-          position: "absolute",
-          ...(position ? { left: position.left, top: position.top } : { right: DEFAULT_MARGIN, bottom: DEFAULT_BOTTOM }),
-          zIndex: 130,
-          display: "inline-flex",
-          pointerEvents: "auto",
-        }}
+        className="session-changes-floating"
+        style={position ? { left: position.left, top: position.top } : { right: DEFAULT_MARGIN, bottom: DEFAULT_BOTTOM }}
       >
         {open && (
-          <div
-            style={{
-              position: "absolute",
-              right: 0,
-              bottom: "calc(100% + 8px)",
-              display: "flex",
-              flexDirection: "column",
-              width: "min(480px, calc(100vw - 48px))",
-              maxWidth: "calc(100vw - 48px)",
-              maxHeight: "min(480px, calc(100dvh - 120px))",
-              overflow: "hidden",
-              border: "1px solid var(--border)",
-              borderRadius: 14,
-              background: "color-mix(in srgb, var(--bg-panel) 96%, transparent)",
-              color: "var(--text)",
-              boxShadow: "0 18px 42px rgba(0,0,0,0.20)",
-              backdropFilter: "blur(12px)",
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexShrink: 0, padding: "10px 12px", borderBottom: "1px solid var(--border)" }}>
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 800 }}>Changed files</div>
-                <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
-                  Session edit/write changes · <span style={{ color: "#16a34a" }}>+{totals.additions}</span> <span style={{ color: "#dc2626" }}>-{totals.deletions}</span>
+          <div className="session-changes-desktop-panel">
+            <div
+              className="session-changes-panel"
+              role="dialog"
+              aria-label={t("panels.sessionChanges.title")}
+            >
+              <div className="session-changes-header">
+                <span className="session-changes-icon" aria-hidden="true" />
+                <div className="session-changes-title-wrap">
+                  <div className="session-changes-title">{t("panels.sessionChanges.title")}</div>
+                  <div className="session-changes-subtitle">
+                    <span>{t("panels.sessionChanges.subtitle")}</span>
+                    <DiffMetrics additions={totals.additions} deletions={totals.deletions} />
+                  </div>
                 </div>
+                <span className="session-changes-header-count">{files.length}</span>
+                <button
+                  type="button"
+                  onClick={close}
+                  aria-label={t("panels.sessionChanges.close")}
+                  title={t("panels.sessionChanges.close")}
+                  className="session-changes-close"
+                >
+                  {"\u00d7"}
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => setOpen(false)}
-                aria-label="Close changed files panel"
-                style={{ border: 0, background: "transparent", color: "var(--text-muted)", cursor: "pointer", fontSize: 18, lineHeight: 1, flexShrink: 0 }}
-              >
-                ×
-              </button>
-            </div>
 
-            <div style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: "auto", padding: 6 }}>
-              {initialLoading && files.length === 0 ? (
-                <div style={{ padding: 10, color: "var(--text-muted)", fontSize: 12 }}>Loading changed files…</div>
-              ) : error ? (
-                <div style={{ padding: 10, color: "#dc2626", fontSize: 12 }}>{error}</div>
-              ) : files.length === 0 ? (
-                <div style={{ padding: 10, color: "var(--text-muted)", fontSize: 12 }}>No tracked edit/write changes yet.</div>
-              ) : files.map((file) => {
-                const badge = statusBadge(file);
-                return (
-                  <button
-                    key={file.path}
-                    type="button"
-                    onClick={() => file.diffAvailable ? setSelectedFile(file) : undefined}
-                    aria-disabled={file.diffAvailable ? undefined : true}
-                    title={file.diffAvailable ? file.path : (file.reason ?? "metadata only")}
-                    style={{
-                      width: "max-content",
-                      minWidth: "100%",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 9,
-                      padding: "8px 9px",
-                      border: 0,
-                      borderRadius: 10,
-                      background: "transparent",
-                      color: "var(--text)",
-                      cursor: file.diffAvailable ? "pointer" : "default",
-                      textAlign: "left",
-                    }}
-                    onMouseEnter={(event) => { event.currentTarget.style.background = "var(--bg-hover)"; }}
-                    onMouseLeave={(event) => { event.currentTarget.style.background = "transparent"; }}
-                  >
-                    <span style={{ width: 20, height: 20, borderRadius: 6, display: "inline-flex", alignItems: "center", justifyContent: "center", color: badge.color, background: "var(--bg-subtle)", fontSize: 11, fontWeight: 900, flexShrink: 0 }}>
-                      {badge.label}
-                    </span>
-                    <span style={{ minWidth: 0, flex: "1 1 auto" }}>
-                      <span style={{ display: "block", fontFamily: "var(--font-mono)", fontSize: 12, whiteSpace: "nowrap" }}>{file.path}</span>
-                      {!file.diffAvailable && <span style={{ display: "block", marginTop: 2, fontSize: 10, color: "var(--text-dim)", whiteSpace: "nowrap" }}>{file.reason ?? "metadata only"}</span>}
-                    </span>
-                    <span style={{ flexShrink: 0, fontFamily: "var(--font-mono)", fontSize: 11 }}>
-                      <span style={{ color: "#16a34a" }}>+{file.additions}</span>{" "}
-                      <span style={{ color: "#dc2626" }}>-{file.deletions}</span>
-                    </span>
-                  </button>
-                );
-              })}
+              <div className="session-changes-content">
+                {initialLoading && files.length === 0 ? (
+                  <div className="session-changes-state">{t("panels.sessionChanges.loading")}</div>
+                ) : error ? (
+                  <div className="session-changes-state is-error" role="alert">{error}</div>
+                ) : files.length === 0 ? (
+                  <div className="session-changes-state">{t("panels.sessionChanges.empty")}</div>
+                ) : (
+                  <div className="session-changes-list">
+                    {files.map((file) => {
+                      const badge = statusBadge(file);
+                      const reason = file.reason ?? t("panels.sessionChanges.metadataOnly");
+                      return (
+                        <button
+                          key={file.path}
+                          type="button"
+                          onClick={() => file.diffAvailable ? setSelectedFile(file) : undefined}
+                          aria-disabled={file.diffAvailable ? undefined : true}
+                          title={file.diffAvailable ? file.path : reason}
+                          className={[
+                            "session-changes-file-row",
+                            file.diffAvailable ? "" : "is-unavailable",
+                          ].filter(Boolean).join(" ")}
+                        >
+                          <span className={`session-changes-file-badge ${badge.tone}`}>
+                            {badge.label}
+                          </span>
+                          <span className="session-changes-file-main">
+                            <span className="session-changes-file-path">{file.path}</span>
+                            {!file.diffAvailable && (
+                              <span className="session-changes-file-reason">{reason}</span>
+                            )}
+                          </span>
+                          <DiffMetrics additions={file.additions} deletions={file.deletions} />
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}
@@ -468,29 +470,26 @@ export function SessionChangesFloatingPanel({ sessionId, agentRunning, refreshKe
           onPointerUp={handlePointerUp}
           onPointerCancel={handlePointerUp}
           aria-expanded={open}
-          aria-label={open ? `Hide changed files, ${fileCountLabel(files.length)}` : `Show changed files, ${fileCountLabel(files.length)}`}
+          aria-label={open
+            ? t("panels.sessionChanges.hideWithCount", { label: fileCountText })
+            : t("panels.sessionChanges.showWithCount", { label: fileCountText })}
           title={buttonTitle}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            border: "1px solid var(--border)",
-            borderRadius: 999,
-            padding: "8px 12px",
-            background: "color-mix(in srgb, var(--bg-panel) 92%, transparent)",
-            color: "var(--text)",
-            boxShadow: "0 10px 28px rgba(0,0,0,0.16)",
-            backdropFilter: "blur(10px)",
-            cursor: dragging ? "grabbing" : "grab",
-            fontSize: 12,
-            fontWeight: 800,
-            touchAction: "none",
-            userSelect: "none",
-            minWidth: "7.5em",
-          }}
+          className={[
+            "session-changes-capsule",
+            open ? "is-open" : "",
+            dragging ? "is-dragging" : "",
+            refreshing ? "is-refreshing" : "",
+            files.length > 0 ? "has-files" : "",
+          ].filter(Boolean).join(" ")}
         >
-          <span>▦</span>
-          <span>{fileCountLabel(files.length)}</span>
+          <span className="session-changes-capsule-icon" aria-hidden="true" />
+          <span className="session-changes-capsule-copy">
+            <span className="session-changes-capsule-label">{fileCountText}</span>
+            {(totals.additions > 0 || totals.deletions > 0) && (
+              <DiffMetrics additions={totals.additions} deletions={totals.deletions} />
+            )}
+          </span>
+          <span className="session-changes-capsule-chevron" aria-hidden="true" />
         </button>
       </div>
 
