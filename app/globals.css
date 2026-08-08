@@ -2932,8 +2932,10 @@ span.linenumber {
 
 .usage-pie {
   display: inline-flex;
+  flex: 0 0 auto;
   align-items: center;
   justify-content: center;
+  aspect-ratio: 1 / 1;
   box-sizing: border-box;
   border: 1px solid color-mix(in srgb, var(--border-strong) 78%, transparent);
   border-radius: 50%;
