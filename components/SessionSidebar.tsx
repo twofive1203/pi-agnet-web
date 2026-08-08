@@ -20,6 +20,7 @@ import {
 } from "./sidebar/sidebar-utils";
 import { WorkspacePicker } from "./sidebar/WorkspacePicker";
 import { SessionList } from "./sidebar/SessionList";
+import { SessionSearchResults } from "./sidebar/SessionSearchResults";
 import { ArchivedSessionSection } from "./sidebar/ArchivedSessionSection";
 import { SidebarExplorerPane } from "./sidebar/SidebarExplorerPane";
 
@@ -76,6 +77,23 @@ export function SessionSidebar({
   const sidebarRootRef = useRef<HTMLDivElement>(null);
   const restoredRef = useRef(false);
 
+  const reportActionError = useCallback(async (message: string) => {
+    await appDialog.alert({
+      title: t("common.alertTitle"),
+      message,
+    });
+  }, [appDialog, t]);
+
+  const readActionError = useCallback(async (res: Response, fallback: string) => {
+    try {
+      const data = (await res.json()) as { error?: unknown };
+      if (typeof data.error === "string" && data.error.trim()) return data.error;
+    } catch {
+      // ignore non-JSON
+    }
+    return fallback;
+  }, []);
+
   const {
     projectSummaries,
     projectSessions,
@@ -91,6 +109,12 @@ export function SessionSidebar({
     archivedHasMore,
     loadingMoreArchived,
     sessionRefreshDone,
+    searchActive,
+    searchResults,
+    searchTotal,
+    searchHasMore,
+    searchLoading,
+    searchError,
     loadSessions,
     loadMoreSessions,
     loadArchivedSessions,
@@ -100,6 +124,8 @@ export function SessionSidebar({
     selectedCwd: activeCwd,
     selectedSessionId,
     refreshKey,
+    searchQuery: sessionSearch,
+    // Browse/load-more failures stay in the list `error` banner; mutations use dialogs.
   });
 
   useEffect(() => {
@@ -114,6 +140,7 @@ export function SessionSidebar({
     setSelectedForArchive(new Set());
     setArchivedExpanded(false);
     setArchiveAllConfirming(false);
+    setSessionSearch("");
   }, [activeCwd]);
 
   const handleArchiveSession = useCallback(async (sessionId: string) => {
@@ -123,20 +150,22 @@ export function SessionSidebar({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sessionIds: [sessionId] }),
       });
-      if (res.ok) {
-        setSelectedForArchive((prev) => {
-          const next = new Set(prev);
-          next.delete(sessionId);
-          return next;
-        });
-        void loadSessions(false);
-        setArchivedExpanded(false);
-        setArchivedSessions([]);
+      if (!res.ok) {
+        await reportActionError(await readActionError(res, t("sidebar.archiveFailed")));
+        return;
       }
-    } catch {
-      // ignore
+      setSelectedForArchive((prev) => {
+        const next = new Set(prev);
+        next.delete(sessionId);
+        return next;
+      });
+      void loadSessions(false);
+      setArchivedExpanded(false);
+      setArchivedSessions([]);
+    } catch (e) {
+      await reportActionError(e instanceof Error ? e.message : String(e));
     }
-  }, [loadSessions, setArchivedSessions]);
+  }, [loadSessions, setArchivedSessions, reportActionError, readActionError, t]);
 
   const handleUnarchiveSession = useCallback(async (sessionId: string) => {
     try {
@@ -145,14 +174,16 @@ export function SessionSidebar({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sessionIds: [sessionId] }),
       });
-      if (res.ok) {
-        void loadSessions(false);
-        setArchivedSessions((prev) => prev.filter((s) => s.id !== sessionId));
+      if (!res.ok) {
+        await reportActionError(await readActionError(res, t("sidebar.unarchiveFailed")));
+        return;
       }
-    } catch {
-      // ignore
+      void loadSessions(false);
+      setArchivedSessions((prev) => prev.filter((s) => s.id !== sessionId));
+    } catch (e) {
+      await reportActionError(e instanceof Error ? e.message : String(e));
     }
-  }, [loadSessions, setArchivedSessions]);
+  }, [loadSessions, setArchivedSessions, reportActionError, readActionError, t]);
 
   const handleBatchArchive = useCallback(async () => {
     const ids = [...selectedForArchive];
@@ -163,14 +194,16 @@ export function SessionSidebar({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sessionIds: ids }),
       });
-      if (res.ok) {
-        setSelectedForArchive(new Set());
-        void loadSessions(false);
+      if (!res.ok) {
+        await reportActionError(await readActionError(res, t("sidebar.archiveFailed")));
+        return;
       }
-    } catch {
-      // ignore
+      setSelectedForArchive(new Set());
+      void loadSessions(false);
+    } catch (e) {
+      await reportActionError(e instanceof Error ? e.message : String(e));
     }
-  }, [selectedForArchive, loadSessions]);
+  }, [selectedForArchive, loadSessions, reportActionError, readActionError, t]);
 
   const handleArchiveAll = useCallback(async () => {
     if (!activeCwd) return;
@@ -181,16 +214,18 @@ export function SessionSidebar({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ cwd: activeCwd }),
       });
-      if (res.ok) {
-        setArchiveAllConfirming(false);
-        void loadSessions(false);
+      if (!res.ok) {
+        await reportActionError(await readActionError(res, t("sidebar.archiveAllFailed")));
+        return;
       }
-    } catch {
-      // ignore
+      setArchiveAllConfirming(false);
+      void loadSessions(false);
+    } catch (e) {
+      await reportActionError(e instanceof Error ? e.message : String(e));
     } finally {
       setArchiveAllBusy(false);
     }
-  }, [activeCwd, loadSessions]);
+  }, [activeCwd, loadSessions, reportActionError, readActionError, t]);
 
   const handleDeleteSession = useCallback(async (session: SessionInfo) => {
     const title = session.name || session.firstMessage.slice(0, 50) || session.id.slice(0, 12);
@@ -198,20 +233,22 @@ export function SessionSidebar({
     if (!confirmed) return;
     try {
       const res = await fetch(`/api/sessions/${encodeURIComponent(session.id)}`, { method: "DELETE" });
-      if (res.ok) {
-        onSessionDeleted?.(session.id);
-        setSelectedForArchive((prev) => {
-          const next = new Set(prev);
-          next.delete(session.id);
-          return next;
-        });
-        setArchivedSessions((prev) => prev.filter((s) => s.id !== session.id));
-        void loadSessions(false);
+      if (!res.ok) {
+        await reportActionError(await readActionError(res, t("sidebar.deleteFailed")));
+        return;
       }
-    } catch {
-      // ignore
+      onSessionDeleted?.(session.id);
+      setSelectedForArchive((prev) => {
+        const next = new Set(prev);
+        next.delete(session.id);
+        return next;
+      });
+      setArchivedSessions((prev) => prev.filter((s) => s.id !== session.id));
+      void loadSessions(false);
+    } catch (e) {
+      await reportActionError(e instanceof Error ? e.message : String(e));
     }
-  }, [loadSessions, onSessionDeleted, t, appDialog, setArchivedSessions]);
+  }, [loadSessions, onSessionDeleted, t, appDialog, setArchivedSessions, reportActionError, readActionError]);
 
   useEffect(() => {
     if (!archivedExpanded || !activeCwd || (archivedCounts[activeCwd] ?? 0) === 0) return;
@@ -470,17 +507,8 @@ export function SessionSidebar({
   const activeSessionCountForCwd = selectedProject?.sessionCount
     ?? (projectSessionTotal > 0 ? projectSessionTotal : filteredSessions.length);
 
-  // Client-side search over the visible session rows (title / first message).
-  const searchFilteredSessions = useMemo(() => {
-    const query = sessionSearch.trim().toLowerCase();
-    if (!query) return filteredSessions;
-    return filteredSessions.filter((s) =>
-      (s.name ?? "").toLowerCase().includes(query)
-      || (s.firstMessage ?? "").toLowerCase().includes(query),
-    );
-  }, [filteredSessions, sessionSearch]);
-
-  const sessionTree = useMemo(() => buildSessionTree(searchFilteredSessions), [searchFilteredSessions]);
+  // Recent list stays independent from search results (no client-side filter merge).
+  const sessionTree = useMemo(() => buildSessionTree(filteredSessions), [filteredSessions]);
 
   const equalShareExplorerOpen = Boolean(explorerOpen && activeCwd && !isDesktopLayout);
   const sessionListFlex = equalShareExplorerOpen ? "1 1 0" : "1 1 auto";
@@ -743,40 +771,57 @@ export function SessionSidebar({
       )}
 
       <div className="sidebar-session-scroll" style={{ flex: sessionListFlex, minHeight: MIN_SESSION_LIST_HEIGHT }}>
-        <SessionList
-          loading={loading}
-          error={error}
-          sessionTree={sessionTree}
-          filteredSessions={searchFilteredSessions}
-          selectedSessionId={selectedSessionId}
-          projectSessionTotal={projectSessionTotal}
-          hasMoreSessions={hasMoreSessions}
-          loadingMore={loadingMore}
-          selectedForArchive={selectedForArchive}
-          onSelectSession={onSelectSession}
-          onRenamed={loadSessions}
-          onSessionDeleted={handleSessionDeletedFromList}
-          onArchive={handleArchiveSession}
-          onContextMenu={handleSessionContextMenu}
-          onToggleSelect={handleToggleSelect}
-          onLoadMore={loadMoreSessions}
-          onClearSelection={handleClearArchiveSelection}
-          onBatchArchive={handleBatchArchive}
-        />
-
-        {activeCwd && !loading && !error && (
-          <ArchivedSessionSection
-            archivedCount={archivedCounts[activeCwd] ?? 0}
-            archivedExpanded={archivedExpanded}
-            archivedSessions={archivedSessions}
-            archivedHasMore={archivedHasMore}
-            loadingMoreArchived={loadingMoreArchived}
-            onToggleExpanded={handleToggleArchived}
-            onSelect={onSelectSession}
-            onUnarchive={handleUnarchiveSession}
-            onDelete={handleArchivedSessionDeleted}
-            onLoadMore={loadMoreArchivedSessions}
+        {searchActive ? (
+          <SessionSearchResults
+            loading={searchLoading}
+            error={searchError}
+            results={searchResults}
+            total={searchTotal}
+            hasMore={searchHasMore}
+            query={sessionSearch}
+            selectedSessionId={selectedSessionId}
+            onSelectSession={onSelectSession}
           />
+        ) : (
+          <>
+            <SessionList
+              loading={loading}
+              error={error}
+              sessionTree={sessionTree}
+              filteredSessions={filteredSessions}
+              selectedSessionId={selectedSessionId}
+              projectSessionTotal={projectSessionTotal}
+              hasMoreSessions={hasMoreSessions}
+              loadingMore={loadingMore}
+              selectedForArchive={selectedForArchive}
+              onSelectSession={onSelectSession}
+              onRenamed={loadSessions}
+              onSessionDeleted={handleSessionDeletedFromList}
+              onArchive={handleArchiveSession}
+              onContextMenu={handleSessionContextMenu}
+              onToggleSelect={handleToggleSelect}
+              onLoadMore={loadMoreSessions}
+              onClearSelection={handleClearArchiveSelection}
+              onBatchArchive={handleBatchArchive}
+              onActionError={(message) => { void reportActionError(message); }}
+            />
+
+            {activeCwd && !loading && !error && (
+              <ArchivedSessionSection
+                archivedCount={archivedCounts[activeCwd] ?? 0}
+                archivedExpanded={archivedExpanded}
+                archivedSessions={archivedSessions}
+                archivedHasMore={archivedHasMore}
+                loadingMoreArchived={loadingMoreArchived}
+                onToggleExpanded={handleToggleArchived}
+                onSelect={onSelectSession}
+                onUnarchive={handleUnarchiveSession}
+                onDelete={handleArchivedSessionDeleted}
+                onLoadMore={loadMoreArchivedSessions}
+                onActionError={(message) => { void reportActionError(message); }}
+              />
+            )}
+          </>
         )}
       </div>
 

@@ -1,9 +1,10 @@
 /**
- * Rebuildable session/project index for WebUI browsing.
+ * Rebuildable session/project index for WebUI browsing and workspace search.
  *
  * Disk JSONL files remain the source of truth. This module accelerates project
- * discovery and per-cwd candidate collection by caching header summaries keyed
- * by path + mtimeMs + size. Cache failures never block browsing.
+ * discovery, per-cwd candidate collection, and name/firstMessage search by
+ * caching header + browse summaries keyed by path + mtimeMs + size. Cache
+ * failures never block browsing or search.
  */
 
 import {
@@ -20,13 +21,15 @@ import { homedir } from "os";
 import { basename, dirname, join } from "path";
 import { canonicalizeCwd } from "./cwd";
 import { readSessionHeaderLine, sessionIdFromFilePath } from "./session-reader-header";
+import { readSessionBrowseSummary } from "./session-search-summary";
 
 /** Local agent-dir resolution to keep this module free of pi SDK import edges. */
 function defaultAgentDir(): string {
   return process.env.PI_CODING_AGENT_DIR || join(homedir(), ".pi", "agent");
 }
 
-export const SESSION_INDEX_VERSION = 1 as const;
+/** v2 adds searchable browse summaries (name / firstMessage / messageCount). */
+export const SESSION_INDEX_VERSION = 2 as const;
 export const SESSION_INDEX_FILE_NAME = "pi-web-session-index.json";
 
 export interface SessionIndexEntry {
@@ -40,6 +43,11 @@ export interface SessionIndexEntry {
   /** File mtime ISO — browse ordering key (not message activity). */
   modified: string;
   archived: boolean;
+  /** Latest session_info name when present. */
+  name?: string;
+  /** First user message preview (truncated). */
+  firstMessage: string;
+  messageCount: number;
 }
 
 export interface SessionIndexFile {
@@ -135,7 +143,10 @@ function isValidEntry(value: unknown): value is SessionIndexEntry {
     typeof entry.created === "string" &&
     typeof entry.modified === "string" &&
     typeof entry.archived === "boolean" &&
-    (entry.parentSessionId === undefined || typeof entry.parentSessionId === "string")
+    (entry.parentSessionId === undefined || typeof entry.parentSessionId === "string") &&
+    (entry.name === undefined || typeof entry.name === "string") &&
+    typeof entry.firstMessage === "string" &&
+    isFiniteNumber(entry.messageCount)
   );
 }
 
@@ -206,6 +217,8 @@ function entryFromHeader(
   const parentSessionId = header.parentSession
     ? sessionIdFromFilePath(header.parentSession)
     : undefined;
+  // Browse summary is best-effort; header-only fields still index the session.
+  const summary = readSessionBrowseSummary(file.path);
   return {
     path: file.path,
     mtimeMs: file.mtimeMs,
@@ -216,6 +229,9 @@ function entryFromHeader(
     created,
     modified,
     archived: file.archived,
+    name: summary?.name,
+    firstMessage: summary?.firstMessage ?? "(no messages)",
+    messageCount: summary?.messageCount ?? 0,
   };
 }
 
@@ -236,7 +252,10 @@ function entriesEqual(a: SessionIndexEntry[], b: SessionIndexEntry[]): boolean {
       x.parentSessionId !== y.parentSessionId ||
       x.created !== y.created ||
       x.modified !== y.modified ||
-      x.archived !== y.archived
+      x.archived !== y.archived ||
+      x.name !== y.name ||
+      x.firstMessage !== y.firstMessage ||
+      x.messageCount !== y.messageCount
     ) {
       return false;
     }

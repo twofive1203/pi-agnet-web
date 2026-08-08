@@ -41,14 +41,19 @@ function writeSession(
   id: string,
   timestamp: string,
   firstUser: string,
-  opts?: { mtimeMs?: number; dirName?: string; root?: "sessions" | "sessions-archive" }
+  opts?: {
+    mtimeMs?: number;
+    dirName?: string;
+    root?: "sessions" | "sessions-archive";
+    name?: string;
+  }
 ) {
   const rootName = opts?.root ?? "sessions";
   const dir = join(agentDir, rootName, opts?.dirName ?? encodeSessionDirName(projectCwd));
   mkdirSync(dir, { recursive: true });
   const fileStamp = timestamp.replace(/[:.]/g, "-");
   const filePath = join(dir, `${fileStamp}_${id}.jsonl`);
-  const lines = [
+  const lines: Array<Record<string, unknown>> = [
     {
       type: "session",
       version: 3,
@@ -56,17 +61,26 @@ function writeSession(
       timestamp,
       cwd: projectCwd,
     },
-    {
-      type: "message",
-      id: `${id}-msg`,
+  ];
+  if (opts?.name) {
+    lines.push({
+      type: "session_info",
+      id: `${id}-info`,
       parentId: null,
       timestamp,
-      message: {
-        role: "user",
-        content: [{ type: "text", text: firstUser }],
-      },
+      name: opts.name,
+    });
+  }
+  lines.push({
+    type: "message",
+    id: `${id}-msg`,
+    parentId: null,
+    timestamp,
+    message: {
+      role: "user",
+      content: [{ type: "text", text: firstUser }],
     },
-  ];
+  });
   writeFileSync(filePath, `${lines.map((line) => JSON.stringify(line)).join("\n")}\n`);
   if (opts?.mtimeMs != null) {
     const atime = new Date(opts.mtimeMs);
@@ -101,7 +115,10 @@ async function main() {
     } = await import("../lib/session-index");
 
     const base = Date.parse("2026-07-10T00:00:00.000Z");
-    writeSession(cwdA, "idx-a-0", new Date(base).toISOString(), "a0", { mtimeMs: base });
+    writeSession(cwdA, "idx-a-0", new Date(base).toISOString(), "alpha first message", {
+      mtimeMs: base,
+      name: "Alpha Named",
+    });
     writeSession(cwdA, "idx-a-1", new Date(base + 60_000).toISOString(), "a1", {
       mtimeMs: base + 60_000,
     });
@@ -158,6 +175,11 @@ async function main() {
     };
     assert.equal(persisted.version, SESSION_INDEX_VERSION);
     assert.equal(persisted.entries.length, 4);
+    const named = first.find((e) => e.id === "idx-a-0");
+    assert.ok(named);
+    assert.equal(named!.name, "Alpha Named");
+    assert.equal(named!.firstMessage, "alpha first message");
+    assert.equal(named!.messageCount, 1);
 
     // Second refresh should reuse fingerprints (0 header reads for unchanged files).
     const beforeReuse = getSessionIndexHeaderReadCount();
@@ -217,6 +239,11 @@ async function main() {
     );
     assert.equal(updated!.size > prevSize, true, "appended content should grow size");
     assert.equal(updated!.mtimeMs, base + 300_000);
+    assert.equal(updated!.messageCount, 2, "summary messageCount must refresh after JSONL modify");
+    assert.ok(
+      updated!.firstMessage.includes("a2") || updated!.firstMessage.length > 0,
+      "firstMessage remains available after modify"
+    );
 
     // Cwd grouping (collision safe) via index lookups.
     const entriesA = await getSessionIndexEntriesForCwd(cwdA, { agentDir, archived: false });

@@ -5,8 +5,14 @@ import type { ProjectSummary, SessionInfo } from "@/lib/types";
 import {
   ARCHIVED_SESSIONS_LIMIT,
   RECENT_SESSIONS_LIMIT,
+  SESSION_SEARCH_DEBOUNCE_MS,
+  SESSION_SEARCH_DEFAULT_LIMIT,
+  SESSION_SEARCH_MIN_QUERY_CHARS,
 } from "@/lib/session-reader-constants";
+import { shouldApplySessionSearchResponse } from "@/lib/session-search-client";
 import { mergeSessionsById } from "@/lib/sidebar-session-tree";
+
+export { shouldApplySessionSearchResponse } from "@/lib/session-search-client";
 
 export interface SessionPageResponse {
   sessions: SessionInfo[];
@@ -18,10 +24,21 @@ export interface SessionPageResponse {
   archivedCounts?: Record<string, number>;
 }
 
+export interface SessionSearchResponse {
+  sessions: SessionInfo[];
+  total?: number;
+  hasMore?: boolean;
+  query?: string;
+  cwd?: string;
+  error?: string;
+}
+
 export interface UseSessionBrowserOptions {
   selectedCwd: string | null;
   selectedSessionId?: string | null;
   refreshKey?: number;
+  /** Debounced search query from the sidebar input (not applied to paged lists). */
+  searchQuery?: string;
   /** Called when a non-abort load error occurs. */
   onError?: (message: string) => void;
 }
@@ -42,6 +59,13 @@ export interface UseSessionBrowserResult {
   archivedHasMore: boolean;
   loadingMoreArchived: boolean;
   sessionRefreshDone: boolean;
+  /** True when the sidebar is in independent search-results mode. */
+  searchActive: boolean;
+  searchResults: SessionInfo[];
+  searchTotal: number;
+  searchHasMore: boolean;
+  searchLoading: boolean;
+  searchError: string | null;
   loadSessions: (showLoading?: boolean) => Promise<void>;
   loadMoreSessions: () => Promise<void>;
   loadArchivedSessions: (cwd: string, reset?: boolean) => Promise<void>;
@@ -51,12 +75,22 @@ export interface UseSessionBrowserResult {
   setError: React.Dispatch<React.SetStateAction<string | null>>;
 }
 
+async function readFetchError(res: Response, fallback: string): Promise<string> {
+  try {
+    const data = (await res.json()) as { error?: unknown };
+    if (typeof data.error === "string" && data.error.trim()) return data.error;
+  } catch {
+    // ignore non-JSON bodies
+  }
+  return fallback;
+}
+
 /**
  * Sidebar session browser data layer: project summaries, paged active sessions,
  * paged archived sessions, abort/cwd isolation, and selected-session patches.
  */
 export function useSessionBrowser(options: UseSessionBrowserOptions): UseSessionBrowserResult {
-  const { selectedCwd, selectedSessionId, refreshKey, onError } = options;
+  const { selectedCwd, selectedSessionId, refreshKey, searchQuery = "", onError } = options;
 
   const [projectSummaries, setProjectSummaries] = useState<ProjectSummary[]>([]);
   const [projectSessions, setProjectSessions] = useState<SessionInfo[]>([]);
@@ -79,11 +113,20 @@ export function useSessionBrowser(options: UseSessionBrowserOptions): UseSession
   const [loadingMoreArchived, setLoadingMoreArchived] = useState(false);
   const [sessionRefreshDone, setSessionRefreshDone] = useState(false);
 
+  const [searchResults, setSearchResults] = useState<SessionInfo[]>([]);
+  const [searchTotal, setSearchTotal] = useState(0);
+  const [searchHasMore, setSearchHasMore] = useState(false);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [searchActive, setSearchActive] = useState(false);
+
   const selectedCwdRef = useRef<string | null>(null);
   selectedCwdRef.current = selectedCwd;
   const browseAbortRef = useRef<AbortController | null>(null);
   const moreAbortRef = useRef<AbortController | null>(null);
   const archivedAbortRef = useRef<AbortController | null>(null);
+  const searchAbortRef = useRef<AbortController | null>(null);
+  const searchSeqRef = useRef(0);
   const sessionRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
@@ -107,7 +150,7 @@ export function useSessionBrowser(options: UseSessionBrowserOptions): UseSession
       limit: String(RECENT_SESSIONS_LIMIT),
     });
     const res = await fetch(`/api/sessions?${params}`, { signal });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) throw new Error(await readFetchError(res, `HTTP ${res.status}`));
     const data = (await res.json()) as SessionPageResponse;
     if (signal?.aborted) return;
     // Drop stale responses from a previous project after a fast cwd switch.
@@ -124,7 +167,7 @@ export function useSessionBrowser(options: UseSessionBrowserOptions): UseSession
 
   const loadProjectSummaries = useCallback(async (signal?: AbortSignal) => {
     const res = await fetch("/api/sessions?view=projects", { signal });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) throw new Error(await readFetchError(res, `HTTP ${res.status}`));
     const data = (await res.json()) as {
       projects: ProjectSummary[];
       archivedCwds?: string[];
@@ -186,7 +229,7 @@ export function useSessionBrowser(options: UseSessionBrowserOptions): UseSession
       });
       if (nextBeforePath) params.set("beforePath", nextBeforePath);
       const res = await fetch(`/api/sessions?${params}`, { signal: controller.signal });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) throw new Error(await readFetchError(res, `HTTP ${res.status}`));
       const data = (await res.json()) as SessionPageResponse;
       if (controller.signal.aborted) return;
       if (selectedCwdRef.current !== cwd) return;
@@ -225,7 +268,7 @@ export function useSessionBrowser(options: UseSessionBrowserOptions): UseSession
         limit: String(ARCHIVED_SESSIONS_LIMIT),
       });
       const res = await fetch(`/api/sessions/archived?${params}`, { signal: controller.signal });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) throw new Error(await readFetchError(res, `HTTP ${res.status}`));
       const data = (await res.json()) as SessionPageResponse & { total?: number };
       if (controller.signal.aborted) return;
       if (selectedCwdRef.current !== cwd) return;
@@ -234,9 +277,16 @@ export function useSessionBrowser(options: UseSessionBrowserOptions): UseSession
       setArchivedHasMore(Boolean(data.hasMore));
       setArchivedNextBefore(data.nextBefore ?? null);
       setArchivedNextBeforePath(data.nextBeforePath ?? null);
+      setError(null);
     } catch (e) {
       if (e instanceof DOMException && e.name === "AbortError") return;
-      if (reset) setArchivedSessions([]);
+      const message = String(e);
+      // Keep previous rows on refresh failure; only clear when intentionally resetting empty.
+      if (reset) {
+        // Do not wipe existing archived rows on failure — caller still sees last good page.
+      }
+      setError(message);
+      onErrorRef.current?.(message);
     }
   }, []);
 
@@ -256,7 +306,7 @@ export function useSessionBrowser(options: UseSessionBrowserOptions): UseSession
       });
       if (archivedNextBeforePath) params.set("beforePath", archivedNextBeforePath);
       const res = await fetch(`/api/sessions/archived?${params}`, { signal: controller.signal });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) throw new Error(await readFetchError(res, `HTTP ${res.status}`));
       const data = (await res.json()) as SessionPageResponse;
       if (controller.signal.aborted) return;
       if (selectedCwdRef.current !== cwd) return;
@@ -265,8 +315,12 @@ export function useSessionBrowser(options: UseSessionBrowserOptions): UseSession
       setArchivedHasMore(Boolean(data.hasMore));
       setArchivedNextBefore(data.nextBefore ?? null);
       setArchivedNextBeforePath(data.nextBeforePath ?? null);
+      setError(null);
     } catch (e) {
       if (e instanceof DOMException && e.name === "AbortError") return;
+      const message = String(e);
+      setError(message);
+      onErrorRef.current?.(message);
     } finally {
       setLoadingMoreArchived(false);
     }
@@ -291,6 +345,103 @@ export function useSessionBrowser(options: UseSessionBrowserOptions): UseSession
     void loadSessions(isFirst);
   }, [loadSessions, refreshKey]);
 
+  // Independent workspace search mode (does not mutate paged projectSessions).
+  useEffect(() => {
+    const cwd = selectedCwd;
+    const trimmed = searchQuery.trim();
+
+    searchAbortRef.current?.abort();
+
+    if (!cwd || trimmed.length < SESSION_SEARCH_MIN_QUERY_CHARS) {
+      searchSeqRef.current += 1;
+      setSearchActive(false);
+      setSearchResults([]);
+      setSearchTotal(0);
+      setSearchHasMore(false);
+      setSearchLoading(false);
+      setSearchError(null);
+      return;
+    }
+
+    setSearchActive(true);
+    setSearchLoading(true);
+    setSearchError(null);
+
+    const requestCwd = cwd;
+    const requestSeq = ++searchSeqRef.current;
+    const controller = new AbortController();
+    searchAbortRef.current = controller;
+    const timer = setTimeout(() => {
+      void (async () => {
+        try {
+          const params = new URLSearchParams({
+            cwd: requestCwd,
+            q: trimmed,
+            includeArchived: "1",
+            limit: String(SESSION_SEARCH_DEFAULT_LIMIT),
+          });
+          const res = await fetch(`/api/sessions/search?${params}`, {
+            signal: controller.signal,
+          });
+          if (!res.ok) {
+            throw new Error(await readFetchError(res, `HTTP ${res.status}`));
+          }
+          const data = (await res.json()) as SessionSearchResponse;
+          if (
+            !shouldApplySessionSearchResponse({
+              aborted: controller.signal.aborted,
+              requestCwd,
+              activeCwd: selectedCwdRef.current,
+              requestSeq,
+              latestSeq: searchSeqRef.current,
+            })
+          ) {
+            return;
+          }
+          setSearchResults(data.sessions ?? []);
+          setSearchTotal(data.total ?? data.sessions?.length ?? 0);
+          setSearchHasMore(Boolean(data.hasMore));
+          setSearchError(null);
+        } catch (e) {
+          if (e instanceof DOMException && e.name === "AbortError") return;
+          if (
+            !shouldApplySessionSearchResponse({
+              aborted: controller.signal.aborted,
+              requestCwd,
+              activeCwd: selectedCwdRef.current,
+              requestSeq,
+              latestSeq: searchSeqRef.current,
+            })
+          ) {
+            return;
+          }
+          const message = String(e);
+          setSearchError(message);
+          setSearchResults([]);
+          setSearchTotal(0);
+          setSearchHasMore(false);
+        } finally {
+          if (
+            shouldApplySessionSearchResponse({
+              aborted: false,
+              requestCwd,
+              activeCwd: selectedCwdRef.current,
+              requestSeq,
+              latestSeq: searchSeqRef.current,
+            })
+          ) {
+            setSearchLoading(false);
+          }
+        }
+      })();
+    }, SESSION_SEARCH_DEBOUNCE_MS);
+
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [selectedCwd, searchQuery, refreshKey]);
+
   // On project change: isolate previous project's sessions and load first page only.
   useEffect(() => {
     setProjectSessions([]);
@@ -304,6 +455,8 @@ export function useSessionBrowser(options: UseSessionBrowserOptions): UseSession
     setArchivedHasMore(false);
     setArchivedNextBefore(null);
     setArchivedNextBeforePath(null);
+    // Search state is owned by the searchQuery effect; clear only the loading latch here.
+    searchAbortRef.current?.abort();
 
     if (!selectedCwd) return;
 
@@ -360,6 +513,7 @@ export function useSessionBrowser(options: UseSessionBrowserOptions): UseSession
       browseAbortRef.current?.abort();
       moreAbortRef.current?.abort();
       archivedAbortRef.current?.abort();
+      searchAbortRef.current?.abort();
     };
   }, []);
 
@@ -379,6 +533,12 @@ export function useSessionBrowser(options: UseSessionBrowserOptions): UseSession
     archivedHasMore,
     loadingMoreArchived,
     sessionRefreshDone,
+    searchActive,
+    searchResults,
+    searchTotal,
+    searchHasMore,
+    searchLoading,
+    searchError,
     loadSessions,
     loadMoreSessions,
     loadArchivedSessions,

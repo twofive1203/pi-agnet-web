@@ -16,6 +16,7 @@ export interface ArchivedSessionSectionProps {
   onUnarchive: (id: string) => void;
   onDelete: (id: string) => void;
   onLoadMore: () => void;
+  onActionError?: (message: string) => void;
 }
 
 export const ArchivedSessionSection = memo(function ArchivedSessionSection({
@@ -29,6 +30,7 @@ export const ArchivedSessionSection = memo(function ArchivedSessionSection({
   onUnarchive,
   onDelete,
   onLoadMore,
+  onActionError,
 }: ArchivedSessionSectionProps) {
   const { t } = useI18n();
   if (archivedCount <= 0) return null;
@@ -77,6 +79,7 @@ export const ArchivedSessionSection = memo(function ArchivedSessionSection({
               onSelect={onSelect}
               onUnarchive={onUnarchive}
               onDelete={onDelete}
+              onActionError={onActionError}
             />
           ))}
           {(archivedHasMore || archivedSessions.length > 0) && (
@@ -121,12 +124,14 @@ const ArchivedSessionItem = memo(function ArchivedSessionItem({
   onSelect,
   onUnarchive,
   onDelete,
+  onActionError,
 }: {
   session: SessionInfo;
   /** Parent-stable handler; item binds session locally so memo stays effective. */
   onSelect: (session: SessionInfo) => void;
   onUnarchive: (id: string) => void;
   onDelete: (id: string) => void;
+  onActionError?: (message: string) => void;
 }) {
   const { t, locale } = useI18n();
   const [deleting, setDeleting] = useState(false);
@@ -148,18 +153,30 @@ const ArchivedSessionItem = memo(function ArchivedSessionItem({
     setConfirmDelete(true);
   }, []);
 
-  const handleDeleteConfirm = useCallback((e: React.MouseEvent) => {
+  const handleDeleteConfirm = useCallback(async (e: React.MouseEvent) => {
     e.stopPropagation();
     setConfirmDelete(false);
     setDeleting(true);
     try {
-      fetch(`/api/sessions/${encodeURIComponent(session.id)}`, { method: "DELETE" })
-        .then(() => onDelete(session.id))
-        .catch(() => setDeleting(false));
-    } catch {
+      const res = await fetch(`/api/sessions/${encodeURIComponent(session.id)}`, { method: "DELETE" });
+      if (!res.ok) {
+        setDeleting(false);
+        let message = t("sidebar.deleteFailed");
+        try {
+          const data = (await res.json()) as { error?: unknown };
+          if (typeof data.error === "string" && data.error.trim()) message = data.error;
+        } catch {
+          // keep fallback
+        }
+        onActionError?.(message);
+        return;
+      }
+      onDelete(session.id);
+    } catch (err) {
       setDeleting(false);
+      onActionError?.(err instanceof Error ? err.message : String(err));
     }
-  }, [session.id, onDelete]);
+  }, [session.id, onDelete, onActionError, t]);
 
   const handleDeleteCancel = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();

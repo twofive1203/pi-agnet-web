@@ -18,6 +18,8 @@ npm run dev     # http://localhost:62666
 | `npm run test:agent-stream` | Agent token-stream coalescing and lifecycle ordering smoke suite. |
 | `npm run test:chat-draft` | Browser-local Composer draft parsing, persistence, and cleanup smoke suite. |
 | `npm run test:session-changes` | Async session changed-file projection and serialization smoke suite. |
+| `npm run test:session-index` | Rebuildable session/project index smoke suite (header reuse, cwd isolation, archive moves). |
+| `npm run test:session-search` | Workspace session search smoke suite (indexed name/firstMessage, archived, limits, stale gate). |
 | `npm run test:session-stats` | Parent-session lifetime token/cost aggregation smoke suite. |
 | `npm run test:snflow` | SnFlow setup/store/session-link/spec-review smoke suite. |
 | `npm run test:automation` | Automation store/schedule/policy/runner/API smoke suite. |
@@ -77,6 +79,7 @@ npm run dev     # http://localhost:62666
 | Area | Source entry | Documentation |
 | --- | --- | --- |
 | Session browsing/parsing | `lib/session-reader.ts`, `app/api/sessions/**` | `docs/architecture/overview.md`, `docs/modules/api.md` |
+| Workspace session search | `lib/session-search.ts`, `lib/session-index.ts`, `app/api/sessions/search/`, `hooks/useSessionBrowser.ts`, `components/sidebar/SessionSearchResults.tsx` | `docs/modules/api.md`, `docs/modules/frontend.md`, `docs/modules/library.md` |
 | Session changed-file overlay | `lib/session-file-changes.ts`, `components/SessionChangesFloatingPanel.tsx`, `app/api/sessions/[id]/changes/**` | `docs/architecture/overview.md`, `docs/modules/api.md`, `docs/modules/frontend.md`, `docs/modules/library.md` |
 | Agent command lifecycle | `lib/rpc-manager.ts`, `app/api/agent/**` | `docs/architecture/overview.md` |
 | Chat/session UI state | `hooks/useAgentSession.ts`, `components/ChatWindow.tsx`, `components/ChatInput.tsx` | `docs/modules/frontend.md` |

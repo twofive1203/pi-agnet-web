@@ -28,6 +28,8 @@ export interface SessionListProps {
   onLoadMore: () => void;
   onClearSelection: () => void;
   onBatchArchive: () => void;
+  /** Surface rename/delete HTTP failures without mutating list state first. */
+  onActionError?: (message: string) => void;
 }
 
 export const SessionList = memo(function SessionList({
@@ -49,6 +51,7 @@ export const SessionList = memo(function SessionList({
   onLoadMore,
   onClearSelection,
   onBatchArchive,
+  onActionError,
 }: SessionListProps) {
   const { t } = useI18n();
   const groupedSessionTree = useMemo(() => {
@@ -100,6 +103,7 @@ export const SessionList = memo(function SessionList({
               onSessionDeleted={onSessionDeleted}
               onArchive={onArchive}
               onContextMenu={onContextMenu}
+              onActionError={onActionError}
               depth={0}
               selectedForArchive={selectedForArchive}
               onToggleSelect={onToggleSelect}
@@ -188,6 +192,7 @@ const SessionTreeItem = memo(function SessionTreeItem({
   onSessionDeleted,
   onArchive,
   onContextMenu,
+  onActionError,
   depth,
   selectedForArchive,
   onToggleSelect,
@@ -199,6 +204,7 @@ const SessionTreeItem = memo(function SessionTreeItem({
   onSessionDeleted?: (id: string) => void;
   onArchive?: (id: string) => void;
   onContextMenu?: (event: React.MouseEvent, session: SessionInfo) => void;
+  onActionError?: (message: string) => void;
   depth: number;
   selectedForArchive?: Set<string>;
   onToggleSelect?: (id: string) => void;
@@ -238,6 +244,7 @@ const SessionTreeItem = memo(function SessionTreeItem({
           onDeleted={onSessionDeleted}
           onArchive={onArchive}
           onContextMenu={onContextMenu}
+          onActionError={onActionError}
           depth={depth}
           hasChildren={hasChildren}
           selectedForArchive={selectedForArchive?.has(node.session.id)}
@@ -258,6 +265,7 @@ const SessionTreeItem = memo(function SessionTreeItem({
               onSessionDeleted={onSessionDeleted}
               onArchive={onArchive}
               onContextMenu={onContextMenu}
+              onActionError={onActionError}
               depth={depth + 1}
               selectedForArchive={selectedForArchive}
               onToggleSelect={onToggleSelect}
@@ -269,6 +277,16 @@ const SessionTreeItem = memo(function SessionTreeItem({
   );
 });
 
+async function readSessionActionError(res: Response, fallback: string): Promise<string> {
+  try {
+    const data = (await res.json()) as { error?: unknown };
+    if (typeof data.error === "string" && data.error.trim()) return data.error;
+  } catch {
+    // ignore
+  }
+  return fallback;
+}
+
 const SessionItem = memo(function SessionItem({
   session,
   isSelected,
@@ -277,6 +295,7 @@ const SessionItem = memo(function SessionItem({
   onDeleted,
   onArchive,
   onContextMenu,
+  onActionError,
   depth = 0,
   hasChildren = false,
   collapsed = false,
@@ -291,6 +310,7 @@ const SessionItem = memo(function SessionItem({
   onDeleted?: (id: string) => void;
   onArchive?: (id: string) => void;
   onContextMenu?: (event: React.MouseEvent, session: SessionInfo) => void;
+  onActionError?: (message: string) => void;
   depth?: number;
   hasChildren?: boolean;
   collapsed?: boolean;
@@ -319,16 +339,20 @@ const SessionItem = memo(function SessionItem({
     setRenaming(false);
     if (name === (session.name ?? "")) return;
     try {
-      await fetch(`/api/sessions/${encodeURIComponent(session.id)}`, {
+      const res = await fetch(`/api/sessions/${encodeURIComponent(session.id)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name }),
       });
+      if (!res.ok) {
+        onActionError?.(await readSessionActionError(res, t("sidebar.renameFailed")));
+        return;
+      }
       onRenamed?.();
-    } catch {
-      // ignore
+    } catch (e) {
+      onActionError?.(e instanceof Error ? e.message : String(e));
     }
-  }, [renameValue, session.id, session.name, onRenamed]);
+  }, [renameValue, session.id, session.name, onRenamed, onActionError, t]);
 
   const handleDeleteClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
@@ -340,12 +364,18 @@ const SessionItem = memo(function SessionItem({
     setConfirmDelete(false);
     setDeleting(true);
     try {
-      await fetch(`/api/sessions/${encodeURIComponent(session.id)}`, { method: "DELETE" });
+      const res = await fetch(`/api/sessions/${encodeURIComponent(session.id)}`, { method: "DELETE" });
+      if (!res.ok) {
+        setDeleting(false);
+        onActionError?.(await readSessionActionError(res, t("sidebar.deleteFailed")));
+        return;
+      }
       onDeleted?.(session.id);
-    } catch {
+    } catch (e) {
       setDeleting(false);
+      onActionError?.(e instanceof Error ? e.message : String(e));
     }
-  }, [session.id, onDeleted]);
+  }, [session.id, onDeleted, onActionError, t]);
 
   const handleDeleteCancel = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();

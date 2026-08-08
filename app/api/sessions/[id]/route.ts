@@ -5,6 +5,7 @@ import { SessionManager } from "@earendil-works/pi-coding-agent";
 import {
   resolveSessionPath,
   invalidateSessionPathCache,
+  invalidateSessionIndex,
   buildSessionContext,
   isArchivedSessionPath,
   sessionIdFromFilePath,
@@ -237,6 +238,8 @@ export async function PATCH(
     }
     const sm = SessionManager.open(filePath);
     sm.appendSessionInfo(name.trim());
+    // Fingerprint changes with append; drop memory so the next search rebuilds summaries.
+    invalidateSessionIndex();
     return NextResponse.json({ ok: true });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
@@ -288,6 +291,7 @@ export async function DELETE(
     deleteSessionArtifacts(filePath);
     deleteSessionChangesSidecar(id);
     invalidateSessionPathCache(id);
+    invalidateSessionIndex();
     return NextResponse.json({ ok: true });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
