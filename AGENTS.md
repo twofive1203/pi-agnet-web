@@ -16,6 +16,7 @@ npm run dev     # http://localhost:62666
 | `node_modules/.bin/tsc --noEmit` | Type-check without emitting. |
 | `npm run test:browser` | Browser binding protocol/manager and Chrome extension artifact smoke suite. |
 | `npm run test:agent-stream` | Agent token-stream coalescing and lifecycle ordering smoke suite. |
+| `npm run test:chat-draft` | Browser-local Composer draft parsing, persistence, and cleanup smoke suite. |
 | `npm run test:session-changes` | Async session changed-file projection and serialization smoke suite. |
 | `npm run test:session-stats` | Parent-session lifetime token/cost aggregation smoke suite. |
 | `npm run test:snflow` | SnFlow setup/store/session-link/spec-review smoke suite. |

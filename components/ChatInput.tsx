@@ -8,6 +8,7 @@ import type { ToolPreset } from "@/components/ToolPanel";
 import { BrowserBindingTrigger } from "@/components/BrowserBindingTrigger";
 import { encodeFilePathForApi, getFileName, getRelativeFilePath, joinFilePath } from "@/lib/file-paths";
 import { buildWorkflowTaskResumePrompt, type WorkflowTaskChatContext } from "@/lib/workflow-chat-context";
+import { clearChatDraft, readChatDraft, writeChatDraft } from "@/lib/chat-draft";
 import { useI18n } from "@/components/I18nProvider";
 
 export interface AttachedImage {
@@ -50,6 +51,7 @@ interface Props {
   onAutoScrollToggle?: () => void;
   browserSessionId?: string | null;
   browserSessionLabel?: string;
+  draftScope: string;
 }
 
 type GitBranchDisplay = Pick<GitStatusInfo, "branch" | "isDetached" | "isDirty" | "isWorktree">;
@@ -359,6 +361,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   soundEnabled, onSoundToggle,
   autoScrollEnabled, onAutoScrollToggle,
   browserSessionId, browserSessionLabel,
+  draftScope,
 }: Props, ref) {
   const { t } = useI18n();
   const retryReason = formatRetryReason(retryInfo?.errorMessage, t);
@@ -382,6 +385,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const [attachedImages, setAttachedImages] = useState<AttachedImage[]>([]);
   const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
   const [uploadingFiles, setUploadingFiles] = useState(false);
+  const [fileUploadError, setFileUploadError] = useState<string | null>(null);
   const [gitBranch, setGitBranch] = useState<GitBranchDisplay | null>(null);
 
   const inputRef = useRef<HTMLDivElement>(null);
@@ -400,6 +404,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   // DOM-based: text before cursor, synced on every input/selection change
   const [beforeCursorText, setBeforeCursorText] = useState("");
   const [hasEditorContent, setHasEditorContent] = useState(false);
+  const [editorDraftText, setEditorDraftText] = useState("");
+  const hydratedDraftScopeRef = useRef<string | null>(null);
 
   const syncFromDom = useCallback(() => {
     const el = inputRef.current;
@@ -407,6 +413,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     const beforeText = getTextBeforeCursor(el);
     setBeforeCursorText(beforeText);
     setHasEditorContent(hasContent(el));
+    setEditorDraftText(serializeNodes(el.childNodes));
   }, []);
 
   const slashMatch = useMemo(() => getSlashCommandMatch(beforeCursorText, beforeCursorText.length), [beforeCursorText]);
@@ -574,6 +581,27 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
   }, []);
+
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    const draft = readChatDraft(window.localStorage, draftScope);
+    el.textContent = draft?.text ?? "";
+    setAttachedFiles(draft?.files ?? []);
+    setBeforeCursorText(draft?.text ?? "");
+    setEditorDraftText(draft?.text ?? "");
+    setHasEditorContent(hasContent(el));
+    hydratedDraftScopeRef.current = draftScope;
+    window.requestAnimationFrame(resizeInput);
+  }, [draftScope, resizeInput]);
+
+  useEffect(() => {
+    if (hydratedDraftScopeRef.current !== draftScope) return;
+    const timer = window.setTimeout(() => {
+      writeChatDraft(window.localStorage, draftScope, { text: editorDraftText, files: attachedFiles });
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [attachedFiles, draftScope, editorDraftText]);
 
   /** Insert text into the contentEditable div at the current cursor position. */
   const insertTextAtCursor = useCallback((text: string, addSpaceSep = true) => {
@@ -787,36 +815,35 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
 
     // ── File attachment ──
 
-  const uploadFile = useCallback(async (file: File): Promise<AttachedFile | null> => {
+  const uploadFile = useCallback(async (file: File): Promise<AttachedFile> => {
     const formData = new FormData();
     formData.append("file", file);
-    try {
-      const res = await fetch("/api/files/upload", { method: "POST", body: formData });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-        console.error("File upload failed:", err.error);
-        return null;
-      }
-      const data = await res.json() as { name: string; path: string; size: number };
-      return { name: data.name, size: data.size, path: data.path };
-    } catch (e) {
-      console.error("File upload error:", e);
-      return null;
+    const res = await fetch("/api/files/upload", { method: "POST", body: formData });
+    const data = await res.json().catch(() => ({})) as { name?: string; path?: string; size?: number; error?: string };
+    if (!res.ok || !data.name || !data.path || typeof data.size !== "number") {
+      throw new Error(data.error ?? `HTTP ${res.status}`);
     }
+    return { name: data.name, size: data.size, path: data.path };
   }, []);
 
   const processFileUploads = useCallback(async (files: File[]) => {
     const textFiles = files.filter((f) => !f.type.startsWith("image/"));
     if (!textFiles.length) return;
     setUploadingFiles(true);
+    setFileUploadError(null);
     const results: AttachedFile[] = [];
+    const failures: string[] = [];
     for (const file of textFiles) {
-      const result = await uploadFile(file);
-      if (result) results.push(result);
+      try {
+        results.push(await uploadFile(file));
+      } catch (error) {
+        failures.push(`${file.name}: ${error instanceof Error ? error.message : String(error)}`);
+      }
     }
     if (results.length > 0) {
       setAttachedFiles((prev) => [...prev, ...results]);
     }
+    if (failures.length > 0) setFileUploadError(failures.join("; "));
     setUploadingFiles(false);
   }, [uploadFile]);
 
@@ -871,8 +898,10 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     setAtDismissedKey(null);
     clearImages();
     clearFiles();
+    setFileUploadError(null);
+    clearChatDraft(window.localStorage, draftScope);
     syncFromDom();
-  }, [clearImages, clearFiles, syncFromDom]);
+  }, [clearImages, clearFiles, draftScope, syncFromDom]);
 
   const handleSend = useCallback(() => {
     if (!sendActive()) return;
@@ -1183,6 +1212,19 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   max: retryInfo.maxAttempts,
                 })
               : t("chat.retrying", { attempt: retryInfo.attempt, max: retryInfo.maxAttempts })}
+          </div>
+        )}
+        {fileUploadError && (
+          <div className="chat-input-retry-notice" role="alert">
+            <span>{t("chat.uploadFailed", { details: fileUploadError })}</span>
+            <button
+              type="button"
+              className="chat-input-attachment-remove"
+              onClick={() => setFileUploadError(null)}
+              aria-label={t("chat.dismissUploadError")}
+            >
+              ×
+            </button>
           </div>
         )}
         {/* Image previews */}

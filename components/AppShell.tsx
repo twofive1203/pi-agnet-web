@@ -368,6 +368,7 @@ export function AppShell() {
   // Right panel — file tabs and optional SnFlow task drawer
   const [fileTabs, setFileTabs] = useState<Tab[]>([]);
   const [activeFileTabId, setActiveFileTabId] = useState<string | null>(null);
+  const [activeFileDirty, setActiveFileDirty] = useState(false);
   // Inspector starts collapsed by default; the focused top-bar trigger reopens the last tab.
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
   /** Inspector tabs: files(Preview) / workflow(SnFlow) / changes / git / agents. */
@@ -503,9 +504,20 @@ export function AppShell() {
     chatInputRef.current?.addFileReference(relativePath, selection);
   }, [activeCwd]);
 
+  const confirmDiscardActiveFile = useCallback(async (): Promise<boolean> => {
+    if (!activeFileDirty) return true;
+    const confirmed = await appDialog.confirm({
+      message: t("panels.fileViewer.discardChanges"),
+      tone: "danger",
+    });
+    if (confirmed) setActiveFileDirty(false);
+    return confirmed;
+  }, [activeFileDirty, appDialog, t]);
+
   /** Workspace picker / explicit project change — may clear cross-cwd session state. */
-  const handleActiveCwdChange = useCallback((cwd: string | null) => {
+  const handleActiveCwdChange = useCallback(async (cwd: string | null) => {
     if (cwd === activeCwdRef.current) return;
+    if (!(await confirmDiscardActiveFile())) return;
     setFileTabs([]);
     setActiveFileTabId(null);
     // Keep the Inspector shell visible across workspace changes; each tab already
@@ -544,9 +556,10 @@ export function AppShell() {
     setGitRefreshKey((k) => k + 1);
     setGitDirty(false);
     router.replace("/", { scroll: false });
-  }, [router]);
+  }, [confirmDiscardActiveFile, router]);
 
-  const handleSelectSession = useCallback((session: SessionInfo, isRestore = false) => {
+  const handleSelectSession = useCallback(async (session: SessionInfo, isRestore = false) => {
+    if (session.cwd && session.cwd !== activeCwdRef.current && !(await confirmDiscardActiveFile())) return;
     setNewSessionCwd(null);
     selectedSessionRef.current = session;
     setSelectedSession(session);
@@ -567,9 +580,10 @@ export function AppShell() {
     if (!isRestore) {
       router.replace(`?session=${encodeURIComponent(session.id)}`, { scroll: false });
     }
-  }, [router]);
+  }, [confirmDiscardActiveFile, router]);
 
-  const handleNewSession = useCallback((_sessionId: string, cwd: string) => {
+  const handleNewSession = useCallback(async (_sessionId: string, cwd: string) => {
+    if (cwd !== activeCwdRef.current && !(await confirmDiscardActiveFile())) return;
     selectedSessionRef.current = null;
     setSelectedSession(null);
     setNewSessionCwd(cwd);
@@ -585,7 +599,7 @@ export function AppShell() {
     setSystemPrompt(null);
     setActiveTopPanel(null);
     router.replace("/", { scroll: false });
-  }, [router]);
+  }, [confirmDiscardActiveFile, router]);
 
   // Called by ChatWindow when a new session gets its real id from pi
   const handleSessionCreated = useCallback((session: SessionInfo) => {
@@ -661,12 +675,14 @@ export function AppShell() {
     }
   }, [router]);
 
-  const openInspectorTab = useCallback((mode: InspectorMode) => {
+  const openInspectorTab = useCallback(async (mode: InspectorMode): Promise<boolean> => {
+    if (mode !== "files" && rightPanelMode === "files" && !(await confirmDiscardActiveFile())) return false;
     if (mode === "workflow") void loadWorkflowPanel();
     if (isMobileLayoutViewport()) setSidebarOpen(false);
     setRightPanelMode(mode);
     setRightPanelOpen(true);
-  }, []);
+    return true;
+  }, [confirmDiscardActiveFile, rightPanelMode]);
 
   const handleInspectorTabKeyDown = useCallback((event: React.KeyboardEvent<HTMLButtonElement>, mode: InspectorMode) => {
     const currentIndex = INSPECTOR_MODES.indexOf(mode);
@@ -678,22 +694,31 @@ export function AppShell() {
     if (nextIndex === null) return;
     event.preventDefault();
     const nextMode = INSPECTOR_MODES[nextIndex];
-    openInspectorTab(nextMode);
-    window.requestAnimationFrame(() => inspectorTabRefs.current[nextMode]?.focus());
+    void openInspectorTab(nextMode).then((opened) => {
+      if (opened) window.requestAnimationFrame(() => inspectorTabRefs.current[nextMode]?.focus());
+    });
   }, [openInspectorTab]);
 
-  const handleOpenFile = useCallback((filePath: string, fileName: string, line?: number) => {
+  const handleOpenFile = useCallback(async (filePath: string, fileName: string, line?: number) => {
     const tabId = `file:${filePath}`;
+    if (tabId !== activeFileTabId && !(await confirmDiscardActiveFile())) return;
     setFileTabs((prev) => {
       const existing = prev.find((t) => t.id === tabId);
       if (existing) return prev.map((tab) => tab.id === tabId ? { ...tab, line } : tab);
       return [...prev, { id: tabId, label: fileName, filePath, line }];
     });
     setActiveFileTabId(tabId);
-    openInspectorTab("files");
-  }, [openInspectorTab]);
+    void openInspectorTab("files");
+  }, [activeFileTabId, confirmDiscardActiveFile, openInspectorTab]);
 
-  const handleCloseFileTab = useCallback((tabId: string) => {
+  const handleSelectFileTab = useCallback(async (tabId: string) => {
+    if (tabId === activeFileTabId) return;
+    if (!(await confirmDiscardActiveFile())) return;
+    setActiveFileTabId(tabId);
+  }, [activeFileTabId, confirmDiscardActiveFile]);
+
+  const handleCloseFileTab = useCallback(async (tabId: string) => {
+    if (tabId === activeFileTabId && !(await confirmDiscardActiveFile())) return;
     setFileTabs((prev) => {
       const next = prev.filter((t) => t.id !== tabId);
       return next;
@@ -703,7 +728,7 @@ export function AppShell() {
       const remaining = fileTabs.filter((t) => t.id !== tabId);
       return remaining.length > 0 ? remaining[remaining.length - 1].id : null;
     });
-  }, [fileTabs]);
+  }, [activeFileTabId, confirmDiscardActiveFile, fileTabs]);
 
   const handleExportSession = useCallback(() => {
     if (!selectedSession) return;
@@ -1384,7 +1409,7 @@ export function AppShell() {
             />
           </Tooltip>
         )}
-        {rightPanelOpen && (
+        {(rightPanelOpen || (rightPanelMode === "files" && activeFileTabId !== null)) && (
           <>
             <div className="insp-head">
               <h3>{t("common.workbench.inspector")}</h3>
@@ -1445,8 +1470,8 @@ export function AppShell() {
                       <TabBar
                         tabs={fileTabs}
                         activeTabId={activeFileTabId ?? ""}
-                        onSelectTab={setActiveFileTabId}
-                        onCloseTab={handleCloseFileTab}
+                        onSelectTab={(tabId) => { void handleSelectFileTab(tabId); }}
+                        onCloseTab={(tabId) => { void handleCloseFileTab(tabId); }}
                       />
                     </div>
                   </div>
@@ -1454,7 +1479,7 @@ export function AppShell() {
                   {/* File content */}
                   <div className="insp-panel-content">
                     {activeFileTab?.filePath ? (
-                      <FileViewer filePath={activeFileTab.filePath} cwd={activeCwd ?? undefined} initialLine={activeFileTab.line} editorConfig={webConfig?.editor} onAddChat={handleAddChat} onOpenFile={handleOpenFile} />
+                      <FileViewer filePath={activeFileTab.filePath} cwd={activeCwd ?? undefined} initialLine={activeFileTab.line} editorConfig={webConfig?.editor} onAddChat={handleAddChat} onOpenFile={handleOpenFile} onDirtyChange={setActiveFileDirty} />
                     ) : (
                       <div className="insp-empty-state">{t("app.noOpenFile")}</div>
                     )}

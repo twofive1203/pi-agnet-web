@@ -20,6 +20,7 @@ import type {
 } from "@/lib/pi-web-config";
 import type { WorkflowSetupCommandResponse, WorkflowSetupStatus } from "@/lib/workflow-setup";
 import { useI18n } from "@/components/I18nProvider";
+import { useAppDialog } from "@/components/AppDialogProvider";
 import {
   SettingsButton,
   SettingsField as Field,
@@ -271,6 +272,7 @@ function editorConfigsEqual(a: PiWebEditorConfig | null, b: PiWebEditorConfig | 
 
 export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string | null; onClose: () => void; onConfigChange?: () => void }) {
   const { locale, setLocale, t } = useI18n();
+  const appDialog = useAppDialog();
   const [section, setSection] = useState<SettingsSection>("language");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -309,6 +311,27 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
     () => !worktreeConfigsEqual(worktree, savedWorktree) || !workflowConfigsEqual(workflow, savedWorkflow) || !usageConfigsEqual(usage, savedUsage) || !terminalConfigsEqual(terminal, savedTerminal) || !chatGptConfigsEqual(chatgpt, savedChatgpt) || JSON.stringify(grok) !== JSON.stringify(savedGrok) || !editorConfigsEqual(editor, savedEditor) || JSON.stringify(bundledExtensions) !== JSON.stringify(savedBundledExtensions),
     [worktree, savedWorktree, workflow, savedWorkflow, usage, savedUsage, terminal, savedTerminal, chatgpt, savedChatgpt, grok, savedGrok, editor, savedEditor, bundledExtensions, savedBundledExtensions],
   );
+
+  const requestClose = useCallback(async () => {
+    if (dirty) {
+      const confirmed = await appDialog.confirm({
+        message: t("settings.discardSettingsConfirm"),
+        tone: "danger",
+      });
+      if (!confirmed) return;
+    }
+    onClose();
+  }, [appDialog, dirty, onClose, t]);
+
+  useEffect(() => {
+    if (!dirty) return;
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [dirty]);
 
   const loadConfig = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
@@ -663,7 +686,7 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
 
   return (
     <>
-    <div className="pi-modal-overlay" onClick={onClose}>
+    <div className="pi-modal-overlay" onClick={(event) => { if (event.target === event.currentTarget) void requestClose(); }}>
       <div
         className="pi-modal-panel settings-modal-panel"
         role="dialog"
@@ -676,7 +699,7 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
             <h2 id="settings-modal-title" className="pi-modal-title">{t("settings.title")}</h2>
             <p className="pi-modal-subtitle">{t("settings.subtitle")}</p>
           </div>
-          <button type="button" onClick={onClose} className="pi-modal-close" title={t("settings.close")} aria-label={t("settings.close")}>
+          <button type="button" onClick={() => { void requestClose(); }} className="pi-modal-close" title={t("settings.close")} aria-label={t("settings.close")}>
             ×
           </button>
         </div>
@@ -1250,7 +1273,7 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
               <span className="settings-modal-footer-note">
                 {section === "mcp" ? t("settings.mcpPanelNote") : section === "skills" ? t("settings.skillsPanelNote") : section === "webtools" ? t("settings.webTools.panelNote") : t("settings.agentsPanelNote")}
               </span>
-              <SettingsButton onClick={onClose}>{t("common.close")}</SettingsButton>
+              <SettingsButton onClick={() => { void requestClose(); }}>{t("common.close")}</SettingsButton>
             </>
           ) : (
             <>
@@ -1259,7 +1282,7 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
               </SettingsButton>
               <div className="settings-modal-footer-actions">
                 {dirty && <span className="settings-dirty-note">{t("settings.unsavedChanges")}</span>}
-                <SettingsButton onClick={onClose}>{t("common.cancel")}</SettingsButton>
+                <SettingsButton onClick={() => { void requestClose(); }}>{t("common.cancel")}</SettingsButton>
                 <SettingsButton
                   variant="primary"
                   onClick={() => void handleSave()}

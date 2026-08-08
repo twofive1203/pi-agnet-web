@@ -485,6 +485,7 @@ export const settingsZh = {
     "技能开关与安装修改立即写入对应 skill 文件，不写入 pi-web.json。",
   resetDefaults: "恢复默认值",
   unsavedChanges: "有未保存更改",
+  discardSettingsConfirm: "关闭设置会丢弃尚未保存的更改，确定继续？",
 
   passed: "通过",
   needsAttention: "需处理",
@@ -1081,6 +1082,7 @@ export const settingsEn = {
     "Skill toggles and installs are written to the skill files immediately, not to pi-web.json.",
   resetDefaults: "Reset to defaults",
   unsavedChanges: "Unsaved changes",
+  discardSettingsConfirm: "Closing Settings will discard unsaved changes. Continue?",
 
   passed: "Passed",
   needsAttention: "Needs attention",

@@ -307,6 +307,7 @@ export const ChatWindow = memo(function ChatWindow({ session, newSessionCwd, onA
       onAutoScrollToggle={onAutoScrollToggle}
       browserSessionId={session?.id ?? null}
       browserSessionLabel={session?.name || session?.id?.slice(0, 8)}
+      draftScope={session?.id ? `session:${session.id}` : `new:${newSessionCwd ?? "unknown"}`}
     />
   );
 

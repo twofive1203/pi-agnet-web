@@ -30,6 +30,7 @@ interface Props {
   editorConfig?: PiWebEditorConfig;
   onAddChat?: (filePath: string, selection?: { startLine: number; endLine: number }) => void;
   onOpenFile?: (filePath: string, fileName: string, line?: number) => void;
+  onDirtyChange?: (dirty: boolean) => void;
 }
 
 interface FileData {
@@ -638,7 +639,7 @@ function DocumentViewer({ filePath, cwd, onAddChat }: { filePath: string; cwd?: 
   );
 }
 
-export function FileViewer({ filePath, cwd, initialLine, editorConfig, onAddChat, onOpenFile }: Props) {
+export function FileViewer({ filePath, cwd, initialLine, editorConfig, onAddChat, onOpenFile, onDirtyChange }: Props) {
   if (isImagePath(filePath)) {
     return <ImageViewer filePath={filePath} cwd={cwd} onAddChat={onAddChat} />;
   }
@@ -648,10 +649,10 @@ export function FileViewer({ filePath, cwd, initialLine, editorConfig, onAddChat
   if (isDocumentPreviewPath(filePath)) {
     return <DocumentViewer filePath={filePath} cwd={cwd} onAddChat={onAddChat} />;
   }
-  return <TextFileViewer filePath={filePath} cwd={cwd} initialLine={initialLine} editorConfig={editorConfig} onAddChat={onAddChat} onOpenFile={onOpenFile} />;
+  return <TextFileViewer filePath={filePath} cwd={cwd} initialLine={initialLine} editorConfig={editorConfig} onAddChat={onAddChat} onOpenFile={onOpenFile} onDirtyChange={onDirtyChange} />;
 }
 
-function TextFileViewer({ filePath, cwd, initialLine, editorConfig, onAddChat, onOpenFile }: Props) {
+function TextFileViewer({ filePath, cwd, initialLine, editorConfig, onAddChat, onOpenFile, onDirtyChange }: Props) {
   const { isDark } = useTheme();
   const { t } = useI18n();
   const appDialog = useAppDialog();
@@ -682,6 +683,22 @@ function TextFileViewer({ filePath, cwd, initialLine, editorConfig, onAddChat, o
   dirtyRef.current = dirty;
   const editorContentRef = useRef(editorContent);
   editorContentRef.current = editorContent;
+
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+  }, [dirty, onDirtyChange]);
+
+  useEffect(() => {
+    if (!dirty) return;
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [dirty]);
+
+  useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
 
   const fetchContent = useCallback((filePath: string, isRefresh = false) => {
     if (isRefresh && dirtyRef.current) {
