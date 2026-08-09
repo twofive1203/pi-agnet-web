@@ -13,4 +13,4 @@ Archive investigation notes, analysis records, and future-improvement research h
 
 ## Open research
 
-There are currently no research documents marked open. Active performance and functional backlog items are tracked in [`../../PERFORMANCE_AND_POLISH_ROADMAP.md`](../../PERFORMANCE_AND_POLISH_ROADMAP.md).
+There are currently no research documents marked open. Active performance and functional backlog items are tracked in [`../plans/README.md`](../plans/README.md).

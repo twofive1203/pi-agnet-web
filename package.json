@@ -59,6 +59,8 @@
     "test:session-index": "npx --yes tsx@4.23.1 scripts/smoke-session-index.ts",
     "test:session-search": "npx --yes tsx@4.23.1 scripts/smoke-session-search.ts",
     "test:session-stats": "npx --yes tsx@4.23.1 scripts/smoke-session-billing-stats.ts",
+    "test:git-diff": "npx --yes tsx@4.23.1 scripts/smoke-git-diff.ts",
+    "test:file-search": "npx --yes tsx@4.23.1 scripts/smoke-workspace-file-search.ts",
     "test:api-protection": "node --import tsx scripts/smoke-grok-usage.mjs",
     "prepublishOnly": "npm run lint && tsc --noEmit && npm run test:server-auth && npm run test:runtime && npm run build && npm run test:server-auth:e2e",
     "release:patch": "npm version patch && npm publish --access public",

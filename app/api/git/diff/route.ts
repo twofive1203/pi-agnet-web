@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { execFile } from "child_process";
 import { promisify } from "util";
-import type { GitCommitFileDiffResponse } from "@/lib/types";
+import type {
+  GitCommitFileDiffResponse,
+  GitWorkingTreeDiffScope,
+  GitWorkingTreeFileDiffResponse,
+} from "@/lib/types";
 
 const execFileAsync = promisify(execFile);
 
@@ -76,29 +80,45 @@ function looksBinaryDiff(diff: string): boolean {
   return /(^|\n)Binary files .+ differ(\n|$)/.test(diff) || /(^|\n)GIT binary patch(\n|$)/.test(diff);
 }
 
-async function buildDiff(cwd: string, hash: string, file: string, oldFile?: string): Promise<string> {
-  const parent = await getFirstParent(cwd, hash);
+const COMMON_DIFF_ARGS = [
+  "--no-ext-diff",
+  "--no-color",
+  "--find-renames",
+  "--find-copies",
+  "--patch",
+] as const;
+
+function getPathspecs(file: string, oldFile?: string): string[] {
   const pathspecs = [literalPathspec(file)];
   if (oldFile && oldFile !== file) pathspecs.push(literalPathspec(oldFile));
+  return pathspecs;
+}
 
-  const commonArgs = [
-    "--no-ext-diff",
-    "--no-color",
-    "--find-renames",
-    "--find-copies",
-    "--patch",
-  ];
-
+async function buildDiff(cwd: string, hash: string, file: string, oldFile?: string): Promise<string> {
+  const parent = await getFirstParent(cwd, hash);
+  const pathspecs = getPathspecs(file, oldFile);
   const args = parent
-    ? ["diff", ...commonArgs, parent, hash, "--", ...pathspecs]
-    : ["diff", ...commonArgs, EMPTY_TREE_HASH, hash, "--", ...pathspecs];
+    ? ["diff", ...COMMON_DIFF_ARGS, parent, hash, "--", ...pathspecs]
+    : ["diff", ...COMMON_DIFF_ARGS, EMPTY_TREE_HASH, hash, "--", ...pathspecs];
 
   return git(args, cwd, DIFF_BUFFER);
+}
+
+async function buildWorkingTreeDiff(
+  cwd: string,
+  scope: GitWorkingTreeDiffScope,
+  file: string,
+  oldFile?: string,
+): Promise<string> {
+  const stagedArgs = scope === "staged" ? ["--cached"] : [];
+  return git(["diff", ...stagedArgs, ...COMMON_DIFF_ARGS, "--", ...getPathspecs(file, oldFile)], cwd, DIFF_BUFFER);
 }
 
 export async function GET(req: NextRequest) {
   const cwd = req.nextUrl.searchParams.get("cwd");
   const hash = req.nextUrl.searchParams.get("hash")?.trim() ?? "";
+  const scopeParam = req.nextUrl.searchParams.get("scope")?.trim() ?? "";
+  const scope = scopeParam === "staged" || scopeParam === "unstaged" ? scopeParam : null;
   const file = req.nextUrl.searchParams.get("path") ?? "";
   const oldFileParam = req.nextUrl.searchParams.get("oldPath");
   const oldFile = oldFileParam && oldFileParam.length > 0 ? oldFileParam : undefined;
@@ -106,8 +126,11 @@ export async function GET(req: NextRequest) {
   if (!cwd) {
     return NextResponse.json({ error: "cwd is required" }, { status: 400 });
   }
-  if (!hash) {
-    return NextResponse.json({ error: "hash is required" }, { status: 400 });
+  if (scopeParam && !scope) {
+    return NextResponse.json({ error: "scope must be staged or unstaged" }, { status: 400 });
+  }
+  if (!scope && !hash) {
+    return NextResponse.json({ error: "hash is required when scope is omitted" }, { status: 400 });
   }
   if (!file) {
     return NextResponse.json({ error: "path is required" }, { status: 400 });
@@ -116,13 +139,35 @@ export async function GET(req: NextRequest) {
   try {
     const isRepo = await validateGitRepository(cwd);
     if (!isRepo) {
-      const response: GitCommitFileDiffResponse = {
-        hash,
-        file,
-        oldFile,
-        diffAvailable: false,
-        reason: "unavailable",
-      };
+      const response: GitCommitFileDiffResponse | GitWorkingTreeFileDiffResponse = scope
+        ? { scope, file, oldFile, diffAvailable: false, reason: "unavailable" }
+        : { hash, file, oldFile, diffAvailable: false, reason: "unavailable" };
+      return NextResponse.json(response);
+    }
+
+    if (scope) {
+      let diff: string;
+      try {
+        diff = await buildWorkingTreeDiff(cwd, scope, file, oldFile);
+      } catch (error) {
+        if (isMaxBufferError(error)) {
+          const response: GitWorkingTreeFileDiffResponse = {
+            scope,
+            file,
+            oldFile,
+            diffAvailable: false,
+            reason: "too-large",
+          };
+          return NextResponse.json(response);
+        }
+        throw error;
+      }
+
+      const response: GitWorkingTreeFileDiffResponse = looksBinaryDiff(diff)
+        ? { scope, file, oldFile, diffAvailable: false, reason: "binary" }
+        : diff.trim()
+          ? { scope, file, oldFile, diffAvailable: true, diff }
+          : { scope, file, oldFile, diffAvailable: false, reason: "unavailable" };
       return NextResponse.json(response);
     }
 

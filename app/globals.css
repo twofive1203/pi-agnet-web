@@ -9075,7 +9075,37 @@ button.inspector-list-row { cursor: pointer; }
 .file-explorer-row-action:focus-visible { outline: var(--focus-ring-width) solid var(--focus-ring-color); outline-offset: 0; }
 .file-explorer-mention-action { width: auto; padding: 0 7px; gap: 4px; color: var(--text-accent); font-size: 10px; font-weight: 700; white-space: nowrap; }
 .file-explorer-empty-branch { display: flex; align-items: center; height: 22px; color: var(--text-tertiary); font-size: 10px; }
-.file-explorer-state { justify-content: flex-start; min-height: 38px; padding: 8px 12px; text-align: left; }
+.file-explorer-branch-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-height: 28px;
+  padding: 4px 7px;
+  border: 1px solid var(--status-danger-border);
+  border-radius: var(--radius-sm);
+  background: var(--status-danger-soft);
+  color: var(--status-danger-foreground);
+  font-size: 10px;
+}
+.file-explorer-branch-error span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-explorer-branch-error button,
+.file-explorer-retry {
+  flex-shrink: 0;
+  padding: 3px 7px;
+  border: 1px solid currentColor;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.file-explorer-branch-error button:focus-visible,
+.file-explorer-retry:focus-visible { outline: var(--focus-ring-width) solid var(--focus-ring-color); outline-offset: 1px; }
+.file-explorer-state { justify-content: flex-start; align-items: flex-start; min-height: 38px; padding: 8px 12px; text-align: left; }
+.file-explorer-state.inspector-state-error { gap: 8px; }
+.file-explorer-retry { color: var(--status-danger-foreground); }
 
 /* File preview chrome stays compact and horizontally scrollable at Inspector width. */
 .file-viewer-shell {
@@ -9408,6 +9438,18 @@ button.inspector-list-row { cursor: pointer; }
 .git-commit-file-code.is-warning { color: var(--status-warning-foreground); }
 .git-file-list { display: flex; flex-direction: column; gap: 2px; }
 .git-file-row { display: flex; align-items: center; gap: 6px; min-width: 0; padding: 2px 1px; }
+.git-file-row-button {
+  width: 100%;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.git-file-row-button:hover,
+.git-file-row-button:focus-visible { background: var(--surface-hover); }
+.git-file-row-button:focus-visible { outline: var(--focus-ring-width) solid var(--focus-ring-color); outline-offset: -1px; }
 .git-status-dot { flex-shrink: 0; width: 6px; height: 6px; border-radius: var(--radius-pill); background: var(--text-tertiary); }
 .git-status-dot.is-success { background: var(--status-success-foreground); }
 .git-status-dot.is-danger { background: var(--status-danger-foreground); }

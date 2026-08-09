@@ -13,6 +13,7 @@ import { ExtensionTodoPanel, isTodoWidget } from "./ExtensionTodoPanel";
 import { ChatMinimap, useMessageRefs } from "./ChatMinimap";
 import { useAgentSession, type AgentPhase } from "@/hooks/useAgentSession";
 import { useAudio } from "@/hooks/useAudio";
+import { useCompletionNotification } from "@/hooks/useCompletionNotification";
 import { useAutoScroll } from "@/hooks/useAutoScroll";
 import { useDragDrop } from "@/hooks/useDragDrop";
 import { SessionChangesFloatingPanel } from "./SessionChangesFloatingPanel";
@@ -167,17 +168,48 @@ export const ChatWindow = memo(function ChatWindow({ session, newSessionCwd, onA
   });
 
   const { soundEnabled, onSoundToggle, playDoneSound } = useAudio();
+  const { notificationState, onNotificationToggle, notifyCompletion } = useCompletionNotification();
   const playDoneSoundRef = useRef(playDoneSound);
   playDoneSoundRef.current = playDoneSound;
   const soundEnabledRef = useRef(soundEnabled);
   soundEnabledRef.current = soundEnabled;
+  const notifyCompletionRef = useRef(notifyCompletion);
+  notifyCompletionRef.current = notifyCompletion;
+  const promptFailedRef = useRef(false);
+  const sessionLabel = (session?.name || session?.id?.slice(0, 8) || t("chat.newSession")).slice(0, 80);
+  const completionCopyRef = useRef({
+    completeTitle: t("chat.notificationCompleteTitle"),
+    completeBody: t("chat.notificationCompleteBody", { session: sessionLabel }),
+    failedTitle: t("chat.notificationFailedTitle"),
+    failedBody: t("chat.notificationFailedBody", { session: sessionLabel }),
+    tag: `pi-session-${session?.id ?? newSessionCwd ?? "new"}`,
+  });
+  completionCopyRef.current = {
+    completeTitle: t("chat.notificationCompleteTitle"),
+    completeBody: t("chat.notificationCompleteBody", { session: sessionLabel }),
+    failedTitle: t("chat.notificationFailedTitle"),
+    failedBody: t("chat.notificationFailedBody", { session: sessionLabel }),
+    tag: `pi-session-${session?.id ?? newSessionCwd ?? "new"}`,
+  };
 
-  // Play completion sound only when the whole prompt lifecycle settles.
+  // Completion cues are emitted only after the prompt lifecycle settles; browser
+  // notifications additionally require an explicit user opt-in and a hidden tab.
   const origHandler = handleAgentEventRef.current;
   useEffect(() => {
     handleAgentEventRef.current = (event) => {
-      if (event.type === "agent_settled" && soundEnabledRef.current) {
-        playDoneSoundRef.current();
+      if (event.type === "agent_start") promptFailedRef.current = false;
+      if (event.type === "prompt_error") {
+        promptFailedRef.current = true;
+        const copy = completionCopyRef.current;
+        notifyCompletionRef.current({ title: copy.failedTitle, body: copy.failedBody, tag: copy.tag });
+      }
+      if (event.type === "agent_settled") {
+        if (soundEnabledRef.current) playDoneSoundRef.current();
+        if (!promptFailedRef.current) {
+          const copy = completionCopyRef.current;
+          notifyCompletionRef.current({ title: copy.completeTitle, body: copy.completeBody, tag: copy.tag });
+        }
+        promptFailedRef.current = false;
       }
       origHandler?.(event);
     };
@@ -303,6 +335,8 @@ export const ChatWindow = memo(function ChatWindow({ session, newSessionCwd, onA
       retryInfo={retryInfo}
       soundEnabled={soundEnabled}
       onSoundToggle={onSoundToggle}
+      notificationState={notificationState}
+      onNotificationToggle={onNotificationToggle}
       autoScrollEnabled={autoScrollEnabled}
       onAutoScrollToggle={onAutoScrollToggle}
       browserSessionId={session?.id ?? null}

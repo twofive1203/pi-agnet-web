@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import type { GitStatusInfo, GitFileChange, GitGraphData, GitGraphCommit, GitCommitDetail, GitCommitChangedFile } from "@/lib/types";
 import { CommitGraph } from "./CommitGraph";
 import { GitCommitDiffModal } from "./GitCommitDiffModal";
+import { GitWorkingTreeDiffModal } from "./GitWorkingTreeDiffModal";
 import { useI18n } from "@/components/I18nProvider";
 
 interface Props {
@@ -22,24 +23,19 @@ function gitStatusTone(status: string): string {
 /** Cap rendered rows per file section so huge repos cannot freeze the panel. */
 const MAX_FILE_ROWS = 200;
 
-const gitStatusLabels: Record<string, string> = {
-  M: "modified",
-  A: "added",
-  D: "deleted",
-  R: "renamed",
-  C: "copied",
-  T: "type changed",
-  U: "unmerged",
-  "?": "untracked",
-};
-
-function FileChangeRow({ change }: { change: GitFileChange }) {
+function FileChangeRow({ change, onOpenDiff }: { change: GitFileChange; onOpenDiff: (change: GitFileChange) => void }) {
+  const { t } = useI18n();
   return (
-    <div className="git-file-row">
+    <button
+      type="button"
+      className="git-file-row git-file-row-button"
+      onClick={() => onOpenDiff(change)}
+      title={t("git.openWorkingTreeDiff")}
+    >
       <span className={`git-status-dot ${gitStatusTone(change.status)}`} />
       <span className="git-file-path">{change.oldFile ? `${change.oldFile} → ${change.file}` : change.file}</span>
-      <span className="git-file-status">{gitStatusLabels[change.status] ?? change.status}</span>
-    </div>
+      <span className="git-file-status">{t(`git.status.${change.status}`)}</span>
+    </button>
   );
 }
 
@@ -48,8 +44,8 @@ function CommitChangedFileRow({ file, onOpenDiff }: { file: GitCommitChangedFile
   return (
     <button
       type="button"
-      onDoubleClick={() => onOpenDiff(file)}
-      title={t("git.doubleClickDiff")}
+      onClick={() => onOpenDiff(file)}
+      title={t("git.openDiff")}
       className="git-commit-file-row"
     >
       <span className={`git-commit-file-code ${gitStatusTone(file.status)}`}>{file.status}</span>
@@ -62,7 +58,7 @@ function CommitChangedFileRow({ file, onOpenDiff }: { file: GitCommitChangedFile
           {typeof file.deletions === "number" && <span className="is-danger">-{file.deletions}</span>}
         </span>
       ) : null}
-      <span className="git-file-status">{gitStatusLabels[file.status] ?? file.status}</span>
+      <span className="git-file-status">{t(`git.status.${file.status}`)}</span>
     </button>
   );
 }
@@ -163,6 +159,7 @@ export function GitPanel({ cwd, refreshKey, onDirtyChange }: Props) {
   const [commitDetailError, setCommitDetailError] = useState<string | null>(null);
   const [commitDetailRetryKey, setCommitDetailRetryKey] = useState(0);
   const [diffFile, setDiffFile] = useState<GitCommitChangedFile | null>(null);
+  const [workingDiff, setWorkingDiff] = useState<{ scope: "staged" | "unstaged"; file: GitFileChange } | null>(null);
   const fetchIdRef = useRef(0);
   const commitDetailFetchIdRef = useRef(0);
   const branchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -240,6 +237,7 @@ export function GitPanel({ cwd, refreshKey, onDirtyChange }: Props) {
     setLoadError(null);
     setGraphError(null);
     setDiffFile(null);
+    setWorkingDiff(null);
   }, [cwd]);
 
   useEffect(() => {
@@ -332,6 +330,10 @@ export function GitPanel({ cwd, refreshKey, onDirtyChange }: Props) {
     setDiffFile(file);
   }, []);
 
+  const handleOpenWorkingDiff = useCallback((scope: "staged" | "unstaged", file: GitFileChange) => {
+    setWorkingDiff({ scope, file });
+  }, []);
+
   const handleSwitchBranch = useCallback(async () => {
     if (!cwd || !selectedBranch || status?.isDirty || switching) return;
 
@@ -352,6 +354,7 @@ export function GitPanel({ cwd, refreshKey, onDirtyChange }: Props) {
       setCommitDetail(null);
       setCommitDetailError(null);
       setDiffFile(null);
+      setWorkingDiff(null);
       if (branchDebounceRef.current) {
         clearTimeout(branchDebounceRef.current);
         branchDebounceRef.current = null;
@@ -469,7 +472,7 @@ export function GitPanel({ cwd, refreshKey, onDirtyChange }: Props) {
           <div className="git-history-column">
             <div className="inspector-section-title">
               {t("git.commitGraph")}
-              {previewBranch && <span className="inspector-section-context">preview: {previewBranch}</span>}
+              {previewBranch && <span className="inspector-section-context">{t("git.previewingBranch", { branch: previewBranch })}</span>}
             </div>
             <div className="git-graph-scroll">
               {graphError ? (
@@ -522,7 +525,11 @@ export function GitPanel({ cwd, refreshKey, onDirtyChange }: Props) {
           ? (
             <div className="git-file-list">
               {status.staged.slice(0, MAX_FILE_ROWS).map((change) => (
-                <FileChangeRow key={`staged-${change.status}-${change.oldFile ?? ""}-${change.file}`} change={change} />
+                <FileChangeRow
+                  key={`staged-${change.status}-${change.oldFile ?? ""}-${change.file}`}
+                  change={change}
+                  onOpenDiff={(file) => handleOpenWorkingDiff("staged", file)}
+                />
               ))}
               {status.staged.length > MAX_FILE_ROWS && (
                 <div className="git-empty-inline">{t("git.moreItems", { count: status.staged.length - MAX_FILE_ROWS })}</div>
@@ -538,7 +545,11 @@ export function GitPanel({ cwd, refreshKey, onDirtyChange }: Props) {
           ? (
             <div className="git-file-list">
               {status.unstaged.slice(0, MAX_FILE_ROWS).map((change) => (
-                <FileChangeRow key={`unstaged-${change.status}-${change.oldFile ?? ""}-${change.file}`} change={change} />
+                <FileChangeRow
+                  key={`unstaged-${change.status}-${change.oldFile ?? ""}-${change.file}`}
+                  change={change}
+                  onOpenDiff={(file) => handleOpenWorkingDiff("unstaged", file)}
+                />
               ))}
               {status.unstaged.length > MAX_FILE_ROWS && (
                 <div className="git-empty-inline">{t("git.moreItems", { count: status.unstaged.length - MAX_FILE_ROWS })}</div>
@@ -579,6 +590,14 @@ export function GitPanel({ cwd, refreshKey, onDirtyChange }: Props) {
           shortHash={commitDetail?.shortHash}
           file={diffFile}
           onClose={() => setDiffFile(null)}
+        />
+      )}
+      {workingDiff && cwd && (
+        <GitWorkingTreeDiffModal
+          cwd={cwd}
+          scope={workingDiff.scope}
+          file={workingDiff.file}
+          onClose={() => setWorkingDiff(null)}
         />
       )}
     </div>

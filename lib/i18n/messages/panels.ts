@@ -269,9 +269,13 @@ export const panelsZh = {
   },
   fileExplorer: {
     insertPath: "将路径插入聊天",
+    insertPathShort: "引用",
     openStandalone: "在独立页面打开",
     empty: "空目录",
-    loading: "加载中…",
+    noFiles: "未找到文件",
+    loading: "正在加载文件…",
+    loadFailed: "目录加载失败",
+    retry: "重试",
   },
   fileViewer: {
     save: "保存",
@@ -722,9 +726,13 @@ export const panelsEn = {
   },
   fileExplorer: {
     insertPath: "Insert path into chat",
+    insertPathShort: "Mention",
     openStandalone: "Open in a separate page",
     empty: "Empty folder",
-    loading: "Loading…",
+    noFiles: "No files found",
+    loading: "Loading files…",
+    loadFailed: "Could not load folder",
+    retry: "Retry",
   },
   fileViewer: {
     save: "Save",

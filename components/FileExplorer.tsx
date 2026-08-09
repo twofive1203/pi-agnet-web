@@ -77,16 +77,18 @@ function TreeNode({
   const [children, setChildren] = useState<FileNode[]>(node.children ?? []);
   const [loaded, setLoaded] = useState(node.loaded ?? false);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const loadChildren = useCallback(async (force = false) => {
     if (loaded && !force) return;
     setLoading(true);
+    setLoadError(null);
     try {
       const entries = await fetchEntries(node.fullPath);
       setChildren(entries);
       setLoaded(true);
-    } catch {
-      // ignore
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : String(error));
     } finally {
       setLoading(false);
     }
@@ -186,7 +188,7 @@ function TreeNode({
                   <circle cx="12" cy="12" r="4" />
                   <path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8" />
                 </svg>
-                mention
+                {t("panels.fileExplorer.insertPathShort")}
               </button>
             )}
           </div>
@@ -197,11 +199,18 @@ function TreeNode({
           {children.map((child) => (
             <TreeNode key={child.fullPath} node={child} depth={depth + 1} cwd={cwd} onOpenFile={onOpenFile} onAtMention={onAtMention} expandedPaths={expandedPaths} onToggleExpanded={onToggleExpanded} refreshKey={refreshKey} />
           ))}
-          {children.length === 0 && loaded && (
-            <div className="file-explorer-empty-branch" style={{ paddingLeft: 8 + (depth + 1) * 14 }}>
-              empty
+          {loadError ? (
+            <div className="file-explorer-branch-error" style={{ marginLeft: 8 + (depth + 1) * 14 }} role="alert">
+              <span title={loadError}>{t("panels.fileExplorer.loadFailed")}</span>
+              <button type="button" onClick={() => void loadChildren(true)} disabled={loading}>
+                {t("panels.fileExplorer.retry")}
+              </button>
             </div>
-          )}
+          ) : children.length === 0 && loaded ? (
+            <div className="file-explorer-empty-branch" style={{ paddingLeft: 8 + (depth + 1) * 14 }}>
+              {t("panels.fileExplorer.empty")}
+            </div>
+          ) : null}
         </div>
       )}
     </div>
@@ -209,9 +218,11 @@ function TreeNode({
 }
 
 export function FileExplorer({ cwd, onOpenFile, refreshKey, onAtMention }: Props) {
+  const { t } = useI18n();
   const [roots, setRoots] = useState<FileNode[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [reloadToken, setReloadToken] = useState(0);
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
   const prevCwdRef = useRef<string | null>(null);
 
@@ -235,7 +246,7 @@ export function FileExplorer({ cwd, onOpenFile, refreshKey, onAtMention }: Props
       setRoots([]);
     }
 
-    setLoading(cwdChanged);
+    if (cwdChanged) setLoading(true);
     setError(null);
     fetchEntries(cwd, controller.signal)
       .then((entries) => {
@@ -249,14 +260,29 @@ export function FileExplorer({ cwd, onOpenFile, refreshKey, onAtMention }: Props
       });
 
     return () => controller.abort();
-  }, [cwd, refreshKey]);
+  }, [cwd, refreshKey, reloadToken]);
 
   if (loading) {
-    return <div className="inspector-state inspector-state-loading file-explorer-state">Loading files...</div>;
+    return <div className="inspector-state inspector-state-loading file-explorer-state">{t("panels.fileExplorer.loading")}</div>;
   }
 
   if (error) {
-    return <div className="inspector-state inspector-state-error file-explorer-state" role="alert">{error}</div>;
+    return (
+      <div className="inspector-state inspector-state-error file-explorer-state" role="alert">
+        <span>{error}</span>
+        <button
+          type="button"
+          className="file-explorer-retry"
+          onClick={() => {
+            setLoading(true);
+            setError(null);
+            setReloadToken((value) => value + 1);
+          }}
+        >
+          {t("panels.fileExplorer.retry")}
+        </button>
+      </div>
+    );
   }
 
   return (
@@ -275,7 +301,7 @@ export function FileExplorer({ cwd, onOpenFile, refreshKey, onAtMention }: Props
         />
       ))}
       {roots.length === 0 && (
-        <div className="inspector-state inspector-state-empty file-explorer-state">No files found</div>
+        <div className="inspector-state inspector-state-empty file-explorer-state">{t("panels.fileExplorer.noFiles")}</div>
       )}
     </div>
   );

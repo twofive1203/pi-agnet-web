@@ -6,7 +6,7 @@ date: 2026-08-07
 origin: session audit 2026-08-07
 related:
   - docs/modules/frontend.md
-  - PERFORMANCE_AND_POLISH_ROADMAP.md
+  - docs/plans/README.md
   - lib/i18n/
 ---
 
@@ -400,7 +400,7 @@ P3 工程卫生
 
 **Files:**
 - Modify: `docs/modules/frontend.md`（Internationalization Coverage status）
-- Modify: `PERFORMANCE_AND_POLISH_ROADMAP.md`（i18n 项进度）
+- Modify: `docs/plans/README.md`（i18n 项进度）
 - Optional: `AGENTS.md` 仅当阅读顺序需增加 i18n 专项入口时
 
 **Approach:**
@@ -514,7 +514,7 @@ U8 → U9 → U10? → U11  Wave C
 - `lib/i18n/messages/settings.ts`
 - `scripts/check-i18n-keys.ts`（可选）
 - `docs/modules/frontend.md`
-- `PERFORMANCE_AND_POLISH_ROADMAP.md`
+- `docs/plans/README.md`
 
 ### 明确暂不动（除非联带）
 - `components/FileIcons.tsx`、纯 SVG/结构组件

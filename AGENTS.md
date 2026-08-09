@@ -21,6 +21,8 @@ npm run dev     # http://localhost:62666
 | `npm run test:session-index` | Rebuildable session/project index smoke suite (header reuse, cwd isolation, archive moves). |
 | `npm run test:session-search` | Workspace session search smoke suite (indexed name/firstMessage, archived, limits, stale gate). |
 | `npm run test:session-stats` | Parent-session lifetime token/cost aggregation smoke suite. |
+| `npm run test:git-diff` | Commit and staged/unstaged working-tree diff smoke suite. |
+| `npm run test:file-search` | Bounded async workspace filename search smoke suite. |
 | `npm run test:snflow` | SnFlow setup/store/session-link/spec-review smoke suite. |
 | `npm run test:automation` | Automation store/schedule/policy/runner/API smoke suite. |
 | `npm run test:mcp` | MCP configuration domain/API smoke suite (adapter-native files, secrets, revisions). |
@@ -53,7 +55,7 @@ npm run dev     # http://localhost:62666
 | Change session lifecycle, branching, JSONL, or SSE | `docs/architecture/overview.md` | `lib/rpc-manager.ts`, `lib/session-reader.ts`, `hooks/useAgentSession.ts` |
 | Change Automation schedules/runs | `docs/architecture/decisions/automation-scheduler.md` | `lib/automation-*.ts`, `app/api/automations/**`, `components/AutomationPanel.tsx` |
 | Operate or trial Automation | `docs/automation-user-guide.zh-CN.md` | Automation panel, task approval, run history, and troubleshooting |
-| Pick up planned/backlog work | `docs/plans/README.md` | `PERFORMANCE_AND_POLISH_ROADMAP.md`, then the linked plan/current code |
+| Pick up planned/backlog work | `docs/plans/README.md` | The linked active plan, then current code |
 | Change code/comment/test conventions | `docs/standards/code-style.md` | Existing nearby code and `.pi/snflows/spec/` when SnFlow is active |
 | Deploy, publish, or debug runtime | `docs/deployment/README.md` | `docs/operations/troubleshooting.md`, `ecosystem.config.cjs`, proxy scripts |
 | Change dependencies or pi SDK integration | `docs/integrations/README.md` | `package.json`, installed pi docs under `node_modules/@earendil-works/pi-coding-agent/` |
@@ -184,7 +186,7 @@ Current docs index:
 - `docs/automation-user-guide.zh-CN.md` — Automation setup, approval, run, promotion, and troubleshooting guide.
 - `docs/plans/README.md` — implementation-plan status index and delivery pointers.
 - `docs/research/README.md` — implemented/superseded investigations and open-research index.
-- `PERFORMANCE_AND_POLISH_ROADMAP.md` — active performance and functional-polish backlog.
+- `docs/plans/README.md` — active implementation, performance, and functional-polish backlog index.
 
 ## AI Working Conventions
 

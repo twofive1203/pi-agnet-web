@@ -9,6 +9,7 @@ import { BrowserBindingTrigger } from "@/components/BrowserBindingTrigger";
 import { encodeFilePathForApi, getFileName, getRelativeFilePath, joinFilePath } from "@/lib/file-paths";
 import { buildWorkflowTaskResumePrompt, type WorkflowTaskChatContext } from "@/lib/workflow-chat-context";
 import { clearChatDraft, readChatDraft, writeChatDraft } from "@/lib/chat-draft";
+import type { CompletionNotificationState } from "@/hooks/useCompletionNotification";
 import { useI18n } from "@/components/I18nProvider";
 
 export interface AttachedImage {
@@ -47,6 +48,8 @@ interface Props {
   retryInfo?: { attempt: number; maxAttempts: number; errorMessage?: string } | null;
   soundEnabled?: boolean;
   onSoundToggle?: () => void;
+  notificationState?: CompletionNotificationState;
+  onNotificationToggle?: () => void | Promise<void>;
   autoScrollEnabled?: boolean;
   onAutoScrollToggle?: () => void;
   browserSessionId?: string | null;
@@ -359,6 +362,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   thinkingLevel, onThinkingLevelChange, availableThinkingLevels, thinkingLevelMap,
   retryInfo,
   soundEnabled, onSoundToggle,
+  notificationState, onNotificationToggle,
   autoScrollEnabled, onAutoScrollToggle,
   browserSessionId, browserSessionLabel,
   draftScope,
@@ -1829,6 +1833,23 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                     <line x1="17" y1="9" x2="23" y2="15" />
                   </svg>
                 )}
+              </button>
+            )}
+
+            {onNotificationToggle !== undefined && notificationState && (
+              <button
+                type="button"
+                onClick={() => { void onNotificationToggle(); }}
+                disabled={notificationState === "unsupported"}
+                title={t(`chat.notificationState.${notificationState}`)}
+                aria-label={t(`chat.notificationState.${notificationState}`)}
+                className={notificationState === "enabled" ? "chat-input-icon-button" : "chat-input-icon-button is-muted"}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" />
+                  <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+                  {notificationState !== "enabled" && <line x1="4" y1="4" x2="20" y2="20" />}
+                </svg>
               </button>
             )}
           </div>

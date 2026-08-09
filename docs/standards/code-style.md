@@ -44,6 +44,8 @@ npm run test:browser      # browser binding protocol/manager + chrome-tab-debug 
 npm run test:agent-stream    # token-stream coalescing, agent_settled barriers, empty-completed retry normalization
 npm run test:session-changes # async changed-file projection ordering smoke
 npm run test:session-stats   # parent-session lifetime token/cost aggregation smoke
+npm run test:git-diff        # commit and staged/unstaged working-tree diff smoke
+npm run test:file-search     # bounded async workspace filename search smoke
 npm run test:snflow       # SnFlow setup/store/session-link/spec-review smokes
 npm run test:runtime      # Next server externals + published launcher invariants
 npm run test:automation   # Automation store/schedule/policy/runner/API/security smokes

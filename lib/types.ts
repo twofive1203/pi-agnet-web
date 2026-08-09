@@ -457,6 +457,17 @@ export interface GitCommitFileDiffResponse {
   reason?: GitCommitDiffReason;
 }
 
+export type GitWorkingTreeDiffScope = "staged" | "unstaged";
+
+export interface GitWorkingTreeFileDiffResponse {
+  scope: GitWorkingTreeDiffScope;
+  file: string;
+  oldFile?: string;
+  diffAvailable: boolean;
+  diff?: string;
+  reason?: GitCommitDiffReason;
+}
+
 export interface GitBranchInfo {
   name: string;
   isCurrent: boolean;

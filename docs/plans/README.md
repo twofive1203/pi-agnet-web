@@ -27,4 +27,4 @@ Status vocabulary:
 | [`2026-08-07-001-refactor-i18n-coverage-plan.md`](2026-08-07-001-refactor-i18n-coverage-plan.md) | completed | Wave A–C product chrome coverage; residual typed keys/API codes remain ordinary backlog. |
 | [`2026-08-07-002-feat-server-access-authentication-plan.md`](2026-08-07-002-feat-server-access-authentication-plan.md) | completed | Safe loopback defaults, server access key/session gate, global Proxy protection, production E2E, and deployment docs delivered. |
 
-The cross-cutting performance and functional backlog lives in [`../../PERFORMANCE_AND_POLISH_ROADMAP.md`](../../PERFORMANCE_AND_POLISH_ROADMAP.md). Historical investigations and implemented design inputs live under [`../research/`](../research/README.md).
+This status table is the active implementation, performance, and functional-polish backlog index. Historical investigations and implemented design inputs live under [`../research/`](../research/README.md).

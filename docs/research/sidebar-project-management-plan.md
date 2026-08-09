@@ -4,7 +4,7 @@
 >
 > 交付：`fbe6e8e` 完成后端懒加载主路径，`2fbe0f4` 完成分页消费、树/数据层拆分和会话索引等收口。
 >
-> 当前权威说明：[`docs/architecture/overview.md`](../architecture/overview.md)、[`docs/modules/frontend.md`](../modules/frontend.md)、[`docs/modules/api.md`](../modules/api.md)。剩余性能与体验建议统一进入 [`PERFORMANCE_AND_POLISH_ROADMAP.md`](../../PERFORMANCE_AND_POLISH_ROADMAP.md)。
+> 当前权威说明：[`docs/architecture/overview.md`](../architecture/overview.md)、[`docs/modules/frontend.md`](../modules/frontend.md)、[`docs/modules/api.md`](../modules/api.md)。剩余性能与体验建议统一进入 [`docs/plans/README.md`](../plans/README.md)。
 >
 > 范围：WebUI 左侧栏「项目管理 / 会话浏览 / WorkTree / Explorer」
 > 相关代码：
