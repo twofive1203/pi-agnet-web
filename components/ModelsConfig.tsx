@@ -3395,6 +3395,8 @@ export function ModelsConfig({ cwd: _cwd, onClose }: { cwd: string | null; onClo
   const [apiKeyProviders, setApiKeyProviders] = useState<ApiKeyProvider[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pricingCatalogOpen, setPricingCatalogOpen] = useState(false);
+  /** Providers absent from this map stay expanded (default). Presence means collapsed. */
+  const [collapsedProviders, setCollapsedProviders] = useState<Record<string, true>>({});
   const [autoPricingByProvider, setAutoPricingByProvider] = useState<AutoPricingByProvider>({});
 
   const updateAutoAppliedPricing = useCallback((providerName: string, index: number, pricing: AutoAppliedPricing | null) => {
@@ -3475,6 +3477,13 @@ export function ModelsConfig({ cwd: _cwd, onClose }: { cwd: string | null; onClo
       delete next[oldName];
       return next;
     });
+    setCollapsedProviders((prev) => {
+      if (!prev[oldName]) return prev;
+      const next = { ...prev };
+      next[newName] = true;
+      delete next[oldName];
+      return next;
+    });
     setConfig((prev) => {
       const entries = Object.entries(prev.providers ?? {});
       const idx = entries.findIndex(([k]) => k === oldName);
@@ -3496,6 +3505,12 @@ export function ModelsConfig({ cwd: _cwd, onClose }: { cwd: string | null; onClo
       delete next[name];
       return next;
     });
+    setCollapsedProviders((prev) => {
+      if (!prev[name]) return prev;
+      const next = { ...prev };
+      delete next[name];
+      return next;
+    });
     setConfig((prev) => {
       const providers = { ...(prev.providers ?? {}) };
       delete providers[name];
@@ -3505,6 +3520,26 @@ export function ModelsConfig({ cwd: _cwd, onClose }: { cwd: string | null; onClo
       const remaining = Object.keys(prev.providers ?? {});
       setSelection(remaining.length > 0 ? { type: "provider", name: remaining[0] } : null);
       return prev;
+    });
+  }, []);
+
+  const expandProvider = useCallback((name: string) => {
+    setCollapsedProviders((prev) => {
+      if (!prev[name]) return prev;
+      const next = { ...prev };
+      delete next[name];
+      return next;
+    });
+  }, []);
+
+  const toggleProviderExpanded = useCallback((name: string) => {
+    setCollapsedProviders((prev) => {
+      if (prev[name]) {
+        const next = { ...prev };
+        delete next[name];
+        return next;
+      }
+      return { ...prev, [name]: true };
     });
   }, []);
 
@@ -3524,6 +3559,7 @@ export function ModelsConfig({ cwd: _cwd, onClose }: { cwd: string | null; onClo
   }, []);
 
   const addModel = useCallback((providerName: string) => {
+    expandProvider(providerName);
     setConfig((prev) => {
       const provider = prev.providers?.[providerName] ?? {};
       const models = [...(provider.models ?? []), { id: "", maxTokens: DEFAULT_MAX_TOKENS }];
@@ -3534,7 +3570,7 @@ export function ModelsConfig({ cwd: _cwd, onClose }: { cwd: string | null; onClo
       setSelection({ type: "model", providerName, index: idx });
       return prev;
     });
-  }, []);
+  }, [expandProvider]);
 
   const addDiscoveredModel = useCallback((providerName: string, candidate: DiscoveredModelCandidate): DiscoveredModelChangeResult => {
     const provider = config.providers?.[providerName];
@@ -3548,6 +3584,7 @@ export function ModelsConfig({ cwd: _cwd, onClose }: { cwd: string | null; onClo
     const model: ModelEntry = candidate.name
       ? { id: candidate.id, name: candidate.name, maxTokens: DEFAULT_MAX_TOKENS }
       : { id: candidate.id, maxTokens: DEFAULT_MAX_TOKENS };
+    expandProvider(providerName);
     setConfig((prev) => {
       const currentProvider = prev.providers?.[providerName] ?? {};
       const currentModels = currentProvider.models ?? [];
@@ -3562,7 +3599,7 @@ export function ModelsConfig({ cwd: _cwd, onClose }: { cwd: string | null; onClo
     });
     setSelection({ type: "model", providerName, index: models.length });
     return { ok: true, message: `Added ${candidate.id}. Cached pricing will be applied when available; click Save to persist it.` };
-  }, [config.providers]);
+  }, [config.providers, expandProvider]);
 
   const removeDiscoveredModel = useCallback((providerName: string, modelId: string): DiscoveredModelChangeResult => {
     const provider = config.providers?.[providerName];
@@ -3718,11 +3755,24 @@ export function ModelsConfig({ cwd: _cwd, onClose }: { cwd: string | null; onClo
                 {(activeOAuth.length > 0 || activeApiKey.length > 0) && providers.length > 0 && <div className="models-tree-divider" />}
                 {loading ? <SettingsState kind="loading" title="Loading models…" /> : providers.length === 0 ? <SettingsState title="No custom providers" /> : providers.map(([providerName, providerData], providerIndex) => {
                   const providerActive = selection?.type === "provider" && selection.name === providerName;
+                  const modelsExpanded = !collapsedProviders[providerName];
+                  const modelCount = providerData.models?.length ?? 0;
                   return (
                     <div key={providerName} className="resource-nav-group models-provider-group">
                       <div className={`resource-nav-row models-provider-row${providerActive ? " resource-nav-row-active" : ""}`}>
+                        <button
+                          type="button"
+                          className="models-provider-expand"
+                          aria-expanded={modelsExpanded}
+                          aria-label={modelsExpanded ? t("settings.models.collapseModels") : t("settings.models.expandModels")}
+                          title={modelsExpanded ? t("settings.models.collapseModels") : t("settings.models.expandModels")}
+                          onClick={() => toggleProviderExpanded(providerName)}
+                        >
+                          <span className={`models-provider-chevron${modelsExpanded ? " is-open" : ""}`} aria-hidden="true" />
+                        </button>
                         <button type="button" className="models-provider-row-main" onClick={() => setSelection({ type: "provider", name: providerName })}>
                           <span className="resource-status-dot" aria-hidden="true" /><span>{providerName}</span>
+                          {!modelsExpanded && modelCount > 0 && <SettingsBadge tone="neutral">{modelCount}</SettingsBadge>}
                         </button>
                         <div className="models-provider-reorder">
                           <SettingsButton
@@ -3749,15 +3799,19 @@ export function ModelsConfig({ cwd: _cwd, onClose }: { cwd: string | null; onClo
                           </SettingsButton>
                         </div>
                       </div>
-                      {(providerData.models ?? []).map((model, index) => {
-                        const modelActive = selection?.type === "model" && selection.providerName === providerName && selection.index === index;
-                        return (
-                          <button key={`${model.id}-${index}`} type="button" className={`resource-nav-row models-tree-model${modelActive ? " resource-nav-row-active" : ""}`} onClick={() => setSelection({ type: "model", providerName, index })}>
-                            <span>{model.id || "new model"}</span>{model.reasoning && <SettingsBadge tone="accent">T</SettingsBadge>}
-                          </button>
-                        );
-                      })}
-                      <button type="button" className="resource-nav-row models-tree-model models-tree-add" onClick={() => addModel(providerName)}>+ model</button>
+                      {modelsExpanded && (
+                        <>
+                          {(providerData.models ?? []).map((model, index) => {
+                            const modelActive = selection?.type === "model" && selection.providerName === providerName && selection.index === index;
+                            return (
+                              <button key={`${model.id}-${index}`} type="button" className={`resource-nav-row models-tree-model${modelActive ? " resource-nav-row-active" : ""}`} onClick={() => setSelection({ type: "model", providerName, index })}>
+                                <span>{model.id || "new model"}</span>{model.reasoning && <SettingsBadge tone="accent">T</SettingsBadge>}
+                              </button>
+                            );
+                          })}
+                          <button type="button" className="resource-nav-row models-tree-model models-tree-add" onClick={() => addModel(providerName)}>+ model</button>
+                        </>
+                      )}
                     </div>
                   );
                 })}

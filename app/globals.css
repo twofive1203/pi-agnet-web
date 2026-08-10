@@ -2599,6 +2599,45 @@ span.linenumber {
   cursor: default;
 }
 
+.models-provider-expand {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+
+.models-provider-expand:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.models-provider-expand:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.models-provider-chevron {
+  width: 0;
+  height: 0;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  border-left: 5px solid currentColor;
+  transition: transform var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.models-provider-chevron.is-open {
+  transform: rotate(90deg);
+}
+
 .models-provider-row-main {
   flex: 1 1 auto;
   min-width: 0;
@@ -2615,11 +2654,15 @@ span.linenumber {
   cursor: pointer;
 }
 
-.models-provider-row-main > :last-child {
+.models-provider-row-main > span:nth-child(2) {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.models-provider-row-main .settings-badge {
+  flex: 0 0 auto;
 }
 
 /* Reorder controls are the row's last child; do not inherit name ellipsis. */
