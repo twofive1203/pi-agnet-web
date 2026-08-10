@@ -7490,6 +7490,37 @@ html:is([data-wallpaper="on"], [data-wallpaper="image"], [data-wallpaper="gradie
   color: var(--status-warning-foreground);
   font-size: 12px;
 }
+.chat-multitab-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--status-info-border, var(--accent-border));
+  background: var(--status-info-soft, var(--accent-soft));
+  color: var(--status-info-foreground, var(--accent-primary));
+  font-size: 12px;
+}
+.chat-multitab-takeover {
+  appearance: none;
+  border: 1px solid currentColor;
+  background: transparent;
+  color: inherit;
+  border-radius: var(--radius-pill, 999px);
+  padding: 2px 10px;
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+.chat-multitab-takeover:hover {
+  background: color-mix(in srgb, currentColor 12%, transparent);
+}
+.chat-multitab-takeover:focus-visible {
+  outline: 2px solid var(--focus-ring, var(--accent-primary));
+  outline-offset: 2px;
+}
 .chat-archived-input {
   flex-shrink: 0;
   padding: 12px 14px;

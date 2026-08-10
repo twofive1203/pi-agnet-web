@@ -439,6 +439,28 @@ export async function getSessionIndexEntriesForCwd(
   });
 }
 
+/**
+ * Unique workspace roots discovered from the session index.
+ * Preferred by allowed-roots over full SessionManager.listAll scans.
+ * Disk remains authoritative: refreshSessionIndex rebuilds from JSONL files.
+ */
+export async function getSessionIndexCwdRoots(options?: {
+  agentDir?: string;
+  /** Default false — authorized file roots track live workspaces only. */
+  includeArchived?: boolean;
+}): Promise<string[]> {
+  const entries = await getSessionIndexEntries({
+    agentDir: options?.agentDir,
+    archived: options?.includeArchived ? undefined : false,
+  });
+  const roots = new Set<string>();
+  for (const entry of entries) {
+    if (!entry.cwd) continue;
+    for (const key of cwdKeySet(entry.cwd)) roots.add(key);
+  }
+  return [...roots];
+}
+
 export function indexEntryToCandidate(entry: SessionIndexEntry): {
   path: string;
   fileName: string;

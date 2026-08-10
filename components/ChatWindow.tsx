@@ -16,6 +16,7 @@ import { useAudio } from "@/hooks/useAudio";
 import { useCompletionNotification } from "@/hooks/useCompletionNotification";
 import { useAutoScroll } from "@/hooks/useAutoScroll";
 import { useDragDrop } from "@/hooks/useDragDrop";
+import { useSessionTabLock } from "@/hooks/useSessionTabLock";
 import { SessionChangesFloatingPanel } from "./SessionChangesFloatingPanel";
 import { useI18n } from "@/components/I18nProvider";
 import {
@@ -156,6 +157,7 @@ export const ChatWindow = memo(function ChatWindow({ session, newSessionCwd, onA
     [t],
   );
   const { autoScrollEnabled, onAutoScrollToggle } = useAutoScroll();
+  const sessionTabLock = useSessionTabLock(session?.id ?? null);
   const {
     loading, error, messages, entryIds, streamState,
     agentRunning, modelNames, modelList, modelsReady, modelThinkingLevels, modelThinkingLevelMaps, toolPreset, thinkingLevel,
@@ -305,6 +307,8 @@ export const ChatWindow = memo(function ChatWindow({ session, newSessionCwd, onA
 
   const isArchived = !!session?.archived;
 
+  const writeLocked = sessionTabLock.writeLocked;
+
   const archivedBannerElement = isArchived ? (
     <div className="chat-archived-banner">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -313,6 +317,25 @@ export const ChatWindow = memo(function ChatWindow({ session, newSessionCwd, onA
         <line x1="12" y1="15" x2="12" y2="3" />
       </svg>
       <span>{t("chat.archivedBanner")}</span>
+    </div>
+  ) : null;
+
+  const multiTabBannerElement = !isArchived && writeLocked ? (
+    <div className="chat-multitab-banner" role="status">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <rect x="3" y="3" width="7" height="7" rx="1" />
+        <rect x="14" y="3" width="7" height="7" rx="1" />
+        <rect x="3" y="14" width="7" height="7" rx="1" />
+        <rect x="14" y="14" width="7" height="7" rx="1" />
+      </svg>
+      <span>{t("chat.multiTabBanner")}</span>
+      <button
+        type="button"
+        className="chat-multitab-takeover"
+        onClick={sessionTabLock.takeOverWrite}
+      >
+        {t("chat.multiTabTakeOver")}
+      </button>
     </div>
   ) : null;
 
@@ -326,23 +349,23 @@ export const ChatWindow = memo(function ChatWindow({ session, newSessionCwd, onA
       onSend={handleSend}
       cwd={session?.cwd ?? newSessionCwd}
       onAbort={handleAbort}
-      onSteer={agentRunning ? handleSteer : undefined}
-      onFollowUp={agentRunning ? handleFollowUp : undefined}
+      onSteer={agentRunning && !writeLocked ? handleSteer : undefined}
+      onFollowUp={agentRunning && !writeLocked ? handleFollowUp : undefined}
       isStreaming={agentRunning}
       model={displayModelValue}
       modelNames={modelNames}
       modelList={modelList}
       modelsReady={modelsReady}
-      onModelChange={handleModelChange}
+      onModelChange={writeLocked ? undefined : handleModelChange}
       onOpenModels={onOpenModels}
-      onCompact={session || isNew ? handleCompact : undefined}
+      onCompact={!writeLocked && (session || isNew) ? handleCompact : undefined}
       onAbortCompaction={handleAbortCompaction}
       isCompacting={isCompacting}
       compactError={compactError}
       toolPreset={toolPreset}
-      onToolPresetChange={session || isNew ? handleToolPresetChange : undefined}
+      onToolPresetChange={!writeLocked && (session || isNew) ? handleToolPresetChange : undefined}
       thinkingLevel={thinkingLevel}
-      onThinkingLevelChange={session || isNew ? handleThinkingLevelChange : undefined}
+      onThinkingLevelChange={!writeLocked && (session || isNew) ? handleThinkingLevelChange : undefined}
       availableThinkingLevels={availableThinkingLevels}
       thinkingLevelMap={currentThinkingLevelMap}
       retryInfo={retryInfo}
@@ -355,6 +378,7 @@ export const ChatWindow = memo(function ChatWindow({ session, newSessionCwd, onA
       browserSessionId={session?.id ?? null}
       browserSessionLabel={session?.name || session?.id?.slice(0, 8)}
       draftScope={session?.id ? `session:${session.id}` : `new:${newSessionCwd ?? "unknown"}`}
+      writeLocked={writeLocked}
     />
   );
 
@@ -379,6 +403,7 @@ export const ChatWindow = memo(function ChatWindow({ session, newSessionCwd, onA
       onDrop={handleDrop}
     >
       {archivedBannerElement}
+      {multiTabBannerElement}
       {session?.id && (
         <SessionChangesFloatingPanel sessionId={session.id} agentRunning={agentRunning} refreshKey={sessionChangesRefreshKey} />
       )}
@@ -479,9 +504,9 @@ export const ChatWindow = memo(function ChatWindow({ session, newSessionCwd, onA
                     toolResults={toolResultsMap}
                     modelNames={modelNames}
                     entryId={entryIds[idx]}
-                    onFork={agentRunning || isNew || (idx === 0 && msg.role === "user") ? undefined : handleFork}
+                    onFork={agentRunning || writeLocked || isNew || (idx === 0 && msg.role === "user") ? undefined : handleFork}
                     forking={forkingEntryId === entryIds[idx]}
-                    onNavigate={agentRunning ? undefined : handleNavigate}
+                    onNavigate={agentRunning || writeLocked ? undefined : handleNavigate}
                     prevAssistantEntryId={agentRunning ? undefined : prevAssistantEntryId}
                     onEditContent={handleEditMessage}
                     showTimestamp={showTimestamp}
@@ -564,7 +589,7 @@ export const ChatWindow = memo(function ChatWindow({ session, newSessionCwd, onA
                     type="button"
                     className="chat-agent-failure-continue"
                     onClick={handleContinueAfterFailure}
-                    disabled={isArchived}
+                    disabled={isArchived || writeLocked}
                   >
                     {t("chat.agentFailureContinue")}
                   </button>

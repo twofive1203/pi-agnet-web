@@ -22,6 +22,8 @@ npm run dev     # http://localhost:62666
 | `npm run test:session-index` | Rebuildable session/project index smoke suite (header reuse, cwd isolation, archive moves). |
 | `npm run test:session-search` | Workspace session search smoke suite (indexed name/firstMessage, archived, limits, stale gate). |
 | `npm run test:session-stats` | Parent-session lifetime token/cost aggregation smoke suite. |
+| `npm run test:scale-baseline` | Usage/allowed-roots/session-index/long-JSONL scale baseline + accelerated-path correctness smoke. |
+| `npm run test:session-tabs` | Same-session multi-tab write-lock coordination pure smoke. |
 | `npm run test:git-diff` | Commit and staged/unstaged working-tree diff smoke suite. |
 | `npm run test:file-search` | Bounded async workspace filename search smoke suite. |
 | `npm run test:file-upload` | Chat upload path-boundary/sanitize/exclusive-write smoke suite. |

@@ -200,7 +200,14 @@ export function UsageStatsModal({ cwd, onClose }: UsageStatsModalProps) {
 
               <div className="usage-content-grid">
                 <section className="usage-stats-card">
-                  <SectionTitle title={t("panels.usage.daily")} right={loading ? t("panels.usage.loading") : stats ? `${stats.from} - ${stats.to} · ${stats.scope.includeArchived ? t("panels.usage.withArchive") : t("panels.usage.activeOnly")}` : ""} />
+                  <SectionTitle
+                    title={t("panels.usage.daily")}
+                    right={loading
+                      ? t("panels.usage.loading")
+                      : stats
+                        ? `${stats.from} - ${stats.to} · ${stats.scope.includeArchived ? t("panels.usage.withArchive") : t("panels.usage.activeOnly")} · ${stats.scanSource === "index" ? t("panels.usage.scanSourceIndex") : t("panels.usage.scanSourceFallback")} · ${t("panels.usage.durationMs", { ms: String(stats.durationMs ?? 0) })}`
+                        : ""}
+                  />
                   <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
                     {(stats?.byDay ?? []).length === 0 ? (
                       <EmptyState />

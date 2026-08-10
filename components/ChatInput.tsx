@@ -66,6 +66,8 @@ interface Props {
   browserSessionId?: string | null;
   browserSessionLabel?: string;
   draftScope: string;
+  /** Another browser tab holds write ownership for this session. */
+  writeLocked?: boolean;
 }
 
 type GitBranchDisplay = Pick<GitStatusInfo, "branch" | "isDetached" | "isDirty" | "isWorktree">;
@@ -380,6 +382,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   autoScrollEnabled, onAutoScrollToggle,
   browserSessionId, browserSessionLabel,
   draftScope,
+  writeLocked = false,
 }: Props, ref) {
   const { t } = useI18n();
   const retryReason = formatRetryReason(retryInfo?.errorMessage, t);
@@ -930,7 +933,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     }),
     [cwd, modelsReady, modelList, model],
   );
-  const sendBlocked = sendBlockReason != null && !isStreaming;
+  // writeLocked is multi-tab coordination; model readiness remains separate.
+  const sendBlocked = ((sendBlockReason != null) || Boolean(writeLocked)) && !isStreaming;
 
   const handleSend = useCallback(() => {
     if (!sendActive()) return;
@@ -1204,10 +1208,14 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
 
   return (
     <div className="chat-input-shell">
-      {sendBlocked && sendBlockReason && (
+      {sendBlocked && (writeLocked || sendBlockReason) && (
         <div className="chat-input-send-block" role="status">
-          <span className="chat-input-send-block-message">{t(chatSendBlockMessageKey(sendBlockReason))}</span>
-          {onOpenModels && chatSendBlockOffersModelsFix(sendBlockReason) && (
+          <span className="chat-input-send-block-message">
+            {writeLocked
+              ? t("chat.multiTabWriteLocked")
+              : t(chatSendBlockMessageKey(sendBlockReason!))}
+          </span>
+          {!writeLocked && onOpenModels && sendBlockReason && chatSendBlockOffersModelsFix(sendBlockReason) && (
             <button
               type="button"
               className="chat-input-send-block-action"

@@ -72,6 +72,9 @@ export const panelsZh = {
     cacheWrite: "缓存写入",
     skipped: "{count} 条跳过",
     mainSubagents: "主会话 {main} · 子代理 {sub}（{count}）",
+    scanSourceIndex: "索引加速",
+    scanSourceFallback: "全量扫描",
+    durationMs: "耗时 {ms} ms",
   },
   chatgpt: {
     title: "ChatGPT 用量",
@@ -529,6 +532,9 @@ export const panelsEn = {
     cacheWrite: "Cache write",
     skipped: "{count} skipped",
     mainSubagents: "Main {main} · Subagents {sub} ({count})",
+    scanSourceIndex: "Index accelerated",
+    scanSourceFallback: "Full scan",
+    durationMs: "{ms} ms",
   },
   chatgpt: {
     title: "ChatGPT usage",

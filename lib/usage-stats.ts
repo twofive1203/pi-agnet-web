@@ -1,5 +1,4 @@
-import { SessionManager } from "@earendil-works/pi-coding-agent";
-import { listAllArchivedSessions, listAllSessions } from "@/lib/session-reader";
+import { readFileSync } from "fs";
 import { canonicalizeCwd, expandCwd } from "@/lib/cwd";
 import { listSessionUsageFiles, type SessionUsageFile } from "@/lib/session-artifacts";
 import type { SessionEntry, SessionInfo, SessionMessageEntry, AssistantMessage } from "@/lib/types";
@@ -60,6 +59,10 @@ export interface UsageStatsResult {
   matchedActiveSessions: number;
   matchedArchivedSessions: number;
   skippedEntries: number;
+  /** How session candidates were collected (index acceleration vs full scan). */
+  scanSource: "index" | "fallback";
+  /** Wall time for candidate collection + usage aggregation. */
+  durationMs: number;
 }
 
 export interface UsageStatsOptions {
@@ -165,6 +168,110 @@ export function parseLocalDateParam(value: string | null, endOfDay: boolean): Da
   return date;
 }
 
+function sessionInfoFromIndexEntry(entry: {
+  path: string;
+  id: string;
+  cwd: string;
+  name?: string;
+  created: string;
+  modified: string;
+  messageCount: number;
+  firstMessage: string;
+  parentSessionId?: string;
+  archived: boolean;
+}): SessionInfo {
+  return {
+    path: entry.path,
+    id: entry.id,
+    cwd: entry.cwd,
+    name: entry.name,
+    created: entry.created,
+    modified: entry.modified,
+    messageCount: entry.messageCount,
+    firstMessage: entry.firstMessage || "(no messages)",
+    parentSessionId: entry.parentSessionId,
+    archived: entry.archived || undefined,
+  };
+}
+
+/**
+ * Collect usage session candidates via session index (preferred) or full scan.
+ * When cwd is set, index filters before any JSONL usage parse.
+ */
+async function listSessionsForUsage(options: {
+  cwd?: string;
+  includeArchived?: boolean;
+}): Promise<{ sessions: SessionInfo[]; scanSource: "index" | "fallback" }> {
+  const includeArchived = options.includeArchived !== false;
+  try {
+    const {
+      getSessionIndexEntries,
+      getSessionIndexEntriesForCwd,
+    } = await import("@/lib/session-index");
+
+    const archivedFilter = includeArchived ? undefined : false;
+    const entries = options.cwd
+      ? await getSessionIndexEntriesForCwd(options.cwd, { archived: archivedFilter })
+      : await getSessionIndexEntries({ archived: archivedFilter });
+
+    // Index refresh already scanned disk. Empty is a valid result (no sessions).
+    return {
+      sessions: entries.map(sessionInfoFromIndexEntry),
+      scanSource: "index",
+    };
+  } catch {
+    // Fall through to full reader scans.
+  }
+
+  // Lazy-import reader so the index-accelerated path stays free of SessionManager.
+  const { listAllArchivedSessions, listAllSessions } = await import("@/lib/session-reader");
+  const activeSessions = await listAllSessions();
+  const archivedSessions = includeArchived ? await listAllArchivedSessions() : [];
+  const sessions = [...activeSessions, ...archivedSessions].filter((session) =>
+    cwdMatches(session.cwd, options.cwd),
+  );
+  return { sessions, scanSource: "fallback" };
+}
+
+/**
+ * SDK-free JSONL scan for assistant usage entries.
+ * Avoids SessionManager.open cost on large transcripts and keeps Usage smokes
+ * runnable without the pi-coding-agent CJS export surface.
+ */
+function readUsageMessageEntries(filePath: string): {
+  entries: Array<SessionMessageEntry & { message: AssistantMessage }>;
+  skipped: number;
+} {
+  let raw: string;
+  try {
+    raw = readFileSync(filePath, "utf8");
+  } catch {
+    return { entries: [], skipped: 1 };
+  }
+
+  const entries: Array<SessionMessageEntry & { message: AssistantMessage }> = [];
+  let skipped = 0;
+  for (const line of raw.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(trimmed);
+    } catch {
+      skipped += 1;
+      continue;
+    }
+    if (!parsed || typeof parsed !== "object") {
+      skipped += 1;
+      continue;
+    }
+    const entry = parsed as SessionEntry;
+    if (!isUsageMessageEntry(entry)) continue;
+    entries.push(entry);
+  }
+  return { entries, skipped };
+}
+
 /**
  * 按日期范围聚合所有 Pi session 的 assistant usage 费用信息。
  *
@@ -172,12 +279,17 @@ export function parseLocalDateParam(value: string | null, endOfDay: boolean): Da
  * @returns 费用统计总览以及按日、模型、供应商、会话拆分的汇总。
  */
 export async function getUsageStats(options: UsageStatsOptions): Promise<UsageStatsResult> {
-  const activeSessions = await listAllSessions();
-  const archivedSessions = options.includeArchived === false ? [] : await listAllArchivedSessions();
-  const sessions = [...activeSessions, ...archivedSessions];
-  const matchedSessions = sessions.filter((session) => cwdMatches(session.cwd, options.cwd));
+  const startedAt = Date.now();
+  const { sessions: matchedSessions, scanSource } = await listSessionsForUsage({
+    cwd: options.cwd,
+    includeArchived: options.includeArchived,
+  });
   const matchedActiveSessions = matchedSessions.filter((session) => !session.archived);
   const matchedArchivedSessions = matchedSessions.filter((session) => session.archived);
+  // scanned* mirrors matched* when index/cwd scoped; keeps UI counters meaningful.
+  const activeSessions = matchedActiveSessions;
+  const archivedSessions = matchedArchivedSessions;
+  const sessions = matchedSessions;
   const records: UsageRecord[] = [];
   const matchedSubagentFilesByParent = new Map<string, Set<string>>();
   let skippedEntries = 0;
@@ -186,16 +298,11 @@ export async function getUsageStats(options: UsageStatsOptions): Promise<UsageSt
     const usageFiles = listSessionUsageFiles(session.path);
 
     for (const source of usageFiles) {
-      let entries: SessionEntry[];
-      try {
-        entries = SessionManager.open(source.path).getEntries() as unknown as SessionEntry[];
-      } catch {
-        skippedEntries += 1;
-        continue;
-      }
+      const { entries, skipped } = readUsageMessageEntries(source.path);
+      skippedEntries += skipped;
+      if (entries.length === 0 && skipped > 0) continue;
 
       for (const entry of entries) {
-        if (!isUsageMessageEntry(entry)) continue;
         const at = new Date(entry.timestamp).getTime();
         if (!Number.isFinite(at)) {
           skippedEntries += 1;
@@ -283,5 +390,7 @@ export async function getUsageStats(options: UsageStatsOptions): Promise<UsageSt
     matchedActiveSessions: matchedActiveSessions.length,
     matchedArchivedSessions: matchedArchivedSessions.length,
     skippedEntries,
+    scanSource,
+    durationMs: Math.max(0, Date.now() - startedAt),
   };
 }

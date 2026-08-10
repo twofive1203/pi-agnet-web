@@ -32,18 +32,40 @@ export function registerAllowedRoot(cwd: string): void {
   globalThis.__piAllowedRootsCache = undefined;
 }
 
+/**
+ * Authorized workspace roots for file/workflow APIs.
+ *
+ * Prefers the rebuildable session index cwd set (header fingerprint scan) over
+ * SessionManager.listAll + per-cwd git metadata. Disk JSONL remains the source
+ * of truth via index refresh; registered roots and ~/pi-cwd-* still apply.
+ * Authorization semantics are unchanged: a path is allowed iff it sits under
+ * one of the discovered roots.
+ */
 export async function getAllowedRoots(): Promise<Set<string>> {
   const now = Date.now();
   const cached = globalThis.__piAllowedRootsCache;
   if (cached && cached.expiresAt > now) return cached.roots;
 
-  const { listAllSessions } = await import("@/lib/session-reader");
-  const sessions = await listAllSessions();
   const roots = new Set<string>();
 
-  for (const session of sessions) {
-    if (!session.cwd) continue;
-    for (const root of createRootVariants(session.cwd)) roots.add(root);
+  try {
+    const { getSessionIndexCwdRoots } = await import("@/lib/session-index");
+    const indexRoots = await getSessionIndexCwdRoots({ includeArchived: false });
+    for (const cwd of indexRoots) {
+      for (const root of createRootVariants(cwd)) roots.add(root);
+    }
+  } catch {
+    // Index acceleration failed — fall back to full active session list.
+    try {
+      const { listAllSessions } = await import("@/lib/session-reader");
+      const sessions = await listAllSessions();
+      for (const session of sessions) {
+        if (!session.cwd) continue;
+        for (const root of createRootVariants(session.cwd)) roots.add(root);
+      }
+    } catch {
+      // Session discovery is best-effort; registered + home roots still apply.
+    }
   }
 
   const home = homedir();
