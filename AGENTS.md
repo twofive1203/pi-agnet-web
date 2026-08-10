@@ -29,6 +29,7 @@ npm run dev     # http://localhost:62666
 | `npm run test:i18n` | zh/en catalog parity and i18n contract checks. |
 | `npm run test:bundled-extensions` | Bundled Pi extension registry/loading smoke suite. |
 | `npm run test:web-tools-config` | Web Search provider/secret configuration smoke suite. |
+| `npm run test:vision` | Vision fallback configuration, routing, and evidence-boundary smoke suite. |
 | `npm run test:ui-theme` | Theme registry, semantic Token, responsive, focus, and motion contract checks. |
 | `npm run test:subagent-observability` | Subagent summaries, metrics, and observation projections. |
 | `npm run test:runtime` | Runtime packaging and published launcher invariants. |
@@ -146,7 +147,7 @@ node_modules/.bin/tsc --noEmit
 | Session files | `~/.pi/agent/sessions/<encoded-cwd>/<timestamp>_<uuid>.jsonl` |
 | Model config | `~/.pi/agent/models.json` |
 | Settings/default model/native subagents | `~/.pi/agent/settings.json`, project override `<cwd>/.pi/settings.json` |
-| Web UI settings (WorkTree, Usage, Web Terminal, ChatGPT panel, Grok panel, Editor, bundled core-extension toggles, SnFlow panel). Unknown legacy root keys such as `trellis` are ignored and left on disk | `~/.pi/agent/pi-web.json` |
+| Web UI settings (WorkTree, Usage, Vision fallback model, Web Terminal, ChatGPT panel, Grok panel, Editor, bundled core-extension toggles, SnFlow panel). Unknown legacy root keys such as `trellis` are ignored and left on disk | `~/.pi/agent/pi-web.json` |
 | Server access auth state (scrypt verifier + session hashes; no plaintext key) | `~/.pi/agent/server-access.json` |
 | Server access policy (optional auth-bypass CIDRs; env can override) | `~/.pi/agent/server-access-policy.json` |
 | Bundled Web Search provider/API key/base URL config | XDG-aware `~/.config/rpiv-web-tools/config.json` (or `XDG_CONFIG_HOME`) |

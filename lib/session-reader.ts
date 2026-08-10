@@ -11,6 +11,7 @@ import type {
 } from "./types";
 import type { SessionEntry as PiSessionEntry, SessionInfo as PiSessionInfo } from "@earendil-works/pi-coding-agent";
 import { normalizeToolCalls } from "./normalize";
+import { stripVisualEvidenceFromMessage } from "./vision-resolver";
 import { getGitMetadataForCwd } from "./git-worktree";
 import { canonicalizeCwd, expandCwd } from "./cwd";
 import {
@@ -298,10 +299,10 @@ function firstMessageFromEntries(entries: ReturnType<SessionManager["getEntries"
       const msg = entry as unknown as { message?: { content?: unknown } };
       const content = msg.message?.content;
       if (typeof content === "string") {
-        firstMessage = content.slice(0, 100);
+        firstMessage = stripVisualEvidenceFromMessage(content).slice(0, 100);
       } else if (Array.isArray(content)) {
         const textBlock = content.find((b: { type: string }) => b.type === "text");
-        if (textBlock) firstMessage = (textBlock as { text: string }).text.slice(0, 100);
+        if (textBlock) firstMessage = stripVisualEvidenceFromMessage((textBlock as { text: string }).text).slice(0, 100);
       }
     }
   }
@@ -941,7 +942,14 @@ export function buildSessionContext(entries: SessionEntry[], leafId?: string | n
         timestamp: raw.timestamp as number | undefined,
       };
     }
-    return normalizeToolCalls(msg);
+    const normalized = normalizeToolCalls(msg);
+    if (normalized.role !== "user") return normalized;
+    const content = typeof normalized.content === "string"
+      ? stripVisualEvidenceFromMessage(normalized.content)
+      : normalized.content.map((block) => block.type === "text"
+        ? { ...block, text: stripVisualEvidenceFromMessage(block.text) }
+        : block);
+    return { ...normalized, content };
   });
 
   return {

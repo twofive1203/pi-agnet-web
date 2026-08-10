@@ -15,6 +15,7 @@ import type {
   PiWebSubagentRunPolicy,
   PiWebTerminalConfig,
   PiWebUsageConfig,
+  PiWebVisionConfig,
   PiWebWorkflowConfig,
   PiWebWorktreeConfig,
 } from "@/lib/pi-web-config";
@@ -59,6 +60,7 @@ interface ModelListItem {
   id: string;
   name: string;
   provider: string;
+  supportsImage: boolean;
 }
 
 interface ModelsResponse {
@@ -77,7 +79,7 @@ const TEMPLATE_VARIABLES = [
   { token: "{yyyyMMdd-HHmmss}", descriptionKey: "settings.pathVarsTimestamp" },
 ];
 
-type SettingsSection = "language" | "worktree" | "usage" | "terminal" | "editor" | "agents" | "mcp" | "skills" | "webtools" | "workflow" | "extensions";
+type SettingsSection = "language" | "worktree" | "usage" | "vision" | "terminal" | "editor" | "agents" | "mcp" | "skills" | "webtools" | "workflow" | "extensions";
 type SubagentThinkingOption = PiWebSubagentRunPolicy["thinking"];
 
 const SUBAGENT_THINKING_OPTIONS: SubagentThinkingOption[] = ["inherit", "off", "minimal", "low", "medium", "high", "xhigh"];
@@ -285,6 +287,8 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
   const [savedWorkflow, setSavedWorkflow] = useState<PiWebWorkflowConfig | null>(null);
   const [usage, setUsage] = useState<PiWebUsageConfig | null>(null);
   const [savedUsage, setSavedUsage] = useState<PiWebUsageConfig | null>(null);
+  const [vision, setVision] = useState<PiWebVisionConfig | null>(null);
+  const [savedVision, setSavedVision] = useState<PiWebVisionConfig | null>(null);
   const [terminal, setTerminal] = useState<PiWebTerminalConfig | null>(null);
   const [savedTerminal, setSavedTerminal] = useState<PiWebTerminalConfig | null>(null);
   const [rawEnvImport, setRawEnvImport] = useState("");
@@ -308,8 +312,8 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
   const [modelsError, setModelsError] = useState<string | null>(null);
 
   const dirty = useMemo(
-    () => !worktreeConfigsEqual(worktree, savedWorktree) || !workflowConfigsEqual(workflow, savedWorkflow) || !usageConfigsEqual(usage, savedUsage) || !terminalConfigsEqual(terminal, savedTerminal) || !chatGptConfigsEqual(chatgpt, savedChatgpt) || JSON.stringify(grok) !== JSON.stringify(savedGrok) || !editorConfigsEqual(editor, savedEditor) || JSON.stringify(bundledExtensions) !== JSON.stringify(savedBundledExtensions),
-    [worktree, savedWorktree, workflow, savedWorkflow, usage, savedUsage, terminal, savedTerminal, chatgpt, savedChatgpt, grok, savedGrok, editor, savedEditor, bundledExtensions, savedBundledExtensions],
+    () => !worktreeConfigsEqual(worktree, savedWorktree) || !workflowConfigsEqual(workflow, savedWorkflow) || !usageConfigsEqual(usage, savedUsage) || JSON.stringify(vision) !== JSON.stringify(savedVision) || !terminalConfigsEqual(terminal, savedTerminal) || !chatGptConfigsEqual(chatgpt, savedChatgpt) || JSON.stringify(grok) !== JSON.stringify(savedGrok) || !editorConfigsEqual(editor, savedEditor) || JSON.stringify(bundledExtensions) !== JSON.stringify(savedBundledExtensions),
+    [worktree, savedWorktree, workflow, savedWorkflow, usage, savedUsage, vision, savedVision, terminal, savedTerminal, chatgpt, savedChatgpt, grok, savedGrok, editor, savedEditor, bundledExtensions, savedBundledExtensions],
   );
 
   const requestClose = useCallback(async () => {
@@ -348,6 +352,8 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
       setSavedWorkflow(data.config.workflow);
       setUsage(data.config.usage);
       setSavedUsage(data.config.usage);
+      setVision(data.config.vision);
+      setSavedVision(data.config.vision);
       setTerminal(data.config.terminal);
       setSavedTerminal(data.config.terminal);
       setChatgpt(data.config.chatgpt);
@@ -374,7 +380,8 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
   const loadModels = useCallback(async (signal?: AbortSignal) => {
     setModelsError(null);
     try {
-      const res = await fetch("/api/models", { signal });
+      const query = cwd ? `?cwd=${encodeURIComponent(cwd)}` : "";
+      const res = await fetch(`/api/models${query}`, { signal });
       const data = await res.json() as ModelsResponse;
       if (!res.ok || data.error) throw new Error(data.error ?? `HTTP ${res.status}`);
       setModelList(data.modelList ?? []);
@@ -383,7 +390,7 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
       setModelsError(err instanceof Error ? err.message : String(err));
       setModelList([]);
     }
-  }, []);
+  }, [cwd]);
 
   const loadWorkflowStatus = useCallback(async (signal?: AbortSignal) => {
     if (!cwd) {
@@ -419,10 +426,10 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
   }, [cwd]);
 
   useEffect(() => {
-    if (section !== "terminal" && section !== "workflow") return;
+    if (section !== "terminal" && section !== "vision" && section !== "workflow") return;
     const controller = new AbortController();
     if (section === "workflow") void loadWorkflowStatus(controller.signal);
-    if (section === "terminal") void loadModels(controller.signal);
+    if (section === "terminal" || section === "vision") void loadModels(controller.signal);
     return () => controller.abort();
   }, [section, loadModels, loadWorkflowStatus]);
 
@@ -438,6 +445,11 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
 
   const updateUsage = useCallback((patch: Partial<PiWebUsageConfig>) => {
     setUsage((prev) => prev ? { ...prev, ...patch } : prev);
+    setNotice(null);
+  }, []);
+
+  const updateVision = useCallback((patch: Partial<PiWebVisionConfig>) => {
+    setVision((prev) => prev ? { ...prev, ...patch } : prev);
     setNotice(null);
   }, []);
 
@@ -546,6 +558,8 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
     setSavedWorkflow(config.workflow);
     setUsage(config.usage);
     setSavedUsage(config.usage);
+    setVision(config.vision);
+    setSavedVision(config.vision);
     setTerminal(config.terminal);
     setSavedTerminal(config.terminal);
     setChatgpt(config.chatgpt);
@@ -562,7 +576,7 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
   }, [onConfigChange]);
 
   const saveConfig = useCallback(async (successNotice?: string): Promise<boolean> => {
-    if (!worktree || !workflow || !usage || !terminal || !chatgpt || !grok || !editor || !bundledExtensions) return false;
+    if (!worktree || !workflow || !usage || !vision || !terminal || !chatgpt || !grok || !editor || !bundledExtensions) return false;
     setSaving(true);
     setError(null);
     setNotice(null);
@@ -571,7 +585,7 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         // Intentionally omit legacy trellis so inert pi-web.json.trellis data is preserved.
-        body: JSON.stringify({ worktree, workflow, usage, terminal, chatgpt, grok, editor, bundledExtensions }),
+        body: JSON.stringify({ worktree, workflow, usage, vision, terminal, chatgpt, grok, editor, bundledExtensions }),
       });
       const data = await res.json() as WebConfigResponse & { success?: boolean };
       if (!res.ok || data.error) throw new Error(data.error ?? `HTTP ${res.status}`);
@@ -584,7 +598,7 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
     } finally {
       setSaving(false);
     }
-  }, [applyLoadedConfig, worktree, workflow, usage, terminal, chatgpt, grok, editor, bundledExtensions]);
+  }, [applyLoadedConfig, worktree, workflow, usage, vision, terminal, chatgpt, grok, editor, bundledExtensions]);
 
   const handleSave = useCallback(async () => {
     await saveConfig(t("settings.savedToast"));
@@ -595,6 +609,7 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
     setWorktree(defaults.worktree);
     setWorkflow(defaults.workflow);
     setUsage(defaults.usage);
+    setVision(defaults.vision);
     setTerminal(defaults.terminal);
     setChatgpt(defaults.chatgpt);
     setGrok(defaults.grok);
@@ -610,6 +625,8 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
     setSavedWorkflow(config.workflow);
     setUsage(config.usage);
     setSavedUsage(config.usage);
+    setVision(config.vision);
+    setSavedVision(config.vision);
     setTerminal(config.terminal);
     setSavedTerminal(config.terminal);
     setChatgpt(config.chatgpt);
@@ -683,6 +700,11 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
     !!workflowStatus.updateAvailable &&
     !workflowBusy &&
     !workflowStatusLoading;
+  const visionModels = modelList.filter((model) => model.supportsImage);
+  const visionModelValue = vision?.model ? `${vision.model.provider}/${vision.model.modelId}` : "";
+  const visionModelAvailable = !vision?.model || visionModels.some(
+    (model) => model.provider === vision.model?.provider && model.id === vision.model?.modelId,
+  );
 
   return (
     <>
@@ -709,6 +731,7 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
             {renderSectionButton("language", t("common.language"), t("settings.languageSection"))}
             {renderSectionButton("worktree", t("settings.sectionWorktree"), t("settings.worktreeSection"))}
             {renderSectionButton("usage", t("settings.sectionUsage"), t("settings.usageSection"))}
+            {renderSectionButton("vision", t("settings.sectionVision"), t("settings.visionSection"))}
             {renderSectionButton("terminal", t("settings.sectionTerminal"), t("settings.terminalSection"))}
             {renderSectionButton("editor", t("settings.sectionEditor"), t("settings.editorSection"))}
             {renderSectionButton("agents", t("settings.sectionAgents"), t("settings.agentsSection"))}
@@ -722,7 +745,7 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
           <div className="settings-modal-content">
             {loading ? (
               <SettingsState kind="loading" title={t("settings.loadingSettings")} />
-            ) : worktree && workflow && usage && terminal && chatgpt && editor && bundledExtensions ? (
+            ) : worktree && workflow && usage && vision && terminal && chatgpt && editor && bundledExtensions ? (
               <div className="settings-section">
                 {error && <SettingsNotice tone="danger">{error}</SettingsNotice>}
                 {notice && <SettingsNotice>{notice}</SettingsNotice>}
@@ -888,6 +911,46 @@ export function SettingsConfig({ cwd, onClose, onConfigChange }: { cwd: string |
                       </Field>
                     </div>
                     <SettingsNotice>{t("settings.grokLockInfo")}</SettingsNotice>
+                  </div>
+                ) : section === "vision" ? (
+                  <div className="settings-section">
+                    <SettingsSectionHeader
+                      title={t("settings.visionSection")}
+                      description={<>{t("settings.visionDescription")} <code className="settings-inline-code">{configPath}</code>{exists ? "" : t("settings.autoCreateOnSave")}</>}
+                    />
+                    <ToggleField
+                      label={t("settings.visionEnable")}
+                      description={t("settings.visionEnableHint")}
+                      checked={vision.enabled}
+                      onChange={(enabled) => updateVision({ enabled })}
+                    />
+                    <Field label={t("settings.visionModel")} description={t("settings.visionModelHint")}>
+                      <SettingsSelect
+                        value={visionModelValue}
+                        onChange={(event) => {
+                          const separator = event.target.value.indexOf("/");
+                          updateVision({
+                            model: separator > 0
+                              ? { provider: event.target.value.slice(0, separator), modelId: event.target.value.slice(separator + 1) }
+                              : null,
+                          });
+                        }}
+                      >
+                        <option value="">{t("settings.visionModelUnset")}</option>
+                        {!visionModelAvailable && vision?.model && (
+                          <option value={visionModelValue}>{t("settings.visionModelUnavailable", { model: visionModelValue })}</option>
+                        )}
+                        {visionModels.map((model) => (
+                          <option key={`${model.provider}/${model.id}`} value={`${model.provider}/${model.id}`}>
+                            {model.name} · {model.provider}/{model.id}
+                          </option>
+                        ))}
+                      </SettingsSelect>
+                    </Field>
+                    {modelsError && <SettingsNotice tone="danger">{modelsError}</SettingsNotice>}
+                    {!modelsError && visionModels.length === 0 && <SettingsNotice tone="warning">{t("settings.visionNoModels")}</SettingsNotice>}
+                    {vision.enabled && !vision.model && <SettingsNotice tone="warning">{t("settings.visionModelRequired")}</SettingsNotice>}
+                    <SettingsNotice>{t("settings.visionRoutingHint")}</SettingsNotice>
                   </div>
                 ) : section === "terminal" ? (
                   <div className="settings-section">

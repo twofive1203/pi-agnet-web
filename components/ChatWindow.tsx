@@ -93,6 +93,9 @@ const TYPEWRITER_KEYS = [
 ] as const;
 
 function phaseLabel(phase: AgentPhase, t: (key: string, params?: Record<string, string | number>) => string): string {
+  if (phase?.kind === "resolving_vision") {
+    return phase.model ? t("chat.phaseResolvingVisionModel", { model: phase.model }) : t("chat.phaseResolvingVision");
+  }
   if (phase?.kind === "running_tools") {
     const names = phase.tools.map((tool) => tool.name);
     if (names.length === 0) return t("chat.phaseRunningTool");

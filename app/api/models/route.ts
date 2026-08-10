@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 interface ModelMetadata {
   models: Record<string, string>;
-  modelList: { id: string; name: string; provider: string }[];
+  modelList: { id: string; name: string; provider: string; supportsImage: boolean }[];
   defaultModel: { provider: string; modelId: string } | null;
   thinkingLevels: Record<string, string[]>;
   thinkingLevelMaps: Record<string, Record<string, string | null>>;
@@ -33,8 +33,8 @@ function getModelMetadataCache(): Map<string, ModelMetadataCacheEntry> {
 }
 
 function compareModelEntries(
-  a: { id: string; name: string; provider: string },
-  b: { id: string; name: string; provider: string },
+  a: { id: string; name: string; provider: string; supportsImage: boolean },
+  b: { id: string; name: string; provider: string; supportsImage: boolean },
 ): number {
   return modelNameCollator.compare(a.name || a.id, b.name || b.id)
     || modelNameCollator.compare(a.provider, b.provider)
@@ -43,7 +43,7 @@ function compareModelEntries(
 
 async function buildModelMetadata(cwd: string): Promise<ModelMetadata> {
   const nameMap = new Map<string, string>();
-  let modelList: { id: string; name: string; provider: string }[] = [];
+  let modelList: { id: string; name: string; provider: string; supportsImage: boolean }[] = [];
   let defaultModel: { provider: string; modelId: string } | null = null;
   const thinkingLevels: Record<string, string[]> = {};
   const thinkingLevelMaps: Record<string, Record<string, string | null>> = {};
@@ -51,10 +51,11 @@ async function buildModelMetadata(cwd: string): Promise<ModelMetadata> {
   try {
     const { services, registry } = await createSessionServicesWithRegistry(cwd, getAgentDir());
     const available = registry.getAvailable();
-    modelList = available.map((model: { id: string; name: string; provider: string }) => ({
+    modelList = available.map((model: { id: string; name: string; provider: string; input?: readonly string[] }) => ({
       id: model.id,
       name: model.name,
       provider: model.provider,
+      supportsImage: model.input?.includes("image") ?? false,
     })).sort(compareModelEntries);
 
     for (const model of available) {

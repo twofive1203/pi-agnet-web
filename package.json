@@ -69,6 +69,7 @@
     "test:mcp": "npx --yes tsx@4.23.1 scripts/smoke-mcp-config.ts",
     "test:bundled-extensions": "npx --yes tsx@4.23.1 scripts/smoke-bundled-pi-extensions.ts",
     "test:web-tools-config": "npx --yes tsx@4.23.1 scripts/smoke-web-tools-config.ts",
+    "test:vision": "npx --yes tsx@4.23.1 scripts/smoke-vision-resolver.ts",
     "test:i18n": "npx --yes tsx@4.23.1 scripts/check-i18n-keys.ts"
   },
   "dependencies": {

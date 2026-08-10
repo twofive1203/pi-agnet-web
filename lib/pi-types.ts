@@ -3,6 +3,7 @@ import type {
   SessionManager,
   SettingsManager,
   SlashCommandInfo,
+  ModelRuntime,
 } from "@earendil-works/pi-coding-agent";
 
 export interface ContextUsage {
@@ -14,6 +15,7 @@ export interface ContextUsage {
 export interface ModelLike {
   id: string;
   provider: string;
+  input?: readonly string[];
 }
 
 export interface ToolInfo {
@@ -127,7 +129,8 @@ export interface AgentSessionLike {
   readonly model: ModelLike | undefined;
   /** pi 0.80.10+ canonical model/auth facade. */
   readonly modelRuntime: {
-    getModel: (provider: string, modelId: string) => ModelLike | undefined;
+    getModel: ModelRuntime["getModel"];
+    completeSimple: ModelRuntime["completeSimple"];
     refresh?: () => Promise<unknown>;
   };
   readonly sessionManager: SessionManager;

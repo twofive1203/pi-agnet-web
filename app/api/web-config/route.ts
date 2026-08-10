@@ -25,6 +25,7 @@ export async function PUT(req: Request) {
       worktree?: unknown;
       workflow?: unknown;
       usage?: unknown;
+      vision?: unknown;
       terminal?: unknown;
       chatgpt?: unknown;
       editor?: unknown;

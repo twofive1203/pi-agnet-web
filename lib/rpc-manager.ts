@@ -12,6 +12,8 @@ import { preparePiRuntimeEnvironment } from "./pi-runtime-resolver";
 import { createBundledPiResourceLoader } from "./bundled-pi-extensions";
 import { ExtensionWebUiBridge } from "./extension-web-ui";
 import { createEmptyCompletedRetryExtension } from "./empty-completed-retry";
+import { readPiWebConfig } from "./pi-web-config";
+import { resolveVisionForMessage, type VisionAttachment } from "./vision-resolver";
 import { disposeAgentSession } from "./pi-session-lifecycle";
 import type { AgentSessionLike, ToolInfo } from "./pi-types";
 import { isSubagentToolName } from "./subagent-runs";
@@ -279,6 +281,34 @@ export class AgentSessionWrapper {
     this.onDestroyCallback = cb;
   }
 
+  private async resolveVisionMessage(message: string, images?: VisionAttachment[]): Promise<string> {
+    if (!images?.length) return message;
+    const resolution = await resolveVisionForMessage({
+      runtime: this.inner.modelRuntime,
+      mainModel: this.inner.model,
+      config: readPiWebConfig().vision,
+      message,
+      images,
+      onResolutionStart: (model) => {
+        this.emitEvent({
+          type: "vision_resolution_start",
+          sessionId: this.sessionId,
+          model: `${model.provider}/${model.modelId}`,
+          imageCount: images.length,
+        });
+      },
+    });
+    if (resolution.usedVisionModel) {
+      this.emitEvent({
+        type: "vision_resolution_complete",
+        sessionId: this.sessionId,
+        model: resolution.visionModel ? `${resolution.visionModel.provider}/${resolution.visionModel.modelId}` : undefined,
+        imageCount: images.length,
+      });
+    }
+    return resolution.message;
+  }
+
   async send(command: Record<string, unknown>): Promise<unknown> {
     this.resetIdleTimer();
     const type = command.type as string;
@@ -288,9 +318,9 @@ export class AgentSessionWrapper {
         // Fire-and-forget HTTP response; lifecycle still arrives over SSE.
         // Extension slash commands (e.g. /brainstorm) return from prompt() without
         // agent_start/agent_end — emit prompt_settled so the browser can clear the spinner.
-        const promptImages = command.images as Array<{ type: "image"; data: string; mimeType: string }> | undefined;
-        void this.inner
-          .prompt(command.message as string, promptImages?.length ? { images: promptImages } : undefined)
+        const promptImages = command.images as VisionAttachment[] | undefined;
+        void this.resolveVisionMessage(command.message as string, promptImages)
+          .then((resolvedMessage) => this.inner.prompt(resolvedMessage, promptImages?.length ? { images: promptImages } : undefined))
           .then(() => {
             if (!this._alive) return;
             if (!this.inner.isStreaming) {
@@ -421,14 +451,16 @@ export class AgentSessionWrapper {
       }
 
       case "steer": {
-        const steerImages = command.images as Array<{ type: "image"; data: string; mimeType: string }> | undefined;
-        await this.inner.steer(command.message as string, steerImages?.length ? steerImages : undefined);
+        const steerImages = command.images as VisionAttachment[] | undefined;
+        const resolvedMessage = await this.resolveVisionMessage(command.message as string, steerImages);
+        await this.inner.steer(resolvedMessage, steerImages?.length ? steerImages : undefined);
         return null;
       }
 
       case "follow_up": {
-        const followImages = command.images as Array<{ type: "image"; data: string; mimeType: string }> | undefined;
-        await this.inner.followUp(command.message as string, followImages?.length ? followImages : undefined);
+        const followImages = command.images as VisionAttachment[] | undefined;
+        const resolvedMessage = await this.resolveVisionMessage(command.message as string, followImages);
+        await this.inner.followUp(resolvedMessage, followImages?.length ? followImages : undefined);
         return null;
       }
 

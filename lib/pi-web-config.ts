@@ -56,6 +56,16 @@ export interface PiWebUsageConfig {
   includeArchived: boolean;
 }
 
+export interface PiWebVisionModelRef {
+  provider: string;
+  modelId: string;
+}
+
+export interface PiWebVisionConfig {
+  enabled: boolean;
+  model: PiWebVisionModelRef | null;
+}
+
 export interface PiWebChatGptWarmupConfig {
   enabled: boolean;
   accountIds: string[];
@@ -137,6 +147,7 @@ export interface PiWebConfig {
   worktree: PiWebWorktreeConfig;
   workflow: PiWebWorkflowConfig;
   usage: PiWebUsageConfig;
+  vision: PiWebVisionConfig;
   terminal: PiWebTerminalConfig;
   chatgpt: PiWebChatGptConfig;
   editor: PiWebEditorConfig;
@@ -149,6 +160,7 @@ export interface PiWebConfigPatch {
   worktree?: unknown;
   workflow?: unknown;
   usage?: unknown;
+  vision?: unknown;
   terminal?: unknown;
   chatgpt?: unknown;
   editor?: unknown;
@@ -181,6 +193,10 @@ export const DEFAULT_PI_WEB_CONFIG: PiWebConfig = {
   },
   usage: {
     includeArchived: true,
+  },
+  vision: {
+    enabled: false,
+    model: null,
   },
   terminal: {
     enabled: false,
@@ -319,6 +335,13 @@ function readSubagentModelRef(value: unknown, fallback: PiWebSubagentModelRef): 
   return fallback;
 }
 
+function readVisionModelRef(value: unknown): PiWebVisionModelRef | null {
+  if (!isRecord(value)) return null;
+  const provider = typeof value.provider === "string" ? value.provider.trim() : "";
+  const modelId = typeof value.modelId === "string" ? value.modelId.trim() : "";
+  return provider && modelId ? { provider, modelId } : null;
+}
+
 function readSubagentThinking(value: unknown, fallback: PiWebSubagentThinking): PiWebSubagentThinking {
   return value === "inherit" || value === "off" || value === "minimal" || value === "low" || value === "medium" || value === "high" || value === "xhigh"
     ? value
@@ -348,6 +371,7 @@ function normalizePiWebConfig(raw: unknown): PiWebConfig {
   const worktree = isRecord(root.worktree) ? root.worktree : {};
   const workflow = isRecord(root.workflow) ? root.workflow : {};
   const usage = isRecord(root.usage) ? root.usage : {};
+  const vision = isRecord(root.vision) ? root.vision : {};
   const terminal = isRecord(root.terminal) ? root.terminal : {};
   const chatgpt = isRecord(root.chatgpt) ? root.chatgpt : {};
   const editor = isRecord(root.editor) ? root.editor : {};
@@ -370,6 +394,10 @@ function normalizePiWebConfig(raw: unknown): PiWebConfig {
     },
     usage: {
       includeArchived: readBoolean(usage.includeArchived, defaults.usage.includeArchived),
+    },
+    vision: {
+      enabled: readBoolean(vision.enabled, defaults.vision.enabled),
+      model: readVisionModelRef(vision.model),
     },
     terminal: {
       enabled: readBoolean(terminal.enabled, defaults.terminal.enabled),
@@ -538,6 +566,21 @@ export function validatePiWebUsageConfig(value: unknown): PiWebUsageConfig {
   };
 }
 
+export function validatePiWebVisionConfig(value: unknown): PiWebVisionConfig {
+  if (!isRecord(value)) {
+    throw new PiWebConfigValidationError("vision config must be an object");
+  }
+  const enabled = requireBoolean(value.enabled, "vision.enabled");
+  const model = readVisionModelRef(value.model);
+  if (enabled && !model) {
+    throw new PiWebConfigValidationError("vision.model is required when vision is enabled");
+  }
+  if (value.model !== null && value.model !== undefined && !model) {
+    throw new PiWebConfigValidationError("vision.model must include provider and modelId");
+  }
+  return { enabled, model };
+}
+
 function validateTerminalShell(value: unknown): PiWebTerminalShell {
   if (value === "zsh" || value === "bash" || value === "sh" || value === "cmd" || value === "powershell" || value === "pwsh" || value === "custom") return value;
   throw new PiWebConfigValidationError("terminal.shell must be zsh, bash, sh, cmd, powershell, pwsh, or custom");
@@ -696,12 +739,13 @@ export function writePiWebConfigPatch(patch: PiWebConfigPatch): PiWebConfigReadR
   const hasWorktree = Object.prototype.hasOwnProperty.call(patch, "worktree");
   const hasWorkflow = Object.prototype.hasOwnProperty.call(patch, "workflow");
   const hasUsage = Object.prototype.hasOwnProperty.call(patch, "usage");
+  const hasVision = Object.prototype.hasOwnProperty.call(patch, "vision");
   const hasTerminal = Object.prototype.hasOwnProperty.call(patch, "terminal");
   const hasChatGpt = Object.prototype.hasOwnProperty.call(patch, "chatgpt");
   const hasEditor = Object.prototype.hasOwnProperty.call(patch, "editor");
   const hasGrok = Object.prototype.hasOwnProperty.call(patch, "grok");
   const hasBundledExtensions = Object.prototype.hasOwnProperty.call(patch, "bundledExtensions");
-  if (!hasWorktree && !hasWorkflow && !hasUsage && !hasTerminal && !hasChatGpt && !hasEditor && !hasGrok && !hasBundledExtensions) {
+  if (!hasWorktree && !hasWorkflow && !hasUsage && !hasVision && !hasTerminal && !hasChatGpt && !hasEditor && !hasGrok && !hasBundledExtensions) {
     throw new PiWebConfigValidationError("no supported config sections provided");
   }
 
@@ -715,6 +759,7 @@ export function writePiWebConfigPatch(patch: PiWebConfigPatch): PiWebConfigReadR
   const normalizedBundledExtensions = hasBundledExtensions ? validatePiWebBundledExtensionsConfig(patch.bundledExtensions) : undefined;
   const normalizedWorkflow = hasWorkflow ? validatePiWebWorkflowConfig(patch.workflow) : undefined;
   const normalizedUsage = hasUsage ? validatePiWebUsageConfig(patch.usage) : undefined;
+  const normalizedVision = hasVision ? validatePiWebVisionConfig(patch.vision) : undefined;
   const normalizedTerminal = hasTerminal ? validatePiWebTerminalConfig(patch.terminal) : undefined;
   const normalizedChatGpt = hasChatGpt ? validatePiWebChatGptConfig(isRecord(chatGptPatch) ? {
     ...currentConfig.chatgpt,
@@ -748,6 +793,14 @@ export function writePiWebConfigPatch(patch: PiWebConfigPatch): PiWebConfigReadR
     nextRaw.usage = {
       ...previousUsage,
       ...normalizedUsage,
+    };
+  }
+
+  if (normalizedVision) {
+    const previousVision = isRecord(raw.vision) ? raw.vision : {};
+    nextRaw.vision = {
+      ...previousVision,
+      ...normalizedVision,
     };
   }
 

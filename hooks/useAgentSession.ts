@@ -479,6 +479,7 @@ function toDialogRequest(event: ExtensionUiRequestEvent): ExtensionDialogRequest
 }
 
 export type AgentPhase =
+  | { kind: "resolving_vision"; model?: string }
   | { kind: "waiting_model" }
   | { kind: "running_tools"; tools: { id: string; name: string }[] }
   | null;
@@ -981,6 +982,13 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       }
       case "extension_error":
         console.error("Pi extension error", event);
+        break;
+      case "vision_resolution_start":
+        setAgentRunning(true);
+        setAgentPhase({ kind: "resolving_vision", model: typeof event.model === "string" ? event.model : undefined });
+        break;
+      case "vision_resolution_complete":
+        setAgentPhase({ kind: "waiting_model" });
         break;
       case "agent_start":
         promptHadAgentLifecycleRef.current = true;

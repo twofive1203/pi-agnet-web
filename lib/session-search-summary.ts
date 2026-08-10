@@ -6,6 +6,7 @@
  */
 
 import { closeSync, openSync, readSync, statSync } from "fs";
+import { stripVisualEvidenceFromMessage } from "./vision-resolver";
 
 /** Hard cap on bytes scanned per file while building search summaries. */
 export const SESSION_SUMMARY_MAX_BYTES = 8 * 1024 * 1024;
@@ -23,7 +24,7 @@ const DEFAULT_FIRST_MESSAGE = "(no messages)";
 
 function extractUserText(content: unknown): string | null {
   if (typeof content === "string") {
-    const text = content.trim();
+    const text = stripVisualEvidenceFromMessage(content).trim();
     return text ? text.slice(0, SESSION_FIRST_MESSAGE_MAX_CHARS) : null;
   }
   if (!Array.isArray(content)) return null;
@@ -34,7 +35,7 @@ function extractUserText(content: unknown): string | null {
       (block as { type?: unknown }).type === "text" &&
       typeof (block as { text?: unknown }).text === "string"
     ) {
-      const text = ((block as { text: string }).text || "").trim();
+      const text = stripVisualEvidenceFromMessage((block as { text: string }).text || "").trim();
       if (text) return text.slice(0, SESSION_FIRST_MESSAGE_MAX_CHARS);
     }
   }
