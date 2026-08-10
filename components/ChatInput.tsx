@@ -11,6 +11,13 @@ import { buildWorkflowTaskResumePrompt, type WorkflowTaskChatContext } from "@/l
 import { clearChatDraft, readChatDraft, writeChatDraft } from "@/lib/chat-draft";
 import type { CompletionNotificationState } from "@/hooks/useCompletionNotification";
 import { useI18n } from "@/components/I18nProvider";
+import { classifyChatProviderError } from "@/lib/chat-provider-errors";
+import { localizeError } from "@/lib/i18n";
+import {
+  chatSendBlockMessageKey,
+  chatSendBlockOffersModelsFix,
+  getChatSendBlockReason,
+} from "@/lib/chat-send-readiness";
 
 export interface AttachedImage {
   data: string;   // base64, no prefix
@@ -34,7 +41,11 @@ interface Props {
   model?: { provider: string; modelId: string } | null;
   modelNames?: Record<string, string>;
   modelList?: { id: string; name: string; provider: string }[];
+  /** False until the first models metadata fetch settles for the active cwd. */
+  modelsReady?: boolean;
   onModelChange?: (provider: string, modelId: string) => void;
+  /** Open Models configuration when send is blocked or auth/model setup is needed. */
+  onOpenModels?: () => void;
   onCompact?: () => void;
   onAbortCompaction?: () => void;
   isCompacting?: boolean;
@@ -350,14 +361,17 @@ function hasContent(el: HTMLElement): boolean {
 
 function formatRetryReason(errorMessage: string | undefined, t: (key: string) => string): string | undefined {
   if (!errorMessage) return undefined;
-  if (errorMessage.includes("empty completed response")) {
-    return t("chat.agentFailureEmptyCompleted");
-  }
-  return errorMessage;
+  const classified = classifyChatProviderError(errorMessage);
+  return localizeError(t, {
+    code: classified.code,
+    message: classified.englishSummary,
+    fallback: classified.technicalDetails,
+  });
 }
 
 export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
-  onSend, cwd, onAbort, onSteer, onFollowUp, isStreaming, model, modelNames, modelList, onModelChange,
+  onSend, cwd, onAbort, onSteer, onFollowUp, isStreaming, model, modelNames, modelList, modelsReady, onModelChange,
+  onOpenModels,
   onCompact, onAbortCompaction, isCompacting, compactError, toolPreset, onToolPresetChange,
   thinkingLevel, onThinkingLevelChange, availableThinkingLevels, thinkingLevelMap,
   retryInfo,
@@ -907,13 +921,25 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     syncFromDom();
   }, [clearImages, clearFiles, draftScope, syncFromDom]);
 
+  const sendBlockReason = useMemo(
+    () => getChatSendBlockReason({
+      cwd,
+      modelsReady,
+      modelList,
+      selectedModel: model ?? null,
+    }),
+    [cwd, modelsReady, modelList, model],
+  );
+  const sendBlocked = sendBlockReason != null && !isStreaming;
+
   const handleSend = useCallback(() => {
     if (!sendActive()) return;
     if (isStreaming) return;
+    if (sendBlocked) return;
     const finalMsg = buildFinalMessage();
     onSend(finalMsg, attachedImages.length ? attachedImages : undefined);
     clearEditor();
-  }, [sendActive, isStreaming, onSend, attachedImages, buildFinalMessage, clearEditor]);
+  }, [sendActive, isStreaming, sendBlocked, onSend, attachedImages, buildFinalMessage, clearEditor]);
 
   const sendQueued = useCallback((mode: "steer" | "followup") => {
     if (!sendActive()) return;
@@ -1006,12 +1032,12 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         if (isStreaming && (onSteer || onFollowUp)) {
           // Default Enter sends as steer if available, else followup
           sendQueued(onSteer ? "steer" : "followup");
-        } else {
+        } else if (!sendBlocked) {
           handleSend();
         }
       }
     },
-    [isStreaming, onSteer, onFollowUp, sendQueued, handleSend, atMenuVisible, atSuggestions, atSelectedIndex, insertAtMention, atMatchKey, slashMenuVisible, filteredSlashCommands, slashSelectedIndex, insertSlashCommand, slashMatchKey]
+    [isStreaming, onSteer, onFollowUp, sendQueued, handleSend, sendBlocked, atMenuVisible, atSuggestions, atSelectedIndex, insertAtMention, atMatchKey, slashMenuVisible, filteredSlashCommands, slashSelectedIndex, insertSlashCommand, slashMatchKey]
   );
 
   const handleInput = useCallback(() => {
@@ -1174,9 +1200,24 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   }, []);
 
   const hasPendingMessage = hasEditorContent || attachedImages.length > 0 || attachedFiles.length > 0;
+  const canSendNow = hasPendingMessage && !sendBlocked;
 
   return (
     <div className="chat-input-shell">
+      {sendBlocked && sendBlockReason && (
+        <div className="chat-input-send-block" role="status">
+          <span className="chat-input-send-block-message">{t(chatSendBlockMessageKey(sendBlockReason))}</span>
+          {onOpenModels && chatSendBlockOffersModelsFix(sendBlockReason) && (
+            <button
+              type="button"
+              className="chat-input-send-block-action"
+              onClick={onOpenModels}
+            >
+              {t("chat.sendBlockedFixModels")}
+            </button>
+          )}
+        </div>
+      )}
       {/* Hidden file inputs */}
       <input
         ref={fileInputRef}
@@ -1472,7 +1513,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           ) : (
             <button
               onClick={handleSend}
-              disabled={!hasPendingMessage}
+              disabled={!canSendNow}
+              title={sendBlocked && sendBlockReason ? t(chatSendBlockMessageKey(sendBlockReason)) : undefined}
               className="chat-input-action-button is-send"
             >
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

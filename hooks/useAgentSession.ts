@@ -15,6 +15,12 @@ import type {
 import { normalizeToolCalls } from "@/lib/normalize";
 import { sendAgentCommand } from "@/lib/agent-client";
 import { getAgentLifecycleDirective } from "@/lib/agent-lifecycle";
+import {
+  buildChatAgentFailure,
+  type ChatProviderErrorCategory,
+} from "@/lib/chat-provider-errors";
+import type { ErrorCode } from "@/lib/i18n/error-codes";
+import { getChatSendBlockReason } from "@/lib/chat-send-readiness";
 import type { ToolEntry, ToolPreset } from "@/components/ToolPanel";
 import {
   boundSubagentOutput,
@@ -491,6 +497,10 @@ export interface AgentFailure {
   retryAttempts: number;
   maxAttempts?: number;
   technicalDetails: string;
+  /** Stable machine code for localized failure copy. */
+  code?: ErrorCode;
+  /** Coarse category for titles/actions (auth/quota/network/…). */
+  category?: ChatProviderErrorCategory;
 }
 
 export type OnSubagentChange = (runs: SubagentRun[]) => void;
@@ -593,6 +603,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [agentRunning, setAgentRunning] = useState(false);
   const [modelNames, setModelNames] = useState<Record<string, string>>({});
   const [modelList, setModelList] = useState<{ id: string; name: string; provider: string }[]>([]);
+  const [modelsReady, setModelsReady] = useState(false);
   const [modelThinkingLevels, setModelThinkingLevels] = useState<Record<string, string[]>>({});
   const [modelThinkingLevelMaps, setModelThinkingLevelMaps] = useState<Record<string, Record<string, string | null>>>({});
   const [newSessionModel, setNewSessionModelState] = useState<{ provider: string; modelId: string } | null>(null);
@@ -1012,14 +1023,13 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           : typeof event.error === "string"
             ? event.error
             : "Command failed";
-        const failure: AgentFailure = {
+        const failure: AgentFailure = buildChatAgentFailure({
+          error: errorMessage,
           provider: currentModel?.provider,
           model: currentModel?.modelId,
-          errorMessage,
           retryAttempts: retryProgressRef.current?.attempt ?? 0,
           maxAttempts: retryProgressRef.current?.maxAttempts,
-          technicalDetails: errorMessage,
-        };
+        });
         pendingAgentErrorRef.current = failure;
         setAgentFailure(failure);
         setAgentRunning(false);
@@ -1075,14 +1085,13 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         }
         if (completed?.role === "assistant") {
           if (completed.stopReason === "error" && completed.errorMessage) {
-            pendingAgentErrorRef.current = {
+            pendingAgentErrorRef.current = buildChatAgentFailure({
+              error: completed.errorMessage,
               provider: completed.provider,
               model: completed.model,
-              errorMessage: completed.errorMessage,
               retryAttempts: retryProgressRef.current?.attempt ?? 0,
               maxAttempts: retryProgressRef.current?.maxAttempts,
-              technicalDetails: completed.errorMessage,
-            };
+            });
           } else if (completed.stopReason !== "error") {
             pendingAgentErrorRef.current = null;
           }
@@ -1248,15 +1257,16 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         } else {
           const finalError = typeof event.finalError === "string"
             ? event.finalError
-            : pendingAgentErrorRef.current?.errorMessage ?? "Retry failed";
-          const failure: AgentFailure = {
+            : pendingAgentErrorRef.current?.technicalDetails
+              ?? pendingAgentErrorRef.current?.errorMessage
+              ?? "Retry failed";
+          const failure: AgentFailure = buildChatAgentFailure({
+            error: finalError,
             provider: pendingAgentErrorRef.current?.provider ?? currentModel?.provider,
             model: pendingAgentErrorRef.current?.model ?? currentModel?.modelId,
-            errorMessage: finalError,
             retryAttempts: attempt,
             maxAttempts: retryProgressRef.current?.maxAttempts,
-            technicalDetails: pendingAgentErrorRef.current?.technicalDetails ?? finalError,
-          };
+          });
           pendingAgentErrorRef.current = failure;
           setAgentFailure(failure);
         }
@@ -1291,6 +1301,27 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const handleSend = useCallback(async (message: string, images?: AttachedImage[]) => {
     if (!message.trim() && !images?.length) return;
     if (agentRunning) return;
+
+    const sendBlock = getChatSendBlockReason({
+      cwd: session?.cwd ?? newSessionCwd,
+      modelsReady,
+      modelList,
+      selectedModel: isNew ? newSessionModel : currentModel,
+    });
+    if (sendBlock && sendBlock !== "models_loading") {
+      const failure: AgentFailure = buildChatAgentFailure({
+        error: sendBlock === "no_models"
+          ? "No models available"
+          : sendBlock === "no_model_selected"
+            ? "Model not found: none selected"
+            : "No workspace selected",
+        provider: currentModel?.provider ?? newSessionModel?.provider,
+        model: currentModel?.modelId ?? newSessionModel?.modelId,
+      });
+      pendingAgentErrorRef.current = failure;
+      setAgentFailure(failure);
+      return;
+    }
 
     const imageBlocks = images?.map((img) => ({ type: "image" as const, source: { type: "base64" as const, media_type: img.mimeType, data: img.data } }));
     const userMsg: AgentMessage = {
@@ -1357,21 +1388,19 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       }
     } catch (e) {
       console.error("Failed to send message:", e);
-      const errorMessage = e instanceof Error ? e.message : String(e);
-      const failure: AgentFailure = {
+      const failure: AgentFailure = buildChatAgentFailure({
+        error: e,
         provider: currentModel?.provider ?? newSessionModel?.provider,
         model: currentModel?.modelId ?? newSessionModel?.modelId,
-        errorMessage,
         retryAttempts: 0,
-        technicalDetails: errorMessage,
-      };
+      });
       pendingAgentErrorRef.current = failure;
       setAgentFailure(failure);
       setAgentRunning(false);
       setAgentPhase(null);
       dispatch({ type: "end" });
     }
-  }, [isNew, newSessionCwd, newSessionModel, toolPreset, thinkingLevel, session, agentRunning, connectEvents, onSessionCreated, currentModel]);
+  }, [isNew, newSessionCwd, newSessionModel, toolPreset, thinkingLevel, session, agentRunning, connectEvents, onSessionCreated, currentModel, modelsReady, modelList]);
 
   const handleContinueAfterFailure = useCallback(() => {
     if (agentRunning) return;
@@ -1654,6 +1683,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
 
     let active = true;
     const refreshGeneration = modelsRefreshKey ?? 0;
+    setModelsReady(false);
     setModelNames({});
     setModelList([]);
     setModelThinkingLevels({});
@@ -1675,6 +1705,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
             : { provider: metadata.modelList[0].provider, modelId: metadata.modelList[0].id };
           setNewSessionModel(selected);
         }
+        setModelsReady(true);
       })
       .catch(() => {
         if (!active) return;
@@ -1682,6 +1713,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         setModelList([]);
         setModelThinkingLevels({});
         setModelThinkingLevelMaps({});
+        setModelsReady(true);
       });
 
     return () => { active = false; };
@@ -1697,7 +1729,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   return {
     // State
     data, loading, error, activeLeafId, messages, entryIds, streamState,
-    agentRunning, modelNames, modelList, modelThinkingLevels, modelThinkingLevelMaps, newSessionModel, toolPreset, thinkingLevel,
+    agentRunning, modelNames, modelList, modelsReady, modelThinkingLevels, modelThinkingLevelMaps, newSessionModel, toolPreset, thinkingLevel,
     retryInfo, agentFailure, contextUsage, systemPrompt, forkingEntryId,
     isCompacting, compactError, currentModel, displayModel, sessionStats,
     agentPhase, subagentRuns: subagentRunsRef.current,

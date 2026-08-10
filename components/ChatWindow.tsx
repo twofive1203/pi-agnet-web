@@ -18,6 +18,12 @@ import { useAutoScroll } from "@/hooks/useAutoScroll";
 import { useDragDrop } from "@/hooks/useDragDrop";
 import { SessionChangesFloatingPanel } from "./SessionChangesFloatingPanel";
 import { useI18n } from "@/components/I18nProvider";
+import {
+  chatFailureActionKey,
+  chatFailureOffersModelsFix,
+  chatFailureTitleKey,
+} from "@/lib/chat-provider-errors";
+import { localizeError } from "@/lib/i18n";
 
 /**
  * Stable React keys for chat rows.
@@ -58,6 +64,8 @@ interface Props {
   onAgentRunningChange?: (running: boolean) => void;
   /** Whether an extension Todo List widget is currently active in the chat. */
   onTodoActiveChange?: (active: boolean) => void;
+  /** Open Models configuration (send-block / failure fix path). */
+  onOpenModels?: () => void;
 }
 
 function isPowerbarExtensionItem(item: { key: string }): boolean {
@@ -141,7 +149,7 @@ function Typewriter({ phrases }: { phrases: string[] }) {
   );
 }
 
-export const ChatWindow = memo(function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSubagentChange, onSessionStatsChange, onContextUsageChange, onAgentRunningChange, onTodoActiveChange }: Props) {
+export const ChatWindow = memo(function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSubagentChange, onSessionStatsChange, onContextUsageChange, onAgentRunningChange, onTodoActiveChange, onOpenModels }: Props) {
   const { t } = useI18n();
   const typewriterPhrases = useMemo(
     () => TYPEWRITER_KEYS.map((key) => t(key)),
@@ -150,7 +158,7 @@ export const ChatWindow = memo(function ChatWindow({ session, newSessionCwd, onA
   const { autoScrollEnabled, onAutoScrollToggle } = useAutoScroll();
   const {
     loading, error, messages, entryIds, streamState,
-    agentRunning, modelNames, modelList, modelThinkingLevels, modelThinkingLevelMaps, toolPreset, thinkingLevel,
+    agentRunning, modelNames, modelList, modelsReady, modelThinkingLevels, modelThinkingLevelMaps, toolPreset, thinkingLevel,
     retryInfo, agentFailure, contextUsage, forkingEntryId,
     isCompacting, compactError, displayModel: displayModelValue, sessionStats,
     agentPhase, sessionChangesRefreshKey,
@@ -324,7 +332,9 @@ export const ChatWindow = memo(function ChatWindow({ session, newSessionCwd, onA
       model={displayModelValue}
       modelNames={modelNames}
       modelList={modelList}
+      modelsReady={modelsReady}
       onModelChange={handleModelChange}
+      onOpenModels={onOpenModels}
       onCompact={session || isNew ? handleCompact : undefined}
       onAbortCompaction={handleAbortCompaction}
       isCompacting={isCompacting}
@@ -510,7 +520,9 @@ export const ChatWindow = memo(function ChatWindow({ session, newSessionCwd, onA
             {!agentRunning && agentFailure && (
               <div className="chat-agent-failure" role="alert">
                 <div className="chat-agent-failure-header">
-                  <div className="chat-agent-failure-title">{t("chat.agentFailureTitle")}</div>
+                  <div className="chat-agent-failure-title">
+                    {t(chatFailureTitleKey(agentFailure.category))}
+                  </div>
                   <button
                     type="button"
                     className="chat-agent-failure-dismiss"
@@ -520,10 +532,17 @@ export const ChatWindow = memo(function ChatWindow({ session, newSessionCwd, onA
                   </button>
                 </div>
                 <div className="chat-agent-failure-message">
-                  {agentFailure.errorMessage.includes("empty completed response")
-                    ? t("chat.agentFailureEmptyCompleted")
-                    : agentFailure.errorMessage}
+                  {localizeError(t, {
+                    code: agentFailure.code,
+                    message: agentFailure.errorMessage,
+                    fallback: agentFailure.errorMessage,
+                  })}
                 </div>
+                {chatFailureActionKey(agentFailure.category) && (
+                  <div className="chat-agent-failure-action-hint">
+                    {t(chatFailureActionKey(agentFailure.category)!)}
+                  </div>
+                )}
                 <div className="chat-agent-failure-meta">
                   {agentFailure.provider && (
                     <span>{t("chat.agentFailureProvider")}: {agentFailure.provider}</span>
@@ -549,6 +568,15 @@ export const ChatWindow = memo(function ChatWindow({ session, newSessionCwd, onA
                   >
                     {t("chat.agentFailureContinue")}
                   </button>
+                  {onOpenModels && chatFailureOffersModelsFix(agentFailure.category) && (
+                    <button
+                      type="button"
+                      className="chat-agent-failure-models"
+                      onClick={onOpenModels}
+                    >
+                      {t("chat.agentFailureOpenModels")}
+                    </button>
+                  )}
                 </div>
               </div>
             )}

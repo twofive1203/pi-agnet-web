@@ -23,6 +23,14 @@ export const errorsZh = {
     rootNotObject: "模型返回 JSON 根节点不是对象",
     noEnv: "模型没有解析出有效环境变量",
   },
+  chat: {
+    authFailed: "模型认证失败。请打开「模型」重新登录或更新 API Key。",
+    quotaExceeded: "当前账号额度不足或请求过快。请查看额度、切换账号/模型，或稍后重试。",
+    networkFailed: "无法连接模型服务。请检查代理和网络配置。",
+    modelNotFound: "当前模型不可用。请重新发现模型或切换到其他模型。",
+    emptyResponse: "模型未返回有效内容。可重试；技术详情见下方。",
+    providerFailed: "模型请求失败。请查看技术详情后重试或切换模型。",
+  },
 } as const satisfies MessageTree;
 
 export const errorsEn = {
@@ -46,5 +54,13 @@ export const errorsEn = {
     noJson: "The model did not return a JSON object",
     rootNotObject: "The model JSON root is not an object",
     noEnv: "The model did not produce any valid environment variables",
+  },
+  chat: {
+    authFailed: "Model authentication failed. Open Models to re-login or update the API key.",
+    quotaExceeded: "Account quota is exhausted or requests are too frequent. Check quota, switch account/model, or retry later.",
+    networkFailed: "Could not reach the model service. Check proxy and network settings.",
+    modelNotFound: "The selected model is unavailable. Rediscover models or switch to another one.",
+    emptyResponse: "The model returned no usable content. Retry; see technical details below.",
+    providerFailed: "The model request failed. Review technical details, then retry or switch models.",
   },
 } as const satisfies MessageTree;

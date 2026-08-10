@@ -1329,6 +1329,10 @@ export function AppShell() {
               onSubagentChange={handleSubagentChange}
               onAgentRunningChange={handleAgentRunningChange}
               onTodoActiveChange={handleTodoActiveChange}
+              onOpenModels={() => {
+                void loadModelsConfig();
+                setModelsConfigOpen(true);
+              }}
             />
           ) : showPlaceholder ? (
             <div className="workbench-empty-state">

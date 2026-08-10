@@ -14,6 +14,12 @@ export const ERROR_CODES = {
   terminalEnvNoJson: "terminal_env.no_json",
   terminalEnvRootNotObject: "terminal_env.root_not_object",
   terminalEnvNoEnv: "terminal_env.no_env",
+  chatAuthFailed: "chat.auth_failed",
+  chatQuotaExceeded: "chat.quota_exceeded",
+  chatNetworkFailed: "chat.network_failed",
+  chatModelNotFound: "chat.model_not_found",
+  chatEmptyResponse: "chat.empty_response",
+  chatProviderFailed: "chat.provider_failed",
 } as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[keyof typeof ERROR_CODES];
@@ -33,6 +39,12 @@ const CODE_TO_MESSAGE_KEY: Record<ErrorCode, string> = {
   [ERROR_CODES.terminalEnvNoJson]: "errors.terminalEnv.noJson",
   [ERROR_CODES.terminalEnvRootNotObject]: "errors.terminalEnv.rootNotObject",
   [ERROR_CODES.terminalEnvNoEnv]: "errors.terminalEnv.noEnv",
+  [ERROR_CODES.chatAuthFailed]: "errors.chat.authFailed",
+  [ERROR_CODES.chatQuotaExceeded]: "errors.chat.quotaExceeded",
+  [ERROR_CODES.chatNetworkFailed]: "errors.chat.networkFailed",
+  [ERROR_CODES.chatModelNotFound]: "errors.chat.modelNotFound",
+  [ERROR_CODES.chatEmptyResponse]: "errors.chat.emptyResponse",
+  [ERROR_CODES.chatProviderFailed]: "errors.chat.providerFailed",
 };
 
 /** English machine message paired with a stable code (safe for logs / API bodies). */
@@ -79,6 +91,8 @@ const LEGACY_MESSAGE_TO_CODE: Record<string, ErrorCode> = {
   "SUB2API JSON accounts 不能为空": ERROR_CODES.oauthSub2apiAccountsEmpty,
   "Grok 未登录。请先在 Models → xAI 或 Grok CLI 完成 OAuth 登录，或设置 GROK_CLI_OAUTH_TOKEN 环境变量。":
     ERROR_CODES.grokNotLoggedIn,
+  "Provider returned an empty completed response after tool results; please retry your request":
+    ERROR_CODES.chatEmptyResponse,
   "模型没有返回 JSON 对象": ERROR_CODES.terminalEnvNoJson,
   "模型返回 JSON 根节点不是对象": ERROR_CODES.terminalEnvRootNotObject,
   "模型没有解析出有效环境变量": ERROR_CODES.terminalEnvNoEnv,

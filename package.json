@@ -54,6 +54,7 @@
     "test:cwd-native-pick": "npx --yes tsx@4.23.1 scripts/smoke-cwd-native-pick.ts",
     "test:subagent-observability": "npx --yes tsx@4.23.1 scripts/smoke-subagent-observability.ts && node --import tsx scripts/smoke-subagent-progress.mjs && npx --yes tsx@4.23.1 scripts/smoke-subagent-session-runs.ts && npx --yes tsx@4.23.1 scripts/smoke-subagent-detail.ts && npx --yes tsx@4.23.1 scripts/smoke-subagent-detail-route.ts && npx --yes tsx@4.23.1 scripts/smoke-subagent-store.ts",
     "test:agent-stream": "node --import tsx scripts/smoke-agent-event-throttler.mjs && node --import tsx scripts/smoke-empty-completed-retry.mjs && npx --yes tsx@4.23.1 scripts/smoke-chat-lifecycle.ts",
+    "test:chat-errors": "npx --yes tsx@4.23.1 scripts/smoke-chat-provider-errors.ts",
     "test:chat-draft": "npx --yes tsx@4.23.1 scripts/smoke-chat-draft.ts",
     "test:session-changes": "node --import tsx scripts/smoke-session-file-changes.mjs",
     "test:session-index": "npx --yes tsx@4.23.1 scripts/smoke-session-index.ts",

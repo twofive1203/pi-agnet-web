@@ -42,6 +42,7 @@ There is no full app test framework. Targeted smoke scripts cover high-risk flow
 ```bash
 npm run test:browser      # browser binding protocol/manager + chrome-tab-debug artifact harness
 npm run test:agent-stream    # token-stream coalescing, agent_settled barriers, empty-completed retry, main-chat lifecycle integration
+npm run test:chat-errors     # chat/provider error classification + pre-send model readiness gate
 npm run test:session-changes # async changed-file projection ordering smoke
 npm run test:session-stats   # parent-session lifetime token/cost aggregation smoke
 npm run test:git-diff        # commit and staged/unstaged working-tree diff smoke

@@ -15,6 +15,8 @@ import type {
   ThinkingContent,
 } from "@/lib/types";
 import { useI18n } from "@/components/I18nProvider";
+import { classifyChatProviderError } from "@/lib/chat-provider-errors";
+import { localizeError } from "@/lib/i18n";
 
 interface Props {
   message: AgentMessage;
@@ -366,12 +368,26 @@ function AssistantMessageView({
         {blocks.map((block, i) => (
           <BlockView key={i} block={block} toolResults={toolResults} isStreaming={isStreaming} streamingDuration={streamingDurations.get(i) ?? (block.type === "thinking" ? thinkingDurationFromFile : undefined)} toolCallDurations={toolCallDurations} />
         ))}
-        {!isStreaming && message.stopReason === "error" && message.errorMessage && (
-          <div className="message-assistant-error" role="alert">
-            <div className="message-assistant-error-title">{t("chat.assistantError")}</div>
-            <div className="message-assistant-error-body">{message.errorMessage}</div>
-          </div>
-        )}
+        {!isStreaming && message.stopReason === "error" && message.errorMessage && (() => {
+          const classified = classifyChatProviderError(message.errorMessage);
+          return (
+            <div className="message-assistant-error" role="alert">
+              <div className="message-assistant-error-title">{t("chat.assistantError")}</div>
+              <div className="message-assistant-error-body">
+                {localizeError(t, {
+                  code: classified.code,
+                  message: classified.englishSummary,
+                  fallback: classified.technicalDetails,
+                })}
+              </div>
+              {classified.category !== "unknown" && classified.technicalDetails !== classified.englishSummary && (
+                <div className="message-assistant-error-body" style={{ marginTop: 6, opacity: 0.75, fontSize: 12 }}>
+                  {classified.technicalDetails}
+                </div>
+              )}
+            </div>
+          );
+        })()}
       </div>
 
       <div className="message-action-row message-action-row-assistant">
