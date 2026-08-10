@@ -1833,7 +1833,8 @@ span.linenumber {
     background var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
-.settings-control:hover:not(:disabled):not(:read-only) {
+.settings-control:hover:not(:disabled):not(:read-only),
+.settings-select:hover:not(:disabled) {
   border-color: var(--border-strong);
 }
 
@@ -1842,8 +1843,10 @@ span.linenumber {
   box-shadow: 0 0 0 var(--focus-ring-width) color-mix(in srgb, var(--focus-ring-color) 24%, transparent);
 }
 
+/* Native <select> matches :read-only in browsers (not free-text editable),
+   so exclude it here; only true disabled selects should look blocked. */
 .settings-control:disabled,
-.settings-control:read-only {
+.settings-control:read-only:not(select) {
   cursor: not-allowed;
   opacity: 0.62;
   background: var(--surface-subtle);
@@ -1860,6 +1863,10 @@ span.linenumber {
 
 .settings-select {
   cursor: pointer;
+}
+
+.settings-select:disabled {
+  cursor: not-allowed;
 }
 
 /* Some platforms (Windows Chrome/Firefox) render the native select popup with
@@ -2584,6 +2591,65 @@ span.linenumber {
 
 .models-provider-group {
   margin-bottom: 4px;
+}
+
+.models-provider-row {
+  padding-right: 2px;
+  gap: 2px;
+  cursor: default;
+}
+
+.models-provider-row-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.models-provider-row-main > :last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Reorder controls are the row's last child; do not inherit name ellipsis. */
+.models-provider-row > .models-provider-reorder {
+  min-width: auto;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.models-provider-reorder {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0;
+  opacity: 0.4;
+}
+
+.models-provider-row:hover .models-provider-reorder,
+.models-provider-row:focus-within .models-provider-reorder,
+.models-provider-row.resource-nav-row-active .models-provider-reorder {
+  opacity: 1;
+}
+
+.models-provider-reorder-btn.settings-button-icon {
+  width: 22px;
+  height: 22px;
+  min-height: 22px;
+  font-size: 11px;
+  line-height: 1;
 }
 
 .models-tree-model {

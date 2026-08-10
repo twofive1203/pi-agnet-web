@@ -3508,6 +3508,21 @@ export function ModelsConfig({ cwd: _cwd, onClose }: { cwd: string | null; onClo
     });
   }, []);
 
+  /** Rebuild providers object so insertion order (and models.json key order) matches the UI. */
+  const moveProvider = useCallback((name: string, direction: -1 | 1) => {
+    setConfig((prev) => {
+      const entries = Object.entries(prev.providers ?? {});
+      const index = entries.findIndex(([key]) => key === name);
+      if (index === -1) return prev;
+      const target = index + direction;
+      if (target < 0 || target >= entries.length) return prev;
+      const next = [...entries];
+      const [item] = next.splice(index, 1);
+      next.splice(target, 0, item);
+      return { ...prev, providers: Object.fromEntries(next) };
+    });
+  }, []);
+
   const addModel = useCallback((providerName: string) => {
     setConfig((prev) => {
       const provider = prev.providers?.[providerName] ?? {};
@@ -3701,13 +3716,39 @@ export function ModelsConfig({ cwd: _cwd, onClose }: { cwd: string | null; onClo
                   return <button key={provider.id} type="button" className={`resource-nav-row${active ? " resource-nav-row-active" : ""}`} onClick={() => setSelection({ type: "apikey", providerId: provider.id })}><ProviderIcon id={provider.id} size={16} /><span>{provider.displayName}</span></button>;
                 })}
                 {(activeOAuth.length > 0 || activeApiKey.length > 0) && providers.length > 0 && <div className="models-tree-divider" />}
-                {loading ? <SettingsState kind="loading" title="Loading models…" /> : providers.length === 0 ? <SettingsState title="No custom providers" /> : providers.map(([providerName, providerData]) => {
+                {loading ? <SettingsState kind="loading" title="Loading models…" /> : providers.length === 0 ? <SettingsState title="No custom providers" /> : providers.map(([providerName, providerData], providerIndex) => {
                   const providerActive = selection?.type === "provider" && selection.name === providerName;
                   return (
                     <div key={providerName} className="resource-nav-group models-provider-group">
-                      <button type="button" className={`resource-nav-row${providerActive ? " resource-nav-row-active" : ""}`} onClick={() => setSelection({ type: "provider", name: providerName })}>
-                        <span className="resource-status-dot" aria-hidden="true" /><span>{providerName}</span>
-                      </button>
+                      <div className={`resource-nav-row models-provider-row${providerActive ? " resource-nav-row-active" : ""}`}>
+                        <button type="button" className="models-provider-row-main" onClick={() => setSelection({ type: "provider", name: providerName })}>
+                          <span className="resource-status-dot" aria-hidden="true" /><span>{providerName}</span>
+                        </button>
+                        <div className="models-provider-reorder">
+                          <SettingsButton
+                            size="icon"
+                            variant="ghost"
+                            className="models-provider-reorder-btn"
+                            disabled={providerIndex === 0}
+                            onClick={() => moveProvider(providerName, -1)}
+                            aria-label={t("settings.models.moveUp")}
+                            title={t("settings.models.moveUp")}
+                          >
+                            ↑
+                          </SettingsButton>
+                          <SettingsButton
+                            size="icon"
+                            variant="ghost"
+                            className="models-provider-reorder-btn"
+                            disabled={providerIndex === providers.length - 1}
+                            onClick={() => moveProvider(providerName, 1)}
+                            aria-label={t("settings.models.moveDown")}
+                            title={t("settings.models.moveDown")}
+                          >
+                            ↓
+                          </SettingsButton>
+                        </div>
+                      </div>
                       {(providerData.models ?? []).map((model, index) => {
                         const modelActive = selection?.type === "model" && selection.providerName === providerName && selection.index === index;
                         return (
