@@ -23,6 +23,7 @@ npm run dev     # http://localhost:62666
 | `npm run test:session-stats` | Parent-session lifetime token/cost aggregation smoke suite. |
 | `npm run test:git-diff` | Commit and staged/unstaged working-tree diff smoke suite. |
 | `npm run test:file-search` | Bounded async workspace filename search smoke suite. |
+| `npm run test:file-upload` | Chat upload path-boundary/sanitize/exclusive-write smoke suite. |
 | `npm run test:snflow` | SnFlow setup/store/session-link/spec-review smoke suite. |
 | `npm run test:automation` | Automation store/schedule/policy/runner/API smoke suite. |
 | `npm run test:mcp` | MCP configuration domain/API smoke suite (adapter-native files, secrets, revisions). |
