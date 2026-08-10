@@ -32,8 +32,16 @@ import {
 } from "../lib/server-access-auth";
 import {
   classifyHostname,
+  detectMultiInstanceRisk,
+  formatRuntimeIdentityLine,
+  resolveProcessInstanceId,
   resolveRuntimeOptions,
 } from "../bin/runtime-options.js";
+import {
+  assertSingleInstanceOrThrow,
+  buildProcessHealthSnapshot,
+  getProcessIdentity,
+} from "../lib/process-runtime";
 import { withTestRemoteAddress } from "../lib/automation-connection-context";
 import { POST as loginRoutePost } from "../app/api/server-auth/login/route";
 
@@ -412,6 +420,110 @@ function testRuntimeOptions(): void {
   console.log("OK runtime-options");
 }
 
+function testSingleInstanceAndHealth(): void {
+  {
+    const clean = detectMultiInstanceRisk({});
+    assert(clean.ok && !clean.fatal, "default env is single-instance ok");
+    assert(clean.reasons.length === 0, "no reasons when clean");
+  }
+  {
+    const cluster = detectMultiInstanceRisk({ NODE_APP_INSTANCE: "0" });
+    assert(!cluster.ok && cluster.fatal, "PM2 cluster marker is fatal by default");
+    assert(cluster.signals.includes("NODE_APP_INSTANCE"), "signal recorded");
+  }
+  {
+    const worker = detectMultiInstanceRisk({ NODE_UNIQUE_ID: "1" });
+    assert(!worker.ok && worker.fatal, "node cluster worker is fatal");
+  }
+  {
+    const many = detectMultiInstanceRisk({ WEB_CONCURRENCY: "2" });
+    assert(!many.ok && many.fatal, "WEB_CONCURRENCY>1 is fatal");
+  }
+  {
+    const instances = detectMultiInstanceRisk({ instances: "2" });
+    assert(!instances.ok && instances.fatal, "instances>1 is fatal");
+  }
+  {
+    const override = detectMultiInstanceRisk({
+      NODE_APP_INSTANCE: "1",
+      PI_WEB_ALLOW_MULTI_INSTANCE: "1",
+    });
+    assert(!override.ok && !override.fatal && override.allowOverride, "override demotes fatal");
+  }
+  {
+    let threw = false;
+    try {
+      assertSingleInstanceOrThrow({ NODE_APP_INSTANCE: "0" });
+    } catch {
+      threw = true;
+    }
+    assert(threw, "assertSingleInstanceOrThrow refuses cluster");
+    const allowed = assertSingleInstanceOrThrow({
+      NODE_APP_INSTANCE: "0",
+      PI_WEB_ALLOW_MULTI_INSTANCE: "1",
+    });
+    assert(allowed.allowOverride, "assert allows override");
+  }
+
+  const id = resolveProcessInstanceId({
+    env: {},
+    pid: 4242,
+    now: () => 1_700_000_000_000,
+    randomHex: () => "abcdef",
+  });
+  assert(id.startsWith("4242-"), "instance id includes pid");
+  assert(
+    resolveProcessInstanceId({ env: { PI_WEB_INSTANCE_ID: "fixed-id" } }) === "fixed-id",
+    "env instance id preferred",
+  );
+
+  const line = formatRuntimeIdentityLine({
+    pid: 9,
+    instanceId: "abc",
+    serverMode: true,
+    hostname: "127.0.0.1",
+    port: 62666,
+    singleInstanceOk: true,
+  });
+  assert(line.includes("pid=9"), "identity line pid");
+  assert(line.includes("instanceId=abc"), "identity line instance");
+  assert(line.includes("mode=server"), "identity line mode");
+  assert(line.includes("bind=127.0.0.1:62666"), "identity line bind");
+  assert(line.includes("singleInstance=ok"), "identity line single ok");
+
+  const identity = getProcessIdentity({
+    PI_WEB_SERVER_MODE: "0",
+    PI_WEB_HOSTNAME: "127.0.0.1",
+    PORT: "62666",
+    PI_WEB_INSTANCE_ID: "test-instance",
+  });
+  assert(identity.mode === "local", "identity local mode");
+  assert(identity.instanceId === "test-instance", "identity uses env id");
+  assert(identity.bind.port === "62666", "identity bind port");
+
+  console.log("OK single-instance-and-health-helpers");
+}
+
+async function testHealthSnapshot(): Promise<void> {
+  const snap = await buildProcessHealthSnapshot({
+    PI_WEB_SERVER_MODE: "0",
+    PI_WEB_HOSTNAME: "127.0.0.1",
+    PORT: "62666",
+    PI_WEB_INSTANCE_ID: "health-snap",
+  });
+  assert(snap.status === "ready", "health status ready");
+  assert(snap.instanceId === "health-snap", "health instance id");
+  assert(typeof snap.pid === "number" && snap.pid > 0, "health pid");
+  assert(typeof snap.liveSessions === "number", "health liveSessions");
+  assert(typeof snap.sseListeners === "number", "health sseListeners");
+  assert(snap.scheduler && typeof snap.scheduler.role === "string", "health scheduler role");
+  assert(snap.singleInstance && typeof snap.singleInstance.ok === "boolean", "health singleInstance");
+  // Must not leak path-like secrets in the public snapshot surface.
+  const json = JSON.stringify(snap);
+  assert(!json.includes("server-access.json"), "health omits auth state path");
+  console.log("OK health-snapshot");
+}
+
 async function testBootstrap(): Promise<void> {
   await withTempDir(async (dir) => {
     const a = await bootstrapServerAccessAuth({ agentDir: dir });
@@ -426,6 +538,8 @@ async function testBootstrap(): Promise<void> {
 
 async function main(): Promise<void> {
   testRuntimeOptions();
+  testSingleInstanceAndHealth();
+  await testHealthSnapshot();
   await testFirstInitAndReuse();
   await testSessionLifecycle();
   await testRotation();

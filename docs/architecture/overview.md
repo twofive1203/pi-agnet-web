@@ -30,6 +30,7 @@ Project discovery and per-cwd candidate collection are accelerated by a rebuilda
 ## Key Boundaries
 
 - **Instance access gate:** root `proxy.ts` enforces optional global access-key authentication when `PI_WEB_SERVER_MODE=1` (set by `--server`, non-loopback bind, or env). It rejects cross-origin state-changing requests, requires effective HTTPS by default, and returns `401` only after those security gates pass. Opaque HttpOnly sessions live in `server-access.json` (verifier + token hashes only). This gate is independent of and does **not** relax Automation, native picker, or browser-bridge loopback-only policies.
+- **Single process:** ordinary chat wrappers, SSE listeners, and access-auth rate limits are process-local. Official launchers and instrumentation refuse known PM2/Node cluster multi-instance markers by default; sticky routing is not a supported multi-replica mode. `GET /api/health` exposes pid/instanceId/live session and SSE aggregates plus Automation scheduler role for ops.
 - Session browsing does not create an AgentSession: API routes read `.jsonl` files through `lib/session-reader.ts`; the only write side effect is pruning stale sessions whose cwd points at a deleted WorkTree.
 - Sending commands creates or reuses an in-process AgentSession through `lib/rpc-manager.ts`.
 - Session detail/context routes reuse the live wrapper's already-parsed `SessionManager` when its canonical session file matches, avoiding another synchronous JSONL parse during active-chat refreshes; inactive sessions still open from disk as the source of truth.

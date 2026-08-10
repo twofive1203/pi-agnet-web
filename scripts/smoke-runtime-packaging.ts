@@ -86,9 +86,28 @@ function checkPublishedLauncher(): void {
     .join("\n");
   assert(!/shell\s*:\s*true/.test(executableSource), "published launcher must not spawn with shell: true");
   assert(launcher.includes('"explorer.exe"'), "Windows browser launch must use explorer.exe directly");
+  assert(launcher.includes("detectMultiInstanceRisk"), "launcher must refuse multi-instance/cluster markers");
+  assert(launcher.includes("formatRuntimeIdentityLine"), "launcher must log runtime identity");
+  assert(launcher.includes("PI_WEB_INSTANCE_ID"), "launcher must propagate process instance id");
 
   const runtimeOptions = join(ROOT, "bin", "runtime-options.js");
   assert(existsSync(runtimeOptions), "bin/runtime-options.js must ship with the launcher");
+  const runtimeBody = readFileSync(runtimeOptions, "utf8");
+  assert(runtimeBody.includes("detectMultiInstanceRisk"), "runtime-options must export multi-instance detection");
+  assert(runtimeBody.includes("PI_WEB_ALLOW_MULTI_INSTANCE"), "runtime-options must document multi-instance override");
+
+  const healthRoute = join(ROOT, "app", "api", "health", "route.ts");
+  assert(existsSync(healthRoute), "public /api/health route must exist");
+  const healthBody = readFileSync(healthRoute, "utf8");
+  assert(healthBody.includes("buildProcessHealthSnapshot"), "health route must use process-runtime snapshot");
+
+  const processRuntime = join(ROOT, "lib", "process-runtime.ts");
+  assert(existsSync(processRuntime), "lib/process-runtime.ts must exist");
+
+  const instrumentation = readFileSync(join(ROOT, "instrumentation.ts"), "utf8");
+  assert(instrumentation.includes("assertSingleInstanceOrThrow"), "instrumentation must enforce single-instance");
+  assert(instrumentation.includes("logProcessRuntimeIdentity"), "instrumentation must log runtime identity");
+
   const pm2 = join(ROOT, "ecosystem.config.cjs");
   assert(existsSync(pm2), "ecosystem.config.cjs must exist for single-process server deploys");
   const pm2Body = readFileSync(pm2, "utf8");

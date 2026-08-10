@@ -78,6 +78,7 @@ API routes live under `app/api/`. When adding, removing, or changing routes, upd
 | `default-cwd/` | POST | Create and return `~/pi-cwd-<YYYYMMDD>`. |
 | `home/` | GET | Return `os.homedir()`. |
 | `server-auth/status/` | GET | Public probe: `{ authRequired, httpWarning }` only — no project/session metadata. |
+| `health/` | GET | Public minimal runtime health: `pid`, `instanceId`, `mode`, `bind`, `liveSessions`, `sseListeners`, `singleInstance`, and Automation `scheduler` role/aggregates. No session ids, cwds, paths, or secrets. |
 | `server-auth/login/` | POST | Exchange access key for a 7-day HttpOnly session cookie (server mode). Requires effective HTTPS by default, exact same-origin, a bounded 4 KiB streamed JSON body, and a socket-IP attempt budget; generic errors. |
 | `server-auth/logout/` | POST | Revoke current server session hash and clear cookie (idempotent). |
 | `usage/` | GET | Aggregate persisted token/cost usage across active-only or active-plus-archived parent sessions and their nested native subagent sessions, including main/subagent splits. |

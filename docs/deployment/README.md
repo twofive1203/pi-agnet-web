@@ -164,7 +164,7 @@ PI_WEB_TRUST_PROXY=1 spi --server -H 127.0.0.1 -p 62666 --no-open
 `ecosystem.config.cjs` runs the official launcher in **single-process fork** mode:
 
 - process name `snail-pi-web`
-- `instances: 1`, `exec_mode: "fork"` (cluster / multi-instance is unsupported — auth state is single-writer)
+- `instances: 1`, `exec_mode: "fork"` (cluster / multi-instance is unsupported — auth state is single-writer; ordinary chat wrappers and SSE listeners are process-local)
 - args: `--server --no-open -H 127.0.0.1 -p 62666` (auth on, loopback backend for HTTPS reverse proxy)
 - `PI_WEB_TRUST_PROXY=1` so the trusted proxy's HTTPS protocol passes the transport gate and produces Secure cookies
 - persist `PI_CODING_AGENT_DIR` so `server-access.json` survives restarts
@@ -176,6 +176,23 @@ pm2 start ecosystem.config.cjs
 ```
 
 For direct LAN listen, change args to `--server --no-open -H 0.0.0.0 -p 62666` **and remove `PI_WEB_TRUST_PROXY`**; clients still need HTTPS unless they match an approved mesh CIDR or the deployment explicitly enables the insecure-HTTP compatibility escape hatch on an already encrypted transport.
+
+### Single-instance guardrails
+
+- Official launchers and Node instrumentation refuse known multi-instance markers by default (`NODE_APP_INSTANCE`, Node cluster `NODE_UNIQUE_ID`, `WEB_CONCURRENCY>1`, `instances>1`).
+- Ready/boot logs print `pid`, `instanceId`, `mode` (`local`|`server`), and `bind` so operators can confirm which process is live.
+- Emergency override only: `PI_WEB_ALLOW_MULTI_INSTANCE=1` (still unsupported; logs a strong warning). **Sticky load-balancing does not make multi-replica supported** until cross-process session coordination exists.
+- Automation already has its own cross-process scheduler lock/leader/standby path; that does **not** extend to ordinary chat sessions.
+
+### Runtime health
+
+`GET /api/health` is a public minimal probe (no session ids, cwds, paths, or secrets):
+
+```bash
+curl -sS http://127.0.0.1:62666/api/health
+```
+
+Useful fields: `pid`, `instanceId`, `mode`, `bind`, `liveSessions`, `sseListeners`, `singleInstance`, and `scheduler.role` (`leader`|`standby`|`inactive`|`unavailable`).
 
 ## Proxy Startup
 

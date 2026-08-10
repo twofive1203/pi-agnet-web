@@ -322,6 +322,120 @@ function resolveRuntimeOptions(input = {}) {
   };
 }
 
+/**
+ * Detect known multi-instance / cluster misconfigurations.
+ * Ordinary chat sessions, SSE listeners, and access-auth rate limits are
+ * process-local — PM2 cluster or Node cluster workers are unsupported.
+ * Sticky routing does not make multi-replica supported.
+ *
+ * @param {NodeJS.ProcessEnv | Record<string, string | undefined>} [env]
+ * @returns {{
+ *   ok: boolean,
+ *   fatal: boolean,
+ *   allowOverride: boolean,
+ *   reasons: string[],
+ *   signals: string[],
+ * }}
+ */
+function detectMultiInstanceRisk(env = process.env) {
+  /** @type {string[]} */
+  const reasons = [];
+  /** @type {string[]} */
+  const signals = [];
+
+  const nodeAppInstance = env.NODE_APP_INSTANCE;
+  if (nodeAppInstance != null && String(nodeAppInstance).trim() !== "") {
+    signals.push("NODE_APP_INSTANCE");
+    reasons.push(
+      `PM2/cluster marker NODE_APP_INSTANCE=${String(nodeAppInstance).trim()} is set (cluster mode is unsupported)`,
+    );
+  }
+
+  const nodeUniqueId = env.NODE_UNIQUE_ID;
+  if (nodeUniqueId != null && String(nodeUniqueId).trim() !== "") {
+    signals.push("NODE_UNIQUE_ID");
+    reasons.push(
+      `Node cluster worker marker NODE_UNIQUE_ID=${String(nodeUniqueId).trim()} is set`,
+    );
+  }
+
+  const webConcurrencyRaw = env.WEB_CONCURRENCY;
+  if (webConcurrencyRaw != null && String(webConcurrencyRaw).trim() !== "") {
+    const n = Number(String(webConcurrencyRaw).trim());
+    if (Number.isFinite(n) && n > 1) {
+      signals.push("WEB_CONCURRENCY");
+      reasons.push(`WEB_CONCURRENCY=${n} suggests multiple workers`);
+    }
+  }
+
+  // PM2 sometimes exposes instance count; treat >1 as a hard misconfig signal.
+  const instancesRaw = env.instances ?? env.PM2_INSTANCES ?? env.PI_WEB_INSTANCES;
+  if (instancesRaw != null && String(instancesRaw).trim() !== "") {
+    const n = Number(String(instancesRaw).trim());
+    if (Number.isFinite(n) && n > 1) {
+      signals.push("instances");
+      reasons.push(`instances=${n} requests multiple processes (unsupported)`);
+    }
+  }
+
+  const allowOverride = envFlagEnabled(env.PI_WEB_ALLOW_MULTI_INSTANCE);
+  if (reasons.length === 0) {
+    return { ok: true, fatal: false, allowOverride, reasons, signals };
+  }
+  return {
+    ok: false,
+    // Refuse by default; explicit override keeps a strong warning path only.
+    fatal: !allowOverride,
+    allowOverride,
+    reasons,
+    signals,
+  };
+}
+
+/**
+ * Stable per-process id for logs and /api/health.
+ * Prefers PI_WEB_INSTANCE_ID when the launcher already minted one.
+ *
+ * @param {object} [input]
+ * @param {NodeJS.ProcessEnv | Record<string, string | undefined>} [input.env]
+ * @param {number} [input.pid]
+ * @param {() => number} [input.now]
+ * @param {() => string} [input.randomHex]
+ * @returns {string}
+ */
+function resolveProcessInstanceId(input = {}) {
+  const env = input.env ?? process.env;
+  const existing = typeof env.PI_WEB_INSTANCE_ID === "string" ? env.PI_WEB_INSTANCE_ID.trim() : "";
+  if (existing) return existing;
+  const pid = Number.isFinite(input.pid) ? Number(input.pid) : process.pid;
+  const now = typeof input.now === "function" ? input.now() : Date.now();
+  const randomHex =
+    typeof input.randomHex === "function"
+      ? input.randomHex()
+      : Math.random().toString(16).slice(2, 8).padEnd(6, "0");
+  return `${pid}-${now.toString(36)}-${randomHex}`;
+}
+
+/**
+ * One-line runtime identity for Ready / boot logs.
+ *
+ * @param {object} input
+ * @param {number} [input.pid]
+ * @param {string} input.instanceId
+ * @param {boolean} input.serverMode
+ * @param {string} input.hostname
+ * @param {string|number} input.port
+ * @param {boolean} [input.singleInstanceOk]
+ * @returns {string}
+ */
+function formatRuntimeIdentityLine(input) {
+  const pid = Number.isFinite(input.pid) ? Number(input.pid) : process.pid;
+  const mode = input.serverMode ? "server" : "local";
+  const single =
+    input.singleInstanceOk === false ? "singleInstance=RISK" : "singleInstance=ok";
+  return `[spi] Runtime pid=${pid} instanceId=${input.instanceId} mode=${mode} bind=${input.hostname}:${input.port} ${single}`;
+}
+
 function printHelp(stdout = console.log) {
   stdout(`Snail Pi Web (spi)
 
@@ -362,6 +476,11 @@ Environment:
                             <agentDir>/server-access-policy.json
                             Example Tailscale range: 100.64.0.0/10
   PI_WEB_ROTATE_ACCESS_KEY=1  Rotate access key on boot
+  PI_WEB_ALLOW_MULTI_INSTANCE=1
+                            Emergency override: allow start despite cluster/
+                            multi-instance markers (still unsupported; logs a
+                            strong warning). Sticky routing is not enough.
+  PI_WEB_INSTANCE_ID        Optional stable process instance id for logs/health
   PI_CODING_AGENT_DIR       Agent data directory (persists access key state)
 
 Security defaults:
@@ -369,12 +488,16 @@ Security defaults:
   Any official non-loopback listen enables authentication.
   Server-mode access-key login requires HTTPS by default.
   Access keys are shown once at first server start or rotation.
+  Single-process only: PM2 cluster / multi-instance is refused by default.
 `);
 }
 
 module.exports = {
   classifyHostname,
   envFlagEnabled,
+  detectMultiInstanceRisk,
+  resolveProcessInstanceId,
+  formatRuntimeIdentityLine,
   resolveRuntimeOptions,
   printHelp,
 };

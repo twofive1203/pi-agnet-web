@@ -7,8 +7,14 @@ const { spawn } = require("child_process");
 const path = require("path");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const fs = require("fs");
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const { printHelp, resolveRuntimeOptions } = require("./runtime-options");
+const {
+  detectMultiInstanceRisk,
+  formatRuntimeIdentityLine,
+  printHelp,
+  resolveProcessInstanceId,
+  resolveRuntimeOptions,
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+} = require("./runtime-options");
 
 const pkgDir = path.join(__dirname, "..");
 const nextDir = path.join(pkgDir, ".next");
@@ -55,6 +61,31 @@ function main() {
     console.warn(`[spi] WARNING: ${warning}`);
   }
 
+  const multiInstance = detectMultiInstanceRisk(process.env);
+  if (!multiInstance.ok) {
+    for (const reason of multiInstance.reasons) {
+      console.error(`[spi] FATAL multi-instance risk: ${reason}`);
+    }
+    console.error(
+      "[spi] Chat sessions, SSE listeners, and access-auth counters are process-local.",
+    );
+    console.error(
+      "[spi] Use ecosystem.config.cjs (instances:1, exec_mode:fork). Sticky routing does not make multi-replica supported.",
+    );
+    if (multiInstance.fatal) {
+      console.error(
+        "[spi] Refusing to start. Set PI_WEB_ALLOW_MULTI_INSTANCE=1 only as an emergency override (still unsupported).",
+      );
+      process.exit(1);
+      return;
+    }
+    console.warn(
+      "[spi] WARNING: PI_WEB_ALLOW_MULTI_INSTANCE=1 override active — continuing with unsupported multi-instance markers.",
+    );
+  }
+
+  const instanceId = resolveProcessInstanceId({ env: process.env, pid: process.pid });
+
   if (options.serverMode) {
     console.log(
       `[spi] Server mode on ${options.hostname}:${options.port} — global access authentication required.`,
@@ -65,6 +96,16 @@ function main() {
   } else {
     console.log(`[spi] Local mode on ${options.hostname}:${options.port} — authentication disabled.`);
   }
+  console.log(
+    formatRuntimeIdentityLine({
+      pid: process.pid,
+      instanceId,
+      serverMode: options.serverMode,
+      hostname: options.hostname,
+      port: options.port,
+      singleInstanceOk: multiInstance.ok,
+    }),
+  );
 
   function appendNodeOption(current, option) {
     const parts = (current ?? "").split(/\s+/).filter(Boolean);
@@ -73,6 +114,8 @@ function main() {
 
   function createRuntimeEnv(baseEnv) {
     const env = { ...baseEnv, ...options.envOverrides };
+    // Propagate a stable id so Next instrumentation / health share the launcher id.
+    env.PI_WEB_INSTANCE_ID = instanceId;
     if (options.httpProxy) {
       env.HTTP_PROXY = options.httpProxy;
       env.HTTPS_PROXY = options.httpProxy;
@@ -110,9 +153,24 @@ function main() {
         : options.hostname;
   const url = `http://${displayHost}:${options.port}`;
 
+  let readyIdentityLogged = false;
   child.stdout.on("data", (chunk) => {
     const text = chunk.toString();
     process.stdout.write(text);
+    if (!readyIdentityLogged && /\bReady\b/i.test(text)) {
+      readyIdentityLogged = true;
+      // Child PID is the Next process that owns sessions/SSE; log it at Ready.
+      console.log(
+        formatRuntimeIdentityLine({
+          pid: child.pid ?? process.pid,
+          instanceId,
+          serverMode: options.serverMode,
+          hostname: options.hostname,
+          port: options.port,
+          singleInstanceOk: multiInstance.ok,
+        }),
+      );
+    }
     if (options.openBrowser && !browserOpened && text.includes("Ready")) {
       browserOpened = true;
       const isWindows = process.platform === "win32";

@@ -14,6 +14,30 @@ function envFlag(name: string): boolean {
 export async function register() {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
 
+  // ── Single-instance guard (chat/SSE/auth counters are process-local) ──
+  let singleInstanceOk = true;
+  try {
+    const {
+      assertSingleInstanceOrThrow,
+      logProcessRuntimeIdentity,
+    } = await import("./lib/process-runtime");
+    const risk = assertSingleInstanceOrThrow(process.env);
+    singleInstanceOk = risk.ok;
+    if (!risk.ok) {
+      for (const reason of risk.reasons) {
+        console.warn(`[spi] WARNING multi-instance override: ${reason}`);
+      }
+      console.warn(
+        "[spi] WARNING: PI_WEB_ALLOW_MULTI_INSTANCE=1 is set — multi-replica remains unsupported even with sticky routing.",
+      );
+    }
+    logProcessRuntimeIdentity(process.env, singleInstanceOk);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("[spi] FATAL: single-instance check failed:", message);
+    throw error instanceof Error ? error : new Error(message);
+  }
+
   // ── Server access authentication (before Automation) ──
   const serverMode = envFlag("PI_WEB_SERVER_MODE");
   const rotate = envFlag("PI_WEB_ROTATE_ACCESS_KEY");

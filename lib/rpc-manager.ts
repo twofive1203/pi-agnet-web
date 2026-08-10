@@ -132,6 +132,11 @@ export class AgentSessionWrapper {
     return this._alive;
   }
 
+  /** Active SSE/event listeners attached to this wrapper (usually 0 or 1). */
+  getSseListenerCount(): number {
+    return this.listeners.length;
+  }
+
   isToolCallActive(toolCallId: string): boolean {
     return this.activeToolCallIds.has(toolCallId);
   }
@@ -580,6 +585,26 @@ function getLocks(): Map<string, Promise<{ session: AgentSessionWrapper; realSes
 
 export function getRpcSession(sessionId: string): AgentSessionWrapper | undefined {
   return getRegistry().get(sessionId);
+}
+
+/** Aggregate in-process chat session / SSE counts for ops health (no session ids). */
+export function getRpcRuntimeStats(): {
+  liveSessions: number;
+  sseListeners: number;
+  startLocks: number;
+} {
+  let liveSessions = 0;
+  let sseListeners = 0;
+  for (const wrapper of getRegistry().values()) {
+    if (!wrapper.isAlive()) continue;
+    liveSessions += 1;
+    sseListeners += wrapper.getSseListenerCount();
+  }
+  return {
+    liveSessions,
+    sseListeners,
+    startLocks: getLocks().size,
+  };
 }
 
 export function reloadRpcAuthState(): number {

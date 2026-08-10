@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  HEALTH_API_PATH,
   SERVER_ACCESS_COOKIE_NAME,
   UNLOCK_PATH,
   assertAuthRequestSameOrigin,
@@ -66,6 +67,8 @@ function testPublicPaths(): void {
   assert(isPublicPath("/api/server-auth/login"), "login public");
   assert(isPublicPath("/api/server-auth/logout"), "logout public");
   assert(isPublicPath("/api/server-auth/status"), "status public");
+  assert(HEALTH_API_PATH === "/api/health", "health path constant");
+  assert(isPublicPath(HEALTH_API_PATH), "health public");
   assert(isPublicPath("/favicon.ico"), "favicon public");
   assert(isPublicPath("/snail-pi-logo.svg"), "logo public");
   assert(isPublicPath("/_next/static/css/app.css"), "static public");
@@ -86,6 +89,7 @@ function testApiInventoryProtected(): void {
     "/api/server-auth/login",
     "/api/server-auth/logout",
     "/api/server-auth/status",
+    HEALTH_API_PATH,
   ]);
   for (const p of routes) {
     // Normalize dynamic inventory paths back to check isPublicPath on templates

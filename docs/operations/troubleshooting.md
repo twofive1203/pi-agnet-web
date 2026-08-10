@@ -6,7 +6,16 @@
 - Confirm bind address: default is `127.0.0.1` (not LAN). Remote access needs `--server` or a non-loopback hostname.
 - Confirm `PI_CODING_AGENT_DIR` when sessions or config appear missing.
 - Check `~/.pi/agent/sessions/` for raw session JSONL files.
-- For PM2 deployments, inspect process logs; ensure single-instance fork mode.
+- For PM2 deployments, inspect process logs; ensure single-instance fork mode (`instances: 1`, `exec_mode: fork`).
+- Hit `GET /api/health` for `pid`, `instanceId`, `mode`, `bind`, `liveSessions`, `sseListeners`, and Automation `scheduler.role`.
+- Boot/Ready logs should include a `[spi] Runtime pid=… instanceId=… mode=… bind=…` line.
+
+## Single-instance / multi-replica
+
+- **Start refused with multi-instance / cluster message:** PM2 cluster (`NODE_APP_INSTANCE`), Node cluster workers, `WEB_CONCURRENCY>1`, or `instances>1` was detected. Use the official `ecosystem.config.cjs` single-process fork profile.
+- **Sticky routing behind a load balancer still fails or splits sessions:** expected. Ordinary chat wrappers, SSE listeners, and access-auth rate limits are process-local. Sticky sessions are **not** a supported multi-replica mode.
+- **Emergency override:** `PI_WEB_ALLOW_MULTI_INSTANCE=1` allows boot despite markers but remains unsupported and logs a strong warning.
+- **Two independent `spi` processes on different ports:** not load-balanced multi-replica; each process owns its own live sessions. Prefer one process per host for production.
 
 ## Server access authentication
 
@@ -17,7 +26,7 @@
 - **Unlock page says HTTPS is required:** expected for server mode over plain HTTP. Terminate TLS at a trusted reverse proxy and set `PI_WEB_TRUST_PROXY=1` on a loopback backend. Only for a transport already encrypted by another trusted layer, restart with `--allow-insecure-http` or `PI_WEB_ALLOW_INSECURE_HTTP=1`.
 - **Stuck on unlock page behind HTTPS:** confirm the proxy overwrites `X-Forwarded-Proto: https` and `X-Forwarded-Host`, then set `PI_WEB_TRUST_PROXY=1` only with a loopback backend so the transport gate passes and cookies are `Secure`.
 - **HTTP warning on unlock page:** HTTP compatibility was explicitly enabled. The warning is suppressed when a trusted proxy reports `https`.
-- **429 on login:** the socket client IP exhausted its short in-process attempt bucket; wait and retry. Restart clears counters (single-instance behavior).
+- **429 on login:** the socket client IP exhausted its short in-process attempt bucket; wait and retry. Restart clears counters (single-instance behavior). Multi-instance would split buckets and is unsupported.
 - **Everyone logged out after ops change:** access key was rotated, or Agent data dir was not persisted (new empty `server-access.json`).
 - **Container loses key every deploy:** mount a persistent volume for `PI_CODING_AGENT_DIR`.
 - **Logged-in remote still cannot use Automation / native folder picker / browser bridge:** correct — those remain loopback-only and are not authorized by the global access key.

@@ -34,6 +34,8 @@ export const UNLOCK_PATH = "/unlock";
 export const LOGIN_API_PATH = "/api/server-auth/login";
 export const LOGOUT_API_PATH = "/api/server-auth/logout";
 export const STATUS_API_PATH = "/api/server-auth/status";
+/** Public process health probe (identity + aggregate counters; no session/project paths). */
+export const HEALTH_API_PATH = "/api/health";
 
 /** Max access-key length accepted by login. */
 export const MAX_ACCESS_KEY_LENGTH = 512;
@@ -392,6 +394,7 @@ export function isPublicPath(pathname: string): boolean {
     pathname === LOGIN_API_PATH
     || pathname === LOGOUT_API_PATH
     || pathname === STATUS_API_PATH
+    || pathname === HEALTH_API_PATH
   ) {
     return true;
   }
