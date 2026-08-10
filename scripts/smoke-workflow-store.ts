@@ -14,6 +14,7 @@ import {
   getWorkflowTaskDetail,
   listWorkflowTasks,
   markWorkflowTaskReady,
+  markWorkflowTaskReadyToCommit,
   updateWorkflowTask,
   WorkflowConflictError,
   WorkflowStoreError,
@@ -108,6 +109,13 @@ try {
   process.chdir(projectB);
   assert(listWorkflowTasks(projectA).tasks.length === 2, "explicit cwd ignores process.cwd");
   process.chdir(prev);
+
+  const directTask = createWorkflowTask(projectA, {
+    title: "Direct main-agent implementation",
+  });
+  const directReady = markWorkflowTaskReady(projectA, directTask.id, directTask.revision);
+  const directHandoff = markWorkflowTaskReadyToCommit(projectA, directTask.id, directReady.revision);
+  assert(directHandoff.status === "ready_to_commit", "direct implementation handoff");
 
   const ready = markWorkflowTaskReady(projectA, created.id, created.revision);
   assert(ready.status === "ready", "mark ready");

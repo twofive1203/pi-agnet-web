@@ -221,6 +221,10 @@ try {
     (diagnostic) => diagnostic.category === ts.DiagnosticCategory.Error,
   );
   assert(extensionErrors.length === 0, `extension parse errors: ${extensionErrors.map((item) => item.code).join(", ")}`);
+  const installedSearchAgent = readFileSync(path.join(root, ".pi", "agents", "snflow-search.md"), "utf8");
+  assert(installedSearchAgent.includes("acceptanceRole: read-only"), "search agent must declare read-only acceptance");
+  assert(installedSearchAgent.includes('turnBudget: {"maxTurns":5'), "search agent must have a tight turn budget");
+  assert(installedSearchAgent.includes("roughly 1,500 characters"), "search agent output must stay bounded");
   const installedCheckAgent = readFileSync(path.join(root, ".pi", "agents", "snflow-check.md"), "utf8");
   assert(installedCheckAgent.includes("acceptanceRole: read-only"), "check agent must declare read-only acceptance");
   assert(installedCheckAgent.includes("completionGuard: false"), "check agent must disable implementation completion guard");
@@ -710,6 +714,16 @@ try {
     assert(cur.status === 0, `wrapper current exited ${cur.status}, expected 0`);
     const curOut = cur.stdout?.toString() ?? "";
     assert(curOut.includes(taskMeta.id), `current output should include task id: ${curOut.slice(0, 400)}`);
+
+    const start = runWrapper(["start", taskMeta.id]);
+    assert(start.status === 0, `wrapper start exited ${start.status}, expected 0`);
+    assert((start.stdout?.toString() ?? "").includes("status=ready"), "start should mark task ready");
+    const handoff = runWrapper(["handoff", taskMeta.id]);
+    assert(handoff.status === 0, `wrapper handoff exited ${handoff.status}, expected 0`);
+    assert(
+      (handoff.stdout?.toString() ?? "").includes("status=ready_to_commit"),
+      "handoff should mark validated direct work ready_to_commit",
+    );
 
     console.log("smoke-snflow-setup: wrapper subprocess invocation OK");
   } finally {

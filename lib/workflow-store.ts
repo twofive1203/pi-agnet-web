@@ -1124,6 +1124,18 @@ export function markWorkflowTaskReady(cwd: string, taskId: string, expectedRevis
   return updateWorkflowTask(cwd, taskId, { expectedRevision, status: "ready" });
 }
 
+/**
+ * Finish the default main-agent implementation path after focused validation.
+ * Run-backed implement/check paths continue to project this status themselves.
+ */
+export function markWorkflowTaskReadyToCommit(
+  cwd: string,
+  taskId: string,
+  expectedRevision: string,
+): WorkflowTaskDetail {
+  return updateWorkflowTask(cwd, taskId, { expectedRevision, status: "ready_to_commit" });
+}
+
 export function writeWorkflowRunRecord(cwd: string, taskId: string, run: WorkflowRunRecord): WorkflowRunRecord {
   const ctx = createStoreContext(cwd);
   const located = resolveExistingTaskDir(ctx, taskId);

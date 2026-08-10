@@ -663,6 +663,10 @@ try {
   assert(managedGuidance.includes("acceptanceRole: read-only"), "managed check agent declares its read-only acceptance role");
   assert(managedGuidance.includes("completionGuard: false"), "managed check agent disables the implementation completion guard");
   assert(managedGuidance.includes("Default to ordinary direct development"), "managed guidance defaults to direct work");
+  assert(managedGuidance.includes("Default writer: main Agent"), "managed guidance keeps implementation in the main session by default");
+  assert(managedGuidance.includes("snflow-search"), "managed guidance includes bounded context search");
+  assert(managedGuidance.includes("Independent `snflow-check` is not a default phase"), "managed guidance risk-gates review");
+  assert(managedGuidance.includes("scripts/snflow-task.ts handoff"), "managed guidance includes direct-work handoff");
   assert(managedGuidance.includes("explicitly asks to use SnFlow"), "managed skill requires explicit opt-in");
   assert(managedGuidance.includes("Warnings and informational findings must still produce `pass`"), "managed check agent keeps advisory findings non-blocking");
   assert(!managedGuidance.includes("Real dev work: create"), "managed guidance removes automatic task creation");

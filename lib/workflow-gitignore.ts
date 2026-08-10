@@ -25,6 +25,7 @@ export const SNFLOW_GITIGNORE_PATTERNS = [
   "!.pi/snflows/spec/",
   ".pi/extensions/snflow/",
   ".pi/skills/snflow-dev/",
+  ".pi/agents/snflow-search.md",
   ".pi/agents/snflow-implement.md",
   ".pi/agents/snflow-check.md",
   "scripts/snflow-task.ts",

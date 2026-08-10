@@ -94,6 +94,7 @@ export interface WorkflowSetupOptions {
 const VERSION_FILE = ".version";
 const EXTENSION_REL = ".pi/extensions/snflow/index.ts";
 const SKILL_REL = ".pi/skills/snflow-dev/SKILL.md";
+const AGENT_SEARCH_REL = ".pi/agents/snflow-search.md";
 const AGENT_IMPLEMENT_REL = ".pi/agents/snflow-implement.md";
 const AGENT_CHECK_REL = ".pi/agents/snflow-check.md";
 const SCRIPT_REL = "scripts/snflow-task.ts";
@@ -605,6 +606,7 @@ export function getWorkflowSetupStatus(cwd: string): WorkflowSetupStatus {
   const hasExtension = isFile(toAbsolute(ctx.workspaceRoot, EXTENSION_REL));
   const hasSkill = isFile(toAbsolute(ctx.workspaceRoot, SKILL_REL));
   const hasAgents =
+    isFile(toAbsolute(ctx.workspaceRoot, AGENT_SEARCH_REL)) &&
     isFile(toAbsolute(ctx.workspaceRoot, AGENT_IMPLEMENT_REL)) &&
     isFile(toAbsolute(ctx.workspaceRoot, AGENT_CHECK_REL));
   const hasScript = isFile(toAbsolute(ctx.workspaceRoot, SCRIPT_REL));

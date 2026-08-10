@@ -3,10 +3,10 @@
  * SnFlow CLI for chat agents.
  *
  * Lifecycle:
- *   create → (edit docs) → start → direct native subagent → complete → archive
+ *   create → (edit docs) → start → main-agent implementation → handoff → complete → archive
  *
- * Implement/check execution is owned by the current chat's foreground native
- * subagent tool. This CLI remains task-management and legacy diagnostics only.
+ * The main chat is the default writer. Native implement/check subagents remain
+ * available for exceptional high-risk or context-isolation cases.
  */
 
 import {
@@ -16,6 +16,7 @@ import {
   getWorkflowTaskDetail,
   listWorkflowTasks,
   markWorkflowTaskReady,
+  markWorkflowTaskReadyToCommit,
   recordWorkflowCommit,
   WorkflowNotFoundError,
 } from "../lib/workflow-store";
@@ -33,6 +34,7 @@ function usage(): never {
   console.log(`Usage:
   workflow-task create <title> [--cwd <path>] [--seed <text>] [--id <slug>] [--ready]
   workflow-task start [--cwd <path>] [taskId]
+  workflow-task handoff [--cwd <path>] [taskId]   # validated main-agent work → ready_to_commit
   workflow-task current [--cwd <path>]
   workflow-task use <taskId> [--cwd <path>]
   workflow-task show [taskId] [--cwd <path>]
@@ -149,6 +151,15 @@ export async function main() {
         ? markWorkflowTaskReady(cwd, taskId, detail.revision)
         : detail;
     setWorkflowCurrentTask(cwd, taskId, { source: "cli", sessionId: sessionIdFromEnv() });
+    console.log(`status=${next.status}`);
+    printActive(taskId);
+    return;
+  }
+
+  if (cmd === "handoff") {
+    const taskId = resolveTaskId(cwd, pos[0]);
+    const detail = getWorkflowTaskDetail(cwd, taskId);
+    const next = markWorkflowTaskReadyToCommit(cwd, taskId, detail.revision);
     console.log(`status=${next.status}`);
     printActive(taskId);
     return;

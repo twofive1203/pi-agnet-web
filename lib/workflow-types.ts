@@ -306,7 +306,7 @@ export function isValidWorkflowRunId(value: unknown): value is string {
 /** Manual authoring transitions (not run-manager projections). */
 export const WORKFLOW_MANUAL_TRANSITIONS: Record<WorkflowTaskStatus, readonly WorkflowTaskStatus[]> = {
   planning: ["ready", "cancelled"],
-  ready: ["planning", "cancelled"],
+  ready: ["planning", "ready_to_commit", "cancelled"],
   implementing: ["cancelled"],
   review_ready: ["cancelled"],
   checking: ["cancelled"],
@@ -331,6 +331,10 @@ export function canStartCheck(status: WorkflowTaskStatus): boolean {
 
 export function canMarkReady(status: WorkflowTaskStatus): boolean {
   return status === "planning" || status === "failed";
+}
+
+export function canMarkReadyToCommit(status: WorkflowTaskStatus): boolean {
+  return status === "ready";
 }
 
 export function canRecordCommit(status: WorkflowTaskStatus): boolean {
