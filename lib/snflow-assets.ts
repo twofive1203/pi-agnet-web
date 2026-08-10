@@ -6,7 +6,7 @@
  * Bump SNFLOW_ASSETS_VERSION (SemVer) whenever any managed file content changes.
  */
 
-export const SNFLOW_ASSETS_VERSION = "1.9.0";
+export const SNFLOW_ASSETS_VERSION = "1.9.1";
 
 export interface SnflowAssetFile {
   /** Project-relative path using forward slashes. */
@@ -425,17 +425,30 @@ function buildGuidance(cwd: string): string | null {
       "<!-- END SNFLOW SPEC -->) for spec-reading guidance specific to this project.",
       \`Edit docs only through the canonical files: \${base}/requirements.md, \${base}/design.md, \${base}/plan.md\`,
       "Do not create or update task.md as the task authority.",
-      "When the user approves implementation, mark the task ready, re-read task.json for its resulting revision, then dispatch the project agent snflow-implement.",
-      "Use context:fresh, this canonical cwd, agentContract:{version:1}, async:false and clarify:false. The task prompt must begin with the SNFLOW_DISPATCH v1 marker containing the resulting revision.",
-      "Approval to implement means dispatch snflow-implement; the main session remains the orchestrator.",
+      "When the user approves implementation, mark the task ready, then re-read task.json and the approved documents before editing.",
+      "The main Agent implements by default. Do not dispatch snflow-implement merely because the task became ready.",
       "The panel Mark Ready action or scripts/snflow-task.ts start may perform the planning-to-ready transition.",
-      "Do not start large implementation before the task is ready.",
+      "Do not start implementation before the task is ready.",
       "</workflow-state:planning>",
     ].join("\\n");
   }
 
+  if (task.status === "ready") {
+    return [
+      "<workflow-state:in_progress>",
+      ...header,
+      "Default path: the main Agent reads the approved task documents and applicable Specs, implements directly, and runs focused validation.",
+      "Use snflow-search only for one bounded context question when direct read/grep would add excessive context.",
+      "Do not dispatch snflow-implement merely because the task is ready, and do not require snflow-check for low-risk deterministic changes.",
+      "After successful validation, run: npx tsx scripts/snflow-task.ts handoff",
+      "Only when high risk, deliberate context isolation, or explicit user delegation justifies the run-backed fallback, use the following instructions instead of editing directly:",
+      directDispatch(cwd, task, "implement"),
+      "The main Agent remains responsible for final decisions, validation evidence, Spec maintenance, and commit handoff.",
+      "</workflow-state:in_progress>",
+    ].join("\\n");
+  }
+
   if (
-    task.status === "ready" ||
     task.status === "implementing" ||
     task.status === "review_ready" ||
     task.status === "checking" ||
@@ -450,11 +463,10 @@ function buildGuidance(cwd: string): string | null {
     return [
       "<workflow-state:in_progress>",
       ...header,
-      "Main-session default flow: implement -> check -> ready_to_commit -> user commit -> complete/archive.",
-      "The current chat native subagent tool is the only implement/check path; its tool updates drive the top Subagents panel.",
+      "This task is already on the exceptional run-backed implement/check path; preserve its bound run and specification snapshot lifecycle.",
       dispatch,
-      "The main session coordinates lifecycle and spec maintenance; the dispatched phase agent owns product-source implementation or review.",
-      "Read the task documents and applicable spec indexes before dispatch, and hand commit control back to the user after check passes.",
+      "The main Agent coordinates lifecycle and Spec maintenance; implement/check children remain bounded to their delegated phase.",
+      "Hand commit control back to the user after the required run-backed validation passes.",
       "</workflow-state:in_progress>",
     ].join("\\n");
   }
@@ -463,7 +475,7 @@ function buildGuidance(cwd: string): string | null {
     return [
       "<workflow-state:ready_to_commit>",
       ...header,
-      "Check passed. Hand off commit to the user (do not commit unless asked).",
+      "Implementation and required validation are complete. Hand off commit to the user (do not commit unless asked).",
       "Warnings and informational findings are advisory: summarize them and let the user choose whether to address them before commit; do not automatically restart implementation.",
       "If this task produced reusable conventions or lessons, write them to the relevant .pi/snflows/spec/ files and update the spec index status tables.",
       "Also update the project-root AGENTS.md SnFlow managed section if the reading-order or",

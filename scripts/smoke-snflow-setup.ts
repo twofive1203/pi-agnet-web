@@ -207,6 +207,30 @@ try {
   assert(ext.includes("before_agent_start"), "extension missing before_agent_start");
   assert(ext.includes("buildGuidance"), "extension missing buildGuidance");
   assert(ext.includes(".join(\"\\n\")"), "extension should join with real newlines");
+  assert(
+    ext.includes("Default path: the main Agent reads the approved task documents"),
+    "ready-state guidance must keep the main Agent as the default writer",
+  );
+  assert(
+    ext.includes("This task is already on the exceptional run-backed implement/check path"),
+    "delegated lifecycle guidance must be limited to tasks already using the run-backed path",
+  );
+  assert(
+    !ext.includes("The current chat native subagent tool is the only implement/check path"),
+    "extension must not retain the old mandatory subagent path",
+  );
+  assert(
+    !ext.includes("Approval to implement means dispatch snflow-implement"),
+    "planning guidance must not force implementation delegation",
+  );
+  assert(
+    ext.includes("Implementation and required validation are complete"),
+    "ready-to-commit guidance must support both direct and delegated validation paths",
+  );
+  assert(
+    ext.includes("If this task produced reusable conventions or lessons"),
+    "ready-to-commit guidance must preserve project knowledge capture",
+  );
   assert(ext.includes("`Active SnFlow task: ${base}`"), "extension template literals broken");
   assert(ext.includes("specRevision") && ext.includes("runId"), "extension dispatch must bind run and specification snapshot");
   assert(
