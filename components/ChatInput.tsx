@@ -21,6 +21,7 @@ import {
 import {
   buildDefaultModelPickerOptions,
   groupModelOptionsByProvider,
+  modelPrimaryCandidateKey,
   type ModelPickerOption,
 } from "@/lib/model-primary-candidates";
 
@@ -402,6 +403,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const [modelAllSubmenuOpen, setModelAllSubmenuOpen] = useState(false);
   const [modelAllSubmenuPos, setModelAllSubmenuPos] = useState<{ left: number; bottom: number; maxHeight: number; minWidth: number } | null>(null);
   const [modelDropdownRect, setModelDropdownRect] = useState<DropdownAnchorRect | null>(null);
+  const [favoriteKeys, setFavoriteKeys] = useState<Set<string>>(() => new Set());
+  const [favoriteBusyKeys, setFavoriteBusyKeys] = useState<Set<string>>(() => new Set());
   const [toolDropdownOpen, setToolDropdownOpen] = useState(false);
   const [toolDropdownRect, setToolDropdownRect] = useState<DropdownAnchorRect | null>(null);
   const [thinkingDropdownOpen, setThinkingDropdownOpen] = useState(false);
@@ -1074,6 +1077,54 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
 
 
 
+  // Keep chat-local favorite keys in sync with server model metadata (Models page close refresh).
+  useEffect(() => {
+    if (!modelList) {
+      setFavoriteKeys(new Set());
+      return;
+    }
+    setFavoriteKeys(new Set(
+      modelList
+        .filter((entry) => entry.primaryCandidate === true)
+        .map((entry) => modelPrimaryCandidateKey(entry.provider, entry.id)),
+    ));
+  }, [modelList]);
+
+  const updateModelFavorite = useCallback(async (provider: string, modelId: string, favorite: boolean) => {
+    const normalizedProvider = provider.trim();
+    const normalizedModelId = modelId.trim();
+    if (!normalizedProvider || !normalizedModelId) return;
+    const key = modelPrimaryCandidateKey(normalizedProvider, normalizedModelId);
+    setFavoriteBusyKeys((current) => new Set(current).add(key));
+    try {
+      const response = await fetch("/api/model-favorites", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          provider: normalizedProvider,
+          modelId: normalizedModelId,
+          favorite,
+        }),
+      });
+      const body = await response.json() as {
+        favorites?: { provider: string; modelId: string }[];
+        error?: string;
+      };
+      if (!response.ok) throw new Error(body.error ?? `HTTP ${response.status}`);
+      setFavoriteKeys(new Set((body.favorites ?? []).map((entry) => (
+        modelPrimaryCandidateKey(entry.provider, entry.modelId)
+      ))));
+    } catch {
+      // Keep prior favoriteKeys; star busy state clears in finally.
+    } finally {
+      setFavoriteBusyKeys((current) => {
+        const next = new Set(current);
+        next.delete(key);
+        return next;
+      });
+    }
+  }, []);
+
   // Build model options: prefer modelList (has provider info), fallback to modelNames
   const modelOptions: ModelOption[] = useMemo(() => {
     if (modelList && modelList.length > 0) {
@@ -1081,15 +1132,16 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         provider: m.provider,
         modelId: m.id,
         name: m.name,
-        primaryCandidate: m.primaryCandidate === true,
+        primaryCandidate: favoriteKeys.has(modelPrimaryCandidateKey(m.provider, m.id)),
       }));
     }
     return Object.entries(modelNames ?? {}).map(([modelId, name]) => ({
       provider: model?.provider ?? "unknown",
       modelId,
       name,
+      primaryCandidate: favoriteKeys.has(modelPrimaryCandidateKey(model?.provider ?? "unknown", modelId)),
     }));
-  }, [modelList, modelNames, model?.provider]);
+  }, [modelList, modelNames, model?.provider, favoriteKeys]);
 
   const { hasPrimaryCandidates, defaultOptions: defaultModelOptions } = useMemo(
     () => buildDefaultModelPickerOptions(modelOptions, model ?? null),
@@ -1718,11 +1770,15 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                       opt: ModelOption,
                       keyPrefix = "",
                       onOptionKeyDown: (event: React.KeyboardEvent<HTMLButtonElement>) => void = handleDropdownOptionKeyDown,
+                      favoriteToggle = false,
                     ) => {
                       const isActive = opt.modelId === model?.modelId && opt.provider === model?.provider;
-                      return (
+                      const favoriteKey = modelPrimaryCandidateKey(opt.provider, opt.modelId);
+                      const favorite = opt.primaryCandidate === true;
+                      const favoriteBusy = favoriteBusyKeys.has(favoriteKey);
+                      const optionButton = (
                         <button
-                          key={`${keyPrefix}${opt.provider}:${opt.modelId}`}
+                          type="button"
                           role="option"
                           aria-selected={isActive}
                           onKeyDown={onOptionKeyDown}
@@ -1734,17 +1790,85 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                             : <span className="chat-input-option-check-placeholder" />}
                           <span className="chat-input-model-option-label">
                             <span className="chat-input-model-option-name">{opt.name}</span>
-                            {opt.primaryCandidate ? (
+                            {!favoriteToggle && favorite ? (
                               <span className="chat-input-model-option-star" aria-hidden="true">★</span>
                             ) : null}
                           </span>
                         </button>
+                      );
+                      if (!favoriteToggle) {
+                        return (
+                          <React.Fragment key={`${keyPrefix}${opt.provider}:${opt.modelId}`}>
+                            {optionButton}
+                          </React.Fragment>
+                        );
+                      }
+                      return (
+                        <div
+                          key={`${keyPrefix}${opt.provider}:${opt.modelId}`}
+                          className={isActive ? "chat-input-model-option-row is-active" : "chat-input-model-option-row"}
+                        >
+                          {optionButton}
+                          <button
+                            type="button"
+                            className={favorite
+                              ? "chat-input-model-favorite-btn is-active"
+                              : "chat-input-model-favorite-btn"}
+                            disabled={favoriteBusy || writeLocked}
+                            aria-label={favorite ? t("chat.modelFavoriteUnset") : t("chat.modelFavoriteSet")}
+                            title={favorite ? t("chat.modelFavoriteUnset") : t("chat.modelFavoriteSet")}
+                            onClick={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              void updateModelFavorite(opt.provider, opt.modelId, !favorite);
+                            }}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter" || event.key === " ") {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                void updateModelFavorite(opt.provider, opt.modelId, !favorite);
+                                return;
+                              }
+                              // Keep list navigation on model options; ArrowLeft collapses the All flyout.
+                              if (event.key === "ArrowLeft" && keyPrefix.startsWith("all:")) {
+                                event.preventDefault();
+                                closeModelAllSubmenu();
+                                window.requestAnimationFrame(() => modelAllTriggerRef.current?.focus());
+                                return;
+                              }
+                              const panel = event.currentTarget.closest(".chat-input-dropdown-panel");
+                              if (!panel) return;
+                              const options = Array.from(
+                                panel.querySelectorAll<HTMLButtonElement>(".chat-input-dropdown-option:not(:disabled)"),
+                              );
+                              const currentOption = event.currentTarget
+                                .closest(".chat-input-model-option-row")
+                                ?.querySelector<HTMLButtonElement>(".chat-input-dropdown-option");
+                              const currentIndex = currentOption ? options.indexOf(currentOption) : -1;
+                              let nextIndex: number | null = null;
+                              if (event.key === "ArrowDown" || event.key === "ArrowRight") {
+                                nextIndex = currentIndex < 0 ? 0 : (currentIndex + 1) % options.length;
+                              } else if (event.key === "ArrowUp") {
+                                nextIndex = currentIndex < 0
+                                  ? options.length - 1
+                                  : (currentIndex - 1 + options.length) % options.length;
+                              } else if (event.key === "Home") nextIndex = 0;
+                              else if (event.key === "End") nextIndex = options.length - 1;
+                              if (nextIndex === null) return;
+                              event.preventDefault();
+                              options[nextIndex]?.focus();
+                            }}
+                          >
+                            {favoriteBusy ? "…" : favorite ? "★" : "☆"}
+                          </button>
+                        </div>
                       );
                     };
                     const renderGroupedModels = (
                       groups: { provider: string; options: ModelOption[] }[],
                       keyPrefix = "",
                       onOptionKeyDown?: (event: React.KeyboardEvent<HTMLButtonElement>) => void,
+                      favoriteToggle = false,
                     ) => groups.map((group, gi) => (
                       <div key={`${keyPrefix}${group.provider}`}>
                         {(groups.length > 1) && (
@@ -1752,7 +1876,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                             {group.provider}
                           </div>
                         )}
-                        {group.options.map((opt) => renderModelOption(opt, keyPrefix, onOptionKeyDown))}
+                        {group.options.map((opt) => renderModelOption(opt, keyPrefix, onOptionKeyDown, favoriteToggle))}
                       </div>
                     ));
                     const handleAllTriggerKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
@@ -1813,7 +1937,13 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                         </div>
                       )}
                       <div onMouseEnter={closeModelAllSubmenu}>
-                        {renderGroupedModels(primaryModelsByProvider, hasPrimaryCandidates ? "primary:" : "")}
+                        {renderGroupedModels(
+                          primaryModelsByProvider,
+                          hasPrimaryCandidates ? "primary:" : "",
+                          undefined,
+                          // Full list is the main panel until the first favorite exists.
+                          !hasPrimaryCandidates,
+                        )}
                       </div>
                     </div>
                     {hasPrimaryCandidates && modelAllSubmenuOpen && modelAllSubmenuPos && (
@@ -1833,7 +1963,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                         onMouseEnter={openModelAllSubmenu}
                         onMouseLeave={scheduleCloseModelAllSubmenu}
                       >
-                        {renderGroupedModels(allModelsByProvider, "all:", handleSubmenuOptionKeyDown)}
+                        {renderGroupedModels(allModelsByProvider, "all:", handleSubmenuOptionKeyDown, true)}
                       </div>
                     )}
                     </>
