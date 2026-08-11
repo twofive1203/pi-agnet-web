@@ -34,6 +34,7 @@ npm run dev     # http://localhost:62666
 | `npm run test:automation` | Automation store/schedule/policy/runner/API smoke suite. |
 | `npm run test:mcp` | MCP configuration domain/API smoke suite (adapter-native files, secrets, revisions). |
 | `npm run test:i18n` | zh/en catalog parity and i18n contract checks. |
+| `npm run test:package-update-check` | npm latest version-check helpers (semver compare + in-process cache) smoke suite. |
 | `npm run test:bundled-extensions` | Bundled Pi extension registry/loading smoke suite. |
 | `npm run test:web-tools-config` | Web Search provider/secret configuration smoke suite. |
 | `npm run test:vision` | Vision fallback configuration, routing, and evidence-boundary smoke suite. |

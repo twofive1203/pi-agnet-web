@@ -8336,6 +8336,21 @@ html:is([data-wallpaper="on"], [data-wallpaper="image"], [data-wallpaper="gradie
   font-size: 11px;
 }
 .chat-empty-versions strong { color: var(--text-primary); font-weight: 600; }
+.chat-empty-version-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  line-height: 1.35;
+}
+.chat-empty-version-update-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #ef4444;
+  box-shadow: 0 0 0 1px color-mix(in srgb, #ef4444 35%, transparent);
+  flex-shrink: 0;
+  cursor: default;
+}
 .extension-status-bar,
 .extension-widget-stack {
   display: flex;

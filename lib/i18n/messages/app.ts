@@ -105,6 +105,7 @@ export const appZh = {
   languageZh: "中文",
   languageEn: "English",
   switchWorkspaceTerminalConfirm: "关闭当前终端并结束所有会话后，才能为所选工作区打开终端。继续？",
+  versionUpdateAvailable: "有新版本 {latest} 可用（当前 {current}）",
 } as const satisfies MessageTree;
 
 export const appEn = {
@@ -212,4 +213,5 @@ export const appEn = {
   languageZh: "中文",
   languageEn: "English",
   switchWorkspaceTerminalConfirm: "Close the current terminal dock and terminate its sessions before opening a terminal for the selected workspace?",
+  versionUpdateAvailable: "Update available: {latest} (current {current})",
 } as const satisfies MessageTree;

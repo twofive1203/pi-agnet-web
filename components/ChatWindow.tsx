@@ -19,12 +19,14 @@ import { useDragDrop } from "@/hooks/useDragDrop";
 import { useSessionTabLock } from "@/hooks/useSessionTabLock";
 import { SessionChangesFloatingPanel } from "./SessionChangesFloatingPanel";
 import { useI18n } from "@/components/I18nProvider";
+import Tooltip from "@/components/Tooltip";
 import {
   chatFailureActionKey,
   chatFailureOffersModelsFix,
   chatFailureTitleKey,
 } from "@/lib/chat-provider-errors";
 import { localizeError } from "@/lib/i18n";
+import type { PackageUpdateCheckResult } from "@/lib/package-update-check";
 
 /**
  * Stable React keys for chat rows.
@@ -310,6 +312,32 @@ export const ChatWindow = memo(function ChatWindow({ session, newSessionCwd, onA
 
   const isEmptyNew = isNew && messages.length === 0 && !streamState.isStreaming && !agentRunning;
 
+  // Quiet npm latest check for the empty-session version row (web/spi + pi).
+  const [packageUpdates, setPackageUpdates] = useState<PackageUpdateCheckResult | null>(null);
+  useEffect(() => {
+    if (!isEmptyNew) return;
+    let cancelled = false;
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const res = await fetch("/api/version-check", {
+          method: "GET",
+          signal: controller.signal,
+          cache: "no-store",
+        });
+        if (!res.ok || cancelled) return;
+        const body = (await res.json()) as PackageUpdateCheckResult;
+        if (!cancelled && body?.web && body?.pi) setPackageUpdates(body);
+      } catch {
+        // Network/registry failures stay silent — no update dots.
+      }
+    })();
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [isEmptyNew]);
+
   const availableThinkingLevels = displayModelValue
     ? (modelThinkingLevels[`${displayModelValue.provider}:${displayModelValue.modelId}`] ?? null)
     : null;
@@ -463,8 +491,50 @@ export const ChatWindow = memo(function ChatWindow({ session, newSessionCwd, onA
                 <span className="chat-empty-prompt"><Typewriter phrases={typewriterPhrases} /></span>
               </div>
               <div className="chat-empty-versions">
-                <span>web <strong>v{process.env.NEXT_PUBLIC_APP_VERSION ?? "0.0.0"}</strong></span>
-                <span>pi <strong>v{process.env.NEXT_PUBLIC_PI_VERSION ?? "0.0.0"}</strong></span>
+                <span className="chat-empty-version-line">
+                  <span>web <strong>v{process.env.NEXT_PUBLIC_APP_VERSION ?? "0.0.0"}</strong></span>
+                  {packageUpdates?.web.updateAvailable && packageUpdates.web.latest ? (
+                    <Tooltip
+                      content={t("app.versionUpdateAvailable", {
+                        latest: packageUpdates.web.latest,
+                        current: packageUpdates.web.current,
+                      })}
+                      position="left"
+                      delay={120}
+                    >
+                      <span
+                        className="chat-empty-version-update-dot"
+                        role="img"
+                        aria-label={t("app.versionUpdateAvailable", {
+                          latest: packageUpdates.web.latest,
+                          current: packageUpdates.web.current,
+                        })}
+                      />
+                    </Tooltip>
+                  ) : null}
+                </span>
+                <span className="chat-empty-version-line">
+                  <span>pi <strong>v{process.env.NEXT_PUBLIC_PI_VERSION ?? "0.0.0"}</strong></span>
+                  {packageUpdates?.pi.updateAvailable && packageUpdates.pi.latest ? (
+                    <Tooltip
+                      content={t("app.versionUpdateAvailable", {
+                        latest: packageUpdates.pi.latest,
+                        current: packageUpdates.pi.current,
+                      })}
+                      position="left"
+                      delay={120}
+                    >
+                      <span
+                        className="chat-empty-version-update-dot"
+                        role="img"
+                        aria-label={t("app.versionUpdateAvailable", {
+                          latest: packageUpdates.pi.latest,
+                          current: packageUpdates.pi.current,
+                        })}
+                      />
+                    </Tooltip>
+                  ) : null}
+                </span>
               </div>
             </div>
             <ExtensionStatusBar items={visibleExtensionStatuses} />
