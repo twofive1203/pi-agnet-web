@@ -164,8 +164,6 @@ function GrokUsageView({
   onRefresh: () => void;
 }) {
   const { t } = useI18n();
-  const monthly = result?.monthly ?? null;
-  const monthlyUtilization = monthly?.utilization ?? null;
   const weekly = result?.weekly ?? null;
   const weeklyUtilization = weekly?.creditUsagePercent ?? null;
   const weeklyCountdown = weekly ? formatResetCountdown(weekly.billingPeriodEnd) : null;
@@ -200,7 +198,7 @@ function GrokUsageView({
         <div style={{ fontSize: 12, color: "#f87171", lineHeight: 1.5 }}>{result.error}</div>
       )}
 
-      {/* Weekly first — same primary window emphasis as ChatGPT's 7d tier. */}
+      {/* Weekly-only — same primary window emphasis as ChatGPT's 7d tier. */}
       {weekly ? (
         <div style={{
           display: "grid", gridTemplateColumns: "36px 1fr auto", alignItems: "center", gap: 10,
@@ -224,38 +222,12 @@ function GrokUsageView({
             {Math.round(weeklyUtilization ?? 0)}%
           </span>
         </div>
-      ) : !loading && !result?.error && !monthly ? (
+      ) : !loading && !result?.error ? (
         <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.5 }}>
-          Click refresh to query Grok CLI billing.
+          Click refresh to query Grok CLI weekly billing.
           {!result?.configured && !result?.envBypass && <> Make sure Grok CLI is logged in.</>}
         </div>
       ) : null}
-
-      {monthly && (
-        <div style={{
-          display: "grid", gridTemplateColumns: "36px 1fr auto", alignItems: "center", gap: 10,
-          padding: 9, borderRadius: 9, border: "1px solid var(--border)", background: "rgba(148,163,184,0.08)",
-        }}>
-          <span style={{
-            width: 30, height: 30, borderRadius: "50%", flexShrink: 0,
-            background: `conic-gradient(${quotaColor(monthlyUtilization ?? 0)} ${(monthlyUtilization ?? 0) * 3.6}deg, rgba(148,163,184,0.18) 0deg)`,
-            border: "1px solid rgba(148,163,184,0.35)",
-            display: "inline-flex", alignItems: "center", justifyContent: "center", boxSizing: "border-box",
-          }}>
-            <span style={{ width: 12, height: 12, borderRadius: "50%", background: "var(--bg-panel)", opacity: 0.92 }} />
-          </span>
-          <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
-            <span style={{ color: "var(--text)", fontSize: 12, fontWeight: 700 }}>Monthly credits</span>
-            <span style={{ color: "var(--text-dim)", fontSize: 10 }}>
-              Used: {monthly.used.toLocaleString()} · Limit: {monthly.monthlyLimit.toLocaleString()} · Remaining: {monthly.remaining.toLocaleString()}
-              {monthly.billingPeriodEnd && <> · Reset: {new Date(monthly.billingPeriodEnd).toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</>}
-            </span>
-          </div>
-          <span style={{ color: quotaColor(monthlyUtilization ?? 0), fontSize: 15, fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>
-            {Math.round(monthlyUtilization ?? 0)}%
-          </span>
-        </div>
-      )}
 
       {result?.envBypass && (
         <div style={{ fontSize: 11, color: "#fb923c" }}>Using GROK_CLI_OAUTH_TOKEN env variable.</div>
@@ -895,7 +867,7 @@ export function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; 
         cache: "no-store",
       });
       const data = await res.json().catch(() => ({})) as GrokUsageResult & { error?: string };
-      if (data.success && data.monthly) {
+      if (data.success && data.weekly) {
         setGrokUsage(data);
         // Active refresh also writes weekly quotaCache onto the active saved account.
         if (forceRefresh) void loadAccounts();
@@ -903,7 +875,7 @@ export function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; 
       }
       // Keep previous successful result in memory when a live refresh fails.
       setGrokUsage((prev) => {
-        if (forceRefresh && prev?.success && prev.monthly) {
+        if (forceRefresh && prev?.success && prev.weekly) {
           return { ...prev, error: data.error ?? prev.error, source: data.source ?? prev.source };
         }
         return data.provider
@@ -913,7 +885,6 @@ export function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; 
               configured: true,
               success: false,
               source: forceRefresh ? "live" : "cache",
-              monthly: null,
               weekly: null,
               error: data.error ?? "Grok CLI usage query failed",
               queriedAt: Date.now(),
@@ -923,7 +894,7 @@ export function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; 
     } catch (error) {
       const message = error instanceof Error ? error.message : "Grok CLI usage query failed";
       setGrokUsage((prev) => {
-        if (forceRefresh && prev?.success && prev.monthly) {
+        if (forceRefresh && prev?.success && prev.weekly) {
           return { ...prev, error: message, source: "live" };
         }
         return {
@@ -931,7 +902,6 @@ export function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; 
           configured: true,
           success: false,
           source: "live",
-          monthly: null,
           weekly: null,
           error: message,
           queriedAt: Date.now(),
@@ -1155,7 +1125,7 @@ export function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; 
         );
         const data = await res.json().catch(() => ({})) as GrokUsageResult & { error?: string };
         if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
-        if (account.active && data.success && data.monthly) setGrokUsage(data);
+        if (account.active && data.success && data.weekly) setGrokUsage(data);
         await loadAccounts();
         setLoginState({
           phase: data.success && data.weekly ? "success" : "error",

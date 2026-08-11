@@ -6,50 +6,30 @@ export class GrokBillingPayloadError extends Error {
 }
 
 export interface GrokBillingPayloads {
-  monthlyResponse: Response;
-  monthlyPayload: unknown | null;
+  weeklyResponse: Response;
   weeklyPayload: unknown | null;
 }
 
-/** Start monthly and optional weekly billing together under independent deadlines. */
+/** Fetch weekly xAI billing (`format=credits`). Monthly billing is no longer supported. */
 export async function fetchGrokBillingPayloads(
   baseUrl: string,
   headers: Record<string, string>,
   timeoutMs: number,
 ): Promise<GrokBillingPayloads> {
-  const weeklyAbort = new AbortController();
-  const weeklyTimeoutMs = Math.min(timeoutMs, 2_000);
-  const weeklyPromise = fetch(`${baseUrl}/billing?format=credits`, {
+  const weeklyResponse = await fetch(`${baseUrl}/billing?format=credits`, {
     method: "GET",
     headers,
-    signal: AbortSignal.any([weeklyAbort.signal, AbortSignal.timeout(weeklyTimeoutMs)]),
-  }).then(async (response) => response.ok ? await response.json() as unknown : null)
-    .catch(() => null);
-
-  try {
-    const monthlyResponse = await fetch(`${baseUrl}/billing`, {
-      method: "GET",
-      headers,
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-    if (!monthlyResponse.ok) {
-      weeklyAbort.abort();
-      return { monthlyResponse, monthlyPayload: null, weeklyPayload: null };
-    }
-    let monthlyPayload: unknown;
-    try {
-      monthlyPayload = await monthlyResponse.json() as unknown;
-    } catch {
-      weeklyAbort.abort();
-      throw new GrokBillingPayloadError("Monthly billing response is not valid JSON");
-    }
-    // Optional weekly data must not extend a successful monthly request. Include
-    // it only when it already settled while monthly was in flight, then cancel.
-    const weeklyPayload = await Promise.race([weeklyPromise, Promise.resolve(null)]);
-    weeklyAbort.abort();
-    return { monthlyResponse, monthlyPayload, weeklyPayload };
-  } catch (error) {
-    weeklyAbort.abort();
-    throw error;
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  if (!weeklyResponse.ok) {
+    return { weeklyResponse, weeklyPayload: null };
   }
+
+  let weeklyPayload: unknown;
+  try {
+    weeklyPayload = await weeklyResponse.json() as unknown;
+  } catch {
+    throw new GrokBillingPayloadError("Weekly billing response is not valid JSON");
+  }
+  return { weeklyResponse, weeklyPayload };
 }

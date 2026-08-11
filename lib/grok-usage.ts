@@ -27,17 +27,9 @@ const GROK_OAUTH_CLIENT_ID =
   process.env.PI_GROK_CLI_OAUTH_CLIENT_ID || "b1a00492-073a-47ea-816f-4c329264a828";
 const GROK_DEFAULT_TOKEN_ENDPOINT = "https://auth.x.ai/oauth2/token";
 
-// Cache file location
+// Cache file location — v2 drops monthly fields (weekly-only billing).
 const CACHE_FILE = "grok-cli-usage-cache.json";
-const CACHE_VERSION = 1;
-
-export interface GrokMonthlyUsage {
-  used: number;
-  monthlyLimit: number;
-  remaining: number;
-  utilization: number;
-  billingPeriodEnd: string;
-}
+const CACHE_VERSION = 2;
 
 export interface GrokWeeklyUsage {
   creditUsagePercent: number;
@@ -49,7 +41,6 @@ export interface GrokUsageResult {
   configured: boolean;
   success: boolean;
   source: "cache" | "live";
-  monthly: GrokMonthlyUsage | null;
   weekly: GrokWeeklyUsage | null;
   error: string | null;
   /** Stable code for UI localization when present. */
@@ -61,7 +52,6 @@ export interface GrokUsageResult {
 interface GrokUsageCache {
   version: number;
   provider: string;
-  monthly: GrokMonthlyUsage | null;
   weekly: GrokWeeklyUsage | null;
   queriedAt: number;
   envBypass: boolean;
@@ -268,7 +258,6 @@ function accountUsageFromQuotaCache(
       configured: true,
       success: false,
       source: "cache",
-      monthly: null,
       weekly: null,
       error: "Not queried yet. Click refresh to query this account's weekly usage.",
       queriedAt: null,
@@ -289,7 +278,6 @@ function accountUsageFromQuotaCache(
     configured: true,
     success: quotaCache.success && Boolean(weekly),
     source: "cache",
-    monthly: null,
     weekly,
     error: quotaCache.error,
     queriedAt: quotaCache.queriedAt,
@@ -355,36 +343,30 @@ async function fetchBillingUsage(
   };
 
   try {
-    // Monthly and optional weekly billing start concurrently. Monthly remains
-    // authoritative for the shared cache; weekly is what account rows display.
-    const { monthlyResponse, monthlyPayload, weeklyPayload } = await fetchGrokBillingPayloads(
+    const { weeklyResponse, weeklyPayload } = await fetchGrokBillingPayloads(
       baseUrl,
       headers,
       GROK_BILLING_TIMEOUT_MS,
     );
 
-    if (!monthlyResponse.ok) {
+    if (!weeklyResponse.ok) {
       // Keep browser-facing errors free of raw upstream bodies (may contain sensitive detail).
-      if (monthlyResponse.status === 401 || monthlyResponse.status === 403) {
+      if (weeklyResponse.status === 401 || weeklyResponse.status === 403) {
         return errorResult(true, "Grok CLI token invalid or expired. Re-login via Models → Grok CLI / xAI.");
       }
-      return errorResult(true, `xAI billing API error (HTTP ${monthlyResponse.status}). Please retry later.`);
-    }
-
-    let monthly: GrokMonthlyUsage;
-    try {
-      monthly = parseMonthlyUsage(monthlyPayload);
-    } catch (parseError) {
-      return errorResult(true, `Invalid billing response: ${errorMessage(parseError)}`);
+      return errorResult(true, `xAI billing API error (HTTP ${weeklyResponse.status}). Please retry later.`);
     }
 
     const weekly = parseWeeklyUsage(weeklyPayload);
+    if (!weekly) {
+      return errorResult(true, "Invalid billing response: weekly usage fields missing or malformed.");
+    }
+
     return {
       provider: GROK_PROVIDER_ID,
       configured: true,
       success: true,
       source: "live",
-      monthly,
       weekly,
       error: null,
       queriedAt: Date.now(),
@@ -450,33 +432,7 @@ async function resolveToken(): Promise<{ token: string; envBypass: boolean; prov
 }
 
 /**
- * 解析月度用量。
- */
-function parseMonthlyUsage(payload: unknown): GrokMonthlyUsage {
-  if (!isRecord(payload)) throw new Error("Invalid billing payload");
-  const config = isRecord(payload.config) ? payload.config : null;
-  if (!config) throw new Error("Invalid billing payload: missing config");
-
-  const monthlyLimit = isRecord(config.monthlyLimit) && typeof config.monthlyLimit.val === "number" ? config.monthlyLimit.val : undefined;
-  const used = isRecord(config.used) && typeof config.used.val === "number" ? config.used.val : undefined;
-  const billingPeriodEnd = typeof config.billingPeriodEnd === "string" ? config.billingPeriodEnd : undefined;
-
-  if (typeof monthlyLimit !== "number" || !Number.isFinite(monthlyLimit) ||
-      typeof used !== "number" || !Number.isFinite(used) ||
-      typeof billingPeriodEnd !== "string" || !Number.isFinite(new Date(billingPeriodEnd).getTime())) {
-    throw new Error("Invalid billing payload: malformed monthly usage fields");
-  }
-
-  const remaining = Math.max(0, monthlyLimit - used);
-  const utilization = monthlyLimit > 0
-    ? Math.min(Math.max(Math.round((used / monthlyLimit) * 100), 0), 100)
-    : 0;
-
-  return { used, monthlyLimit, remaining, utilization, billingPeriodEnd };
-}
-
-/**
- * 解析周度用量（可选）。
+ * 解析周度用量。
  */
 function parseWeeklyUsage(payload: unknown): GrokWeeklyUsage | null {
   if (!isRecord(payload)) return null;
@@ -502,19 +458,6 @@ function getCacheFilePath(): string {
   return join(getAgentDir(), CACHE_FILE);
 }
 
-/**
- * 从磁盘读取 last-known 缓存。
- */
-function isMonthlyUsage(value: unknown): value is GrokMonthlyUsage {
-  if (!isRecord(value)) return false;
-  return typeof value.used === "number" && Number.isFinite(value.used)
-    && typeof value.monthlyLimit === "number" && Number.isFinite(value.monthlyLimit)
-    && typeof value.remaining === "number" && Number.isFinite(value.remaining)
-    && typeof value.utilization === "number" && Number.isFinite(value.utilization)
-    && typeof value.billingPeriodEnd === "string"
-    && Number.isFinite(new Date(value.billingPeriodEnd).getTime());
-}
-
 function isWeeklyUsage(value: unknown): value is GrokWeeklyUsage {
   if (!isRecord(value)) return false;
   return typeof value.creditUsagePercent === "number" && Number.isFinite(value.creditUsagePercent)
@@ -527,16 +470,18 @@ function readCache(): GrokUsageCache | null {
   if (!existsSync(cachePath)) return null;
   try {
     const raw = JSON.parse(readFileSync(cachePath, "utf8")) as unknown;
-    if (!isRecord(raw) || raw.version !== CACHE_VERSION || raw.provider !== GROK_PROVIDER_ID) return null;
-    if (raw.monthly !== null && !isMonthlyUsage(raw.monthly)) return null;
+    if (!isRecord(raw) || raw.provider !== GROK_PROVIDER_ID) return null;
+    // Accept v2 (weekly-only) and legacy v1 caches that still carry a valid weekly field.
+    if (raw.version !== CACHE_VERSION && raw.version !== 1) return null;
     if (raw.weekly !== null && raw.weekly !== undefined && !isWeeklyUsage(raw.weekly)) return null;
+    // Legacy monthly-only caches without weekly are treated as a miss.
+    if (raw.weekly === null || raw.weekly === undefined) return null;
     if (typeof raw.queriedAt !== "number" || !Number.isFinite(raw.queriedAt)) return null;
     if (typeof raw.envBypass !== "boolean") return null;
     return {
       version: CACHE_VERSION,
       provider: GROK_PROVIDER_ID,
-      monthly: raw.monthly,
-      weekly: raw.weekly ?? null,
+      weekly: raw.weekly,
       queriedAt: raw.queriedAt,
       envBypass: raw.envBypass,
     };
@@ -552,7 +497,6 @@ function writeCache(result: GrokUsageResult): void {
   const cache: GrokUsageCache = {
     version: CACHE_VERSION,
     provider: GROK_PROVIDER_ID,
-    monthly: result.monthly,
     weekly: result.weekly,
     queriedAt: result.queriedAt ?? Date.now(),
     envBypass: result.envBypass,
@@ -568,7 +512,6 @@ function notConfiguredResult(): GrokUsageResult {
     configured: false,
     success: false,
     source: "live",
-    monthly: null,
     weekly: null,
     error: "Grok is not logged in. Complete OAuth in Models → xAI or Grok CLI, or set GROK_CLI_OAUTH_TOKEN.",
     errorCode: ERROR_CODES.grokNotLoggedIn,
@@ -583,7 +526,6 @@ function errorResult(configured: boolean, message: string): GrokUsageResult {
     configured,
     success: false,
     source: "live",
-    monthly: null,
     weekly: null,
     error: message,
     queriedAt: Date.now(),
@@ -597,7 +539,6 @@ function cacheResult(cache: GrokUsageCache): GrokUsageResult {
     configured: true,
     success: true,
     source: "cache",
-    monthly: cache.monthly,
     weekly: cache.weekly,
     error: null,
     queriedAt: cache.queriedAt,
@@ -621,7 +562,6 @@ export async function getGrokUsage(mode: "cache" | "refresh" = "cache"): Promise
       configured: true,
       success: false,
       source: "cache",
-      monthly: null,
       weekly: null,
       error: "Not queried yet. Click refresh to query Grok CLI billing.",
       queriedAt: null,
@@ -636,7 +576,7 @@ export async function getGrokUsage(mode: "cache" | "refresh" = "cache"): Promise
   const { token, envBypass, providerId } = resolved;
   const result = await fetchBillingUsage(token, resolveBaseUrl(providerId), envBypass);
 
-  if (result.success && result.monthly) {
+  if (result.success && result.weekly) {
     writeCache(result);
     // Keep the active saved-account weekly pie in sync with the shared usage panel.
     await cacheWeeklyUsageToActiveAccount(providerId, result);
@@ -689,7 +629,7 @@ export async function getGrokAccountUsage(
   // Active-account live refresh also keeps the shared top-bar/Models cache current.
   try {
     const list = await listOAuthAccounts(provider);
-    if (result.success && result.monthly && list.activeAccountId === normalizedAccountId) {
+    if (result.success && result.weekly && list.activeAccountId === normalizedAccountId) {
       writeCache(result);
     }
   } catch {

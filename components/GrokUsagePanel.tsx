@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useI18n } from "@/components/I18nProvider";
-import { formatDate, formatDateTime, formatNumber, localizeError } from "@/lib/i18n";
+import { formatDateTime, localizeError } from "@/lib/i18n";
 import { useAppDialog } from "@/components/AppDialogProvider";
 import {
   findWeeklyQuotaTier,
@@ -161,7 +161,7 @@ export function GrokUsagePanel() {
         cache: "no-store",
       });
       const data = await res.json() as GrokUsageResult & { error?: string };
-      if (data.success && data.monthly) {
+      if (data.success && data.weekly) {
         setError(null);
         setUsageResult(data);
         // Active refresh writes weekly quotaCache onto the active saved account.
@@ -171,7 +171,7 @@ export function GrokUsagePanel() {
       // Keep previous successful result in memory on live failure / empty cache.
       if (data.error) setError(localizeError(t, { code: (data as { errorCode?: string }).errorCode, message: data.error }));
       setUsageResult((prev) => {
-        if (prev?.success && prev.monthly && forceRefresh) return prev;
+        if (prev?.success && prev.weekly && forceRefresh) return prev;
         return data;
       });
     } catch (err) {
@@ -324,7 +324,6 @@ export function GrokUsagePanel() {
     return findWeeklyQuotaTier(activeAccount?.quotaCache?.tiers ?? []) ?? null;
   }, [usageResult, activeAccount]);
   const knownTiers = useMemo(() => (weeklyTier ? [weeklyTier] : []), [weeklyTier]);
-  const monthly = usageResult?.monthly ?? null;
   const refreshText = usageResult?.queriedAt
     ? formatQuotaQueriedAt(usageResult.queriedAt)
     : activeAccount?.quotaCache?.queriedAt
@@ -439,32 +438,6 @@ export function GrokUsagePanel() {
                   </div>
                 );
               })}
-            </div>
-          )}
-
-          {monthly && (
-            <div className="usage-quota-row">
-              <UsagePie
-                tier={{ name: "monthly", utilization: monthly.utilization, resetsAt: monthly.billingPeriodEnd }}
-                size={30}
-                title={t("panels.grok.monthlyCredits")}
-              />
-              <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
-                <span style={{ color: "var(--text)", fontSize: 12, fontWeight: 700 }}>{t("panels.grok.monthlyCredits")}</span>
-                <span style={{ color: "var(--text-dim)", fontSize: 10 }}>
-                  {t("panels.grok.monthlyLine", {
-                    used: formatNumber(monthly.used, locale),
-                    limit: formatNumber(monthly.monthlyLimit, locale),
-                    remaining: formatNumber(monthly.remaining, locale),
-                  })}
-                  {monthly.billingPeriodEnd && (
-                    <> · {t("panels.grok.resetsAt", { date: formatDate(monthly.billingPeriodEnd, locale, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) })}</>
-                  )}
-                </span>
-              </div>
-              <span style={{ color: quotaColor(monthly.utilization), fontSize: 15, fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>
-                {Math.round(monthly.utilization)}%
-              </span>
             </div>
           )}
 
