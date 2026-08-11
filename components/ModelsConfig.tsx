@@ -548,7 +548,6 @@ export function ModelsConfig({ cwd, onClose }: { cwd: string | null; onClose: ()
                               onClick={() => setSelection(provider.selection)}
                             >
                               <span>{model.name || model.id}</span>
-                              {favorite && <SettingsBadge tone="accent">★</SettingsBadge>}
                             </button>
                             <button
                               type="button"
@@ -629,7 +628,6 @@ export function ModelsConfig({ cwd, onClose }: { cwd: string | null; onClose: ()
                                 >
                                   <span>{model.id || "new model"}</span>
                                   {model.reasoning && <SettingsBadge tone="accent">T</SettingsBadge>}
-                                  {favorite && <SettingsBadge tone="accent">★</SettingsBadge>}
                                 </button>
                                 <button
                                   type="button"
