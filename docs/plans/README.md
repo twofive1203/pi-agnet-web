@@ -26,5 +26,6 @@ Status vocabulary:
 | [`2026-08-01-009-refactor-ui-quality-regression-plan.md`](2026-08-01-009-refactor-ui-quality-regression-plan.md) | completed | Browser matrix + representative themes accepted 2026-08-11; mobile tool-only observation passed by product owner. |
 | [`2026-08-07-001-refactor-i18n-coverage-plan.md`](2026-08-07-001-refactor-i18n-coverage-plan.md) | completed | Wave A–C product chrome coverage; residual typed keys/API codes remain ordinary backlog. |
 | [`2026-08-07-002-feat-server-access-authentication-plan.md`](2026-08-07-002-feat-server-access-authentication-plan.md) | completed | Safe loopback defaults, server access key/session gate, global Proxy protection, production E2E, and deployment docs delivered. |
+| [`2026-08-11-001-feat-session-performance-metrics-plan.md`](2026-08-11-001-feat-session-performance-metrics-plan.md) | completed | U1–U5 delivered: domain/sidecar, raw AgentSession recording, session-detail/SSE/client state, SessionResourcePanel + estimated live TPS, docs and targeted validation. |
 
 This status table is the active implementation, performance, and functional-polish backlog index. Historical investigations and implemented design inputs live under [`../research/`](../research/README.md).

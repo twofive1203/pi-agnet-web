@@ -6,6 +6,7 @@ import type {
   AgentMessage,
   SessionBillingStats,
   SessionInfo,
+  SessionPerformanceSummary,
   SessionTreeNode,
 } from "@/lib/types";
 import { useExtensionUi } from "@/hooks/useExtensionUi";
@@ -69,6 +70,8 @@ export interface SessionData {
   tree: SessionTreeNode[];
   leafId: string | null;
   sessionStats: SessionBillingStats | null;
+  /** Durable accurate performance summary; null/absent when no valid samples. */
+  sessionPerformance?: SessionPerformanceSummary | null;
   context: {
     messages: AgentMessage[];
     entryIds: string[];
@@ -368,6 +371,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     return total > 0 ? { tokens, cost } : null;
   }, [messages]);
   const sessionStats = data?.sessionStats ?? currentContextStats;
+  const sessionPerformance = data?.sessionPerformance ?? null;
 
   const loadSession = useCallback(async (sid: string, showLoading = false, includeState = false) => {
     const requestId = ++sessionLoadRequestRef.current;
@@ -832,6 +836,12 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           setSessionChangesRefreshKey((value) => value + 1);
         }
         break;
+      case "session_performance_update":
+        if (event.sessionId === sessionIdRef.current && event.sessionPerformance) {
+          const summary = event.sessionPerformance as SessionPerformanceSummary;
+          setData((prev) => prev ? { ...prev, sessionPerformance: summary } : prev);
+        }
+        break;
     }
     recordSubagentClientDuration("eventHandlerMs", handlerStartedAt);
   }, [currentModel, handleExtensionUiRequest, loadSession, onAgentEnd, updateSubagentRuns]);
@@ -1269,6 +1279,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     agentRunning, modelNames, modelList, modelsReady, modelThinkingLevels, modelThinkingLevelMaps, newSessionModel, toolPreset, thinkingLevel,
     retryInfo, agentFailure, contextUsage, systemPrompt, forkingEntryId,
     isCompacting, compactError, currentModel, displayModel, sessionStats,
+    sessionPerformance,
     agentPhase, subagentRuns: subagentRunsRef.current,
     sessionChangesRefreshKey,
     extensionStatuses,

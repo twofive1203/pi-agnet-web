@@ -60,6 +60,7 @@ interface Props {
   onSystemPromptChange?: (prompt: string | null) => void;
   onSubagentChange?: (runs: import("@/hooks/useAgentSession").SubagentRun[]) => void;
   onSessionStatsChange?: (stats: { tokens: { input: number; output: number; cacheRead: number; cacheWrite: number }; cost?: number } | null) => void;
+  onSessionPerformanceChange?: (performance: import("@/lib/types").SessionPerformanceSummary | null) => void;
   onContextUsageChange?: (usage: { percent: number | null; contextWindow: number; tokens: number | null } | null) => void;
   /** Agent running state — used by AppShell's observe bar / Changes tab polling. */
   onAgentRunningChange?: (running: boolean) => void;
@@ -150,7 +151,7 @@ function Typewriter({ phrases }: { phrases: string[] }) {
   );
 }
 
-export const ChatWindow = memo(function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSubagentChange, onSessionStatsChange, onContextUsageChange, onAgentRunningChange, onTodoActiveChange, onOpenModels }: Props) {
+export const ChatWindow = memo(function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSubagentChange, onSessionStatsChange, onSessionPerformanceChange, onContextUsageChange, onAgentRunningChange, onTodoActiveChange, onOpenModels }: Props) {
   const { t } = useI18n();
   const typewriterPhrases = useMemo(
     () => TYPEWRITER_KEYS.map((key) => t(key)),
@@ -163,6 +164,7 @@ export const ChatWindow = memo(function ChatWindow({ session, newSessionCwd, onA
     agentRunning, modelNames, modelList, modelsReady, modelThinkingLevels, modelThinkingLevelMaps, toolPreset, thinkingLevel,
     retryInfo, agentFailure, contextUsage, forkingEntryId,
     isCompacting, compactError, displayModel: displayModelValue, sessionStats,
+    sessionPerformance,
     agentPhase, sessionChangesRefreshKey,
     extensionStatuses, extensionWidgets, extensionDialog, extensionToasts,
     isNew,
@@ -239,6 +241,17 @@ export const ChatWindow = memo(function ChatWindow({ session, newSessionCwd, onA
     onSessionStatsChange?.(sessionStatsRef.current);
   }, [statsKey, onSessionStatsChange]);
   useEffect(() => () => { onSessionStatsChange?.(null); }, [onSessionStatsChange]);
+
+  // Push durable session performance up to AppShell (scalar key avoids identity loops).
+  const performanceKey = sessionPerformance
+    ? `${sessionPerformance.sampleCount}|${sessionPerformance.totalOutputTokens}|${sessionPerformance.totalStreamDurationMs}|${sessionPerformance.totalTtftMs}|${sessionPerformance.byModel.map((row) => `${row.provider}:${row.model}:${row.sampleCount}`).join(",")}`
+    : null;
+  const sessionPerformanceRef = useRef(sessionPerformance);
+  sessionPerformanceRef.current = sessionPerformance;
+  useEffect(() => {
+    onSessionPerformanceChange?.(sessionPerformanceRef.current);
+  }, [performanceKey, onSessionPerformanceChange]);
+  useEffect(() => () => { onSessionPerformanceChange?.(null); }, [onSessionPerformanceChange]);
 
   // Push context usage up to AppShell as well.
   const ctxKey = contextUsage

@@ -22,6 +22,7 @@ npm run dev     # http://localhost:62666
 | `npm run test:session-index` | Rebuildable session/project index smoke suite (header reuse, cwd isolation, archive moves). |
 | `npm run test:session-search` | Workspace session search smoke suite (indexed name/firstMessage, archived, limits, stale gate). |
 | `npm run test:session-stats` | Parent-session lifetime token/cost aggregation smoke suite. |
+| `npm run test:session-performance` | Durable session performance (weighted TPS/TTFT) domain, sidecar, and lifecycle smoke suite. |
 | `npm run test:scale-baseline` | Usage/allowed-roots/session-index/long-JSONL scale baseline + accelerated-path correctness smoke. |
 | `npm run test:session-tabs` | Same-session multi-tab write-lock coordination pure smoke. |
 | `npm run test:git-diff` | Commit and staged/unstaged working-tree diff smoke suite. |
@@ -88,6 +89,7 @@ npm run dev     # http://localhost:62666
 | Session browsing/parsing | `lib/session-reader.ts`, `app/api/sessions/**` | `docs/architecture/overview.md`, `docs/modules/api.md` |
 | Workspace session search | `lib/session-search.ts`, `lib/session-index.ts`, `app/api/sessions/search/`, `hooks/useSessionBrowser.ts`, `components/sidebar/SessionSearchResults.tsx` | `docs/modules/api.md`, `docs/modules/frontend.md`, `docs/modules/library.md` |
 | Session changed-file overlay | `lib/session-file-changes.ts`, `components/SessionChangesFloatingPanel.tsx`, `app/api/sessions/[id]/changes/**` | `docs/architecture/overview.md`, `docs/modules/api.md`, `docs/modules/frontend.md`, `docs/modules/library.md` |
+| Session performance metrics | `lib/session-performance.ts`, `components/SessionResourcePanel.tsx`, `lib/rpc-manager.ts`, `app/api/sessions/[id]/route.ts` | `docs/architecture/overview.md`, `docs/modules/api.md`, `docs/modules/frontend.md`, `docs/modules/library.md` |
 | Agent command lifecycle | `lib/rpc-manager.ts`, `app/api/agent/**` | `docs/architecture/overview.md` |
 | Chat/session UI state | `hooks/useAgentSession.ts`, `components/ChatWindow.tsx`, `components/ChatInput.tsx` | `docs/modules/frontend.md` |
 | Tool-call normalization | `lib/normalize.ts` | `docs/architecture/overview.md`, `docs/modules/library.md` |
@@ -106,6 +108,7 @@ Keep this section short and operational; detailed rationale belongs in `docs/arc
 - Distinguish forked sessions (new JSONL file) from in-session branches (`navigate_tree` in the same file).
 - Normalize pi tool calls through `lib/normalize.ts`; do not hand-roll tool-call field mapping in components/routes.
 - Track session changed-file UI through non-Git sidecars in `lib/session-file-changes.ts`; do not derive it from Git status.
+- Track session performance (weighted TPS/TTFT) through the non-JSONL sidecar in `lib/session-performance.ts`; measure on the raw AgentSession event boundary before SSE throttling; do not backfill from historical message timestamps or mix into billing/`sessionStats`/global Usage.
 - Treat session header `parentSession` as display metadata only; content comes from JSONL entries.
 - When changing event kinds, JSONL records, RPC payloads, config fields, or shared constants, search for all consumers first and update docs/tests/validation notes.
 - Do not reset or overwrite unrelated user changes.
@@ -149,6 +152,7 @@ node_modules/.bin/tsc --noEmit
 | Default data dir | `~/.pi/agent/` |
 | Data dir override | `PI_CODING_AGENT_DIR` |
 | Session files | `~/.pi/agent/sessions/<encoded-cwd>/<timestamp>_<uuid>.jsonl` |
+| Session performance sidecars | `~/.pi/agent/session-performance/<encoded-session-id>.json` (aggregate counters only) |
 | Model config | `~/.pi/agent/models.json` |
 | Settings/default model/native subagents | `~/.pi/agent/settings.json`, project override `<cwd>/.pi/settings.json` |
 | Web UI settings (WorkTree, Usage, Vision fallback model, Web Terminal, ChatGPT panel, Grok panel, Editor, bundled core-extension toggles, SnFlow panel). Unknown legacy root keys such as `trellis` are ignored and left on disk | `~/.pi/agent/pi-web.json` |

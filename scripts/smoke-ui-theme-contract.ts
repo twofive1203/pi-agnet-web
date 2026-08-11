@@ -103,6 +103,9 @@ const REQUIRED_STABLE_CLASSES = [
   ".app-shell-root",
   ".top-context",
   ".app-resource-cluster",
+  ".app-resource-tps",
+  ".session-resource-popover",
+  ".assistant-tps-badge",
   ".app-top-more-portal",
   ".top-more-menu",
   ".insp-tabs",
@@ -153,6 +156,8 @@ interface ThemeSources {
   workbenchSkinHook: string;
   workbenchSkinLib: string;
   shell: string;
+  sessionResource: string;
+  messageView: string;
   chatInput: string;
   appDialog: string;
   extensionDialog: string;
@@ -381,6 +386,27 @@ function collectContractProblems(
     || !sources.picker.includes("window.visualViewport?.addEventListener")) {
     problems.push("portal focus: Theme Picker focus/viewport contract is missing");
   }
+  if (!sources.sessionResource.includes('createPortal(')
+    || !sources.sessionResource.includes('role="dialog"')
+    || !sources.sessionResource.includes('event.key === "Escape"')
+    || !sources.sessionResource.includes("triggerRef.current?.focus()")
+    || !sources.sessionResource.includes("window.visualViewport?.addEventListener")) {
+    problems.push("portal focus: Session Resource popover focus/viewport contract is missing");
+  }
+  if (!sources.messageView.includes("is-estimate")
+    || !sources.messageView.includes("estimatedTps")
+    || !sources.messageView.includes('is-${tier}')
+    || !sources.css.includes(".assistant-tps-badge.is-fast")
+    || !sources.css.includes(".assistant-tps-badge.is-steady")
+    || !sources.css.includes(".assistant-tps-badge.is-moderate")
+    || !sources.css.includes(".assistant-tps-badge.is-slow")) {
+    problems.push("session performance: live TPS must keep estimate label and speed-tier classes");
+  }
+  if (!sources.shell.includes("SessionResourcePanel")
+    || !sources.sessionResource.includes("sessionNoAccurateSamples")
+    || !sources.sessionResource.includes("sessionMixedModelsNote")) {
+    problems.push("session performance: resource panel empty/mixed-model contract is missing");
+  }
   if (!sources.chatInput.includes('aria-haspopup="listbox"')
     || !sources.chatInput.includes('role="listbox"')
     || !sources.chatInput.includes('role="option"')
@@ -422,6 +448,8 @@ const sources: ThemeSources = {
   workbenchSkinHook: readSource("hooks/useWorkbenchSkin.ts"),
   workbenchSkinLib: readSource("lib/theme-skin.ts"),
   shell: readSource("components/AppShell.tsx"),
+  sessionResource: readSource("components/SessionResourcePanel.tsx"),
+  messageView: readSource("components/MessageView.tsx"),
   chatInput: readSource("components/ChatInput.tsx"),
   appDialog: readSource("components/AppDialogProvider.tsx"),
   extensionDialog: readSource("components/ExtensionDialogHost.tsx"),

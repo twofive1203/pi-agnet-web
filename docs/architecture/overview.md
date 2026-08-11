@@ -106,6 +106,16 @@ Recent-session browse order uses file mtime (then filename timestamp, then path)
 - Session JSONL files are not modified for this UI-only projection.
 - MVP tracks built-in `edit` and `write` tools only; arbitrary `bash` file mutations are not shown unless a future scanner/sandbox design adds explicit support.
 
+### Session performance metrics
+
+- Durable session TPS/TTFT is a WebUI-owned aggregate sidecar at `~/.pi/agent/session-performance/<encoded-session-id>.json`. It stores counters and provider/model identifiers only — never prompts, message content, or per-call history.
+- Timing is captured on the raw in-process `AgentSession.subscribe()` boundary in `lib/rpc-manager.ts` **before** `SubagentProgressThrottler` / `AgentEventThrottler` and independent of browser SSE listeners or presentation throttling.
+- Sample windows: `turn_start` → first non-empty text/thinking/tool-call delta (TTFT) → ordinary Assistant `message_end` (stream duration). Numerator is provider-reported `usage.output`. Invalid/error/aborted/zero-duration/missing-boundary calls are excluded rather than guessed.
+- Weighted session TPS = total output tokens ÷ total stream duration; average TTFT is arithmetic mean. Mixed-model sessions expose one session total plus stable provider/model rows.
+- No historical backfill from JSONL timestamps. Old sessions start with an accurate empty state until new ordinary Assistant calls are observed after the feature is installed.
+- `sessionPerformance` is projected beside (not inside) billing `sessionStats`. Global Usage, Automation, Subagent, compaction, and branch-summary stats are unchanged.
+- After a successful sidecar write, a bounded `session_performance_update` SSE event carries the public summary. Session delete awaits wrapper destroy/flush before removing both sidecars so queued writes cannot recreate files.
+
 ### Models and tools
 
 - `GET /api/models` returns `defaultModel` from `~/.pi/agent/settings.json`.

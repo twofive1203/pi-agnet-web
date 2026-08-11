@@ -10,6 +10,8 @@ import { FileViewer } from "./FileViewer";
 import { TabBar, type Tab } from "./TabBar";
 import { ChatGptUsagePanel } from "./ChatGptUsagePanel";
 import { GrokUsagePanel } from "./GrokUsagePanel";
+import { SessionResourcePanel } from "./SessionResourcePanel";
+import type { SessionPerformanceSummary } from "@/lib/types";
 import { StoredSubagentPanel, SubagentBadgeIndicator } from "./SubagentObservation";
 import { WorkflowSessionWidget } from "./WorkflowSessionWidget";
 import type { WorkflowTaskDetail } from "@/lib/workflow-types";
@@ -274,6 +276,12 @@ export function AppShell() {
   const [sessionStats, setSessionStats] = useState<{ tokens: { input: number; output: number; cacheRead: number; cacheWrite: number }; cost?: number } | null>(null);
   const handleSessionStatsChange = useCallback((stats: { tokens: { input: number; output: number; cacheRead: number; cacheWrite: number }; cost?: number } | null) => {
     setSessionStats(stats);
+  }, []);
+
+  // Durable session performance summary — independent of billing stats.
+  const [sessionPerformance, setSessionPerformance] = useState<SessionPerformanceSummary | null>(null);
+  const handleSessionPerformanceChange = useCallback((performance: SessionPerformanceSummary | null) => {
+    setSessionPerformance(performance);
   }, []);
 
   // Agent running state drives the Inspector attention signal and Changes polling.
@@ -1093,68 +1101,19 @@ export function AppShell() {
             </button>
             </Tooltip>
           </div>
-          {((showChat && (sessionStats || contextUsage)) || webConfig?.chatgpt.usagePanelEnabled || webConfig?.grok.usagePanelEnabled) && (
+          {((showChat && (sessionStats || contextUsage || sessionPerformance)) || webConfig?.chatgpt.usagePanelEnabled || webConfig?.grok.usagePanelEnabled) && (
             <div className="app-resource-cluster" aria-label={t("app.resources")}>
-              {showChat && (sessionStats || contextUsage) && (() => {
-                const tokens = sessionStats?.tokens;
-                const cost = sessionStats?.cost ?? 0;
-                const formatCompact = (value: number) => value >= 1_000_000 ? `${(value / 1_000_000).toFixed(1)}M` : value >= 1000 ? `${(value / 1000).toFixed(0)}k` : String(value);
-                const totalTokens = tokens ? tokens.input + tokens.output + tokens.cacheRead + tokens.cacheWrite : 0;
-                const usageSummary = cost > 0
-                  ? (cost >= 0.01 ? `$${cost.toFixed(2)}` : `<$0.01`)
-                  : totalTokens > 0 ? formatCompact(totalTokens) : null;
-
-                let contextTone = "";
-                let contextSummary: string | null = null;
-                if (contextUsage?.contextWindow) {
-                  const percent = contextUsage.percent;
-                  if (percent !== null && percent > 90) contextTone = " is-danger";
-                  else if (percent !== null && percent > 70) contextTone = " is-warning";
-                  contextSummary = percent !== null ? `${percent.toFixed(0)}%` : "?";
-                }
-
-                const tooltipParts: string[] = [];
-                if (tokens) {
-                  tooltipParts.push(`in: ${tokens.input.toLocaleString()}`);
-                  tooltipParts.push(`out: ${tokens.output.toLocaleString()}`);
-                  tooltipParts.push(`cache read: ${tokens.cacheRead.toLocaleString()}`);
-                  tooltipParts.push(`cache write: ${tokens.cacheWrite.toLocaleString()}`);
-                  if (cost > 0) tooltipParts.push(`cost: $${cost.toFixed(4)}`);
-                }
-                if (contextUsage?.contextWindow) {
-                  const percent = contextUsage.percent;
-                  tooltipParts.push(`context: ${percent !== null ? percent.toFixed(1) + "%" : "unknown"} of ${contextUsage.contextWindow.toLocaleString()} tokens`);
-                }
-
-                if (!contextSummary && !usageSummary) return null;
-                return (
-                  <Tooltip content={tooltipParts.join("\n")} position="bottom">
-                  <button
-                    type="button"
-                    className="app-resource-session"
-                    aria-label={t("app.sessionUsage")}
-                    onPointerEnter={() => { void loadUsageStatsModal(); }}
-                    onFocus={() => { void loadUsageStatsModal(); }}
-                    onClick={() => {
-                      void loadUsageStatsModal();
-                      setUsageStatsOpen(true);
-                    }}
-                  >
-                    {contextSummary && (
-                      <span className={`app-resource-context${contextTone}`}>
-                        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                          <path d="M2 13V8a6 6 0 0 1 12 0v5" />
-                          <path d="M2 13h12" />
-                        </svg>
-                        <span className="app-resource-context-label">{t("app.contextUsage")}</span>
-                        <strong>{contextSummary}</strong>
-                      </span>
-                    )}
-                    {usageSummary && <span className="app-resource-cost">{usageSummary}</span>}
-                  </button>
-                  </Tooltip>
-                );
-              })()}
+              {showChat && (sessionStats || contextUsage || sessionPerformance) && (
+                <SessionResourcePanel
+                  sessionStats={sessionStats}
+                  sessionPerformance={sessionPerformance}
+                  contextUsage={contextUsage}
+                  onOpenGlobalUsage={() => {
+                    void loadUsageStatsModal();
+                    setUsageStatsOpen(true);
+                  }}
+                />
+              )}
               {(webConfig?.chatgpt.usagePanelEnabled || webConfig?.grok.usagePanelEnabled) && (
                 <div className="app-resource-providers">
                   {webConfig?.chatgpt.usagePanelEnabled && <ChatGptUsagePanel />}
@@ -1325,6 +1284,7 @@ export function AppShell() {
               onBranchDataChange={handleBranchDataChange}
               onSystemPromptChange={handleSystemPromptChange}
               onSessionStatsChange={handleSessionStatsChange}
+              onSessionPerformanceChange={handleSessionPerformanceChange}
               onContextUsageChange={handleContextUsageChange}
               onSubagentChange={handleSubagentChange}
               onAgentRunningChange={handleAgentRunningChange}

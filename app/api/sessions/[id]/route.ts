@@ -13,6 +13,7 @@ import {
 } from "@/lib/session-reader";
 import { getRpcSession } from "@/lib/rpc-manager";
 import { deleteSessionChangesSidecar } from "@/lib/session-file-changes";
+import { deleteSessionPerformanceSidecar, readSessionPerformanceSummary } from "@/lib/session-performance";
 import { deleteSessionArtifacts } from "@/lib/session-artifacts";
 import { getSessionBillingStats, hasSessionBillingUsage } from "@/lib/session-billing-stats";
 import { canonicalizeCwd } from "@/lib/cwd";
@@ -206,6 +207,13 @@ export async function GET(
       }
     }
 
+    let sessionPerformance = null;
+    try {
+      sessionPerformance = readSessionPerformanceSummary(id);
+    } catch {
+      sessionPerformance = null;
+    }
+
     return NextResponse.json({
       sessionId: id,
       filePath,
@@ -214,6 +222,7 @@ export async function GET(
       tree,
       context,
       sessionStats: hasSessionBillingUsage(billingStats) ? billingStats : null,
+      sessionPerformance,
       ...(agentState !== undefined ? { agentState } : {}),
     });
   } catch (error) {
@@ -287,9 +296,19 @@ export async function DELETE(
       }
     } catch { /* skip if dir unreadable */ }
 
-    getRpcSession(id)?.destroy();
+    // Await wrapper teardown + sidecar flush before deleting artifacts so a
+    // queued performance/changed-file write cannot recreate files after delete.
+    const rpc = getRpcSession(id);
+    if (rpc) {
+      try {
+        await rpc.destroyAsync();
+      } catch {
+        // Best-effort; continue cleanup even if dispose fails.
+      }
+    }
     deleteSessionArtifacts(filePath);
     deleteSessionChangesSidecar(id);
+    deleteSessionPerformanceSidecar(id);
     invalidateSessionPathCache(id);
     invalidateSessionIndex();
     return NextResponse.json({ ok: true });

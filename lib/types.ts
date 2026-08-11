@@ -83,6 +83,38 @@ export interface SessionBillingStats {
   cost: number;
 }
 
+/** Per provider/model breakdown of durable session performance samples. */
+export interface SessionPerformanceModelBreakdown {
+  provider: string;
+  model: string;
+  sampleCount: number;
+  totalOutputTokens: number;
+  totalStreamDurationMs: number;
+  totalTtftMs: number;
+  /** Weighted TPS for this provider/model row; null when no positive duration. */
+  avgTps: number | null;
+  /** Arithmetic mean TTFT in milliseconds. */
+  avgTtftMs: number | null;
+}
+
+/**
+ * Bounded, client-safe session performance summary.
+ * Derived from aggregate sidecar counters only — no per-call history.
+ */
+export interface SessionPerformanceSummary {
+  sampleCount: number;
+  totalOutputTokens: number;
+  totalStreamDurationMs: number;
+  totalTtftMs: number;
+  /** Weighted session TPS: totalOutputTokens / (totalStreamDurationMs/1000). */
+  avgTps: number | null;
+  /** Arithmetic mean TTFT across valid samples, in milliseconds. */
+  avgTtftMs: number | null;
+  /** True when more than one provider/model pair contributed samples. */
+  mixedModels: boolean;
+  byModel: SessionPerformanceModelBreakdown[];
+}
+
 export interface AssistantMessage {
   role: "assistant";
   content: AssistantContentBlock[];

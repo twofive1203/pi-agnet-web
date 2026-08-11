@@ -44,6 +44,7 @@ npm run test:browser      # browser binding protocol/manager + chrome-tab-debug 
 npm run test:agent-stream    # token-stream coalescing, agent_settled barriers, empty-completed retry, main-chat lifecycle integration
 npm run test:chat-errors     # chat/provider error classification + pre-send model readiness gate
 npm run test:session-changes # async changed-file projection ordering smoke
+npm run test:session-performance # durable session TPS/TTFT aggregate + lifecycle smoke
 npm run test:session-stats   # parent-session lifetime token/cost aggregation smoke
 npm run test:git-diff        # commit and staged/unstaged working-tree diff smoke
 npm run test:file-search     # bounded async workspace filename search smoke

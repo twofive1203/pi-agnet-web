@@ -5545,6 +5545,125 @@ html:is([data-wallpaper="on"], [data-wallpaper="image"], [data-wallpaper="gradie
   color: var(--text-primary);
   font-weight: 650;
 }
+.app-resource-tps {
+  padding-left: 8px;
+  border-left: 1px solid var(--border-subtle);
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  color: var(--text-primary);
+  font-weight: 650;
+}
+.app-resource-tps-label {
+  color: var(--text-tertiary);
+  font-weight: 600;
+}
+.app-resource-tps-unit {
+  color: var(--text-tertiary);
+  font-size: 10px;
+  font-weight: 600;
+}
+.session-resource-popover {
+  width: min(400px, calc(100vw - 16px));
+  max-height: min(70vh, 560px);
+}
+.session-resource-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 2px;
+  border-top: 1px solid var(--border-subtle);
+}
+.session-resource-section:first-of-type {
+  border-top: 0;
+  padding-top: 0;
+}
+.session-resource-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 12px;
+}
+.session-resource-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.session-resource-metric-label {
+  color: var(--text-tertiary);
+  font-size: 11px;
+}
+.session-resource-metric strong {
+  color: var(--text-primary);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+.session-resource-note {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  line-height: 1.45;
+}
+.session-resource-model-list {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.session-resource-model-row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 9px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--surface-subtle);
+}
+.session-resource-model-name {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+.session-resource-model-name strong {
+  color: var(--text-primary);
+  font-weight: 700;
+}
+.session-resource-model-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.session-resource-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 2px;
+  border-top: 1px solid var(--border-subtle);
+}
+.session-resource-global-usage {
+  min-height: var(--control-height-sm);
+  padding: 0 12px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  background: var(--surface-app);
+  color: var(--text-accent);
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+}
+.session-resource-global-usage:hover {
+  background: var(--surface-hover);
+}
+.session-resource-global-usage:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: 2px;
+}
 .app-resource-providers {
   display: flex;
   align-items: stretch;
@@ -5682,13 +5801,15 @@ html:is([data-wallpaper="on"], [data-wallpaper="image"], [data-wallpaper="gradie
 
 @container topbar (max-width: 760px) {
   .workspace-breadcrumb-label,
-  .app-resource-context-label {
+  .app-resource-context-label,
+  .app-resource-tps-label {
     display: none;
   }
   .breadcrumb-session { max-width: 180px; }
 }
 @container topbar (max-width: 560px) {
   .app-resource-cost,
+  .app-resource-tps-unit,
   .app-resource-cluster .usage-panel-trigger-name,
   .app-resource-cluster .usage-pie-label {
     display: none;
@@ -8660,7 +8781,7 @@ html:is([data-wallpaper="on"], [data-wallpaper="image"], [data-wallpaper="gradie
 }
 .assistant-token-estimate { gap: 2px; }
 /* Soft status badges: soft fill + status foreground keeps contrast safe on
-   every theme palette; the previous solid hex chips ignored the skin. */
+   every theme palette. Live estimate still uses ~ label; tiers are visual only. */
 .assistant-tps-badge {
   margin-left: 6px;
   padding: 1px 6px;

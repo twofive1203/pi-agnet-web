@@ -2,6 +2,7 @@ import { createAgentSession, SessionManager } from "@earendil-works/pi-coding-ag
 import { cleanupSessionResources } from "@earendil-works/pi-ai";
 import { cacheSessionPath } from "./session-reader";
 import { flushSessionFileChanges, recordSessionFileChangeEvent } from "./session-file-changes";
+import { SessionPerformanceRecorder, flushSessionPerformance } from "./session-performance";
 import { canonicalizeCwd } from "./cwd";
 import {
   getSnflowChatLifecycleLoadDiagnostic,
@@ -100,6 +101,7 @@ export class AgentSessionWrapper {
   private subagentProgressThrottler: SubagentProgressThrottler<AgentEvent>;
   private activeToolCallIds = new Set<string>();
   private activeSubagentToolCallIds = new Set<string>();
+  private performanceRecorder: SessionPerformanceRecorder | null = null;
   private _alive = true;
 
   constructor(public readonly inner: AgentSessionLike, public readonly cwd: string) {
@@ -142,9 +144,32 @@ export class AgentSessionWrapper {
   }
 
   start(): void {
+    // Accurate performance timing is captured on the raw in-process subscription,
+    // upstream of SubagentProgressThrottler / AgentEventThrottler and independent of SSE listeners.
+    this.performanceRecorder = new SessionPerformanceRecorder({
+      sessionId: this.sessionId,
+      cwd: this.cwd,
+      sessionFile: this.sessionFile || undefined,
+      onSummary: (summary) => {
+        if (!this._alive) return;
+        this.emitEvent({
+          type: "session_performance_update",
+          sessionId: this.sessionId,
+          sessionPerformance: summary,
+        });
+      },
+    });
+
     this.unsubscribe = this.inner.subscribe((event: AgentEvent) => {
       const handlerStartedAt = nowForSubagentMetric();
       this.resetIdleTimer();
+
+      try {
+        this.performanceRecorder?.observe(event);
+      } catch {
+        // Performance observation must never interrupt normal agent event delivery.
+      }
+
       const toolCallId = typeof event.toolCallId === "string" ? event.toolCallId : undefined;
       const isSubagentEvent = toolCallId ? this.activeSubagentToolCallIds.has(toolCallId) : false;
       if (event.type === "tool_execution_start" && toolCallId) {
@@ -510,9 +535,17 @@ export class AgentSessionWrapper {
   }
 
   destroy(): void {
-    void this.destroyWithReason("quit").catch(() => {
+    void this.destroyAsync().catch(() => {
       // Teardown is best-effort for idle/process shutdown paths.
     });
+  }
+
+  /**
+   * Awaitable teardown used by session delete so sidecar cleanup cannot race a
+   * queued performance/changed-file write that would recreate files after delete.
+   */
+  destroyAsync(): Promise<void> {
+    return this.destroyWithReason("quit");
   }
 
   private destroyForReplacement(reason: "new" | "resume" | "fork"): Promise<void> {
@@ -523,6 +556,11 @@ export class AgentSessionWrapper {
     if (this.destroyPromise) return this.destroyPromise;
 
     this._alive = false;
+    // Close the recorder first so late onSummary callbacks cannot emit after teardown starts.
+    const performanceRecorder = this.performanceRecorder;
+    this.performanceRecorder = null;
+    performanceRecorder?.close();
+
     if (this.idleTimer) clearTimeout(this.idleTimer);
     this.unsubscribe?.();
     this.subagentProgressThrottler.clear();
@@ -549,6 +587,12 @@ export class AgentSessionWrapper {
         await flushSessionFileChanges(this.inner.sessionId);
       } catch {
         // Changed-file projection is best-effort and must not block SDK disposal on failure.
+      }
+      try {
+        await performanceRecorder?.flush();
+        await flushSessionPerformance(this.inner.sessionId);
+      } catch {
+        // Performance projection is best-effort and must not block SDK disposal on failure.
       }
       await disposeAgentSession(this.inner, reason);
       this.onDestroyCallback?.();

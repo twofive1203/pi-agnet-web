@@ -355,7 +355,15 @@ function AssistantMessageView({
                   </span>
                   {tps !== null && (() => {
                     const tier = tps >= 50 ? "fast" : tps >= 30 ? "steady" : tps >= 15 ? "moderate" : "slow";
-                    return <span className={`assistant-tps-badge is-${tier}`}>{tps.toFixed(1)} t/s</span>;
+                    return (
+                      <span
+                        className={`assistant-tps-badge is-estimate is-${tier}`}
+                        title={t("chat.estimatedTps")}
+                        aria-label={t("chat.estimatedTpsValue", { value: tps.toFixed(1) })}
+                      >
+                        ~{tps.toFixed(1)} t/s
+                      </span>
+                    );
                   })()}
                 </span>
               )}
