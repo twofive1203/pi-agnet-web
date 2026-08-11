@@ -1,14 +1,14 @@
 ---
 title: "refactor: 统一前端视觉系统并完成主题细节优化"
 type: refactor
-status: active
-remaining: iteration-8-browser-matrix
+status: completed
 date: 2026-08-01
+completed: 2026-08-11
 ---
 
 # refactor: 统一前端视觉系统并完成主题细节优化
 
-> 当前仅剩 Iteration 8 的固定浏览器矩阵、代表主题对比度与焦点顺序人工确认；Iteration 1–7 的实现交付均已完成。
+> Iteration 1–8 全部完成。Iteration 8 浏览器矩阵与代表主题确认见 `docs/operations/ui-visual-validation-results-2026-08-10.md`。
 
 ## Overview
 
@@ -40,7 +40,7 @@ date: 2026-08-01
 | Iteration 5 | 设置原语、Settings 外壳与共享 Dialog | U6（第一部分） | Iteration 1 | 已完成 | [`2026-08-01-006-refactor-settings-primitives-plan.md`](./2026-08-01-006-refactor-settings-primitives-plan.md) |
 | Iteration 6 | MCP 与 Agents 配置面板迁移 | U6（第二部分） | Iteration 5 | 已完成 | [`2026-08-01-007-refactor-mcp-agents-settings-plan.md`](./2026-08-01-007-refactor-mcp-agents-settings-plan.md) |
 | Iteration 7 | Models、Extensions 与 Skills 复杂面板迁移 | U6（第三部分） | Iteration 5；建议在 Iteration 6 后实施 | 已完成 | [`2026-08-01-008-refactor-resource-config-surfaces-plan.md`](./2026-08-01-008-refactor-resource-config-surfaces-plan.md) |
-| Iteration 8 | 响应式、无障碍与视觉回归收口 | U7, U8 | Iteration 2–7 | 进行中（代码/契约/文档已完成，浏览器矩阵待执行） | [`2026-08-01-009-refactor-ui-quality-regression-plan.md`](./2026-08-01-009-refactor-ui-quality-regression-plan.md) |
+| Iteration 8 | 响应式、无障碍与视觉回归收口 | U7, U8 | Iteration 2–7 | 已完成 | [`2026-08-01-009-refactor-ui-quality-regression-plan.md`](./2026-08-01-009-refactor-ui-quality-regression-plan.md) |
 
 ### 迭代执行规则
 

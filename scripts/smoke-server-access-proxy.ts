@@ -7,6 +7,8 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  BROWSER_PAIR_API_PATH,
+  BROWSER_UNPAIR_API_PATH,
   HEALTH_API_PATH,
   SERVER_ACCESS_COOKIE_NAME,
   UNLOCK_PATH,
@@ -17,8 +19,10 @@ import {
   getServerAccessPolicyPath,
   ipMatchesEntry,
   isApiPath,
+  isBrowserExtensionPairingPath,
   isClientIpAuthBypassed,
   isInsecureHttpAllowed,
+  isLoopbackClientAddress,
   isPublicPath,
   isSecureTransportRequired,
   isServerAccessAuthEnabled,
@@ -78,6 +82,24 @@ function testPublicPaths(): void {
   assert(!isPublicPath("/api/sessions"), "sessions not public");
   assert(!isPublicPath("/api/models"), "models not public");
   assert(!isPublicPath("/api/agent/events"), "agent sse not public");
+  assert(!isPublicPath(BROWSER_PAIR_API_PATH), "browser pair is not globally public");
+  assert(!isPublicPath(BROWSER_UNPAIR_API_PATH), "browser unpair is not globally public");
+  assert(isBrowserExtensionPairingPath(BROWSER_PAIR_API_PATH), "pair path classified");
+  assert(isBrowserExtensionPairingPath(`${BROWSER_PAIR_API_PATH}/`), "pair slash classified");
+  assert(isBrowserExtensionPairingPath(BROWSER_UNPAIR_API_PATH), "unpair path classified");
+  assert(!isBrowserExtensionPairingPath("/api/browser/status"), "status is not extension pairing path");
+  assert(!isBrowserExtensionPairingPath("/api/browser/bindings"), "bindings is not extension pairing path");
+  assert(isLoopbackClientAddress("127.0.0.1"), "loopback v4");
+  assert(isLoopbackClientAddress("::1"), "loopback v6");
+  assert(!isLoopbackClientAddress("10.0.0.5"), "non-loopback rejected");
+  assert(
+    proxySource.includes("isBrowserExtensionPairingPath"),
+    "proxy must special-case extension pairing paths",
+  );
+  assert(
+    proxySource.includes('action === "exchange"') || proxySource.includes("action === 'exchange'"),
+    "proxy must allow cookie-free exchange for the Chrome extension",
+  );
   console.log("OK public-paths");
 }
 

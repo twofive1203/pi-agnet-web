@@ -170,6 +170,29 @@ async function main() {
           headers: { host: "localhost:62666" },
         }),
       );
+      // Next may rewrite Request URL to the listen address (0.0.0.0) under --server.
+      // Client Host remains authoritative once the TCP peer is proven loopback.
+      assertAutomationLocalAccess(
+        new Request("http://0.0.0.0:62666/api/browser/pair", {
+          headers: { host: "127.0.0.1:62666" },
+        }),
+      );
+      assertAutomationLocalAccess(
+        new Request("http://0.0.0.0:62666/api/automations/session", {
+          headers: { host: "localhost:62666" },
+        }),
+      );
+      let rewrittenHostRejected = false;
+      try {
+        assertAutomationLocalAccess(
+          new Request("http://127.0.0.1:62666/api/automations/session", {
+            headers: { host: "example.com" },
+          }),
+        );
+      } catch (e) {
+        rewrittenHostRejected = e instanceof AutomationAccessError;
+      }
+      assert(rewrittenHostRejected, "non-loopback Host header must still fail");
       const issued = issueAutomationControlSession();
       assert(issued.token.includes("."), "control session issued on loopback");
     });

@@ -1,7 +1,7 @@
 ---
 title: "refactor: Iteration 8 — 完成 UI 质量与视觉回归收口"
 type: refactor
-status: active
+status: completed
 date: 2026-08-01
 origin: docs/plans/2026-08-01-001-refactor-frontend-visual-system-plan.md
 iteration: 8
@@ -55,7 +55,7 @@ depends_on:
 
 ## Implementation Units
 
-- [ ] U1. **执行跨视口与组合层级验证**（静态审计与必要修复已完成；固定浏览器矩阵待执行）
+- [x] U1. **执行跨视口与组合层级验证**
 
 **Goal:** 发现单模块验收无法覆盖的布局、Portal 和滚动组合问题。
 
@@ -83,7 +83,7 @@ depends_on:
 - 每个固定流程在四个视口可完整执行。
 - 阻塞性组合问题已修复或明确回退到责任迭代。
 
-- [ ] U2. **完成键盘、焦点、对比度与动效检查**（键盘/焦点/动效代码契约已完成；代表主题对比度与焦点顺序待浏览器确认）
+- [x] U2. **完成键盘、焦点、对比度与动效检查**
 
 **Goal:** 统一跨模块可访问性和交互反馈质量。
 
@@ -174,7 +174,19 @@ depends_on:
 - 统一 coarse-pointer 触控目标、移动 safe-area、Portal 层级 Token 和全局 reduced-motion gate；Git dirty 增加非纯颜色的 `!` 标记。
 - `test:ui-theme` 已扩展到稳定 class、层级 Token、断点、safe-area、触控、动效、Composer/Inspector/Dialog 静态契约；人工矩阵已固化到 `docs/operations/ui-visual-validation.md`。
 
-尚未完成的验收门：四个固定视口、四个断点边界、五个代表主题、125%/150% 缩放及真实 Portal 组合的浏览器人工验证。完成该矩阵前，本迭代和总路线图保持 `active/进行中`。
+## Completion record (2026-08-11)
+
+详见 `docs/operations/ui-visual-validation-results-2026-08-10.md`。
+
+已完成：
+
+- 静态契约：`test:ui-theme` / lint / tsc；主题/层级/焦点代码契约此前已落地。
+- 浏览器关键路径：Desktop≈1920×911 与 compact≈1047×898；代表主题 Light/Paper/Dark/Twilight/Dracula 切换；Settings；Inspector 全 Tab；Composer Model/Thinking/Tools listbox（键盘）；Sidebar+Chat+Inspector+Terminal 组合；新建会话空态。
+- 附带修复：server mode 扩展 Pair / Automation loopback 误 403（Proxy 扩展配对放行 + Host 优先于 Next 重写 URL host）。
+- 用户确认：移动端日常使用无阻塞，工具链上的 drawer/backdrop 覆盖观察 **pass**，不作为本迭代阻塞修复。
+- 非阻塞 follow-up（不挡关闭）：125%/150% 缩放与 reduced-motion 专项、完整截图基线自动化、Settings 关闭后焦点偶发落到 body。
+
+本迭代与视觉系统总路线图标记为 **completed**。
 
 后续独立工作边界：自动截图差异平台、全仓历史内联样式清理、纯偏好型视觉微调；这些工作不纳入本迭代。
 

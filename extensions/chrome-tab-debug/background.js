@@ -112,19 +112,51 @@ function sendSocket(obj) {
   socket.send(text);
 }
 
+function formatPairHttpError(status, data) {
+  const message = (data && typeof data.error === "string" && data.error) || "Pairing failed";
+  const code = data && typeof data.code === "string" ? data.code : "";
+  if (status === 401 || code === "unauthorized") {
+    return "Snail Pi is in server mode and blocked extension pairing. Update Snail Pi (loopback pair bypass) or open the Web UI on 127.0.0.1 and retry.";
+  }
+  if (status === 403 || code === "forbidden" || /origin/i.test(message)) {
+    return "Pairing was blocked by the server origin/auth gate. Ensure Snail Pi includes the loopback extension-pair bypass, then reload this extension.";
+  }
+  if (status === 426 || code === "secure_transport_required") {
+    return "Server mode requires HTTPS for ordinary traffic; extension pairing must use loopback HTTP. Update Snail Pi or set PI_WEB_ALLOW_INSECURE_HTTP=1 for local trials.";
+  }
+  if (!status) return message;
+  return `${message} (HTTP ${status}${code ? ` · ${code}` : ""})`;
+}
+
 async function pairWithCode(pairingCode, webPort = DEFAULT_WEB_PORT) {
-  const res = await fetch(`http://127.0.0.1:${webPort}/api/browser/pair`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      action: "exchange",
-      pairingCode,
-      extensionOrigin: chrome.runtime.getURL("").replace(/\/$/, ""),
-      label: "Snail Pi Tab Debug",
-    }),
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || "Pairing failed");
+  const normalizedCode = String(pairingCode || "").trim();
+  if (!normalizedCode) throw new Error("Pairing code is required");
+  let res;
+  try {
+    res = await fetch(`http://127.0.0.1:${webPort}/api/browser/pair`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        action: "exchange",
+        pairingCode: normalizedCode,
+        extensionOrigin: chrome.runtime.getURL("").replace(/\/$/, ""),
+        label: "Snail Pi Tab Debug",
+      }),
+    });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(`Cannot reach Snail Pi at http://127.0.0.1:${webPort} (${detail}). Is the Web UI running locally?`);
+  }
+  let data = {};
+  try {
+    data = await res.json();
+  } catch {
+    data = {};
+  }
+  if (!res.ok) throw new Error(formatPairHttpError(res.status, data));
+  if (!data.clientId || !data.installationSecret) {
+    throw new Error("Pairing response missing client credentials");
+  }
   await setLocalInstall({
     clientId: data.clientId,
     installationSecret: data.installationSecret,

@@ -21,7 +21,9 @@ import {
   forbiddenJson,
   getAuthBypassEntries,
   isApiPath,
+  isBrowserExtensionPairingPath,
   isClientIpAuthBypassed,
+  isLoopbackClientAddress,
   isPublicPath,
   isSecureTransportRequired,
   isServerAccessAuthEnabled,
@@ -73,6 +75,31 @@ export async function proxy(request: NextRequest): Promise<NextResponse | Respon
 
   if (isPublicPath(pathname)) {
     return NextResponse.next();
+  }
+
+  // Chrome extension installation pairing stays cookie-free and same-origin-free.
+  // The extension always talks to http://127.0.0.1 and cannot carry the WebUI access-key
+  // cookie or an exact page Origin. Prefer a proven loopback TCP peer; when socket capture is
+  // unavailable in this layer, only extension-owned actions (exchange/connect_token/unpair)
+  // skip the cookie gate and the route handlers still enforce direct loopback.
+  // issue/configure remain fully authenticated so server-mode code issuance is not anonymous.
+  if (isBrowserExtensionPairingPath(pathname) && isStateChangingMethod(request.method)) {
+    const remote = resolveSocketRemoteAddress();
+    if (isLoopbackClientAddress(remote)) {
+      return NextResponse.next();
+    }
+    if (pathname === "/api/browser/unpair" || pathname === "/api/browser/unpair/") {
+      return NextResponse.next();
+    }
+    try {
+      const peek = await request.clone().json() as { action?: unknown };
+      const action = typeof peek.action === "string" ? peek.action : "";
+      if (action === "exchange" || action === "connect_token") {
+        return NextResponse.next();
+      }
+    } catch {
+      // Fall through to normal origin/auth gates when the body is not JSON.
+    }
   }
 
   // SameSite cookies still travel between sibling origins on the same site.

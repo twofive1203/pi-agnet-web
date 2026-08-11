@@ -106,26 +106,28 @@ export function assertDirectLoopbackConnection(req?: Request): string {
 
   // Host/URL are advisory consistency checks only after remote is proven loopback.
   // A spoofed Host from a remote client never reaches here because remote would fail first.
+  // Prefer the client Host header: Next may rewrite Request URL hostname to the listen
+  // address (e.g. 0.0.0.0) or another non-loopback label even when the peer is 127.0.0.1.
   if (req) {
-    try {
-      const url = new URL(req.url);
-      if (url.hostname && !isLoopbackHostLabel(url.hostname) && !isLoopbackIp(url.hostname)) {
-        throw new AutomationAccessError(
-          "Automation request URL host is not loopback",
-          403,
-          "security",
-        );
-      }
-    } catch (error) {
-      if (error instanceof AutomationAccessError) throw error;
-      // Invalid URL — fail closed
-      throw new AutomationAccessError("Invalid request URL", 403, "security");
-    }
-    const host = req.headers.get("host") ?? "";
-    if (host) {
-      const hostLabel = host.split(":")[0] ?? host;
+    const hostHeader = (req.headers.get("host") ?? "").trim();
+    if (hostHeader) {
+      const hostLabel = hostHeader.split(":")[0] ?? hostHeader;
       if (!isLoopbackHostLabel(hostLabel) && !isLoopbackIp(hostLabel)) {
         throw new AutomationAccessError("Host header is not loopback", 403, "security");
+      }
+    } else {
+      try {
+        const url = new URL(req.url);
+        if (url.hostname && !isLoopbackHostLabel(url.hostname) && !isLoopbackIp(url.hostname)) {
+          throw new AutomationAccessError(
+            "Automation request URL host is not loopback",
+            403,
+            "security",
+          );
+        }
+      } catch (error) {
+        if (error instanceof AutomationAccessError) throw error;
+        throw new AutomationAccessError("Invalid request URL", 403, "security");
       }
     }
   }

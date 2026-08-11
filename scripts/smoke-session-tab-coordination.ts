@@ -14,7 +14,7 @@ import {
   type SessionTabPeer,
 } from "../lib/session-tab-coordination";
 
-function main() {
+async function main() {
   assert.match(sessionTabChannelName("abc/def"), /pi-web:session-tab:v1:/);
   assert.notEqual(createSessionTabId(1), createSessionTabId(2));
 
@@ -108,8 +108,8 @@ function main() {
   assert.equal(peers.has("tab_reader"), false);
 
   // Source contract: ChatWindow/ChatInput wire the lock.
-  const fs = require("node:fs") as typeof import("node:fs");
-  const path = require("node:path") as typeof import("node:path");
+  const fs = await import("node:fs");
+  const path = await import("node:path");
   const root = path.resolve(__dirname, "..");
   const chatWindow = fs.readFileSync(path.join(root, "components/ChatWindow.tsx"), "utf8");
   const chatInput = fs.readFileSync(path.join(root, "components/ChatInput.tsx"), "utf8");

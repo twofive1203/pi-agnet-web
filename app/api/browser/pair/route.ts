@@ -10,6 +10,7 @@ import {
 } from "@/lib/browser-pairing";
 import { ensureBrowserBridgeStarted } from "@/lib/browser-bridge";
 import { BrowserControlError, DEFAULT_BROWSER_BRIDGE_PORT } from "@/lib/browser-protocol";
+import { assertDirectLoopbackConnection } from "@/lib/automation-local-access";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -46,6 +47,8 @@ export async function POST(req: Request) {
     }
 
     if (action === "exchange") {
+      // Extension-owned: always hits http://127.0.0.1 without WebUI cookies.
+      assertDirectLoopbackConnection(req);
       if (typeof body.pairingCode !== "string") {
         return NextResponse.json({ error: "pairingCode is required" }, { status: 400 });
       }
@@ -61,6 +64,8 @@ export async function POST(req: Request) {
     }
 
     if (action === "connect_token") {
+      // Extension-owned reconnect handshake; keep loopback-only even in server mode.
+      assertDirectLoopbackConnection(req);
       if (typeof body.clientId !== "string" || typeof body.installationSecret !== "string") {
         return NextResponse.json({ error: "clientId and installationSecret are required" }, { status: 400 });
       }
@@ -87,8 +92,17 @@ export async function POST(req: Request) {
     return NextResponse.json({ success: true, ...offer, installations: listInstallations() });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    const status = error instanceof BrowserControlError ? 400 : 500;
-    const code = error instanceof BrowserControlError ? error.code : undefined;
+    const statusFromError = error && typeof error === "object" && "status" in error
+      ? Number((error as { status?: unknown }).status)
+      : undefined;
+    const status = error instanceof BrowserControlError
+      ? 400
+      : (Number.isFinite(statusFromError) ? statusFromError! : 500);
+    const code = error instanceof BrowserControlError
+      ? error.code
+      : (error && typeof error === "object" && "code" in error
+        ? String((error as { code?: unknown }).code ?? "error")
+        : undefined);
     return NextResponse.json({ error: message, code }, { status });
   }
 }

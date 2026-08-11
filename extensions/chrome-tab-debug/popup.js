@@ -145,11 +145,32 @@ async function refresh() {
 
 $("pair-btn").addEventListener("click", async () => {
   showError("");
-  const pairingCode = $("pairing-code").value;
+  const pairingCode = String($("pairing-code").value || "").trim();
   const webPort = Number($("web-port").value || 62666);
-  const result = await send("pair", { pairingCode, webPort });
-  if (result?.error) showError(result.error);
-  await refresh();
+  if (!pairingCode) {
+    showError("Enter the pairing code from Snail Pi first.");
+    return;
+  }
+  if (!Number.isFinite(webPort) || webPort <= 0 || webPort > 65535) {
+    showError("Web UI port must be a valid TCP port.");
+    return;
+  }
+  const btn = $("pair-btn");
+  const previousLabel = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "Pairing…";
+  try {
+    const result = await send("pair", { pairingCode, webPort });
+    if (result?.error) {
+      showError(result.error);
+    } else {
+      showError("");
+    }
+    await refresh();
+  } finally {
+    btn.disabled = false;
+    btn.textContent = previousLabel || "Pair";
+  }
 });
 
 $("accept-btn")?.addEventListener("click", async () => {

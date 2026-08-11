@@ -37,6 +37,14 @@ export const STATUS_API_PATH = "/api/server-auth/status";
 /** Public process health probe (identity + aggregate counters; no session/project paths). */
 export const HEALTH_API_PATH = "/api/health";
 
+/**
+ * Chrome extension installation pairing endpoints.
+ * Not unconditionally public: Proxy may skip cookie/same-origin only for proven loopback peers.
+ * Route handlers still enforce loopback for extension-owned actions (exchange/connect_token/unpair).
+ */
+export const BROWSER_PAIR_API_PATH = "/api/browser/pair";
+export const BROWSER_UNPAIR_API_PATH = "/api/browser/unpair";
+
 /** Max access-key length accepted by login. */
 export const MAX_ACCESS_KEY_LENGTH = 512;
 /** Max JSON body bytes for login. */
@@ -406,6 +414,19 @@ export function isPublicPath(pathname: string): boolean {
   if (pathname.startsWith("/_next/image")) return true;
 
   return false;
+}
+
+/**
+ * Paths used by the unpacked Chrome extension against http://127.0.0.1.
+ * Never treat these as globally public: server mode may listen on non-loopback interfaces.
+ */
+export function isBrowserExtensionPairingPath(pathname: string): boolean {
+  return (
+    pathname === BROWSER_PAIR_API_PATH
+    || pathname === `${BROWSER_PAIR_API_PATH}/`
+    || pathname === BROWSER_UNPAIR_API_PATH
+    || pathname === `${BROWSER_UNPAIR_API_PATH}/`
+  );
 }
 
 export function isApiPath(pathname: string): boolean {
