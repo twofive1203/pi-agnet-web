@@ -1,10 +1,22 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "@/components/I18nProvider";
 import { formatNumber } from "@/lib/i18n";
-import { SettingsButton, SettingsInput, SettingsNotice, SettingsTab, SettingsTabs } from "@/components/ui/SettingsPrimitives";
+import {
+  SettingsButton,
+  SettingsInput,
+  SettingsNotice,
+  SettingsTab,
+  SettingsTabs,
+} from "@/components/ui/SettingsPrimitives";
+import { formatCompactTokens, UsageTokenChart, type UsageChartMode } from "@/components/UsageTokenChart";
 import type { UsageStatsResult, UsageTotals } from "@/lib/usage-stats";
+import {
+  buildInclusiveUsageRangeEnding,
+  totalUsageTokens,
+  validateUsageDateRangeDraft,
+} from "@/lib/usage-timeline";
 
 interface UsageStatsModalProps {
   cwd?: string | null;
@@ -12,12 +24,17 @@ interface UsageStatsModalProps {
 }
 
 type UsageScope = "all" | "cwd";
+type RangePreset = "7" | "30" | "90" | "custom";
+
+interface AppliedQuery {
+  from: string;
+  to: string;
+  scope: UsageScope;
+  preset: RangePreset;
+}
 
 /**
- * 将日期对象格式化为日期输入框需要的本地日期字符串。
- *
- * @param date 需要格式化的日期对象。
- * @returns `YYYY-MM-DD` 格式的本地日期。
+ * Format a Date as a local `YYYY-MM-DD` date-input value.
  */
 function toDateInputValue(date: Date): string {
   const year = date.getFullYear();
@@ -26,101 +43,179 @@ function toDateInputValue(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
-/**
- * 生成默认的统计日期范围。
- *
- * @returns 默认近 7 天的日期输入框值。
- */
-function getDefaultInputRange(): { from: string; to: string } {
-  const to = new Date();
-  const from = new Date(to);
-  from.setDate(from.getDate() - 6);
-  return { from: toDateInputValue(from), to: toDateInputValue(to) };
+function todayLocalDate(): string {
+  return toDateInputValue(new Date());
 }
 
-/**
- * 格式化美元费用，保留小额费用的可读性。
- *
- * @param value 需要格式化的费用数字。
- * @returns 美元格式字符串。
- */
+function defaultSevenDayRange(): { from: string; to: string } {
+  return buildInclusiveUsageRangeEnding(todayLocalDate(), 7) ?? {
+    from: todayLocalDate(),
+    to: todayLocalDate(),
+  };
+}
+
 function formatCost(value: number): string {
   if (value <= 0) return "$0.00";
   if (value < 0.01) return "<$0.01";
   return `$${value.toFixed(2)}`;
 }
 
-/**
- * 格式化 token 数量。
- *
- * @param value 需要格式化的 token 数。
- * @returns 带千分位的 token 字符串。
- */
 function formatTokens(value: number, locale: import("@/lib/i18n").Locale): string {
   return formatNumber(value, locale);
 }
 
-function formatTokensM(value: number, locale: import("@/lib/i18n").Locale): string {
-  return `${formatNumber(Math.round(value / 1_000_000), locale)}M`;
+function formatTokensExact(value: number, locale: import("@/lib/i18n").Locale): string {
+  return formatNumber(value, locale);
 }
 
 /**
- * 计算 token 汇总总数。
- *
- * @param totals token 和费用汇总对象。
- * @returns input、output、cacheRead、cacheWrite 的总和。
- */
-function totalTokens(totals: UsageTotals): number {
-  return totals.input + totals.output + totals.cacheRead + totals.cacheWrite;
-}
-
-/**
- * 渲染日期范围费用统计弹窗。
- *
- * @param props cwd 为当前项目目录，onClose 用于关闭弹窗。
- * @returns 用于查看费用统计的 React 节点。
+ * Global Usage statistics modal with Token structure chart and range controls.
  */
 export function UsageStatsModal({ cwd, onClose }: UsageStatsModalProps) {
   const { t, locale } = useI18n();
-  const defaults = useMemo(() => getDefaultInputRange(), []);
-  const [from, setFrom] = useState(defaults.from);
-  const [to, setTo] = useState(defaults.to);
-  const [scope, setScope] = useState<UsageScope>(cwd ? "cwd" : "all");
+  const initialRange = useMemo(() => defaultSevenDayRange(), []);
+  const initialScope: UsageScope = cwd ? "cwd" : "all";
+
+  const [preset, setPreset] = useState<RangePreset>("7");
+  const [draftFrom, setDraftFrom] = useState(initialRange.from);
+  const [draftTo, setDraftTo] = useState(initialRange.to);
+  const [scope, setScope] = useState<UsageScope>(initialScope);
+  const [applied, setApplied] = useState<AppliedQuery>({
+    from: initialRange.from,
+    to: initialRange.to,
+    scope: initialScope,
+    preset: "7",
+  });
+  const [chartMode, setChartMode] = useState<UsageChartMode>("absolute");
+
   const [stats, setStats] = useState<UsageStatsResult | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [initialError, setInitialError] = useState<string | null>(null);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
 
-  const activeCwd = scope === "cwd" ? cwd : null;
-  const largestDailyCost = Math.max(0, ...(stats?.byDay.map((day) => day.totals.cost) ?? []));
+  const requestSeqRef = useRef(0);
+  const abortRef = useRef<AbortController | null>(null);
+  const statsRef = useRef<UsageStatsResult | null>(null);
+  statsRef.current = stats;
 
-  const loadStats = useCallback(async (signal?: AbortSignal) => {
-    setLoading(true);
-    setError(null);
+  // Drop cwd scope when the active workspace disappears.
+  useEffect(() => {
+    if (!cwd && scope === "cwd") {
+      setScope("all");
+      setApplied((prev) => (prev.scope === "cwd" ? { ...prev, scope: "all" } : prev));
+    }
+  }, [cwd, scope]);
+
+  const draftValidation = validateUsageDateRangeDraft(draftFrom, draftTo);
+  const canApplyCustom = draftValidation == null;
+  const customMatchesApplied =
+    draftFrom === applied.from && draftTo === applied.to && applied.preset === "custom";
+
+  const applyPreset = useCallback((next: Exclude<RangePreset, "custom">) => {
+    const days = next === "7" ? 7 : next === "30" ? 30 : 90;
+    const range = buildInclusiveUsageRangeEnding(todayLocalDate(), days);
+    if (!range) return;
+    setPreset(next);
+    setDraftFrom(range.from);
+    setDraftTo(range.to);
+    setApplied((prev) => ({
+      from: range.from,
+      to: range.to,
+      scope: prev.scope,
+      preset: next,
+    }));
+  }, []);
+
+  const applyCustomRange = useCallback(() => {
+    if (validateUsageDateRangeDraft(draftFrom, draftTo) != null) return;
+    setPreset("custom");
+    setApplied((prev) => ({
+      from: draftFrom,
+      to: draftTo,
+      scope: prev.scope,
+      preset: "custom",
+    }));
+  }, [draftFrom, draftTo]);
+
+  const applyScope = useCallback((next: UsageScope) => {
+    if (next === "cwd" && !cwd) return;
+    setScope(next);
+    setApplied((prev) => ({ ...prev, scope: next }));
+  }, [cwd]);
+
+  const loadStats = useCallback(async (query: AppliedQuery, opts?: { isRefresh?: boolean }) => {
+    const seq = ++requestSeqRef.current;
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    const hasStats = statsRef.current != null;
+    if (hasStats || opts?.isRefresh) {
+      setRefreshing(true);
+      setRefreshError(null);
+    } else {
+      setInitialLoading(true);
+      setInitialError(null);
+    }
+
     try {
-      const params = new URLSearchParams({ from, to });
-      if (activeCwd) params.set("cwd", activeCwd);
-      const res = await fetch(`/api/usage?${params.toString()}`, { signal });
+      const params = new URLSearchParams({
+        from: query.from,
+        to: query.to,
+        timeline: "auto",
+      });
+      // Never emit cwd-scoped requests without a real workspace path.
+      if (query.scope === "cwd" && cwd) params.set("cwd", cwd);
+      const res = await fetch(`/api/usage?${params.toString()}`, { signal: controller.signal });
       const data = await res.json() as UsageStatsResult & { error?: string };
+      if (seq !== requestSeqRef.current) return;
       if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
       setStats(data);
+      setInitialError(null);
+      setRefreshError(null);
     } catch (err) {
-      if (signal?.aborted) return;
-      setStats(null);
-      setError(err instanceof Error ? err.message : String(err));
+      if (controller.signal.aborted || seq !== requestSeqRef.current) return;
+      const message = err instanceof Error ? err.message : String(err);
+      if (statsRef.current != null) {
+        setRefreshError(message);
+      } else {
+        setStats(null);
+        setInitialError(message);
+      }
     } finally {
-      if (!signal?.aborted) setLoading(false);
+      if (seq === requestSeqRef.current) {
+        setInitialLoading(false);
+        setRefreshing(false);
+      }
     }
-  }, [activeCwd, from, to]);
+  }, [cwd]);
 
+  // Fetch whenever the applied query identity changes.
   useEffect(() => {
-    const controller = new AbortController();
-    void loadStats(controller.signal);
-    return () => controller.abort();
-  }, [loadStats]);
+    void loadStats(applied);
+    return () => {
+      abortRef.current?.abort();
+    };
+  }, [applied, loadStats]);
 
-  useEffect(() => {
-    if (!cwd && scope === "cwd") setScope("all");
-  }, [cwd, scope]);
+  const handleRefresh = useCallback(() => {
+    void loadStats(applied, { isRefresh: true });
+  }, [applied, loadStats]);
+
+  const customValidationMessage =
+    preset === "custom" || draftFrom !== applied.from || draftTo !== applied.to
+      ? draftValidation === "empty"
+        ? t("panels.usage.rangeInvalidEmpty")
+        : draftValidation === "malformed"
+          ? t("panels.usage.rangeInvalidMalformed")
+          : draftValidation === "order"
+            ? t("panels.usage.rangeInvalidOrder")
+            : null
+      : null;
+
+  const showBlockingError = !stats && Boolean(initialError);
+  const showInitialSkeleton = !stats && initialLoading && !initialError;
 
   return (
     <div
@@ -132,9 +227,7 @@ export function UsageStatsModal({ cwd, onClose }: UsageStatsModalProps) {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div
-        className="pi-modal-panel pi-modal-panel-wide usage-modal-panel"
-      >
+      <div className="pi-modal-panel pi-modal-panel-wide usage-modal-panel">
         <div className="pi-modal-header usage-modal-header">
           <div className="usage-modal-title-row">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
@@ -145,28 +238,91 @@ export function UsageStatsModal({ cwd, onClose }: UsageStatsModalProps) {
           </div>
 
           <div className="usage-modal-controls">
-            <label className="usage-filter-label">
-              {t("panels.usage.from")}
-              <SettingsInput
-                type="date"
-                value={from}
-                onChange={(e) => setFrom(e.target.value)}
-                className="usage-date-input"
-              />
-            </label>
-            <label className="usage-filter-label">
-              {t("panels.usage.to")}
-              <SettingsInput
-                type="date"
-                value={to}
-                onChange={(e) => setTo(e.target.value)}
-                className="usage-date-input"
-              />
-            </label>
-            <SettingsTabs aria-label={t("panels.usage.scopeAria")}>
-              {(["all", "cwd"] as UsageScope[]).map((item) => <SettingsTab key={item} active={scope === item} disabled={item === "cwd" && !cwd} onClick={() => setScope(item)}>{item === "all" ? t("panels.usage.scopeAll") : t("panels.usage.scopeCwd")}</SettingsTab>)}
+            <SettingsTabs aria-label={t("panels.usage.presetAria")}>
+              {([
+                ["7", t("panels.usage.preset7")],
+                ["30", t("panels.usage.preset30")],
+                ["90", t("panels.usage.preset90")],
+                ["custom", t("panels.usage.presetCustom")],
+              ] as const).map(([id, label]) => (
+                <SettingsTab
+                  key={id}
+                  active={preset === id}
+                  onClick={() => {
+                    if (id === "custom") {
+                      setPreset("custom");
+                      return;
+                    }
+                    applyPreset(id);
+                  }}
+                >
+                  {label}
+                </SettingsTab>
+              ))}
             </SettingsTabs>
-            <SettingsButton size="icon" onClick={() => void loadStats()} disabled={loading} busy={loading} title={t("panels.usage.refresh")} aria-label={t("panels.usage.refreshAria")}>
+
+            {preset === "custom" ? (
+              <div className="usage-custom-range">
+                <label className="usage-filter-label">
+                  {t("panels.usage.from")}
+                  <SettingsInput
+                    type="date"
+                    value={draftFrom}
+                    onChange={(e) => {
+                      setDraftFrom(e.target.value);
+                      setPreset("custom");
+                    }}
+                    className="usage-date-input"
+                  />
+                </label>
+                <label className="usage-filter-label">
+                  {t("panels.usage.to")}
+                  <SettingsInput
+                    type="date"
+                    value={draftTo}
+                    onChange={(e) => {
+                      setDraftTo(e.target.value);
+                      setPreset("custom");
+                    }}
+                    className="usage-date-input"
+                  />
+                </label>
+                <SettingsButton
+                  size="sm"
+                  variant="secondary"
+                  disabled={!canApplyCustom || customMatchesApplied}
+                  onClick={applyCustomRange}
+                >
+                  {t("panels.usage.applyRange")}
+                </SettingsButton>
+              </div>
+            ) : (
+              <span className="usage-range-summary" title={`${applied.from} – ${applied.to}`}>
+                {t("panels.usage.rangeSummary", { from: applied.from, to: applied.to })}
+              </span>
+            )}
+
+            <SettingsTabs aria-label={t("panels.usage.scopeAria")}>
+              {(["all", "cwd"] as UsageScope[]).map((item) => (
+                <SettingsTab
+                  key={item}
+                  active={scope === item}
+                  disabled={item === "cwd" && !cwd}
+                  onClick={() => applyScope(item)}
+                >
+                  {item === "all" ? t("panels.usage.scopeAll") : t("panels.usage.scopeCwd")}
+                </SettingsTab>
+              ))}
+            </SettingsTabs>
+
+            <SettingsButton
+              size="icon"
+              onClick={handleRefresh}
+              disabled={initialLoading || refreshing}
+              busy={refreshing}
+              title={t("panels.usage.refresh")}
+              aria-label={t("panels.usage.refreshAria")}
+            >
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M21 12a9 9 0 1 1-2.64-6.36" />
                 <polyline points="21 3 21 9 15 9" />
@@ -182,122 +338,198 @@ export function UsageStatsModal({ cwd, onClose }: UsageStatsModalProps) {
         </div>
 
         <div className="pi-modal-body usage-modal-body">
-          {error ? (
-            <SettingsNotice tone="danger">{error}</SettingsNotice>
-          ) : (
-            <>
+          {customValidationMessage && (
+            <SettingsNotice tone="warning">{customValidationMessage}</SettingsNotice>
+          )}
+
+          {showBlockingError ? (
+            <SettingsNotice tone="danger">
+              <div>{initialError}</div>
+              <div style={{ marginTop: 8 }}>
+                <SettingsButton size="sm" onClick={handleRefresh}>
+                  {t("panels.usage.retry")}
+                </SettingsButton>
+              </div>
+            </SettingsNotice>
+          ) : showInitialSkeleton ? (
+            <div className="usage-stats-empty" role="status" aria-live="polite">
+              {t("panels.usage.loading")}
+            </div>
+          ) : stats ? (
+            <div className={`usage-stats-live${refreshing ? " is-refreshing" : ""}`} aria-busy={refreshing || undefined}>
+              {(refreshing || refreshError) && (
+                <div className="usage-refresh-status" role="status" aria-live="polite">
+                  {refreshing ? (
+                    <SettingsNotice tone="info">{t("panels.usage.refreshing")}</SettingsNotice>
+                  ) : (
+                    <SettingsNotice tone="danger">
+                      {t("panels.usage.refreshError", { error: refreshError ?? "" })}
+                    </SettingsNotice>
+                  )}
+                </div>
+              )}
+
               <div className="usage-metric-grid">
-                <Metric label={t("panels.usage.totalCost")} value={formatCost(stats?.totals.cost ?? 0)} strong />
-                <Metric label={t("panels.usage.mainCost")} value={formatCost(stats?.mainTotals.cost ?? 0)} />
-                <Metric label={t("panels.usage.subagentCost")} value={formatCost(stats?.subagentTotals.cost ?? 0)} />
-                <Metric label={t("panels.usage.tokens")} value={`${formatTokens(totalTokens(stats?.totals ?? zeroTotals), locale)} (${formatTokensM(totalTokens(stats?.totals ?? zeroTotals), locale)})`} />
-                <Metric label={t("panels.usage.calls")} value={formatTokens(stats?.totals.calls ?? 0, locale)} />
-                <Metric label={t("panels.usage.sessions")} value={`${stats?.bySession.length ?? 0}/${stats?.matchedSessions ?? 0}`} />
-                <Metric label={t("panels.usage.subagentSessions")} value={formatTokens(stats?.subagentSessions ?? 0, locale)} />
-                <Metric label={t("panels.usage.scannedActiveArchive")} value={`${stats?.scannedActiveSessions ?? 0}/${stats?.scannedArchivedSessions ?? 0}`} />
-                <Metric label={t("panels.usage.matchedActiveArchive")} value={`${stats?.matchedActiveSessions ?? 0}/${stats?.matchedArchivedSessions ?? 0}`} />
+                <Metric label={t("panels.usage.totalCost")} value={formatCost(stats.totals.cost)} strong />
+                <Metric
+                  label={t("panels.usage.tokens")}
+                  value={formatCompactTokens(totalUsageTokens(stats.totals), locale)}
+                  detail={formatTokensExact(totalUsageTokens(stats.totals), locale)}
+                />
+                <Metric label={t("panels.usage.calls")} value={formatTokens(stats.totals.calls, locale)} />
+                <Metric
+                  label={t("panels.usage.sessionsWithUsageMatched")}
+                  value={`${stats.bySession.length}/${stats.matchedSessions}`}
+                  detail={t("panels.usage.sessionsWithUsageHint")}
+                />
+                <Metric label={t("panels.usage.mainCost")} value={formatCost(stats.mainTotals.cost)} />
+                <Metric label={t("panels.usage.subagentCost")} value={formatCost(stats.subagentTotals.cost)} />
               </div>
 
-              <div className="usage-content-grid">
-                <section className="usage-stats-card">
-                  <SectionTitle
-                    title={t("panels.usage.daily")}
-                    right={loading
-                      ? t("panels.usage.loading")
-                      : stats
-                        ? `${stats.from} - ${stats.to} · ${stats.scope.includeArchived ? t("panels.usage.withArchive") : t("panels.usage.activeOnly")} · ${stats.scanSource === "index" ? t("panels.usage.scanSourceIndex") : t("panels.usage.scanSourceFallback")} · ${t("panels.usage.durationMs", { ms: String(stats.durationMs ?? 0) })}`
-                        : ""}
-                  />
-                  <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-                    {(stats?.byDay ?? []).length === 0 ? (
-                      <EmptyState />
-                    ) : stats!.byDay.map((day) => {
-                      const width = largestDailyCost > 0 ? Math.max(3, (day.totals.cost / largestDailyCost) * 100) : 0;
-                      return (
-                        <div key={day.date} style={{ display: "grid", gridTemplateColumns: "82px minmax(0, 1fr) 72px", alignItems: "center", gap: 8, fontSize: 11 }}>
-                          <span style={{ color: "var(--text-muted)", fontVariantNumeric: "tabular-nums" }}>{day.date.slice(5)}</span>
-                          <div style={{ height: 7, background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: 999, overflow: "hidden" }}>
-                            <div className="usage-daily-bar-fill" style={{ width: `${width}%` }} />
-                          </div>
-                          <span style={{ color: "var(--text)", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{formatCost(day.totals.cost)}</span>
-                        </div>
-                      );
+              <div className="usage-diagnostics" aria-label={t("panels.usage.diagnosticsAria")}>
+                <span>{t("panels.usage.subagentSessions")}: {formatTokens(stats.subagentSessions, locale)}</span>
+                <span>{t("panels.usage.scannedActiveArchive")}: {stats.scannedActiveSessions}/{stats.scannedArchivedSessions}</span>
+                <span>{t("panels.usage.matchedActiveArchive")}: {stats.matchedActiveSessions}/{stats.matchedArchivedSessions}</span>
+                <span>
+                  {stats.scanSource === "index"
+                    ? t("panels.usage.scanSourceIndex")
+                    : t("panels.usage.scanSourceFallback")}
+                  {" · "}
+                  {t("panels.usage.durationMs", { ms: String(stats.durationMs ?? 0) })}
+                  {" · "}
+                  {stats.scope.timezone}
+                </span>
+              </div>
+
+              <section className="usage-stats-card usage-chart-card">
+                <div className="usage-stats-card-header">
+                  <div className="usage-stats-card-meta usage-chart-meta">
+                    {t("panels.usage.chartMeta", {
+                      from: stats.from,
+                      to: stats.to,
+                      granularity:
+                        stats.timeline?.granularity === "week"
+                          ? t("panels.usage.granularityWeek")
+                          : stats.timeline?.granularity === "month"
+                            ? t("panels.usage.granularityMonth")
+                            : t("panels.usage.granularityDay"),
+                      archive: stats.scope.includeArchived
+                        ? t("panels.usage.withArchive")
+                        : t("panels.usage.activeOnly"),
                     })}
                   </div>
-                </section>
+                </div>
+                {stats.timeline ? (
+                  <UsageTokenChart
+                    timeline={stats.timeline}
+                    mode={chartMode}
+                    onModeChange={setChartMode}
+                    locale={locale}
+                    refreshing={refreshing}
+                  />
+                ) : (
+                  <div className="usage-stats-empty">{t("panels.usage.chartEmpty")}</div>
+                )}
+              </section>
 
+              <div className="usage-content-grid usage-content-grid-spaced">
                 <section className="usage-stats-card">
-                  <SectionTitle title={t("panels.usage.tokens")} />
-                  <TokenRows totals={stats?.totals ?? zeroTotals} locale={locale} />
+                  <SectionTitle title={t("panels.usage.tokens")} right={t("panels.usage.detailRangeNote")} />
+                  <TokenRows totals={stats.totals} locale={locale} />
                 </section>
               </div>
 
               <div className="usage-content-grid usage-content-grid-spaced">
-                <Breakdown title={t("panels.usage.models")} rows={(stats?.byModel ?? []).slice(0, 8).map((row) => ({ label: `${row.provider}/${row.model}`, totals: row.totals }))} />
-                <Breakdown title={t("panels.usage.providers")} rows={(stats?.byProvider ?? []).map((row) => ({ label: row.provider, totals: row.totals }))} />
+                <Breakdown
+                  title={t("panels.usage.models")}
+                  rows={stats.byModel.slice(0, 8).map((row) => ({
+                    label: `${row.provider}/${row.model}`,
+                    totals: row.totals,
+                  }))}
+                />
+                <Breakdown
+                  title={t("panels.usage.providers")}
+                  rows={stats.byProvider.map((row) => ({
+                    label: row.provider,
+                    totals: row.totals,
+                  }))}
+                />
               </div>
 
               <section className="usage-stats-card usage-stats-card-spaced">
-                <SectionTitle title={t("panels.usage.sessions")} right={t("panels.usage.skipped", { count: stats?.skippedEntries ?? 0 })} />
+                <SectionTitle title={t("panels.usage.sessions")} right={t("panels.usage.skipped", { count: stats.skippedEntries })} />
                 <div style={{ display: "flex", flexDirection: "column" }}>
-                  {(stats?.bySession ?? []).length === 0 ? (
+                  {stats.bySession.length === 0 ? (
                     <EmptyState />
-                  ) : stats!.bySession.slice(0, 12).map((session) => (
-                    <div key={session.sessionId} style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 90px 90px", gap: 10, padding: "8px 0", borderTop: "1px solid var(--border)", alignItems: "center" }}>
-                      <div style={{ minWidth: 0 }}>
-                        <div style={{ fontSize: 12, color: "var(--text)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                          {session.name || session.firstMessage || session.sessionId}
-                        </div>
-                        <div style={{ fontSize: 10, color: "var(--text-dim)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginTop: 2 }}>
-                          {session.cwd}
-                        </div>
-                        {session.subagentSessions > 0 && (
-                          <div style={{ fontSize: 10, color: "var(--text-dim)", marginTop: 2 }}>
-                            {t("panels.usage.mainSubagents", {
-                              main: formatCost(session.mainTotals.cost),
-                              sub: formatCost(session.subagentTotals.cost),
-                              count: session.subagentSessions,
-                            })}
+                  ) : (
+                    stats.bySession.slice(0, 12).map((session) => (
+                      <div
+                        key={session.sessionId}
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "minmax(0, 1fr) 90px 90px",
+                          gap: 10,
+                          padding: "8px 0",
+                          borderTop: "1px solid var(--border)",
+                          alignItems: "center",
+                        }}
+                      >
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: 12, color: "var(--text)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                            {session.name || session.firstMessage || session.sessionId}
                           </div>
-                        )}
+                          <div style={{ fontSize: 10, color: "var(--text-dim)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginTop: 2 }}>
+                            {session.cwd}
+                          </div>
+                          {session.subagentSessions > 0 && (
+                            <div style={{ fontSize: 10, color: "var(--text-dim)", marginTop: 2 }}>
+                              {t("panels.usage.mainSubagents", {
+                                main: formatCost(session.mainTotals.cost),
+                                sub: formatCost(session.subagentTotals.cost),
+                                count: session.subagentSessions,
+                              })}
+                            </div>
+                          )}
+                        </div>
+                        <span style={{ fontSize: 11, color: "var(--text-muted)", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                          {formatTokens(totalUsageTokens(session.totals), locale)}
+                        </span>
+                        <span style={{ fontSize: 12, color: "var(--text)", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                          {formatCost(session.totals.cost)}
+                        </span>
                       </div>
-                      <span style={{ fontSize: 11, color: "var(--text-muted)", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{formatTokens(totalTokens(session.totals), locale)}</span>
-                      <span style={{ fontSize: 12, color: "var(--text)", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{formatCost(session.totals.cost)}</span>
-                    </div>
-                  ))}
+                    ))
+                  )}
                 </div>
               </section>
-            </>
-          )}
+            </div>
+          ) : null}
         </div>
       </div>
     </div>
   );
 }
 
-const zeroTotals: UsageTotals = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, calls: 0 };
-
-/**
- * 渲染统计指标块。
- *
- * @param props label 为指标名，value 为指标值，strong 控制高亮样式。
- * @returns 指标块 React 节点。
- */
-function Metric({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
+function Metric({
+  label,
+  value,
+  detail,
+  strong,
+}: {
+  label: string;
+  value: string;
+  detail?: string;
+  strong?: boolean;
+}) {
   return (
     <div className="usage-stats-card usage-metric">
       <div className="usage-metric-label">{label}</div>
       <div className={`usage-metric-value${strong ? " usage-metric-value-strong" : ""}`}>{value}</div>
+      {detail ? <div className="usage-metric-detail">{detail}</div> : null}
     </div>
   );
 }
 
-/**
- * 渲染面板标题。
- *
- * @param props title 为左侧标题，right 为右侧辅助文本。
- * @returns 标题 React 节点。
- */
 function SectionTitle({ title, right }: { title: string; right?: string }) {
   return (
     <div className="usage-stats-card-header">
@@ -307,12 +539,6 @@ function SectionTitle({ title, right }: { title: string; right?: string }) {
   );
 }
 
-/**
- * 渲染 token 类型拆分行。
- *
- * @param props totals 为 token 汇总对象。
- * @returns token 明细 React 节点。
- */
 function TokenRows({ totals, locale }: { totals: UsageTotals; locale: import("@/lib/i18n").Locale }) {
   const { t } = useI18n();
   const rows = [
@@ -324,22 +550,31 @@ function TokenRows({ totals, locale }: { totals: UsageTotals; locale: import("@/
   return (
     <div style={{ display: "flex", flexDirection: "column" }}>
       {rows.map(([label, value]) => (
-        <div key={label} style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 96px 54px", gap: 8, alignItems: "center", padding: "6px 0", borderTop: "1px solid var(--border)", fontSize: 12 }}>
+        <div
+          key={label}
+          style={{
+            display: "grid",
+            gridTemplateColumns: "minmax(0, 1fr) 72px minmax(96px, auto)",
+            gap: 8,
+            alignItems: "center",
+            padding: "6px 0",
+            borderTop: "1px solid var(--border)",
+            fontSize: 12,
+          }}
+        >
           <span style={{ color: "var(--text-muted)" }}>{label}</span>
-          <span style={{ color: "var(--text)", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{formatTokens(value, locale)}</span>
-          <span style={{ color: "var(--text-dim)", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{formatTokensM(value, locale)}</span>
+          <span style={{ color: "var(--text)", textAlign: "right", fontVariantNumeric: "tabular-nums", fontWeight: 650 }}>
+            {formatCompactTokens(value, locale)}
+          </span>
+          <span style={{ color: "var(--text-dim)", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+            {formatTokensExact(value, locale)}
+          </span>
         </div>
       ))}
     </div>
   );
 }
 
-/**
- * 渲染费用拆分列表。
- *
- * @param props title 为标题，rows 为带汇总数据的拆分行。
- * @returns 拆分面板 React 节点。
- */
 function Breakdown({ title, rows }: { title: string; rows: { label: string; totals: UsageTotals }[] }) {
   const { locale } = useI18n();
   return (
@@ -350,10 +585,27 @@ function Breakdown({ title, rows }: { title: string; rows: { label: string; tota
       ) : (
         <div style={{ display: "flex", flexDirection: "column" }}>
           {rows.map((row) => (
-            <div key={row.label} style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 72px 72px", gap: 8, alignItems: "center", padding: "7px 0", borderTop: "1px solid var(--border)", fontSize: 11 }}>
-              <span style={{ color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.label}</span>
-              <span style={{ color: "var(--text-dim)", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{formatTokens(row.totals.calls, locale)}</span>
-              <span style={{ color: "var(--text)", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{formatCost(row.totals.cost)}</span>
+            <div
+              key={row.label}
+              style={{
+                display: "grid",
+                gridTemplateColumns: "minmax(0, 1fr) 72px 72px",
+                gap: 8,
+                alignItems: "center",
+                padding: "7px 0",
+                borderTop: "1px solid var(--border)",
+                fontSize: 11,
+              }}
+            >
+              <span style={{ color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {row.label}
+              </span>
+              <span style={{ color: "var(--text-dim)", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                {formatTokens(row.totals.calls, locale)}
+              </span>
+              <span style={{ color: "var(--text)", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                {formatCost(row.totals.cost)}
+              </span>
             </div>
           ))}
         </div>
@@ -362,11 +614,6 @@ function Breakdown({ title, rows }: { title: string; rows: { label: string; tota
   );
 }
 
-/**
- * 渲染空统计状态。
- *
- * @returns 空状态 React 节点。
- */
 function EmptyState() {
   const { t } = useI18n();
   return <div className="usage-stats-empty">{t("panels.usage.noUsageInRange")}</div>;

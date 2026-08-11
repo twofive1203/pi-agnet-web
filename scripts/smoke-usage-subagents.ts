@@ -42,7 +42,8 @@ try {
   const parentName = "2026-07-24T00-00-00-000Z_smoke-parent";
   const parentPath = join(agentDir, "sessions", encodedCwd, `${parentName}.jsonl`);
   const childPath = join(agentDir, "sessions", encodedCwd, parentName, "run-id", "run-0", "session.jsonl");
-  const timestamp = "2026-07-24T00:00:00.000Z";
+  // Midday UTC keeps the local calendar day stable across common offsets.
+  const timestamp = "2026-07-24T12:00:00.000Z";
 
   writeJsonl(parentPath, [
     { type: "session", version: 3, id: "smoke-parent", timestamp, cwd },
@@ -55,14 +56,17 @@ try {
 
   const { getUsageStats } = await import("../lib/usage-stats");
   const {
-    archiveSessionFile,
-    listAllArchivedSessions,
-    unarchiveSessionFile,
-  } = await import("../lib/session-reader");
-  const { deleteSessionArtifacts, getSessionCompanionDir } = await import("../lib/session-artifacts");
+    archiveSessionArtifacts,
+    deleteSessionArtifacts,
+    getSessionCompanionDir,
+    unarchiveSessionArtifacts,
+  } = await import("../lib/session-artifacts");
+  const { invalidateSessionIndex } = await import("../lib/session-index");
+
+  // Local calendar bounds around the fixture day (avoid UTC Date string drift).
   const range = {
-    from: new Date("2026-07-23T00:00:00.000Z"),
-    to: new Date("2026-07-25T00:00:00.000Z"),
+    from: new Date(2026, 6, 23, 0, 0, 0, 0),
+    to: new Date(2026, 6, 25, 23, 59, 59, 999),
     cwd,
   };
 
@@ -72,24 +76,63 @@ try {
   assert.equal(active.subagentTotals.cost, 2);
   assert.equal(active.subagentSessions, 1);
   assert.equal(active.bySession[0]?.subagentSessions, 1);
+  assert.ok(active.byDay.length >= 1);
+  assert.equal(active.timeline, undefined);
+  assert.ok(active.scope.timezone);
 
-  const archivedPath = archiveSessionFile(parentPath);
+  // Opt-in auto timeline keeps accounting and reconciles bucket Token sums.
+  const withTimeline = await getUsageStats({ ...range, includeArchived: false, timeline: "auto" });
+  assert.equal(withTimeline.totals.cost, 3);
+  assert.equal(withTimeline.mainTotals.cost, 1);
+  assert.equal(withTimeline.subagentTotals.cost, 2);
+  assert.equal(withTimeline.byDay.length, 0);
+  assert.ok(withTimeline.timeline);
+  assert.equal(withTimeline.timeline!.granularity, "day");
+  const bucketTokens = withTimeline.timeline!.buckets.reduce(
+    (sum, bucket) => ({
+      input: sum.input + bucket.totals.input,
+      output: sum.output + bucket.totals.output,
+      cacheRead: sum.cacheRead + bucket.totals.cacheRead,
+      cacheWrite: sum.cacheWrite + bucket.totals.cacheWrite,
+    }),
+    { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+  );
+  assert.equal(bucketTokens.input, withTimeline.totals.input);
+  assert.equal(bucketTokens.output, withTimeline.totals.output);
+  assert.equal(bucketTokens.cacheRead, withTimeline.totals.cacheRead);
+  assert.equal(bucketTokens.cacheWrite, withTimeline.totals.cacheWrite);
+  assert.equal(withTimeline.scope.timezone, active.scope.timezone);
+
+  // Use artifacts helpers directly so this smoke stays free of session-reader /
+  // pi-coding-agent CJS export surface while still covering archive layouts.
+  const archivedPath = archiveSessionArtifacts(parentPath);
+  invalidateSessionIndex();
   assert.equal(existsSync(parentPath), false);
   assert.equal(existsSync(childPath), false);
   assert.equal(existsSync(getSessionCompanionDir(archivedPath)), true);
-  assert.equal((await listAllArchivedSessions()).length, 1);
 
   const archived = await getUsageStats({ ...range, includeArchived: true });
   assert.equal(archived.totals.cost, 3);
   assert.equal(archived.subagentTotals.cost, 2);
 
+  const archivedTimeline = await getUsageStats({ ...range, includeArchived: true, timeline: "auto" });
+  assert.equal(archivedTimeline.totals.cost, 3);
+  assert.equal(archivedTimeline.subagentTotals.cost, 2);
+  assert.ok(archivedTimeline.timeline);
+  assert.equal(
+    archivedTimeline.timeline!.buckets.reduce((sum, b) => sum + b.totals.input, 0),
+    archivedTimeline.totals.input,
+  );
+
   // Recreate the legacy layout where archive moved only the parent JSONL.
   renameSync(getSessionCompanionDir(archivedPath), getSessionCompanionDir(parentPath));
+  invalidateSessionIndex();
   const legacyArchived = await getUsageStats({ ...range, includeArchived: true });
   assert.equal(legacyArchived.totals.cost, 3);
   assert.equal(legacyArchived.subagentTotals.cost, 2);
 
-  const restoredPath = unarchiveSessionFile(archivedPath);
+  const restoredPath = unarchiveSessionArtifacts(archivedPath);
+  invalidateSessionIndex();
   assert.equal(restoredPath, parentPath);
   assert.equal(existsSync(childPath), true);
 

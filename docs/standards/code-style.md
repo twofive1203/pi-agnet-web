@@ -46,6 +46,8 @@ npm run test:chat-errors     # chat/provider error classification + pre-send mod
 npm run test:session-changes # async changed-file projection ordering smoke
 npm run test:session-performance # durable session TPS/TTFT aggregate + lifecycle smoke
 npm run test:session-stats   # parent-session lifetime token/cost aggregation smoke
+npm run test:usage           # Usage auto timeline projection + subagent/archive accounting
+npm run test:scale-baseline  # Usage/index/allowed-roots scale + accelerated-path correctness
 npm run test:git-diff        # commit and staged/unstaged working-tree diff smoke
 npm run test:file-search     # bounded async workspace filename search smoke
 npm run test:file-upload     # chat upload path-boundary / sanitize / exclusive-write smoke

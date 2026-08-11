@@ -27,5 +27,6 @@ Status vocabulary:
 | [`2026-08-07-001-refactor-i18n-coverage-plan.md`](2026-08-07-001-refactor-i18n-coverage-plan.md) | completed | Wave A–C product chrome coverage; residual typed keys/API codes remain ordinary backlog. |
 | [`2026-08-07-002-feat-server-access-authentication-plan.md`](2026-08-07-002-feat-server-access-authentication-plan.md) | completed | Safe loopback defaults, server access key/session gate, global Proxy protection, production E2E, and deployment docs delivered. |
 | [`2026-08-11-001-feat-session-performance-metrics-plan.md`](2026-08-11-001-feat-session-performance-metrics-plan.md) | completed | U1–U5 delivered: domain/sidecar, raw AgentSession recording, session-detail/SSE/client state, SessionResourcePanel + estimated live TPS, docs and targeted validation. |
+| [`2026-08-11-002-feat-usage-token-charts-plan.md`](2026-08-11-002-feat-usage-token-charts-plan.md) | completed | U1–U5 delivered: server auto day/week/month timeline, resilient presets/refresh, dependency-free Token structure chart, modal integration, docs + targeted validation. Browser/manual theme-viewport matrix remains ordinary follow-up. |
 
 This status table is the active implementation, performance, and functional-polish backlog index. Historical investigations and implemented design inputs live under [`../research/`](../research/README.md).

@@ -21,7 +21,14 @@ function getDefaultRange(): { from: Date; to: Date } {
 /**
  * 查询指定日期范围内的 Pi assistant usage 费用统计。
  *
- * @param request 包含 from、to、cwd 查询参数的 Next.js 请求对象。
+ * Query params:
+ * - `from` / `to`: optional `YYYY-MM-DD` range (default last 7 local days)
+ * - `cwd`: optional workspace filter
+ * - `timeline=auto`: opt into day/week/month chart buckets (`timeline`) and omit `byDay` rows
+ *
+ * Default response keeps `byDay` for compatibility. The modal uses `timeline=auto`.
+ *
+ * @param request 包含 from、to、cwd、timeline 查询参数的 Next.js 请求对象。
  * @returns 聚合后的费用统计 JSON。
  */
 export async function GET(request: NextRequest) {
@@ -30,6 +37,7 @@ export async function GET(request: NextRequest) {
     const fromParam = request.nextUrl.searchParams.get("from");
     const toParam = request.nextUrl.searchParams.get("to");
     const cwd = request.nextUrl.searchParams.get("cwd") || undefined;
+    const timelineParam = request.nextUrl.searchParams.get("timeline");
     const from = fromParam ? parseLocalDateParam(fromParam, false) : defaults.from;
     const to = toParam ? parseLocalDateParam(toParam, true) : defaults.to;
 
@@ -39,9 +47,18 @@ export async function GET(request: NextRequest) {
     if (from.getTime() > to.getTime()) {
       return NextResponse.json({ error: "from must be earlier than or equal to to" }, { status: 400 });
     }
+    if (timelineParam != null && timelineParam !== "auto") {
+      return NextResponse.json({ error: "timeline must be auto when provided" }, { status: 400 });
+    }
 
     const config = readPiWebConfig();
-    const stats = await getUsageStats({ from, to, cwd, includeArchived: config.usage.includeArchived });
+    const stats = await getUsageStats({
+      from,
+      to,
+      cwd,
+      includeArchived: config.usage.includeArchived,
+      timeline: timelineParam === "auto" ? "auto" : undefined,
+    });
     return NextResponse.json({
       ...stats,
       from: fromParam ?? formatLocalDate(from),

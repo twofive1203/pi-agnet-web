@@ -218,6 +218,22 @@ async function main() {
     assert.equal(usageAll.value.matchedSessions, SESSION_COUNT);
     assert.ok(usageAll.value.totals.cost >= usageCwd.value.totals.cost);
 
+    // Auto-timeline projection reuses the same scan and stays index-backed.
+    const usageTimeline = await timeAsync("usage stats (auto timeline)", () =>
+      getUsageStats({ ...range, timeline: "auto" }),
+    );
+    timings.push({
+      label: usageTimeline.label,
+      ms: usageTimeline.ms,
+      detail: `source=${usageTimeline.value.scanSource} buckets=${usageTimeline.value.timeline?.buckets.length ?? 0} gran=${usageTimeline.value.timeline?.granularity ?? "-"}`,
+    });
+    assert.equal(usageTimeline.value.scanSource, "index");
+    assert.equal(usageTimeline.value.matchedSessions, SESSION_COUNT);
+    assert.equal(usageTimeline.value.byDay.length, 0);
+    assert.ok(usageTimeline.value.timeline);
+    assert.ok((usageTimeline.value.timeline?.buckets.length ?? 0) > 0);
+    assert.equal(usageTimeline.value.totals.cost, usageAll.value.totals.cost);
+
     const cwdEntries = await getSessionIndexEntriesForCwd(cwdA);
     assert.equal(cwdEntries.length, half);
 

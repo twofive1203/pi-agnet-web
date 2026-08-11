@@ -112,6 +112,7 @@ Check each combination at desktop, portrait-tablet, and mobile widths:
 | Composer listbox + shared dialog | Dialog wins stacking; closing restores a usable Composer focus target |
 | Todo sheet + toast | Both remain readable above safe area and Composer |
 | Theme/Usage popover + drawer | Popover stays viewport-bounded and does not become trapped behind drawer chrome |
+| Usage Token structure chart modal | Full-width stacked chart readable at desktop / 641–959 / ≤640 and 200% zoom; absolute/share modes; keyboard Arrow/Home/End + Escape unpin; touch pin/clear; no page-level horizontal overflow; reduced-motion has no chart geometry animation |
 | Changes/Git + Diff | Diff wins stacking and remains closable at minimum Inspector width |
 | Settings + nested dialog/popover | One clear modal layer; no background focus or double page scrolling |
 

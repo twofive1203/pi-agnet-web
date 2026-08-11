@@ -112,6 +112,11 @@ const REQUIRED_STABLE_CLASSES = [
   ".chat-input-dropdown-panel",
   ".pi-modal-overlay",
   ".extension-toast-stack",
+  ".usage-modal-panel",
+  ".usage-token-chart",
+  ".usage-token-bucket",
+  ".usage-token-tooltip",
+  ".usage-token-legend",
 ] as const;
 
 const REQUIRED_MODAL_WIDTH_CONTRACTS = [
@@ -241,6 +246,22 @@ function collectContractProblems(
     if (!sources.css.includes(stableClass)) {
       problems.push(`stable class: missing ${stableClass}`);
     }
+  }
+
+  // Usage Token chart contract: stacked series + reduced-motion, no legacy daily cost bar.
+  if (sources.css.includes(".usage-daily-bar-fill")) {
+    problems.push("usage chart: legacy .usage-daily-bar-fill must be removed");
+  }
+  if (!sources.css.includes("--usage-series-input")
+    || !sources.css.includes("--usage-series-output")
+    || !sources.css.includes("--usage-series-cache-read")
+    || !sources.css.includes("--usage-series-cache-write")) {
+    problems.push("usage chart: missing series color variables");
+  }
+  if (!sources.css.includes(".usage-token-bucket:focus-visible")
+    || !sources.css.includes("@media (max-width: 640px)")
+    || !sources.css.includes(".usage-token-seg")) {
+    problems.push("usage chart: focus/responsive/segment contracts incomplete");
   }
 
   for (const modalWidthContract of REQUIRED_MODAL_WIDTH_CONTRACTS) {

@@ -63,6 +63,7 @@
     "test:session-stats": "npx --yes tsx@4.23.1 scripts/smoke-session-billing-stats.ts",
     "test:session-performance": "npx --yes tsx@4.23.1 scripts/smoke-session-performance.ts",
     "test:scale-baseline": "npx --yes tsx@4.23.1 scripts/smoke-scale-baseline.ts",
+    "test:usage": "npx --yes tsx@4.23.1 scripts/smoke-usage-timeline.ts && npx --yes tsx@4.23.1 scripts/smoke-usage-subagents.ts",
     "test:session-tabs": "npx --yes tsx@4.23.1 scripts/smoke-session-tab-coordination.ts",
     "test:git-diff": "npx --yes tsx@4.23.1 scripts/smoke-git-diff.ts",
     "test:file-search": "npx --yes tsx@4.23.1 scripts/smoke-workspace-file-search.ts",

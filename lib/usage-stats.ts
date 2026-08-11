@@ -2,6 +2,7 @@ import { readFileSync } from "fs";
 import { canonicalizeCwd, expandCwd } from "@/lib/cwd";
 import { listSessionUsageFiles, type SessionUsageFile } from "@/lib/session-artifacts";
 import type { SessionEntry, SessionInfo, SessionMessageEntry, AssistantMessage } from "@/lib/types";
+import { projectUsageTimeline, type UsageTimeline } from "@/lib/usage-timeline";
 
 export interface UsageTotals {
   input: number;
@@ -49,6 +50,8 @@ export interface UsageStatsResult {
   subagentTotals: UsageTotals;
   subagentSessions: number;
   byDay: UsageDaySummary[];
+  /** Present when the caller opts into auto day/week/month chart projection. */
+  timeline?: UsageTimeline;
   byModel: UsageModelSummary[];
   byProvider: UsageModelSummary[];
   bySession: UsageSessionSummary[];
@@ -70,6 +73,12 @@ export interface UsageStatsOptions {
   to: Date;
   cwd?: string;
   includeArchived?: boolean;
+  /**
+   * When `"auto"`, attach a self-describing day/week/month timeline and omit
+   * daily chart rows (`byDay` is empty) to keep the chart payload lean.
+   * Default/direct callers keep the existing `byDay` contract.
+   */
+  timeline?: "auto";
 }
 
 interface UsageRecord {
@@ -365,9 +374,19 @@ export async function getUsageStats(options: UsageStatsOptions): Promise<UsageSt
     addUsage(record.source.kind === "subagent" ? sessionSummary.subagentTotals : sessionSummary.mainTotals, usage);
   }
 
+  const fromDate = formatLocalDate(options.from);
+  const toDate = formatLocalDate(options.to);
+  const dailyRows = [...byDay.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, dayTotals]) => ({ date, totals: dayTotals }));
+  const includeTimeline = options.timeline === "auto";
+  const timeline = includeTimeline
+    ? projectUsageTimeline(fromDate, toDate, dailyRows)
+    : undefined;
+
   return {
-    from: formatLocalDate(options.from),
-    to: formatLocalDate(options.to),
+    from: fromDate,
+    to: toDate,
     scope: {
       cwd: options.cwd,
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "local",
@@ -377,9 +396,9 @@ export async function getUsageStats(options: UsageStatsOptions): Promise<UsageSt
     mainTotals,
     subagentTotals,
     subagentSessions: [...matchedSubagentFilesByParent.values()].reduce((sum, files) => sum + files.size, 0),
-    byDay: [...byDay.entries()]
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([date, dayTotals]) => ({ date, totals: dayTotals })),
+    // Chart projection omits daily rows; default/direct callers keep byDay.
+    byDay: includeTimeline ? [] : dailyRows,
+    ...(timeline ? { timeline } : {}),
     byModel: [...byModel.values()].sort((a, b) => b.totals.cost - a.totals.cost),
     byProvider: [...byProvider.values()].sort((a, b) => b.totals.cost - a.totals.cost),
     bySession: [...bySession.values()].sort((a, b) => b.totals.cost - a.totals.cost),
