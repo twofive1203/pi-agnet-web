@@ -8,7 +8,7 @@ import {
   normalizeSubagentProgressList,
   normalizeSubagentProgressSnapshot,
   serializeSubagentRunsForFlush,
-} from "../hooks/useAgentSession.ts";
+} from "../lib/subagent-progress.ts";
 import {
   formatActivityBadge,
   formatDurationMs,
