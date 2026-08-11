@@ -454,9 +454,38 @@ export function ModelsConfig({ cwd: _cwd, onClose }: { cwd: string | null; onClo
                           {(providerData.models ?? []).map((model, index) => {
                             const modelActive = selection?.type === "model" && selection.providerName === providerName && selection.index === index;
                             return (
-                              <button key={`${model.id}-${index}`} type="button" className={`resource-nav-row models-tree-model${modelActive ? " resource-nav-row-active" : ""}`} onClick={() => setSelection({ type: "model", providerName, index })}>
-                                <span>{model.id || "new model"}</span>{model.reasoning && <SettingsBadge tone="accent">T</SettingsBadge>}
-                              </button>
+                              <div key={`${model.id}-${index}`} className={`resource-nav-row models-tree-model${modelActive ? " resource-nav-row-active" : ""}`}>
+                                <button
+                                  type="button"
+                                  className="models-tree-model-select"
+                                  onClick={() => setSelection({ type: "model", providerName, index })}
+                                >
+                                  <span>{model.id || "new model"}</span>
+                                  {model.reasoning && <SettingsBadge tone="accent">T</SettingsBadge>}
+                                  {model.primaryCandidate && <SettingsBadge tone="accent">★</SettingsBadge>}
+                                </button>
+                                <button
+                                  type="button"
+                                  className={`models-tree-star-btn${model.primaryCandidate ? " is-active" : ""}`}
+                                  aria-label={model.primaryCandidate ? t("settings.models.primaryCandidateUnset") : t("settings.models.primaryCandidateSet")}
+                                  title={model.primaryCandidate ? t("settings.models.primaryCandidateUnset") : t("settings.models.primaryCandidateSet")}
+                                  onClick={(event) => {
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    const models = [...(providerData.models ?? [])];
+                                    const current = models[index];
+                                    if (!current) return;
+                                    models[index] = {
+                                      ...current,
+                                      primaryCandidate: current.primaryCandidate ? undefined : true,
+                                    };
+                                    updateProvider(providerName, { ...providerData, models });
+                                    setSelection({ type: "model", providerName, index });
+                                  }}
+                                >
+                                  {model.primaryCandidate ? "★" : "☆"}
+                                </button>
+                              </div>
                             );
                           })}
                           <button type="button" className="resource-nav-row models-tree-model models-tree-add" onClick={() => addModel(providerName)}>+ model</button>

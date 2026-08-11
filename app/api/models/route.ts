@@ -2,13 +2,23 @@ import { stat } from "fs/promises";
 import { getAgentDir, type SettingsManager } from "@earendil-works/pi-coding-agent";
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import { canonicalizeCwd } from "@/lib/cwd";
+import { modelPrimaryCandidateKey } from "@/lib/model-primary-candidates";
+import { readPrimaryCandidateKeys } from "@/lib/model-primary-candidates-server";
 import { createSessionServicesWithRegistry } from "@/lib/pi-auth";
 
 export const dynamic = "force-dynamic";
 
+interface ModelListItem {
+  id: string;
+  name: string;
+  provider: string;
+  supportsImage: boolean;
+  primaryCandidate: boolean;
+}
+
 interface ModelMetadata {
   models: Record<string, string>;
-  modelList: { id: string; name: string; provider: string; supportsImage: boolean }[];
+  modelList: ModelListItem[];
   defaultModel: { provider: string; modelId: string } | null;
   thinkingLevels: Record<string, string[]>;
   thinkingLevelMaps: Record<string, Record<string, string | null>>;
@@ -32,10 +42,9 @@ function getModelMetadataCache(): Map<string, ModelMetadataCacheEntry> {
   return globalThis.__piModelMetadataCache;
 }
 
-function compareModelEntries(
-  a: { id: string; name: string; provider: string; supportsImage: boolean },
-  b: { id: string; name: string; provider: string; supportsImage: boolean },
-): number {
+function compareModelEntries(a: ModelListItem, b: ModelListItem): number {
+  // Primary candidates float first so chat pickers and settings lists stay scannable.
+  if (a.primaryCandidate !== b.primaryCandidate) return a.primaryCandidate ? -1 : 1;
   return modelNameCollator.compare(a.name || a.id, b.name || b.id)
     || modelNameCollator.compare(a.provider, b.provider)
     || modelNameCollator.compare(a.id, b.id);
@@ -43,7 +52,7 @@ function compareModelEntries(
 
 async function buildModelMetadata(cwd: string): Promise<ModelMetadata> {
   const nameMap = new Map<string, string>();
-  let modelList: { id: string; name: string; provider: string; supportsImage: boolean }[] = [];
+  let modelList: ModelListItem[] = [];
   let defaultModel: { provider: string; modelId: string } | null = null;
   const thinkingLevels: Record<string, string[]> = {};
   const thinkingLevelMaps: Record<string, Record<string, string | null>> = {};
@@ -51,11 +60,13 @@ async function buildModelMetadata(cwd: string): Promise<ModelMetadata> {
   try {
     const { services, registry } = await createSessionServicesWithRegistry(cwd, getAgentDir());
     const available = registry.getAvailable();
+    const primaryCandidates = readPrimaryCandidateKeys();
     modelList = available.map((model: { id: string; name: string; provider: string; input?: readonly string[] }) => ({
       id: model.id,
       name: model.name,
       provider: model.provider,
       supportsImage: model.input?.includes("image") ?? false,
+      primaryCandidate: primaryCandidates.has(modelPrimaryCandidateKey(model.provider, model.id)),
     })).sort(compareModelEntries);
 
     for (const model of available) {

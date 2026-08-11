@@ -197,7 +197,7 @@ function resolveStreamingMessage(event: AgentEvent): Partial<AgentMessage> | und
 
 interface ModelMetadata {
   models: Record<string, string>;
-  modelList: { id: string; name: string; provider: string }[];
+  modelList: { id: string; name: string; provider: string; primaryCandidate?: boolean }[];
   defaultModel: { provider: string; modelId: string } | null;
   thinkingLevels: Record<string, string[]>;
   thinkingLevelMaps: Record<string, Record<string, string | null>>;
@@ -261,7 +261,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [streamState, dispatch] = useReducer(streamReducer, { isStreaming: false, streamingMessage: null });
   const [agentRunning, setAgentRunning] = useState(false);
   const [modelNames, setModelNames] = useState<Record<string, string>>({});
-  const [modelList, setModelList] = useState<{ id: string; name: string; provider: string }[]>([]);
+  const [modelList, setModelList] = useState<{ id: string; name: string; provider: string; primaryCandidate?: boolean }[]>([]);
   const [modelsReady, setModelsReady] = useState(false);
   const [modelThinkingLevels, setModelThinkingLevels] = useState<Record<string, string[]>>({});
   const [modelThinkingLevelMaps, setModelThinkingLevelMaps] = useState<Record<string, Record<string, string | null>>>({});

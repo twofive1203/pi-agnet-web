@@ -18,6 +18,11 @@ import {
   chatSendBlockOffersModelsFix,
   getChatSendBlockReason,
 } from "@/lib/chat-send-readiness";
+import {
+  buildDefaultModelPickerOptions,
+  groupModelOptionsByProvider,
+  type ModelPickerOption,
+} from "@/lib/model-primary-candidates";
 
 export interface AttachedImage {
   data: string;   // base64, no prefix
@@ -25,11 +30,7 @@ export interface AttachedImage {
   previewUrl: string; // object URL for display
 }
 
-interface ModelOption {
-  provider: string;
-  modelId: string;
-  name: string;
-}
+type ModelOption = ModelPickerOption;
 
 interface Props {
   onSend: (message: string, images?: AttachedImage[]) => void;
@@ -40,7 +41,7 @@ interface Props {
   isStreaming: boolean;
   model?: { provider: string; modelId: string } | null;
   modelNames?: Record<string, string>;
-  modelList?: { id: string; name: string; provider: string }[];
+  modelList?: { id: string; name: string; provider: string; primaryCandidate?: boolean }[];
   /** False until the first models metadata fetch settles for the active cwd. */
   modelsReady?: boolean;
   onModelChange?: (provider: string, modelId: string) => void;
@@ -398,6 +399,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const [atSelectedIndex, setAtSelectedIndex] = useState(0);
   const [atDismissedKey, setAtDismissedKey] = useState<string | null>(null);
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
+  const [modelAllSubmenuOpen, setModelAllSubmenuOpen] = useState(false);
+  const [modelAllSubmenuPos, setModelAllSubmenuPos] = useState<{ left: number; bottom: number; maxHeight: number; minWidth: number } | null>(null);
   const [modelDropdownRect, setModelDropdownRect] = useState<DropdownAnchorRect | null>(null);
   const [toolDropdownOpen, setToolDropdownOpen] = useState(false);
   const [toolDropdownRect, setToolDropdownRect] = useState<DropdownAnchorRect | null>(null);
@@ -413,6 +416,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const slashSelectedItemRef = useRef<HTMLButtonElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const modelDropdownPanelRef = useRef<HTMLDivElement>(null);
+  const modelAllTriggerRef = useRef<HTMLButtonElement>(null);
+  const modelAllSubmenuRef = useRef<HTMLDivElement>(null);
+  const modelAllCloseTimerRef = useRef<number | null>(null);
   const toolDropdownRef = useRef<HTMLDivElement>(null);
   const toolDropdownPanelRef = useRef<HTMLDivElement>(null);
   const thinkingDropdownRef = useRef<HTMLDivElement>(null);
@@ -1069,24 +1075,36 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
 
 
   // Build model options: prefer modelList (has provider info), fallback to modelNames
-  const modelOptions: ModelOption[] = (() => {
+  const modelOptions: ModelOption[] = useMemo(() => {
     if (modelList && modelList.length > 0) {
-      return modelList.map((m) => ({ provider: m.provider, modelId: m.id, name: m.name }));
+      return modelList.map((m) => ({
+        provider: m.provider,
+        modelId: m.id,
+        name: m.name,
+        primaryCandidate: m.primaryCandidate === true,
+      }));
     }
     return Object.entries(modelNames ?? {}).map(([modelId, name]) => ({
       provider: model?.provider ?? "unknown",
       modelId,
       name,
     }));
-  })();
+  }, [modelList, modelNames, model?.provider]);
 
-  // Group options by provider, preserving insertion order
-  const modelsByProvider: { provider: string; options: ModelOption[] }[] = [];
-  for (const opt of modelOptions) {
-    const group = modelsByProvider.find((g) => g.provider === opt.provider);
-    if (group) group.options.push(opt);
-    else modelsByProvider.push({ provider: opt.provider, options: [opt] });
-  }
+  const { hasPrimaryCandidates, defaultOptions: defaultModelOptions } = useMemo(
+    () => buildDefaultModelPickerOptions(modelOptions, model ?? null),
+    [modelOptions, model],
+  );
+
+  // Favorites stay in the primary panel; full list opens as a flyout from the top "All" row.
+  const primaryModelsByProvider = useMemo(
+    () => groupModelOptionsByProvider(hasPrimaryCandidates ? defaultModelOptions : modelOptions),
+    [hasPrimaryCandidates, defaultModelOptions, modelOptions],
+  );
+  const allModelsByProvider = useMemo(
+    () => groupModelOptionsByProvider(modelOptions),
+    [modelOptions],
+  );
 
   const currentModelOption = model
     ? modelOptions.find((o) => o.modelId === model.modelId && o.provider === model.provider)
@@ -1094,6 +1112,63 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const currentModelLabel = currentModelOption
     ? `${currentModelOption.provider}/${currentModelOption.name}`
     : model ? `${model.provider}/${model.modelId}` : null;
+
+  const clearModelAllCloseTimer = useCallback(() => {
+    if (modelAllCloseTimerRef.current !== null) {
+      window.clearTimeout(modelAllCloseTimerRef.current);
+      modelAllCloseTimerRef.current = null;
+    }
+  }, []);
+
+  const closeModelAllSubmenu = useCallback(() => {
+    clearModelAllCloseTimer();
+    setModelAllSubmenuOpen(false);
+    setModelAllSubmenuPos(null);
+  }, [clearModelAllCloseTimer]);
+
+  const positionModelAllSubmenu = useCallback(() => {
+    const mainPanel = modelDropdownPanelRef.current;
+    if (!mainPanel) return null;
+    const mainRect = mainPanel.getBoundingClientRect();
+    const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
+    const viewportWidth = window.innerWidth;
+    const gap = 4;
+    const minWidth = Math.max(mainRect.width, 180);
+    const spaceRight = viewportWidth - mainRect.right - 8;
+    const openOnRight = spaceRight >= Math.min(minWidth, 160);
+    const left = openOnRight
+      ? Math.min(mainRect.right + gap, viewportWidth - minWidth - 8)
+      : Math.max(8, mainRect.left - minWidth - gap);
+    return {
+      left,
+      bottom: Math.max(8, viewportHeight - mainRect.bottom),
+      maxHeight: Math.max(120, Math.min(mainRect.height || 240, viewportHeight * 0.6)),
+      minWidth,
+    };
+  }, []);
+
+  const openModelAllSubmenu = useCallback(() => {
+    clearModelAllCloseTimer();
+    const pos = positionModelAllSubmenu();
+    if (!pos) return;
+    setModelAllSubmenuPos(pos);
+    setModelAllSubmenuOpen(true);
+  }, [clearModelAllCloseTimer, positionModelAllSubmenu]);
+
+  const scheduleCloseModelAllSubmenu = useCallback(() => {
+    clearModelAllCloseTimer();
+    modelAllCloseTimerRef.current = window.setTimeout(() => {
+      setModelAllSubmenuOpen(false);
+      setModelAllSubmenuPos(null);
+      modelAllCloseTimerRef.current = null;
+    }, 140);
+  }, [clearModelAllCloseTimer]);
+
+  useEffect(() => {
+    if (!modelDropdownOpen) closeModelAllSubmenu();
+  }, [modelDropdownOpen, closeModelAllSubmenu]);
+
+  useEffect(() => () => clearModelAllCloseTimer(), [clearModelAllCloseTimer]);
   const gitBranchInfo = gitBranch;
   const gitBranchLabel = gitBranchInfo?.isDetached ? "detached" : gitBranchInfo?.branch ?? null;
   const gitBranchTitle = gitBranchInfo && gitBranchLabel
@@ -1150,11 +1225,15 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           : null;
     if (!panel) return;
     const frame = window.requestAnimationFrame(() => {
-      panel.querySelector<HTMLButtonElement>(".chat-input-dropdown-option.is-active")
-        ?.focus({ preventScroll: true });
-      if (!panel.contains(document.activeElement)) {
-        panel.querySelector<HTMLButtonElement>(".chat-input-dropdown-option")?.focus({ preventScroll: true });
-      }
+      // Prefer real model options over the top "All" flyout trigger so opening the picker
+      // does not auto-expand the full-model submenu.
+      const activeOption = panel.querySelector<HTMLButtonElement>(
+        ".chat-input-dropdown-option.is-active:not(.chat-input-model-all-trigger)",
+      );
+      const firstOption = panel.querySelector<HTMLButtonElement>(
+        ".chat-input-dropdown-option:not(.chat-input-model-all-trigger)",
+      ) ?? panel.querySelector<HTMLButtonElement>(".chat-input-dropdown-option");
+      (activeOption ?? firstOption)?.focus({ preventScroll: true });
     });
     return () => window.cancelAnimationFrame(frame);
   }, [modelDropdownOpen, thinkingDropdownOpen, toolDropdownOpen]);
@@ -1162,7 +1241,11 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   // Body-portaled dropdowns close on outside pointer/focus and return focus on Escape.
   useEffect(() => {
     const closeOutside = (target: Node) => {
-      const insideModelDropdown = Boolean(dropdownRef.current?.contains(target) || modelDropdownPanelRef.current?.contains(target));
+      const insideModelDropdown = Boolean(
+        dropdownRef.current?.contains(target)
+        || modelDropdownPanelRef.current?.contains(target)
+        || modelAllSubmenuRef.current?.contains(target),
+      );
       const insideToolDropdown = Boolean(toolDropdownRef.current?.contains(target) || toolDropdownPanelRef.current?.contains(target));
       const insideThinkingDropdown = Boolean(thinkingDropdownRef.current?.contains(target) || thinkingDropdownPanelRef.current?.contains(target));
 
@@ -1175,14 +1258,25 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       const target = event.target as Node;
-      const modelOpen = Boolean(dropdownRef.current?.contains(target) || modelDropdownPanelRef.current?.contains(target));
+      const insideModelAllSubmenu = Boolean(modelAllSubmenuRef.current?.contains(target));
+      const modelOpen = Boolean(
+        dropdownRef.current?.contains(target)
+        || modelDropdownPanelRef.current?.contains(target)
+        || insideModelAllSubmenu,
+      );
       const thinkingOpen = Boolean(thinkingDropdownRef.current?.contains(target) || thinkingDropdownPanelRef.current?.contains(target));
       const toolOpen = Boolean(toolDropdownRef.current?.contains(target) || toolDropdownPanelRef.current?.contains(target));
       if (!modelOpen && !thinkingOpen && !toolOpen) return;
       event.preventDefault();
       if (modelOpen) {
-        setModelDropdownOpen(false);
-        window.requestAnimationFrame(() => dropdownRef.current?.querySelector<HTMLButtonElement>("button")?.focus());
+        // Collapse the All flyout first; a second Escape closes the whole picker.
+        if (modelAllSubmenuOpen || insideModelAllSubmenu) {
+          closeModelAllSubmenu();
+          window.requestAnimationFrame(() => modelAllTriggerRef.current?.focus());
+        } else {
+          setModelDropdownOpen(false);
+          window.requestAnimationFrame(() => dropdownRef.current?.querySelector<HTMLButtonElement>("button")?.focus());
+        }
       }
       if (thinkingOpen) {
         setThinkingDropdownOpen(false);
@@ -1201,7 +1295,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       document.removeEventListener("focusin", handleFocusIn, true);
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, []);
+  }, [modelAllSubmenuOpen, closeModelAllSubmenu]);
 
   const hasPendingMessage = hasEditorContent || attachedImages.length > 0 || attachedFiles.length > 0;
   const canSendNow = hasPendingMessage && !sendBlocked;
@@ -1605,44 +1699,144 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   </button>
                   {modelDropdownOpen && modelDropdownRect && typeof document !== "undefined" && (() => {
                     const { bottom, maxHeight } = getDropdownPanelMetrics(modelDropdownRect);
+                    const selectModel = (opt: ModelOption, isActive: boolean) => {
+                      closeModelAllSubmenu();
+                      setModelDropdownOpen(false);
+                      if (!isActive) onModelChange(opt.provider, opt.modelId);
+                      window.requestAnimationFrame(() => dropdownRef.current?.querySelector<HTMLButtonElement>("button")?.focus());
+                    };
+                    const handleSubmenuOptionKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
+                      if (event.key === "ArrowLeft") {
+                        event.preventDefault();
+                        closeModelAllSubmenu();
+                        window.requestAnimationFrame(() => modelAllTriggerRef.current?.focus());
+                        return;
+                      }
+                      handleDropdownOptionKeyDown(event);
+                    };
+                    const renderModelOption = (
+                      opt: ModelOption,
+                      keyPrefix = "",
+                      onOptionKeyDown: (event: React.KeyboardEvent<HTMLButtonElement>) => void = handleDropdownOptionKeyDown,
+                    ) => {
+                      const isActive = opt.modelId === model?.modelId && opt.provider === model?.provider;
+                      return (
+                        <button
+                          key={`${keyPrefix}${opt.provider}:${opt.modelId}`}
+                          role="option"
+                          aria-selected={isActive}
+                          onKeyDown={onOptionKeyDown}
+                          onClick={() => selectModel(opt, isActive)}
+                          className={isActive ? "chat-input-dropdown-option is-active" : "chat-input-dropdown-option"}
+                        >
+                          {isActive
+                            ? <svg className="chat-input-option-check" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="1.5 5 4 7.5 8.5 2.5" /></svg>
+                            : <span className="chat-input-option-check-placeholder" />}
+                          <span className="chat-input-model-option-label">
+                            <span className="chat-input-model-option-name">{opt.name}</span>
+                            {opt.primaryCandidate ? (
+                              <span className="chat-input-model-option-star" aria-hidden="true">★</span>
+                            ) : null}
+                          </span>
+                        </button>
+                      );
+                    };
+                    const renderGroupedModels = (
+                      groups: { provider: string; options: ModelOption[] }[],
+                      keyPrefix = "",
+                      onOptionKeyDown?: (event: React.KeyboardEvent<HTMLButtonElement>) => void,
+                    ) => groups.map((group, gi) => (
+                      <div key={`${keyPrefix}${group.provider}`}>
+                        {(groups.length > 1) && (
+                          <div className={gi > 0 ? "chat-input-dropdown-group has-divider" : "chat-input-dropdown-group"}>
+                            {group.provider}
+                          </div>
+                        )}
+                        {group.options.map((opt) => renderModelOption(opt, keyPrefix, onOptionKeyDown))}
+                      </div>
+                    ));
+                    const handleAllTriggerKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
+                      if (event.key === "ArrowRight" || event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        openModelAllSubmenu();
+                        window.requestAnimationFrame(() => {
+                          modelAllSubmenuRef.current
+                            ?.querySelector<HTMLButtonElement>(".chat-input-dropdown-option")
+                            ?.focus({ preventScroll: true });
+                        });
+                        return;
+                      }
+                      if (event.key === "ArrowLeft" && modelAllSubmenuOpen) {
+                        event.preventDefault();
+                        closeModelAllSubmenu();
+                        return;
+                      }
+                      handleDropdownOptionKeyDown(event);
+                    };
                     return createPortal((
-                    <div ref={modelDropdownPanelRef} id={MODEL_DROPDOWN_ID} className="chat-input-dropdown-panel" role="listbox" aria-label={t("chat.model")} style={{
-                      position: "fixed",
-                      bottom, left: modelDropdownRect.left,
-                      width: "max-content", minWidth: modelDropdownRect.width, maxHeight,
-                    }}>
-                      {modelsByProvider.map((group, gi) => (
-                        <div key={group.provider}>
-                          {(modelsByProvider.length > 1) && (
-                            <div className={gi > 0 ? "chat-input-dropdown-group has-divider" : "chat-input-dropdown-group"}>
-                              {group.provider}
-                            </div>
-                          )}
-                          {group.options.map((opt) => {
-                            const isActive = opt.modelId === model?.modelId && opt.provider === model?.provider;
-                            return (
-                              <button
-                                key={`${opt.provider}:${opt.modelId}`}
-                                role="option"
-                                aria-selected={isActive}
-                                onKeyDown={handleDropdownOptionKeyDown}
-                                onClick={() => {
-                                  setModelDropdownOpen(false);
-                                  if (!isActive) onModelChange(opt.provider, opt.modelId);
-                                  window.requestAnimationFrame(() => dropdownRef.current?.querySelector<HTMLButtonElement>("button")?.focus());
-                                }}
-                                className={isActive ? "chat-input-dropdown-option is-active" : "chat-input-dropdown-option"}
-                              >
-                                {isActive
-                                  ? <svg className="chat-input-option-check" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="1.5 5 4 7.5 8.5 2.5" /></svg>
-                                  : <span className="chat-input-option-check-placeholder" />}
-                                {opt.name}
-                              </button>
-                            );
-                          })}
+                    <>
+                    <div
+                      ref={modelDropdownPanelRef}
+                      id={MODEL_DROPDOWN_ID}
+                      className="chat-input-dropdown-panel"
+                      role="listbox"
+                      aria-label={t("chat.model")}
+                      style={{
+                        position: "fixed",
+                        bottom, left: modelDropdownRect.left,
+                        width: "max-content", minWidth: modelDropdownRect.width, maxHeight,
+                      }}
+                    >
+                      {hasPrimaryCandidates && (
+                        <div
+                          className="chat-input-model-all-slot is-top"
+                          onMouseEnter={openModelAllSubmenu}
+                          onMouseLeave={scheduleCloseModelAllSubmenu}
+                        >
+                          <button
+                            ref={modelAllTriggerRef}
+                            type="button"
+                            className={modelAllSubmenuOpen
+                              ? "chat-input-dropdown-option chat-input-model-all-trigger is-open"
+                              : "chat-input-dropdown-option chat-input-model-all-trigger"}
+                            aria-label={t("chat.modelAll")}
+                            aria-haspopup="menu"
+                            aria-expanded={modelAllSubmenuOpen}
+                            onFocus={openModelAllSubmenu}
+                            onKeyDown={handleAllTriggerKeyDown}
+                            onClick={openModelAllSubmenu}
+                          >
+                            <span className="chat-input-option-check-placeholder" aria-hidden="true" />
+                            <span className="chat-input-model-all-label">{t("chat.modelAll")}</span>
+                            <span className="chat-input-model-all-chevron" aria-hidden="true">›</span>
+                          </button>
                         </div>
-                      ))}
+                      )}
+                      <div onMouseEnter={closeModelAllSubmenu}>
+                        {renderGroupedModels(primaryModelsByProvider, hasPrimaryCandidates ? "primary:" : "")}
+                      </div>
                     </div>
+                    {hasPrimaryCandidates && modelAllSubmenuOpen && modelAllSubmenuPos && (
+                      <div
+                        ref={modelAllSubmenuRef}
+                        className="chat-input-dropdown-panel chat-input-model-all-submenu"
+                        role="menu"
+                        aria-label={t("chat.modelAll")}
+                        style={{
+                          position: "fixed",
+                          left: modelAllSubmenuPos.left,
+                          bottom: modelAllSubmenuPos.bottom,
+                          width: "max-content",
+                          minWidth: modelAllSubmenuPos.minWidth,
+                          maxHeight: modelAllSubmenuPos.maxHeight,
+                        }}
+                        onMouseEnter={openModelAllSubmenu}
+                        onMouseLeave={scheduleCloseModelAllSubmenu}
+                      >
+                        {renderGroupedModels(allModelsByProvider, "all:", handleSubmenuOptionKeyDown)}
+                      </div>
+                    )}
+                    </>
                     ), document.body);
                   })()}
                 </div>

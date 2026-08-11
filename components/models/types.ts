@@ -89,6 +89,11 @@ export interface ModelEntry {
   cost?: { input?: number; output?: number; cacheRead?: number; cacheWrite?: number };
   headers?: Record<string, string>;
   compat?: Record<string, unknown>;
+  /**
+   * WebUI-only: mark this model as a first-level chat picker candidate (favorite).
+   * Stored in models.json; Pi ignores unknown fields.
+   */
+  primaryCandidate?: boolean;
 }
 
 export interface ProviderEntry {

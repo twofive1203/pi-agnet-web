@@ -6,6 +6,8 @@ Shared logic lives under `lib/`. Prefer adding behavior here when it is used by 
 | --- | --- |
 | `lib/rpc-manager.ts` | `AgentSessionWrapper`, global registry, `startRpcSession()`, cwd-scoped session cleanup, lifecycle handling, `getRpcRuntimeStats()` for ops health, and prompt/steer/follow-up attachment routing through the configured Vision resolver when the active model lacks image input. Interactive loaders always attach the empty-completed retry normalizer extension. |
 | `lib/empty-completed-retry.ts` | Provider-targeted `message_end` normalizer: empty post-tool `completed` assistant responses become retryable errors when the provider sets `emptyCompletedRetry: true` in `models.json`. |
+| `lib/model-primary-candidates.ts` | Client-safe WebUI-only `primaryCandidate` helpers: models.json parse projection, picker grouping, and default short-list projection (candidates first; full list when none marked). |
+| `lib/model-primary-candidates-server.ts` | Server-only disk reader for `primaryCandidate` keys from `models.json` with mtime/size cache. Keep out of client bundles. |
 | `lib/agent-retry-errors.ts` | Shared empty-completed retry error text so the normalizer and UI stay aligned. |
 | `lib/agent-lifecycle.ts` | Pure mapping from Pi lifecycle events to WebUI settle/keep-running directives. |
 | `lib/chat-prompt-lifecycle.ts` | Pure prompt-level chat state machine and in-process harness (throttler → apply) for browser-free integration smokes: `agentRunning`/`phase`/retry/failure/stream settle on `agent_settled`/`prompt_error`, keep busy across `agent_end` retry gaps, and flush pending text before tool/lifecycle barriers. Documents the contract mirrored by `hooks/useAgentSession.ts`. |

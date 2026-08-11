@@ -781,6 +781,14 @@ export function ModelDetail({
         <Check label={t("settings.models.reasoningThinking")} checked={model.reasoning ?? false} onChange={(v) => set("reasoning", v || undefined)} />
         <Check label={t("settings.models.imageInput")} checked={model.input?.includes("image") ?? false}
           onChange={(v) => set("input", v ? ["text", "image"] : undefined)} />
+        <Check
+          label={t("settings.models.primaryCandidate")}
+          checked={model.primaryCandidate === true}
+          onChange={(v) => set("primaryCandidate", v || undefined)}
+        />
+      </div>
+      <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: -8 }}>
+        {t("settings.models.primaryCandidateHint")}
       </div>
 
       {model.reasoning && (
