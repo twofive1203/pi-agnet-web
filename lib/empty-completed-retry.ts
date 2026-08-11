@@ -192,6 +192,11 @@ function lastContextMessageRole(sessionManager: { getBranch(): unknown[] }): str
  * The in-memory continuation flag keeps later retry attempts tied to the same
  * post-tool turn even though each failed Assistant message is persisted.
  */
+function isStaleExtensionContextError(error: unknown): boolean {
+  return error instanceof Error
+    && (/extension ctx is stale|Extension context no longer active/i.test(error.message));
+}
+
 export function createEmptyCompletedRetryExtension(): InlineExtension {
   return {
     name: "empty-completed-retry",
@@ -202,23 +207,29 @@ export function createEmptyCompletedRetryExtension(): InlineExtension {
       pi.on("message_end", (event, ctx) => {
         if (event.message.role !== "assistant") return;
 
-        const followsToolResult = continuingAfterToolResult
-          || lastContextMessageRole(ctx.sessionManager) === "toolResult";
-        const normalized = normalizeEmptyCompletedAssistantMessage(event.message, {
-          followsToolResult,
-          aborted: ctx.signal?.aborted === true,
-          // Re-read on each check so Models UI saves apply without restarting the process.
-          enabledProviders: readEmptyCompletedRetryProviders(),
-        });
+        try {
+          const followsToolResult = continuingAfterToolResult
+            || lastContextMessageRole(ctx.sessionManager) === "toolResult";
+          const normalized = normalizeEmptyCompletedAssistantMessage(event.message, {
+            followsToolResult,
+            aborted: ctx.signal?.aborted === true,
+            // Re-read on each check so Models UI saves apply without restarting the process.
+            enabledProviders: readEmptyCompletedRetryProviders(),
+          });
 
-        if (normalized !== event.message) {
-          continuingAfterToolResult = true;
-          return { message: normalized };
+          if (normalized !== event.message) {
+            continuingAfterToolResult = true;
+            return { message: normalized };
+          }
+
+          continuingAfterToolResult = followsToolResult
+            && event.message.stopReason === "error"
+            && ctx.signal?.aborted !== true;
+        } catch (error) {
+          // Dispose/reload can invalidate ctx while message_end is still draining.
+          if (isStaleExtensionContextError(error)) return;
+          throw error;
         }
-
-        continuingAfterToolResult = followsToolResult
-          && event.message.stopReason === "error"
-          && ctx.signal?.aborted !== true;
       });
 
       pi.on("agent_settled", () => {

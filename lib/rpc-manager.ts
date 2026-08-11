@@ -296,6 +296,13 @@ export class AgentSessionWrapper {
           return { cancelled: true };
         },
         reload: async () => {
+          // Drain active turns before SDK reload invalidates extension ctx.
+          // Otherwise in-flight tool/message handlers throw stale-ctx unhandledRejections.
+          try {
+            await this.inner.abort();
+          } catch {
+            // Reload must still proceed when abort/drain fails.
+          }
           await this.inner.reload?.();
           this.emitEvent({ type: "extension_ui_request", id: `reload-${Date.now()}`, method: "notify", message: "Pi extensions, skills, prompts, and themes reloaded.", notifyType: "info" });
         },

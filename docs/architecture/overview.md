@@ -55,7 +55,7 @@ Project discovery and per-cwd candidate collection are accelerated by a rebuilda
 - Idle timeout is 10 minutes.
 - Concurrent `startRpcSession()` calls must share `globalThis.__piStartLocks`.
 - After `send("fork")`, capture the new session id and destroy the wrapper immediately. `AgentSession.fork()` mutates `inner.sessionId`; leaving the old wrapper alive can corrupt `parentSession` chains.
-- WebUI-owned wrapper teardown emits the SDK `session_shutdown` lifecycle event before `AgentSession.dispose()`. This is required for extension timers, pollers, and UI contexts to release references before the SDK marks them stale.
+- WebUI-owned wrapper teardown drains active agent/compaction work (`abort` + idle wait, bounded), then emits the SDK `session_shutdown` lifecycle event, and only then calls `AgentSession.dispose()`. This order is required so extension timers/pollers and in-flight handlers release references before the SDK marks extension ctx stale (stale-ctx access otherwise surfaces as `unhandledRejection`). Extension-driven `/reload` follows the same drain-before-invalidate rule.
 
 ### Branching model
 

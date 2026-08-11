@@ -311,33 +311,54 @@ export class WorkflowChatLifecycleObserver {
   }
 }
 
+function sessionIdFromExtensionCtx(ctx: { sessionManager: { getSessionId(): string } }): string | null {
+  try {
+    return ctx.sessionManager.getSessionId();
+  } catch (error) {
+    // Session replacement/reload/dispose can invalidate ctx mid-handler.
+    if (
+      error instanceof Error
+      && (/extension ctx is stale|Extension context no longer active/i.test(error.message))
+    ) {
+      return null;
+    }
+    throw error;
+  }
+}
+
 export function createWorkflowChatLifecycleExtension(cwd: string): InlineExtension {
   const observer = new WorkflowChatLifecycleObserver(cwd);
   return {
     name: "snflow-chat-lifecycle",
     factory(pi) {
       pi.on("tool_call", (event, ctx) => {
+        const sessionId = sessionIdFromExtensionCtx(ctx);
+        if (!sessionId) return undefined;
         const result = observer.beforeToolCall(
           {
             toolCallId: event.toolCallId,
             toolName: event.toolName,
             input: event.input as Record<string, unknown>,
           },
-          ctx.sessionManager.getSessionId(),
+          sessionId,
         );
         return result.block ? { block: true, reason: result.reason } : undefined;
       });
       pi.on("tool_execution_update", (event, ctx) => {
+        const sessionId = sessionIdFromExtensionCtx(ctx);
+        if (!sessionId) return;
         observer.onToolUpdate(
           {
             toolCallId: event.toolCallId,
             toolName: event.toolName,
             partialResult: event.partialResult,
           },
-          ctx.sessionManager.getSessionId(),
+          sessionId,
         );
       });
       pi.on("tool_result", (event, ctx) => {
+        const sessionId = sessionIdFromExtensionCtx(ctx);
+        if (!sessionId) return;
         observer.onToolResult(
           {
             toolCallId: event.toolCallId,
@@ -347,10 +368,12 @@ export function createWorkflowChatLifecycleExtension(cwd: string): InlineExtensi
             details: event.details,
             isError: event.isError,
           },
-          ctx.sessionManager.getSessionId(),
+          sessionId,
         );
       });
       pi.on("tool_execution_end", (event, ctx) => {
+        const sessionId = sessionIdFromExtensionCtx(ctx);
+        if (!sessionId) return;
         observer.onToolResult(
           {
             toolCallId: event.toolCallId,
@@ -358,7 +381,7 @@ export function createWorkflowChatLifecycleExtension(cwd: string): InlineExtensi
             result: event.result,
             isError: event.isError,
           },
-          ctx.sessionManager.getSessionId(),
+          sessionId,
         );
       });
     },
