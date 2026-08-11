@@ -129,13 +129,26 @@ async function refresh() {
       btn.className = "secondary";
       btn.textContent = consented && debuggerPermission
         ? (binding.state === "active_debug" ? "Debug allowed" : "Debug consent granted")
-        : "Allow debug (optional)";
+        : "Allow debug";
       btn.disabled = consented && debuggerPermission && binding.state === "active_debug";
       btn.addEventListener("click", async () => {
         showError("");
-        const result = await send("grant_debug", { bindingId: binding.bindingId });
-        if (result?.error) showError(result.error);
-        await refresh();
+        btn.disabled = true;
+        const previousLabel = btn.textContent;
+        btn.textContent = "Recording debug consent…";
+        try {
+          // `debugger` cannot be optional in Chrome. The required manifest
+          // permission is inert until this per-binding consent is recorded and
+          // Snail Pi separately requests the debugger attachment.
+          const result = await send("grant_debug", { bindingId: binding.bindingId });
+          if (result?.error) showError(result.error);
+          await refresh();
+        } catch (error) {
+          showError(error instanceof Error ? error.message : String(error));
+        } finally {
+          btn.disabled = false;
+          btn.textContent = previousLabel || "Allow debug";
+        }
       });
       li.appendChild(btn);
     }

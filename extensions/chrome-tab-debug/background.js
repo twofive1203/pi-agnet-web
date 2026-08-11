@@ -726,7 +726,7 @@ async function handleCommand(requestId, payload) {
       if (!hasPerm || !consent) {
         return errorResult(
           "CAPABILITY_REQUIRED",
-          "Enable debug mode in the extension popup (grants optional debugger permission and local consent)",
+          "Open the extension popup and click Allow debug to grant local consent for this tab binding",
         );
       }
       try {
@@ -917,7 +917,7 @@ async function hasDebuggerPermission() {
 async function attachDebugger(tabId, bindingId) {
   const permitted = await hasDebuggerPermission();
   if (!permitted) {
-    throw new Error("Optional debugger permission not granted");
+    throw new Error("Debugger permission unavailable; reload the extension and approve its required permissions");
   }
   try {
     await chrome.debugger.attach({ tabId }, "1.3");
@@ -1287,8 +1287,9 @@ async function acceptPendingForActiveTab(pendingRequestId) {
 
 async function grantDebugConsent(bindingId) {
   if (!bindingId) throw new Error("bindingId required");
-  const granted = await chrome.permissions.request({ permissions: ["debugger"] });
-  if (!granted) throw new Error("Debugger permission denied");
+  if (!await hasDebuggerPermission()) {
+    throw new Error("Debugger permission unavailable; reload the extension and approve its required permissions");
+  }
   const state = await getSessionBindings();
   if (!state.bindings[bindingId]) throw new Error("Unknown binding");
   state.debugConsent = state.debugConsent || {};

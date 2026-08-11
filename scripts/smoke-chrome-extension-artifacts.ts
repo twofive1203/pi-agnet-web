@@ -536,7 +536,7 @@ function createChromeMock(options: {
     },
     debugger: {
       async attach(source: { tabId: number }) {
-        if (!debuggerPermission) throw new Error("Optional debugger permission not granted");
+        if (!debuggerPermission) throw new Error("Debugger permission unavailable");
         if (attachedTabs.has(source.tabId)) throw new Error("Debugger already attached by another client");
         attachedTabs.add(source.tabId);
       },
@@ -600,8 +600,8 @@ async function checkManifestAndAssets(): Promise<void> {
   assert(!perms.includes("<all_urls>"), "permissions must not include <all_urls>");
   assert(!hosts.includes("<all_urls>"), "host_permissions must not include <all_urls>");
   assert(!JSON.stringify(manifest).includes("<all_urls>"), "manifest must not mention <all_urls>");
-  assert(!perms.includes("debugger"), "debugger must not be mandatory permission");
-  assert(optional.includes("debugger"), "debugger must be optional_permissions");
+  assert(perms.includes("debugger"), "debugger must be a required permission because Chrome forbids it in optional_permissions");
+  assert(!optional.includes("debugger"), "debugger must not be declared as an unsupported optional permission");
   assert(perms.includes("activeTab"), "activeTab required");
   assert(perms.includes("scripting"), "scripting required");
   assert(perms.includes("storage"), "storage required");
@@ -652,6 +652,15 @@ async function checkManifestAndAssets(): Promise<void> {
   assert(
     popupHtml.includes("Pair &amp; connect current tab") && popupSource.includes("Pairing & connecting…"),
     "popup must communicate the combined pairing and current-tab authorization",
+  );
+  assert(
+    !popupSource.includes('chrome.permissions.request({ permissions: ["debugger"] })')
+      && !backgroundSource.includes('chrome.permissions.request({ permissions: ["debugger"] })'),
+    "debugger is a required Chrome permission and must not be requested at runtime",
+  );
+  assert(
+    popupSource.includes('send("grant_debug", { bindingId: binding.bindingId })'),
+    "popup click must still record explicit per-binding debug consent",
   );
 
   // Generated files must declare their source marker.
@@ -1249,6 +1258,21 @@ async function checkBackgroundProductionPaths(): Promise<void> {
     return (resp.payload || {}) as Record<string, unknown>;
   }
 
+  async function popupRequest(type: string, payload: Record<string, unknown> = {}): Promise<Record<string, unknown>> {
+    return await new Promise<Record<string, unknown>>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error(`popup ${type} timeout`)), 3000);
+      for (const listener of chrome.__test.runtimeListeners) {
+        const ret = listener({ channel: "snail-pi-popup", type, ...payload }, {}, (response: unknown) => {
+          clearTimeout(timer);
+          resolve((response || {}) as Record<string, unknown>);
+        });
+        if (ret === true) return;
+      }
+      clearTimeout(timer);
+      reject(new Error("no popup listener"));
+    });
+  }
+
   // Authorization rejections before debugger/script execution
   const cases: Array<{ name: string; payload: Record<string, unknown>; code: string }> = [
     {
@@ -1410,6 +1434,23 @@ async function checkBackgroundProductionPaths(): Promise<void> {
     params: { __tabId: tabId, __documentId: documentId, __origin: origin },
   });
   assert((noDebug.error as { code?: string })?.code === "CAPABILITY_REQUIRED", "debug consent required");
+
+  // Popup service worker records per-binding consent only when Chrome has
+  // activated the manifest-required debugger permission.
+  const consentWithoutPermission = await popupRequest("grant_debug", { bindingId });
+  assert(
+    String(consentWithoutPermission.error || "").includes("approve its required permissions"),
+    "background fails closed when Chrome has not activated the required debugger permission",
+  );
+  chrome.__test.setDebuggerPermission(true);
+  const grantedConsent = await popupRequest("grant_debug", { bindingId });
+  assert(grantedConsent.ok === true, "background records popup-granted debug consent");
+  const consentState = await chrome.storage.session.get(["debugConsent"]);
+  assert(
+    Boolean((consentState.debugConsent as Record<string, unknown> | undefined)?.[bindingId]),
+    "debug consent persisted for current binding",
+  );
+  chrome.__test.setDebuggerPermission(false);
 
   // Authorized snapshot reaches content script path
   const okSnap = await commandResult({

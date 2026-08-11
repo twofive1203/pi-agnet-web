@@ -18,11 +18,11 @@ Temporary, user-confirmed Chrome tab binding for local Snail Pi sessions.
 | `activeTab` | Temporary access only after the user invokes the extension on the chosen tab |
 | `scripting` | Inject DOM content script after confirmation |
 | `storage` | Persist installation credential (`local`) and temporary bindings (`session`) |
-| `debugger` (optional) | Read-only console/network diagnostics only after popup consent + runtime permission |
+| `debugger` | Chrome does not permit `debugger` in `optional_permissions`; the API remains inert until popup per-binding consent and a separate WebUI enable request attach it for read-only console/network diagnostics |
 | `tabs` | Observe bound-tab navigation/close for suspend/revoke |
 | `http://127.0.0.1/*` | Talk only to local Snail Pi HTTP + browser bridge |
 
-No `<all_urls>`, no always-on content scripts, no remote code, incognito not allowed. `debugger` is an **optional_permission** — DOM binding never attaches the debugger.
+No `<all_urls>`, no always-on content scripts, no remote code, incognito not allowed. Chrome requires `debugger` to be a manifest permission rather than an optional permission; DOM binding still never attaches the debugger, and debug attachment remains gated by explicit popup consent for that binding plus a separate WebUI enable action.
 
 ## Security notes
 
@@ -39,7 +39,7 @@ No `<all_urls>`, no always-on content scripts, no remote code, incognito not all
 - Successful actions return an 800 ms bounded post-action state summary. Cross-origin or still-loading navigation reports `stabilization: "pending"` rather than a false no-change result.
 - Network tool results never include Cookie/Authorization headers or bodies.
 - Raw CDP and arbitrary JavaScript evaluation are not exposed.
-- Debug mode requires extension popup consent and optional `debugger` permission; contention maps to `CAPABILITY_UNAVAILABLE`.
+- Debug mode requires per-binding extension popup consent before the WebUI enable action may use the manifest-declared `debugger` permission. Contention maps to `CAPABILITY_UNAVAILABLE`.
 
 ## Protocol compatibility
 

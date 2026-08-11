@@ -76,6 +76,7 @@ Use `scripts/start-pi-web-proxy.sh` or `scripts/start-pi-web-proxy.ps1` when pro
 - If the popup remains on `Checking…`: reload the unpacked extension and restart Snail Pi so both sides use the current protocol implementation. The popup should report `Extension unavailable` instead of waiting indefinitely when its MV3 service worker does not respond.
 - If tools return `BRIDGE_DISCONNECTED`: open the extension popup and click Reconnect; the MV3 service worker may have stopped.
 - If tools return `BINDING_SUSPENDED`: the tab navigated cross-origin; re-confirm binding on the new page.
+- If **Allow debug** reports `Only permissions specified in the manifest may be requested`: reload extension version 0.1.4+ from `chrome://extensions` and approve/re-enable it if Chrome shows the required-permission warning. Chrome explicitly forbids `debugger` in `optional_permissions`; current builds declare it as required but still gate every attachment behind per-binding popup consent plus the separate WebUI **Enable debug** action.
 - If debug tools return `CAPABILITY_UNAVAILABLE`: DevTools or another debugger may have detached `chrome.debugger`. DOM tools should still work; re-enable debug from Snail Pi after closing the conflicting debugger.
 - Tab bindings are temporary (`chrome.storage.session` + in-memory manager). Chrome/Snail Pi restart and session fork do not restore them.
 - Never expect raw CDP, arbitrary JS evaluation, cookies, or network bodies from v1 tools.
