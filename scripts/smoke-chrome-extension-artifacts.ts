@@ -644,6 +644,15 @@ async function checkManifestAndAssets(): Promise<void> {
 
   const backgroundSource = readFileSync(join(EXT_DIR, "background.js"), "utf8");
   assert(!backgroundSource.includes("${nextUrl}::nav"), "navigation document ids must not embed URLs");
+  assert(
+    backgroundSource.includes("acceptPendingForActiveTab(pairing.pending.pendingRequestId)"),
+    "pairing click must auto-bind the pairing-targeted pending request",
+  );
+  const popupSource = readFileSync(join(EXT_DIR, "popup.js"), "utf8");
+  assert(
+    popupHtml.includes("Pair &amp; connect current tab") && popupSource.includes("Pairing & connecting…"),
+    "popup must communicate the combined pairing and current-tab authorization",
+  );
 
   // Generated files must declare their source marker.
   for (const file of ["action-policy.js", "action-policy.inject.js", "redaction.js", "protocol-capabilities.js"]) {

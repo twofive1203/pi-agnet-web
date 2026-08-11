@@ -9,6 +9,7 @@ import {
   setBrowserBridgePort,
 } from "@/lib/browser-pairing";
 import { ensureBrowserBridgeStarted } from "@/lib/browser-bridge";
+import { getBrowserBindingManager } from "@/lib/browser-binding-manager";
 import { BrowserControlError, DEFAULT_BROWSER_BRIDGE_PORT } from "@/lib/browser-protocol";
 import { assertDirectLoopbackConnection } from "@/lib/automation-local-access";
 
@@ -25,6 +26,8 @@ export async function POST(req: Request) {
       clientId?: unknown;
       extensionOrigin?: unknown;
       label?: unknown;
+      sessionId?: unknown;
+      sessionLabel?: unknown;
       enabled?: unknown;
       port?: unknown;
     };
@@ -60,7 +63,14 @@ export async function POST(req: Request) {
         extensionOrigin: typeof body.extensionOrigin === "string" ? body.extensionOrigin : undefined,
         label: typeof body.label === "string" ? body.label : undefined,
       });
-      return NextResponse.json({ success: true, ...result });
+      const { bindingIntent, ...installation } = result;
+      const pending = bindingIntent
+        ? getBrowserBindingManager().createPendingBindingRequest({
+          sessionId: bindingIntent.sessionId,
+          sessionLabel: bindingIntent.sessionLabel,
+        })
+        : null;
+      return NextResponse.json({ success: true, ...installation, pending });
     }
 
     if (action === "connect_token") {
@@ -88,7 +98,19 @@ export async function POST(req: Request) {
     const state = readBrowserBridgeState();
     if (!state.enabled) setBrowserBridgeEnabled(true);
     await ensureBrowserBridgeStarted(state.port || DEFAULT_BROWSER_BRIDGE_PORT);
-    const offer = issuePairingCode({ port: state.port || DEFAULT_BROWSER_BRIDGE_PORT });
+    const sessionId = typeof body.sessionId === "string" ? body.sessionId.trim() : "";
+    if (sessionId.startsWith("new-")) {
+      return NextResponse.json({ error: "Wait for the real session id before browser binding" }, { status: 400 });
+    }
+    const offer = issuePairingCode({
+      port: state.port || DEFAULT_BROWSER_BRIDGE_PORT,
+      bindingIntent: sessionId
+        ? {
+          sessionId,
+          sessionLabel: typeof body.sessionLabel === "string" ? body.sessionLabel : undefined,
+        }
+        : undefined,
+    });
     return NextResponse.json({ success: true, ...offer, installations: listInstallations() });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

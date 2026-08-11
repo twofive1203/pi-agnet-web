@@ -73,7 +73,11 @@ export function BrowserBindingPanel({
       const res = await fetch("/api/browser/pair", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "issue" }),
+        body: JSON.stringify({
+          action: "issue",
+          sessionId: realSession ? sessionId : undefined,
+          sessionLabel: realSession ? (sessionLabel || sessionId?.slice(0, 8)) : undefined,
+        }),
       });
       const data = await res.json() as { pairingCode?: string; expiresAt?: number; error?: string };
       if (!res.ok) throw new Error(data.error || "Failed to issue pairing code");

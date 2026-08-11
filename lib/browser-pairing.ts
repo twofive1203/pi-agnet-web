@@ -1,6 +1,6 @@
 /**
- * Installation pairing helpers: one-time codes, verifiers, challenge-response.
- * Pairing grants installation trust only — never tab authorization.
+ * Installation pairing helpers: one-time codes, optional session intents, verifiers, challenge-response.
+ * Pairing credentials grant installation trust only; active-tab authorization still requires extension acceptance.
  */
 
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
@@ -23,6 +23,11 @@ function getAgentDir(): string {
   return join(homedir(), ".pi", "agent");
 }
 
+export type PairingBindingIntent = {
+  sessionId: string;
+  sessionLabel?: string;
+};
+
 export type BrowserBridgePersistedState = {
   version: 1;
   port: number;
@@ -33,6 +38,7 @@ export type BrowserBridgePersistedState = {
     salt: string;
     expiresAt: number;
     createdAt: number;
+    bindingIntent?: PairingBindingIntent;
   };
 };
 
@@ -107,6 +113,20 @@ export function readBrowserBridgeState(agentDir = getAgentDir()): BrowserBridgeP
           && typeof item.createdAt === "number";
       })
       : [];
+    const rawBindingIntent = isRecord(raw.pendingPairing) && isRecord(raw.pendingPairing.bindingIntent)
+      ? raw.pendingPairing.bindingIntent
+      : null;
+    const bindingIntent = rawBindingIntent
+      && typeof rawBindingIntent.sessionId === "string"
+      && rawBindingIntent.sessionId.trim()
+      && !rawBindingIntent.sessionId.trim().startsWith("new-")
+      ? {
+        sessionId: rawBindingIntent.sessionId.trim(),
+        ...(typeof rawBindingIntent.sessionLabel === "string" && rawBindingIntent.sessionLabel.trim()
+          ? { sessionLabel: rawBindingIntent.sessionLabel.trim().slice(0, 160) }
+          : {}),
+      }
+      : undefined;
     const pending = isRecord(raw.pendingPairing)
       && typeof raw.pendingPairing.codeHash === "string"
       && typeof raw.pendingPairing.salt === "string"
@@ -117,6 +137,7 @@ export function readBrowserBridgeState(agentDir = getAgentDir()): BrowserBridgeP
         salt: raw.pendingPairing.salt,
         expiresAt: raw.pendingPairing.expiresAt,
         createdAt: raw.pendingPairing.createdAt,
+        ...(bindingIntent ? { bindingIntent } : {}),
       }
       : null;
     return {
@@ -187,6 +208,7 @@ export function issuePairingCode(options?: {
   port?: number;
   agentDir?: string;
   now?: number;
+  bindingIntent?: PairingBindingIntent;
 }): IssuedPairingCode {
   const agentDir = options?.agentDir ?? getAgentDir();
   const now = options?.now ?? Date.now();
@@ -199,7 +221,25 @@ export function issuePairingCode(options?: {
   const salt = randomBytes(16).toString("hex");
   const codeHash = hashWithSalt(normalizePairingCode(pairingCode), salt);
   const expiresAt = now + (options?.ttlMs ?? DEFAULT_PAIRING_TTL_MS);
-  state.pendingPairing = { codeHash, salt, expiresAt, createdAt: now };
+  const targetSessionId = options?.bindingIntent?.sessionId.trim();
+  if (targetSessionId?.startsWith("new-")) {
+    throw new BrowserControlError("INVALID_FRAME", "A real session id is required for pairing-bound tab access");
+  }
+  const bindingIntent = targetSessionId
+    ? {
+      sessionId: targetSessionId,
+      ...(options?.bindingIntent?.sessionLabel?.trim()
+        ? { sessionLabel: options.bindingIntent.sessionLabel.trim().slice(0, 160) }
+        : {}),
+    }
+    : undefined;
+  state.pendingPairing = {
+    codeHash,
+    salt,
+    expiresAt,
+    createdAt: now,
+    ...(bindingIntent ? { bindingIntent } : {}),
+  };
   if (options?.port) state.port = options.port;
   writeBrowserBridgeState(state, agentDir);
   return {
@@ -221,6 +261,7 @@ export type PairingExchangeResult = {
   port: number;
   host: "127.0.0.1";
   protocolVersion: 1;
+  bindingIntent?: PairingBindingIntent;
 };
 
 export function exchangePairingCode(input: {
@@ -269,6 +310,7 @@ export function exchangePairingCode(input: {
     port: state.port,
     host: "127.0.0.1",
     protocolVersion: 1,
+    ...(pending.bindingIntent ? { bindingIntent: pending.bindingIntent } : {}),
   };
 }
 

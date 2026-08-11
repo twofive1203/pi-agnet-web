@@ -158,7 +158,7 @@ $("pair-btn").addEventListener("click", async () => {
   const btn = $("pair-btn");
   const previousLabel = btn.textContent;
   btn.disabled = true;
-  btn.textContent = "Pairing…";
+  btn.textContent = "Pairing & connecting…";
   try {
     const result = await send("pair", { pairingCode, webPort });
     if (result?.error) {
@@ -169,7 +169,7 @@ $("pair-btn").addEventListener("click", async () => {
     await refresh();
   } finally {
     btn.disabled = false;
-    btn.textContent = previousLabel || "Pair";
+    btn.textContent = previousLabel || "Pair & connect current tab";
   }
 });
 

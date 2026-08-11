@@ -164,6 +164,8 @@ async function pairWithCode(pairingCode, webPort = DEFAULT_WEB_PORT) {
     bridgePort: data.port || DEFAULT_PORT,
     pairedAt: Date.now(),
   });
+  const pairingPendings = normalizePendings(data);
+  if (pairingPendings.length) cachedPendings = pairingPendings;
   await connectBridge();
   return data;
 }
@@ -262,6 +264,15 @@ function scheduleReconnect() {
     reconnectTimer = null;
     void connectBridge();
   }, delay);
+}
+
+async function waitForBridgeAuthentication(timeoutMs = 5000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (socket && socket.readyState === WebSocket.OPEN && socketAuthenticated) return;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error("Extension bridge authentication timed out");
 }
 
 /**
@@ -1431,7 +1442,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       };
     }
     if (message.type === "pair") {
-      await pairWithCode(message.pairingCode, message.webPort || DEFAULT_WEB_PORT);
+      const pairing = await pairWithCode(message.pairingCode, message.webPort || DEFAULT_WEB_PORT);
+      if (pairing.pending?.pendingRequestId) {
+        await waitForBridgeAuthentication();
+        const accepted = await acceptPendingForActiveTab(pairing.pending.pendingRequestId);
+        return { ok: true, binding: accepted.binding };
+      }
       return { ok: true };
     }
     if (message.type === "unpair") {

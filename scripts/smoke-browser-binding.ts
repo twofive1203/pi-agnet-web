@@ -472,7 +472,12 @@ async function main(): Promise<void> {
 
   await check("pairing challenge and connect token", async () => {
     setBrowserBridgeEnabled(true, agentDir);
-    const offer2 = issuePairingCode({ agentDir, ttlMs: 60_000, port: 62667 });
+    const offer2 = issuePairingCode({
+      agentDir,
+      ttlMs: 60_000,
+      port: 62667,
+      bindingIntent: { sessionId: "session-pair-target", sessionLabel: "Pair target" },
+    });
     assert(normalizePairingCode(offer2.pairingCode).length === 8, "code length");
     const exchanged = exchangePairingCode({
       pairingCode: offer2.pairingCode,
@@ -480,6 +485,8 @@ async function main(): Promise<void> {
       extensionOrigin: "chrome-extension://test",
     });
     assert(exchanged.clientId.startsWith("ext_"), "client id");
+    assert(exchanged.bindingIntent?.sessionId === "session-pair-target", "pairing preserves target session");
+    assert(exchanged.bindingIntent?.sessionLabel === "Pair target", "pairing preserves target label");
     assert(verifyInstallationSecret(exchanged.clientId, exchanged.installationSecret, agentDir), "secret verifies");
 
     const token = issueConnectToken({
@@ -1124,11 +1131,22 @@ async function main(): Promise<void> {
     }
   });
 
-  await check("BrowserBindingPanel revoke uses danger i18n confirm and cancel short-circuits", async () => {
+  await check("BrowserBindingPanel pairing intent and revoke confirmation contracts", async () => {
     const { readFileSync } = await import("node:fs");
     const { join: pathJoin } = await import("node:path");
     const panelPath = pathJoin(process.cwd(), "components", "BrowserBindingPanel.tsx");
     const source = readFileSync(panelPath, "utf8");
+    assert(source.includes("sessionId: realSession ? sessionId : undefined"), "pair issue carries real session id");
+    assert(source.includes("sessionLabel: realSession ?"), "pair issue carries session label");
+    const pairRouteSource = readFileSync(
+      pathJoin(process.cwd(), "app", "api", "browser", "pair", "route.ts"),
+      "utf8",
+    );
+    assert(pairRouteSource.includes("bindingIntent: sessionId"), "pair issue stores session binding intent");
+    assert(
+      pairRouteSource.includes("createPendingBindingRequest") && pairRouteSource.includes("bindingIntent.sessionId"),
+      "pair exchange creates the targeted pending bind request",
+    );
     assert(source.includes('t("panels.browser.revokeTitle")'), "revoke title i18n key");
     assert(source.includes('t("panels.browser.revokeAllTitle")'), "revoke-all title i18n key");
     assert(source.includes('t("panels.browser.revokeMessage")'), "revoke message i18n key");

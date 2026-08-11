@@ -5,12 +5,11 @@ Temporary, user-confirmed Chrome tab binding for local Snail Pi sessions.
 ## Install (development)
 
 1. Start Snail Pi Web (`npm run dev` or `spi`) on `http://127.0.0.1:62666`.
-2. In the chat Browser panel, click **Enable + pair extension** and copy the pairing code.
+2. In a Snail Pi chat with a real session id, open the Browser panel, click **Enable + pair extension**, and copy the pairing code.
 3. Open `chrome://extensions`, enable **Developer mode**, **Load unpacked**, and select this directory:
    `extensions/chrome-tab-debug`
-4. Open the extension popup, enter the pairing code (and web port if not 62666), then **Pair**.
-5. In a Snail Pi session with a real session id, click **Connect browser tab**.
-6. Switch to the target normal webpage, open the extension popup, and click **Bind this tab**.
+4. Switch to the normal webpage you want the chat to use, open the extension popup, enter the pairing code (and web port if not 62666), then click **Pair & connect current tab**. The pairing code carries a one-time intent for the issuing chat session, so this explicit popup click both pairs the installation and binds the active tab.
+5. For later tabs or an already-paired extension, use **Connect browser tab** in the target chat and then **Bind this tab** in the extension popup.
 
 ## Permissions
 
@@ -27,7 +26,7 @@ No `<all_urls>`, no always-on content scripts, no remote code, incognito not all
 
 ## Security notes
 
-- Installation pairing is not tab authorization.
+- Installation credentials alone are not tab authorization. During first-time setup, the pairing code may carry a one-time target-session intent, but the active tab is authorized only by the explicit **Pair & connect current tab** popup click.
 - Binding acceptance is only accepted over the authenticated WebSocket channel (HTTP accept is rejected).
 - Every command re-checks the extension-owned `chrome.storage.session` binding (session, binding, tab, document, origin, state, capability) before acting.
 - Tab bindings are temporary and use `chrome.storage.session` only; bridge/Snail Pi restart reconciles and clears stale authorizations.
