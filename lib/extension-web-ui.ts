@@ -38,16 +38,21 @@ function stripAnsi(text: string): string {
 }
 
 /**
- * pi-subagents TUI HUDs that overlap the top-bar SubagentPanel.
- * Drop them in WebUI so we skip factory materialization + SSE churn.
+ * TUI chrome that WebUI already owns elsewhere or intentionally does not render.
+ * Drop these in the bridge so we skip factory materialization + SSE churn.
+ * - pi-subagents HUDs overlap the top-bar SubagentPanel
+ * - powerbar is TUI status chrome; Chat also filters it client-side
  */
 const SUPPRESSED_EXTENSION_WIDGET_KEYS = new Set([
   "subagent-fleet-status",
   "subagent-async",
+  "powerbar",
 ]);
 
 export function isSuppressedExtensionWidgetKey(key: string): boolean {
-  return SUPPRESSED_EXTENSION_WIDGET_KEYS.has(key);
+  const normalized = key.toLowerCase();
+  if (SUPPRESSED_EXTENSION_WIDGET_KEYS.has(normalized)) return true;
+  return normalized.startsWith("powerbar:");
 }
 
 /**
@@ -130,20 +135,15 @@ export class ExtensionWebUiBridge {
           statusText: text,
         });
       },
-      setWorkingMessage: (message) => {
-        this.emitUnsupported("setWorkingMessage", message ? `message: ${message}` : undefined);
-      },
-      setWorkingVisible: () => {
-        this.emitUnsupported("setWorkingVisible");
-      },
-      setWorkingIndicator: () => {
-        this.emitUnsupported("setWorkingIndicator");
-      },
-      setHiddenThinkingLabel: () => {
-        this.emitUnsupported("setHiddenThinkingLabel");
-      },
+      // TUI-only loader chrome: match official RPC mode (silent no-op).
+      // Extensions such as pi-powerbar / pi-raw-paste call these on session_start;
+      // emitting extension_error would spam the browser console every bind.
+      setWorkingMessage: () => {},
+      setWorkingVisible: () => {},
+      setWorkingIndicator: () => {},
+      setHiddenThinkingLabel: () => {},
       setWidget: (key, content, options) => {
-        // Top-bar SubagentPanel owns subagent observability in WebUI.
+        // WebUI owns subagent observability; powerbar is TUI-only chrome.
         if (isSuppressedExtensionWidgetKey(key)) return;
 
         if (content === undefined) {
@@ -161,32 +161,27 @@ export class ExtensionWebUiBridge {
         const widgetLines = materializeWidgetLines(
           content as string[] | ((tui: unknown, theme: unknown) => unknown),
         );
-        if (widgetLines !== undefined) {
-          this.emit({
-            type: "extension_ui_request",
-            id: randomUUID(),
-            method: "setWidget",
-            widgetKey: key,
-            widgetLines,
-            widgetPlacement: options?.placement,
-          });
+        if (widgetLines === undefined) {
+          // Official RPC ignores non-array factories; we try to materialize first
+          // (todo-list etc.) and silently drop factories that need full TUI/theme.
           return;
         }
 
-        this.emitUnsupported(
-          "setWidget",
-          "component factory could not be materialized to text lines in WebUI",
-        );
+        this.emit({
+          type: "extension_ui_request",
+          id: randomUUID(),
+          method: "setWidget",
+          widgetKey: key,
+          widgetLines,
+          widgetPlacement: options?.placement,
+        });
       },
-      setFooter: () => this.emitUnsupported("setFooter"),
-      setHeader: () => this.emitUnsupported("setHeader"),
+      setFooter: () => {},
+      setHeader: () => {},
       setTitle: (title) => {
         this.emit({ type: "extension_ui_request", id: randomUUID(), method: "setTitle", title });
       },
-      custom: async () => {
-        this.emitUnsupported("custom", "TUI custom components are not supported in WebUI");
-        return undefined as never;
-      },
+      custom: async () => undefined as never,
       pasteToEditor: (text) => {
         this.emit({ type: "extension_ui_request", id: randomUUID(), method: "set_editor_text", text });
       },
@@ -194,8 +189,8 @@ export class ExtensionWebUiBridge {
         this.emit({ type: "extension_ui_request", id: randomUUID(), method: "set_editor_text", text });
       },
       getEditorText: () => "",
-      addAutocompleteProvider: () => this.emitUnsupported("addAutocompleteProvider"),
-      setEditorComponent: () => this.emitUnsupported("setEditorComponent"),
+      addAutocompleteProvider: () => {},
+      setEditorComponent: () => {},
       getEditorComponent: () => undefined,
       theme: passthroughTheme,
       getAllThemes: () => [],
@@ -256,15 +251,6 @@ export class ExtensionWebUiBridge {
 
       this.pending.set(id, { event, resolve: finish });
       this.emit(event);
-    });
-  }
-
-  private emitUnsupported(method: string, detail?: string): void {
-    this.emit({
-      type: "extension_error",
-      extensionPath: "<webui-extension-host>",
-      event: "ui",
-      error: detail ? `${method} is not supported: ${detail}` : `${method} is not supported in WebUI extension mode`,
     });
   }
 }
