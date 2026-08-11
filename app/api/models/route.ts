@@ -2,8 +2,8 @@ import { stat } from "fs/promises";
 import { getAgentDir, type SettingsManager } from "@earendil-works/pi-coding-agent";
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import { canonicalizeCwd } from "@/lib/cwd";
+import { readModelFavoriteKeys } from "@/lib/model-favorites";
 import { modelPrimaryCandidateKey } from "@/lib/model-primary-candidates";
-import { readPrimaryCandidateKeys } from "@/lib/model-primary-candidates-server";
 import { createSessionServicesWithRegistry } from "@/lib/pi-auth";
 
 export const dynamic = "force-dynamic";
@@ -60,7 +60,12 @@ async function buildModelMetadata(cwd: string): Promise<ModelMetadata> {
   try {
     const { services, registry } = await createSessionServicesWithRegistry(cwd, getAgentDir());
     const available = registry.getAvailable();
-    const primaryCandidates = readPrimaryCandidateKeys();
+    let primaryCandidates = new Set<string>();
+    try {
+      primaryCandidates = readModelFavoriteKeys();
+    } catch {
+      // A malformed WebUI sidecar must not hide otherwise usable Pi models.
+    }
     modelList = available.map((model: { id: string; name: string; provider: string; input?: readonly string[] }) => ({
       id: model.id,
       name: model.name,

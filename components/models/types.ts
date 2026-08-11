@@ -90,8 +90,8 @@ export interface ModelEntry {
   headers?: Record<string, string>;
   compat?: Record<string, unknown>;
   /**
-   * WebUI-only: mark this model as a first-level chat picker candidate (favorite).
-   * Stored in models.json; Pi ignores unknown fields.
+   * Legacy WebUI-only favorite flag. New writes use model-favorites.json, while
+   * this field remains readable for one-time migration.
    */
   primaryCandidate?: boolean;
 }

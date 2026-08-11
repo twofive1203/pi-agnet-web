@@ -487,16 +487,22 @@ export function ModelDetail({
   provider,
   model,
   autoAppliedPricing,
+  favorite,
+  favoriteBusy,
   onChange,
   onAutoAppliedPricingChange,
+  onFavoriteChange,
   onDelete,
 }: {
   providerName: string;
   provider: ProviderEntry;
   model: ModelEntry;
   autoAppliedPricing: AutoAppliedPricing | null;
+  favorite: boolean;
+  favoriteBusy: boolean;
   onChange: (m: ModelEntry) => void;
   onAutoAppliedPricingChange: (pricing: AutoAppliedPricing | null) => void;
+  onFavoriteChange: (favorite: boolean) => void;
   onDelete: () => void;
 }) {
   const { t } = useI18n();
@@ -783,8 +789,9 @@ export function ModelDetail({
           onChange={(v) => set("input", v ? ["text", "image"] : undefined)} />
         <Check
           label={t("settings.models.primaryCandidate")}
-          checked={model.primaryCandidate === true}
-          onChange={(v) => set("primaryCandidate", v || undefined)}
+          checked={favorite}
+          disabled={!model.id.trim() || favoriteBusy}
+          onChange={onFavoriteChange}
         />
       </div>
       <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: -8 }}>

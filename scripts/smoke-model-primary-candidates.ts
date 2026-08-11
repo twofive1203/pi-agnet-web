@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   buildDefaultModelPickerOptions,
   groupModelOptionsByProvider,
@@ -6,8 +9,14 @@ import {
   modelPrimaryCandidateKey,
   readPrimaryCandidateKeysFromModelsJson,
 } from "../lib/model-primary-candidates";
+import {
+  getModelFavoritesPath,
+  ModelFavoritesValidationError,
+  readModelFavorites,
+  setModelFavorite,
+} from "../lib/model-favorites";
 
-function main() {
+async function main() {
   assert.equal(modelPrimaryCandidateKey(" OpenAI ", " gpt-4.1 "), "OpenAI\0gpt-4.1");
   assert.equal(isPrimaryCandidateModel({ primaryCandidate: true }), true);
   assert.equal(isPrimaryCandidateModel({ primaryCandidate: false }), false);
@@ -42,7 +51,7 @@ function main() {
   ];
 
   const noneMarked = buildDefaultModelPickerOptions(
-    options.map(({ primaryCandidate: _pc, ...rest }) => rest),
+    options.map(({ provider, modelId, name }) => ({ provider, modelId, name })),
   );
   assert.equal(noneMarked.hasPrimaryCandidates, false);
   assert.equal(noneMarked.defaultOptions.length, 4);
@@ -76,7 +85,67 @@ function main() {
   assert.deepEqual(collapsed.map((g) => g.provider), ["openai", "anthropic"]);
   assert.equal(collapsed[0]?.options.length, 3);
 
+  const agentDir = mkdtempSync(join(tmpdir(), "pi-model-favorites-"));
+  try {
+    mkdirSync(agentDir, { recursive: true });
+    writeFileSync(join(agentDir, "models.json"), JSON.stringify({
+      providers: {
+        custom: {
+          models: [
+            { id: "legacy-a", primaryCandidate: true },
+            { id: "legacy-b", primaryCandidate: true },
+          ],
+        },
+      },
+    }));
+
+    const legacy = readModelFavorites(agentDir);
+    assert.equal(legacy.source, "legacy");
+    assert.deepEqual(legacy.favorites.map((entry) => `${entry.provider}/${entry.modelId}`), [
+      "custom/legacy-a",
+      "custom/legacy-b",
+    ]);
+
+    const migrated = await setModelFavorite(
+      { provider: "custom", modelId: "legacy-a" },
+      false,
+      agentDir,
+    );
+    assert.equal(migrated.source, "sidecar");
+    assert.deepEqual(migrated.favorites.map((entry) => `${entry.provider}/${entry.modelId}`), [
+      "custom/legacy-b",
+    ]);
+    assert.equal(getModelFavoritesPath(agentDir), join(agentDir, "model-favorites.json"));
+
+    await Promise.all([
+      setModelFavorite({ provider: "openai-codex", modelId: "gpt-built-in" }, true, agentDir),
+      setModelFavorite({ provider: "xai", modelId: "grok-built-in" }, true, agentDir),
+    ]);
+    const sidecar = readModelFavorites(agentDir);
+    assert.equal(sidecar.source, "sidecar");
+    assert.deepEqual(sidecar.favorites.map((entry) => `${entry.provider}/${entry.modelId}`), [
+      "custom/legacy-b",
+      "openai-codex/gpt-built-in",
+      "xai/grok-built-in",
+    ]);
+
+    writeFileSync(join(agentDir, "models.json"), JSON.stringify({
+      providers: { custom: { models: [{ id: "ignored-legacy", primaryCandidate: true }] } },
+    }));
+    assert.deepEqual(
+      readModelFavorites(agentDir).favorites.map((entry) => `${entry.provider}/${entry.modelId}`),
+      ["custom/legacy-b", "openai-codex/gpt-built-in", "xai/grok-built-in"],
+    );
+
+    assert.throws(
+      () => setModelFavorite({ provider: "", modelId: "bad" }, true, agentDir),
+      ModelFavoritesValidationError,
+    );
+  } finally {
+    rmSync(agentDir, { recursive: true, force: true });
+  }
+
   console.log("smoke-model-primary-candidates: ok");
 }
 
-main();
+void main();

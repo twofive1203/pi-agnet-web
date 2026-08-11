@@ -1,7 +1,7 @@
 "use client";
 
 import { useI18n } from "@/components/I18nProvider";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   SettingsActionRow,
   SettingsBadge,
@@ -10,6 +10,7 @@ import {
   SettingsState,
 } from "@/components/ui/SettingsPrimitives";
 import { ModelPricingCatalog } from "./ModelPricingCatalog";
+import { modelPrimaryCandidateKey } from "@/lib/model-primary-candidates";
 import type {
   ApiKeyProvider,
   DiscoveredModelCandidate,
@@ -30,11 +31,22 @@ import { AddProviderPicker, PricingSyncStatus } from "./models/AddProviderPicker
 
 type AutoPricingByProvider = Record<string, Record<number, AutoAppliedPricing>>;
 
+interface AvailableModel {
+  id: string;
+  name: string;
+  provider: string;
+  primaryCandidate?: boolean;
+}
+
+interface ModelFavoritesResponse {
+  favorites?: { provider: string; modelId: string }[];
+  error?: string;
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function ModelsConfig({ cwd: _cwd, onClose }: { cwd: string | null; onClose: () => void }) {
+export function ModelsConfig({ cwd, onClose }: { cwd: string | null; onClose: () => void }) {
   const { t } = useI18n();
-  void _cwd;
   const [config, setConfig] = useState<ModelsJson>({ providers: {} });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -45,9 +57,15 @@ export function ModelsConfig({ cwd: _cwd, onClose }: { cwd: string | null; onClo
   const [apiKeyProviders, setApiKeyProviders] = useState<ApiKeyProvider[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pricingCatalogOpen, setPricingCatalogOpen] = useState(false);
-  /** Providers absent from this map stay expanded (default). Presence means collapsed. */
+  /** Custom providers are expanded by default; authenticated built-in providers are collapsed. */
   const [collapsedProviders, setCollapsedProviders] = useState<Record<string, true>>({});
+  const [expandedAuthenticatedProviders, setExpandedAuthenticatedProviders] = useState<Record<string, true>>({});
   const [autoPricingByProvider, setAutoPricingByProvider] = useState<AutoPricingByProvider>({});
+  const [availableModels, setAvailableModels] = useState<AvailableModel[]>([]);
+  const [availableModelsError, setAvailableModelsError] = useState<string | null>(null);
+  const [favoriteKeys, setFavoriteKeys] = useState<Set<string>>(new Set());
+  const [favoriteBusyKeys, setFavoriteBusyKeys] = useState<Set<string>>(new Set());
+  const [favoriteError, setFavoriteError] = useState<string | null>(null);
 
   const updateAutoAppliedPricing = useCallback((providerName: string, index: number, pricing: AutoAppliedPricing | null) => {
     setAutoPricingByProvider((prev) => {
@@ -92,6 +110,34 @@ export function ModelsConfig({ cwd: _cwd, onClose }: { cwd: string | null; onClo
       .catch(() => {});
   }, []);
 
+  const loadAvailableModels = useCallback(() => {
+    const params = new URLSearchParams({ refresh: "1" });
+    if (cwd) params.set("cwd", cwd);
+    fetch(`/api/models?${params.toString()}`)
+      .then(async (response) => {
+        const body = await response.json() as { modelList?: AvailableModel[]; error?: string };
+        if (!response.ok) throw new Error(body.error ?? `HTTP ${response.status}`);
+        setAvailableModels(body.modelList ?? []);
+        setAvailableModelsError(null);
+      })
+      .catch((error) => {
+        setAvailableModels([]);
+        setAvailableModelsError(error instanceof Error ? error.message : String(error));
+      });
+  }, [cwd]);
+
+  const loadModelFavorites = useCallback(() => {
+    fetch("/api/model-favorites")
+      .then(async (response) => {
+        const body = await response.json() as ModelFavoritesResponse;
+        if (!response.ok) throw new Error(body.error ?? `HTTP ${response.status}`);
+        setFavoriteKeys(new Set((body.favorites ?? []).map((favorite) => (
+          modelPrimaryCandidateKey(favorite.provider, favorite.modelId)
+        ))));
+      })
+      .catch((error) => setFavoriteError(error instanceof Error ? error.message : String(error)));
+  }, []);
+
   useEffect(() => {
     fetch("/api/models-config")
       .then((r) => r.json())
@@ -105,7 +151,9 @@ export function ModelsConfig({ cwd: _cwd, onClose }: { cwd: string | null; onClo
       .finally(() => setLoading(false));
     loadOAuthProviders();
     loadApiKeyProviders();
-  }, [loadOAuthProviders, loadApiKeyProviders]);
+    loadAvailableModels();
+    loadModelFavorites();
+  }, [loadOAuthProviders, loadApiKeyProviders, loadAvailableModels, loadModelFavorites]);
 
   const addCustomProvider = useCallback(() => {
     let finalName = "new-provider";
@@ -190,6 +238,17 @@ export function ModelsConfig({ cwd: _cwd, onClose }: { cwd: string | null; onClo
         return next;
       }
       return { ...prev, [name]: true };
+    });
+  }, []);
+
+  const toggleAuthenticatedProviderExpanded = useCallback((key: string) => {
+    setExpandedAuthenticatedProviders((prev) => {
+      if (prev[key]) {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      }
+      return { ...prev, [key]: true };
     });
   }, []);
 
@@ -303,6 +362,35 @@ export function ModelsConfig({ cwd: _cwd, onClose }: { cwd: string | null; onClo
     setSelection({ type: "provider", name: providerName });
   }, [shiftAutoPricingAfterRemove]);
 
+  const updateFavorite = useCallback(async (provider: string, modelId: string, favorite: boolean) => {
+    const normalizedProvider = provider.trim();
+    const normalizedModelId = modelId.trim();
+    if (!normalizedProvider || !normalizedModelId) return;
+    const key = modelPrimaryCandidateKey(normalizedProvider, normalizedModelId);
+    setFavoriteError(null);
+    setFavoriteBusyKeys((current) => new Set(current).add(key));
+    try {
+      const response = await fetch("/api/model-favorites", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider: normalizedProvider, modelId: normalizedModelId, favorite }),
+      });
+      const body = await response.json() as ModelFavoritesResponse;
+      if (!response.ok) throw new Error(body.error ?? `HTTP ${response.status}`);
+      setFavoriteKeys(new Set((body.favorites ?? []).map((entry) => (
+        modelPrimaryCandidateKey(entry.provider, entry.modelId)
+      ))));
+    } catch (error) {
+      setFavoriteError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setFavoriteBusyKeys((current) => {
+        const next = new Set(current);
+        next.delete(key);
+        return next;
+      });
+    }
+  }, []);
+
   const handleSave = useCallback(async () => {
     setSaving(true);
     setSaveError(null);
@@ -326,6 +414,29 @@ export function ModelsConfig({ cwd: _cwd, onClose }: { cwd: string | null; onClo
   const providers = Object.entries(config.providers ?? {});
   const activeOAuth = oauthProviders.filter((p) => p.loggedIn);
   const activeApiKey = apiKeyProviders.filter((p) => p.configured);
+  const availableModelsByProvider = useMemo(() => {
+    const grouped = new Map<string, AvailableModel[]>();
+    for (const model of availableModels) {
+      const models = grouped.get(model.provider);
+      if (models) models.push(model);
+      else grouped.set(model.provider, [model]);
+    }
+    return grouped;
+  }, [availableModels]);
+  const authenticatedProviders: { key: string; id: string; label: string; selection: Selection }[] = [
+    ...activeOAuth.map((provider) => ({
+      key: `oauth:${provider.id}`,
+      id: provider.id,
+      label: provider.name,
+      selection: { type: "oauth", providerId: provider.id } as Selection,
+    })),
+    ...activeApiKey.map((provider) => ({
+      key: `apikey:${provider.id}`,
+      id: provider.id,
+      label: provider.displayName,
+      selection: { type: "apikey", providerId: provider.id } as Selection,
+    })),
+  ];
 
   // Resolve current detail
   const detailContent = (() => {
@@ -333,12 +444,12 @@ export function ModelsConfig({ cwd: _cwd, onClose }: { cwd: string | null; onClo
     if (selection.type === "oauth") {
       const p = oauthProviders.find((p) => p.id === selection.providerId);
       if (!p) return null;
-      return <OAuthDetail key={p.id} provider={p} onRefresh={loadOAuthProviders} />;
+      return <OAuthDetail key={p.id} provider={p} onRefresh={() => { loadOAuthProviders(); loadAvailableModels(); }} />;
     }
     if (selection.type === "apikey") {
       const p = apiKeyProviders.find((p) => p.id === selection.providerId);
       if (!p) return null;
-      return <ApiKeyDetail key={p.id} provider={p} onRefresh={loadApiKeyProviders} />;
+      return <ApiKeyDetail key={p.id} provider={p} onRefresh={() => { loadApiKeyProviders(); loadAvailableModels(); }} />;
     }
     if (selection.type === "provider") {
       const provider = config.providers?.[selection.name];
@@ -366,8 +477,11 @@ export function ModelsConfig({ cwd: _cwd, onClose }: { cwd: string | null; onClo
         provider={provider}
         model={model}
         autoAppliedPricing={autoPricingByProvider[selection.providerName]?.[selection.index] ?? null}
+        favorite={favoriteKeys.has(modelPrimaryCandidateKey(selection.providerName, model.id))}
+        favoriteBusy={favoriteBusyKeys.has(modelPrimaryCandidateKey(selection.providerName, model.id))}
         onChange={(m) => updateModel(selection.providerName, selection.index, m)}
         onAutoAppliedPricingChange={(pricing) => updateAutoAppliedPricing(selection.providerName, selection.index, pricing)}
+        onFavoriteChange={(favorite) => { void updateFavorite(selection.providerName, model.id, favorite); }}
         onDelete={() => removeModel(selection.providerName, selection.index)}
       />
     );
@@ -380,7 +494,7 @@ export function ModelsConfig({ cwd: _cwd, onClose }: { cwd: string | null; onClo
           <div className="pi-modal-header">
             <div className="pi-modal-header-copy">
               <div id="models-config-title" className="pi-modal-title">Models</div>
-              <div className="pi-modal-subtitle resource-path">~/.pi/agent/models.json</div>
+              <div className="pi-modal-subtitle resource-path">~/.pi/agent/models.json · model-favorites.json</div>
             </div>
             <SettingsActionRow className="models-header-actions">
               <SettingsButton size="icon" onClick={() => setPricingCatalogOpen(true)} title="View pricing catalog" aria-label="View pricing catalog">
@@ -394,13 +508,63 @@ export function ModelsConfig({ cwd: _cwd, onClose }: { cwd: string | null; onClo
           <div className="pi-modal-split-body resource-split-body">
             <aside className="resource-split-nav models-tree" aria-label="Model providers">
               <div className="resource-split-list">
-                {activeOAuth.map((provider) => {
-                  const active = selection?.type === "oauth" && selection.providerId === provider.id;
-                  return <button key={provider.id} type="button" className={`resource-nav-row${active ? " resource-nav-row-active" : ""}`} onClick={() => setSelection({ type: "oauth", providerId: provider.id })}><ProviderIcon id={provider.id} size={16} /><span>{provider.name}</span></button>;
-                })}
-                {activeApiKey.map((provider) => {
-                  const active = selection?.type === "apikey" && selection.providerId === provider.id;
-                  return <button key={provider.id} type="button" className={`resource-nav-row${active ? " resource-nav-row-active" : ""}`} onClick={() => setSelection({ type: "apikey", providerId: provider.id })}><ProviderIcon id={provider.id} size={16} /><span>{provider.displayName}</span></button>;
+                {authenticatedProviders.map((provider) => {
+                  const providerModels = availableModelsByProvider.get(provider.id) ?? [];
+                  const modelsExpanded = providerModels.length > 0 && expandedAuthenticatedProviders[provider.key] === true;
+                  const providerActive = selection?.type === provider.selection.type
+                    && "providerId" in selection
+                    && selection.providerId === provider.id;
+                  return (
+                    <div key={provider.key} className="resource-nav-group models-provider-group">
+                      <div className={`resource-nav-row models-provider-row${providerActive ? " resource-nav-row-active" : ""}`}>
+                        {providerModels.length > 0 ? (
+                          <button
+                            type="button"
+                            className="models-provider-expand"
+                            aria-expanded={modelsExpanded}
+                            aria-label={modelsExpanded ? t("settings.models.collapseModels") : t("settings.models.expandModels")}
+                            title={modelsExpanded ? t("settings.models.collapseModels") : t("settings.models.expandModels")}
+                            onClick={() => toggleAuthenticatedProviderExpanded(provider.key)}
+                          >
+                            <span className={`models-provider-chevron${modelsExpanded ? " is-open" : ""}`} aria-hidden="true" />
+                          </button>
+                        ) : <span className="models-provider-expand" aria-hidden="true" />}
+                        <button type="button" className="models-provider-row-main" onClick={() => setSelection(provider.selection)}>
+                          <ProviderIcon id={provider.id} size={16} />
+                          <span>{provider.label}</span>
+                          {providerModels.length > 0 && !modelsExpanded && <SettingsBadge tone="neutral">{providerModels.length}</SettingsBadge>}
+                        </button>
+                      </div>
+                      {modelsExpanded && providerModels.map((model) => {
+                        const favoriteKey = modelPrimaryCandidateKey(model.provider, model.id);
+                        const favorite = favoriteKeys.has(favoriteKey);
+                        const favoriteBusy = favoriteBusyKeys.has(favoriteKey);
+                        return (
+                          <div key={favoriteKey} className="resource-nav-row models-tree-model">
+                            <button
+                              type="button"
+                              className="models-tree-model-select"
+                              title={`${model.provider}/${model.id}`}
+                              onClick={() => setSelection(provider.selection)}
+                            >
+                              <span>{model.name || model.id}</span>
+                              {favorite && <SettingsBadge tone="accent">★</SettingsBadge>}
+                            </button>
+                            <button
+                              type="button"
+                              className={`models-tree-star-btn${favorite ? " is-active" : ""}`}
+                              disabled={favoriteBusy}
+                              aria-label={favorite ? t("settings.models.primaryCandidateUnset") : t("settings.models.primaryCandidateSet")}
+                              title={favorite ? t("settings.models.primaryCandidateUnset") : t("settings.models.primaryCandidateSet")}
+                              onClick={() => { void updateFavorite(model.provider, model.id, !favorite); }}
+                            >
+                              {favoriteBusy ? "…" : favorite ? "★" : "☆"}
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
                 })}
                 {(activeOAuth.length > 0 || activeApiKey.length > 0) && providers.length > 0 && <div className="models-tree-divider" />}
                 {loading ? <SettingsState kind="loading" title="Loading models…" /> : providers.length === 0 ? <SettingsState title="No custom providers" /> : providers.map(([providerName, providerData], providerIndex) => {
@@ -453,6 +617,9 @@ export function ModelsConfig({ cwd: _cwd, onClose }: { cwd: string | null; onClo
                         <>
                           {(providerData.models ?? []).map((model, index) => {
                             const modelActive = selection?.type === "model" && selection.providerName === providerName && selection.index === index;
+                            const favoriteKey = modelPrimaryCandidateKey(providerName, model.id);
+                            const favorite = favoriteKeys.has(favoriteKey);
+                            const favoriteBusy = favoriteBusyKeys.has(favoriteKey);
                             return (
                               <div key={`${model.id}-${index}`} className={`resource-nav-row models-tree-model${modelActive ? " resource-nav-row-active" : ""}`}>
                                 <button
@@ -462,28 +629,22 @@ export function ModelsConfig({ cwd: _cwd, onClose }: { cwd: string | null; onClo
                                 >
                                   <span>{model.id || "new model"}</span>
                                   {model.reasoning && <SettingsBadge tone="accent">T</SettingsBadge>}
-                                  {model.primaryCandidate && <SettingsBadge tone="accent">★</SettingsBadge>}
+                                  {favorite && <SettingsBadge tone="accent">★</SettingsBadge>}
                                 </button>
                                 <button
                                   type="button"
-                                  className={`models-tree-star-btn${model.primaryCandidate ? " is-active" : ""}`}
-                                  aria-label={model.primaryCandidate ? t("settings.models.primaryCandidateUnset") : t("settings.models.primaryCandidateSet")}
-                                  title={model.primaryCandidate ? t("settings.models.primaryCandidateUnset") : t("settings.models.primaryCandidateSet")}
+                                  className={`models-tree-star-btn${favorite ? " is-active" : ""}`}
+                                  disabled={!model.id.trim() || favoriteBusy}
+                                  aria-label={favorite ? t("settings.models.primaryCandidateUnset") : t("settings.models.primaryCandidateSet")}
+                                  title={favorite ? t("settings.models.primaryCandidateUnset") : t("settings.models.primaryCandidateSet")}
                                   onClick={(event) => {
                                     event.preventDefault();
                                     event.stopPropagation();
-                                    const models = [...(providerData.models ?? [])];
-                                    const current = models[index];
-                                    if (!current) return;
-                                    models[index] = {
-                                      ...current,
-                                      primaryCandidate: current.primaryCandidate ? undefined : true,
-                                    };
-                                    updateProvider(providerName, { ...providerData, models });
+                                    void updateFavorite(providerName, model.id, !favorite);
                                     setSelection({ type: "model", providerName, index });
                                   }}
                                 >
-                                  {model.primaryCandidate ? "★" : "☆"}
+                                  {favoriteBusy ? "…" : favorite ? "★" : "☆"}
                                 </button>
                               </div>
                             );
@@ -505,6 +666,8 @@ export function ModelsConfig({ cwd: _cwd, onClose }: { cwd: string | null; onClo
 
           <div className="pi-modal-footer models-footer">
             {saveError && <SettingsNotice tone="danger" className="models-save-error">{saveError}</SettingsNotice>}
+            {availableModelsError && <SettingsNotice tone="danger" className="models-save-error">{availableModelsError}</SettingsNotice>}
+            {favoriteError && <SettingsNotice tone="danger" className="models-save-error">{favoriteError}</SettingsNotice>}
             {savedOk && <SettingsBadge tone="success">Saved</SettingsBadge>}
             <SettingsButton onClick={onClose}>Cancel</SettingsButton>
             <SettingsButton variant="primary" onClick={handleSave} disabled={savedOk} busy={saving}>{savedOk ? t("settings.models.saved") : saving ? t("settings.models.saving") : t("settings.models.save")}</SettingsButton>

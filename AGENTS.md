@@ -155,6 +155,7 @@ node_modules/.bin/tsc --noEmit
 | Session files | `~/.pi/agent/sessions/<encoded-cwd>/<timestamp>_<uuid>.jsonl` |
 | Session performance sidecars | `~/.pi/agent/session-performance/<encoded-session-id>.json` (aggregate counters only) |
 | Model config | `~/.pi/agent/models.json` |
+| WebUI model favorites (built-in, subscription, extension, custom) | `~/.pi/agent/model-favorites.json` (legacy `models.json` flags seed the first write) |
 | Settings/default model/native subagents | `~/.pi/agent/settings.json`, project override `<cwd>/.pi/settings.json` |
 | Web UI settings (WorkTree, Usage, Vision fallback model, Web Terminal, ChatGPT panel, Grok panel, Editor, bundled core-extension toggles, SnFlow panel). Unknown legacy root keys such as `trellis` are ignored and left on disk | `~/.pi/agent/pi-web.json` |
 | Server access auth state (scrypt verifier + session hashes; no plaintext key) | `~/.pi/agent/server-access.json` |
