@@ -37,6 +37,20 @@
   Prefer the device's exact `/32`; use the full `100.64.0.0/10` only if every tailnet peer is trusted. The env override `PI_WEB_AUTH_BYPASS_CIDRS` uses socket `remoteAddress` only; forged `X-Forwarded-For` is ignored.
 - **Bypass configured but still sees unlock:** loopback and world-open rules are intentionally rejected because loopback may be a reverse proxy carrying untrusted clients. Otherwise, the remote address may be unavailable/outside the list or an empty env override may be clearing the file. Check the boot log and `netstat`.
 
+## Windows desktop pet
+
+- **Pet shows 蜗牛派服务未启动 / Service not running:** no compatible listener on `127.0.0.1:<port>` (default `62666`). Start the service separately with `spi --no-open`, then use Retry. The pet never auto-runs that command or spawns a service process.
+- **Copy start command does nothing visible:** it only writes `spi --no-open` to the clipboard — paste into a terminal yourself.
+- **Incompatible / protocol mismatch / server mode:** port owner is not a local-mode Snail Pi observer. Fix the service (`spi` without server-mode attach expectations) or change the pet port setting; the pet will not kill or replace the process.
+- **Pet connected but tasks missing after browser close:** confirm `spi` is still running (ordinary Agent wrappers live in the service process). Restarting the service drops in-memory ordinary/Quick Command work; SnFlow/Automation may reconcile from disk.
+- **Duplicate notifications after reconnect:** should not happen for the same `transitionId`. If it does, file a bug with instanceId/reset details; baseline on first snapshot after connect/reset is intentional (no backfill).
+- **Click-through cannot click the pet:** use tray → 取消鼠标穿透 / 显示桌宠.
+- **Closed the window and pet “disappeared”:** close hides to tray; use tray → 显示桌宠. Only tray 退出桌宠 ends the pet process.
+- **Quit pet while Agent is running:** expected that tasks keep running; there is no “will interrupt tasks” warning because the pet cannot stop them.
+- **Uninstalled pet, sessions gone?** should not happen — agent data is under `~/.pi/agent` owned by `spi`. If data is missing, check `PI_CODING_AGENT_DIR` / accidental deletion, not pet uninstall.
+- **npm `spi` install pulled Electron?** it must not; pet packaging is separate. Report if `npm pack` contents include `desktop/`.
+- **Validation / packaging contracts:** `npm run test:desktop-observer`, `npm run test:desktop-package`, and `docs/operations/desktop-pet-validation.md`.
+
 ## Development Safety
 
 - Use `npm run dev` during development.

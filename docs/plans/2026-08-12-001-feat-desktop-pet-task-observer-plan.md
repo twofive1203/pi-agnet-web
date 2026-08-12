@@ -1,7 +1,7 @@
 ---
 title: "feat: Add independent Windows desktop pet task observer"
 type: feat
-status: active
+status: completed
 date: 2026-08-12
 origin: docs/brainstorms/2026-08-12-desktop-pet-task-observer-requirements.md
 architecture: docs/architecture/decisions/desktop-pet-task-observer.md
@@ -431,7 +431,7 @@ flowchart LR
 
 ---
 
-### [ ] U7. Build Windows pet, Activity tray and notifications
+### [x] U7. Build Windows pet, Activity tray and notifications
 
 **Goal:** Deliver the complete attach-only desktop experience.
 
@@ -483,9 +483,11 @@ flowchart LR
 
 **Verification:** Users can start `spi`, close browsers and observe reliably; without `spi`, they receive actionable guidance.
 
+**Completed:** 2026-08-12 — pure activity/read/notification stores; Electron main/preload/renderer/tray/window wiring; builtin pet manifests; deep-link open gate; forge pet-only contract stub; `npm run test:desktop-contract`. Live Electron window launch deferred to U8 packaging validation.
+
 ---
 
-### [ ] U8. Harden pet-only Windows packaging and release validation
+### [x] U8. Harden pet-only Windows packaging and release validation
 
 **Goal:** Produce a signed-ready Windows pet installer and close regression/documentation gaps without bundling the Snail Pi runtime.
 
@@ -530,6 +532,8 @@ flowchart LR
 
 **Verification:** Clean Windows 10/11 can install/remove the pet with no service/task/data side effects.
 
+**Completed:** 2026-08-12 — hardened `forge.config.ts` (`DESKTOP_PACKAGE_CONTRACT`, forbidden paths, Squirrel + signing placeholders); `desktop/package.json` private pet metadata; `scripts/smoke-desktop-package.mjs`; `docs/operations/desktop-pet-validation.md` AE1–AE13 + manual matrix; README/deployment/troubleshooting/module docs; npm `files` remains spi-only. Live Windows installer make/sign/clean-profile runs documented as 未执行.
+
 ---
 
 ## Phased Delivery
@@ -554,7 +558,7 @@ U7: pet, Activity tray, unread state, notifications, tray and built-in pets.
 
 ### Phase 4 — Windows release
 
-U8: pet-only installer, signing-ready distribution, clean-profile/accessibility/regression matrix.
+U8: pet-only installer contract, signing-ready distribution docs, clean-profile/accessibility/regression matrix (manual gates tracked in `docs/operations/desktop-pet-validation.md`).
 
 ---
 

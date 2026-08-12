@@ -130,6 +130,8 @@ Attach-only desktop pet API. **Direct IPv4 loopback (`127.0.0.1`) + local mode o
 
 Implementation: `lib/desktop-observer-access.ts`, `lib/task-observer-hub.ts`, adapters under `lib/task-observer-*.ts`. Activity `deepLink` values are allowlisted relative WebUI paths from `lib/desktop-deep-link.ts` (Agent `?session=`, SnFlow `inspector=snflow&task=`, Automation `panel=automation`, Quick Command `panel=quick-commands`).
 
+**Desktop client packaging** is separate from this API and from npm `spi`: Electron pet sources live under `desktop/`, pack contract in `forge.config.ts`, validation in `docs/operations/desktop-pet-validation.md`, smoke `npm run test:desktop-package`. The pet consumes these routes from main only (token never reaches the renderer).
+
 ## Automation routes
 
 Local-only (`direct loopback` + Automation control session). Sensitive mutations require a one-time approval challenge.

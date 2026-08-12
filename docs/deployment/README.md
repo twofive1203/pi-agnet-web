@@ -224,6 +224,38 @@ Fetch upstream `main` with:
 git fetch upstream main
 ```
 
+## Windows Desktop Pet (separate artifact)
+
+The desktop pet is an **attach-only** Electron companion. It is **not** part of the npm `@twofive/snail-pi-web` / `spi` package (`package.json#files` excludes `desktop/` and `forge.config.ts`).
+
+### Independent startup
+
+Either order works; the pet reconnects when the service becomes available:
+
+```bash
+spi --no-open                 # local service, default http://127.0.0.1:62666
+# then launch SnailPiPet / snail-pi-pet (installer or packaged exe)
+```
+
+| Rule | Detail |
+| --- | --- |
+| Loopback only | `127.0.0.1` local mode; server mode / remote / multi-instance aggregation are rejected. |
+| No process ownership | Pet never spawns, stops, signals, or stores a service PID. |
+| Service not running | UI shows 蜗牛派服务未启动 + copyable `spi --no-open` + Retry (never auto-executes). |
+| Quit / uninstall | Leaving or removing the pet must not stop `spi` or delete `~/.pi/agent`. |
+| Node requirement | Packaged pet must not require a system Node install; `spi` remains a separate Node/npm install. |
+
+### Packaging contract
+
+- Config: root `forge.config.ts` + `DESKTOP_PACKAGE_CONTRACT` (pet-only ignore list, Squirrel maker, AppUserModelID `com.twofive.snail-pi-pet`).
+- Source app: `desktop/` (`desktop/package.json` is `private: true`, name `snail-pi-pet`).
+- Contract smoke: `npm run test:desktop-package` (and full `npm run test:desktop-observer`).
+- After a local `electron-forge make`, set `DESKTOP_PACKAGE_OUT` to the output directory and re-run the package smoke to scan artifacts for forbidden server runtime paths (`.next`, `next`, `node-pty`, pi SDK, `bin/pi-web.js`, …).
+- Signing placeholders: `WINDOWS_CERTIFICATE_FILE`, `WINDOWS_CERTIFICATE_PASSWORD`, `CSC_LINK`, `CSC_KEY_PASSWORD`. Unsigned builds are for engineering QA; SmartScreen may warn until signed.
+- Full AE matrix and manual Windows gates: [`docs/operations/desktop-pet-validation.md`](../operations/desktop-pet-validation.md).
+
+> Do not publish the pet inside the npm `spi` tarball. Do not bundle Next/pi/Automation workers/node-pty into the pet installer.
+
 ## npm Package Release
 
 Before publishing, authenticate and validate the release bundle:
@@ -234,10 +266,13 @@ npm run lint
 node_modules/.bin/tsc --noEmit
 npm run test:server-auth
 npm run test:runtime
+npm run test:desktop-package
 npm run build
 npm run test:server-auth:e2e
 npm pack --dry-run
 ```
+
+Confirm `npm pack --dry-run` does **not** list `desktop/` or `forge.config.ts`.
 
 Publish the current version:
 

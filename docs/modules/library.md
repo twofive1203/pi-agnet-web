@@ -52,6 +52,21 @@ Shared logic lives under `lib/`. Prefer adding behavior here when it is used by 
 | `desktop/main/connection-state.ts` | Pure attach-only connection state machine (`probing` / `connected` / `reconnecting` / `service-not-running` / `incompatible`) with copyable `spi --no-open` and no process ownership. |
 | `desktop/main/observer-client.ts` | Main-process observer probe client: health → protocol → session token → SSE handlers; injectable fetch; token never leaves main memory; no child_process/PID/signal. |
 | `desktop/main/settings-store.ts` | Desktop pet settings normalize/serialize defaults (port, pet id, window, notification prefs, local transition LRU). Forbids tokens/PIDs/cwd/prompt persistence. |
+| `desktop/main/activity-store.ts` | Pure Activity tray projection: project grouping/priority sort, local mark-read, sanitized renderer view (no token/cwd/non-loopback URLs), elapsed computation. |
+| `desktop/main/notification-controller.ts` | Transition-id notification policy (baseline suppress, needs_input/blocked/completion gates, LRU dedupe) + injectable OS notify host. |
+| `desktop/main/window-manager.ts` | Pet window state helpers: close-to-tray, click-through recovery, tray expand sizing, secure `webPreferences` contract. |
+| `desktop/main/tray-controller.ts` | System tray menu model (Show / disable click-through / Retry / Open WebUI / copy start / Quit without task-interruption warning). |
+| `desktop/main/deep-link-opener.ts` | Main-process allowlist gate before `shell.openExternal`; rejects absolute/renderer-arbitrary URLs. |
+| `desktop/main/autostart.ts` | Login-item toggle for the pet process only (never starts/stops `spi`). |
+| `desktop/main/settings-persistence.ts` | userData settings file load/save with injectable fs; reuses settings-store safety asserts. |
+| `desktop/main/ipc-contract.ts` | Narrow pet IPC channel allowlist shared by main and preload. |
+| `desktop/main/main.ts` | Electron main wiring: single-instance, observer client, notifications, tray, window, validated deep links; quit never mutates service/tasks. |
+| `desktop/preload/pet-preload.ts` | `contextBridge` surface `window.snailPet` — sanitized state + local actions only. |
+| `desktop/renderer/pet-state.ts` | Renderer pure helpers: builtin pet manifests, reduced-motion frames, non-color cues, keyboard selection, elapsed formatting. |
+| `desktop/renderer/pet-app.tsx` (+ `pet-app.js`) | Pet + Activity tray UI; presentation only; honors reduced motion and keyboard. |
+| `forge.config.ts` | Pet-only Electron Forge config + `DESKTOP_PACKAGE_CONTRACT` / `DESKTOP_FORBIDDEN_BUNDLE_PATHS` (no Next/pi/node-pty/`spi` runtime; signing env placeholders). |
+| `desktop/package.json` | Private `snail-pi-pet` package metadata; not published with npm `spi`. |
+| `scripts/smoke-desktop-package.mjs` | Packaging contract smoke: npm `files` exclusion, forge pet-only ignore, no service-control source, validation doc AE gates, optional `DESKTOP_PACKAGE_OUT` artifact scan. |
 | `lib/unified-diff.ts` | Wrapper around the `diff` package for bounded unified diff generation and addition/deletion counting. |
 | `lib/agent-client.ts` | Client-side helper for `POST /api/agent/[id]`. |
 | `lib/chat-draft.ts` | Bounded browser-local Composer draft contract: per-session storage keys, versioned validation, text/uploaded-file normalization, and best-effort read/write/clear helpers. Image blobs are intentionally excluded. |

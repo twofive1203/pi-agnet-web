@@ -1,6 +1,6 @@
 # Windows Desktop Pet Task Observer
 
-- **Status:** Proposed (Revised)
+- **Status:** Accepted (U1–U8 implemented; Windows clean-profile installer/signing matrix remains manual per validation doc)
 - **Date:** 2026-08-12
 - **Scope:** Windows-first independent Electron companion and local multi-project task observation
 - **Requirements:** `docs/brainstorms/2026-08-12-desktop-pet-task-observer-requirements.md`

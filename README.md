@@ -104,6 +104,24 @@ PI_CODING_AGENT_DIR=/path/to/pi-agent-data spi
 - **终端与浏览器调试**：可选多标签/分屏 Web Terminal；配合随附的 Chrome 扩展，把浏览器标签页临时绑定给智能体进行受限调试。
 - **用量与工作流**：查看会话成本及可选的 ChatGPT/Codex、Grok 用量；通过 SnFlow 面板管理显式启用的结构化任务，并用 `/snflow-spec-review` 审核当前任务中可沉淀的项目规范候选。
 - **界面体验**：支持中英文界面、多套主题、桌面/移动端布局和可调整大小的工作区面板。
+- **Windows 桌宠（可选，独立安装）**：attach-only 任务观察器，连接已运行的本地 `spi`，在托盘/Activity tray 中查看 Running / Needs input / Ready / Blocked；**不会**启动或停止服务。详见下方「Windows 桌宠」。
+
+## Windows 桌宠（独立进程）
+
+桌宠与 npm 包 `spi` **分开发布**：安装/卸载桌宠不影响 `~/.pi/agent` 数据，也不会附带 Next/pi/node-pty 服务运行时。
+
+推荐启动顺序（可颠倒；桌宠会重试连接）：
+
+```bash
+spi --no-open          # 本机服务，不自动打开浏览器
+# 然后启动已安装的 SnailPiPet / snail-pi-pet
+```
+
+- 默认探测 `http://127.0.0.1:62666`（仅 IPv4 回环本地模式）。
+- 服务未启动时显示「蜗牛派服务未启动」，可复制 `spi --no-open`，**不会**自动执行命令。
+- 退出桌宠不会中断 Agent / Automation / Quick Command。
+- 打包与验收清单：[`docs/operations/desktop-pet-validation.md`](docs/operations/desktop-pet-validation.md)、[`docs/deployment/README.md`](docs/deployment/README.md)。
+- 合约测试：`npm run test:desktop-observer` / `npm run test:desktop-package`。
 
 ## 从源码运行
 
@@ -139,6 +157,8 @@ app/          # Next.js 页面和 API 路由
 components/   # 浏览器端 UI 组件
 hooks/        # 会话状态、主题、拖拽、音频等 React hooks
 lib/          # 会话解析、RPC 生命周期、路径/配置/提供商等共享逻辑
+desktop/      # Windows 桌宠（Electron，与 npm spi 分离）
+forge.config.ts # 桌宠 pet-only 打包契约
 scripts/      # 构建和运维脚本
 bin/          # spi CLI 入口
 public/       # 静态资源

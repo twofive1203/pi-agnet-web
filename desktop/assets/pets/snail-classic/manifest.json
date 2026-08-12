@@ -1,0 +1,40 @@
+{
+  "id": "snail-classic",
+  "name": "Classic Snail",
+  "version": 1,
+  "states": {
+    "idle": { "frame": "idle", "staticFrame": "idle", "label": "Idle", "glyph": "·" },
+    "running": {
+      "frame": "running",
+      "staticFrame": "running-static",
+      "label": "Running",
+      "glyph": "›"
+    },
+    "retrying": {
+      "frame": "retrying",
+      "staticFrame": "retrying-static",
+      "label": "Retrying",
+      "glyph": "↻"
+    },
+    "needs_input": {
+      "frame": "needs-input",
+      "staticFrame": "needs-input",
+      "label": "Needs input",
+      "glyph": "?"
+    },
+    "ready": { "frame": "ready", "staticFrame": "ready", "label": "Ready", "glyph": "✓" },
+    "blocked": { "frame": "blocked", "staticFrame": "blocked", "label": "Blocked", "glyph": "!" },
+    "disconnected": {
+      "frame": "disconnected",
+      "staticFrame": "disconnected",
+      "label": "Disconnected",
+      "glyph": "⚠"
+    },
+    "service_not_running": {
+      "frame": "service-not-running",
+      "staticFrame": "service-not-running",
+      "label": "Service not running",
+      "glyph": "⏻"
+    }
+  }
+}

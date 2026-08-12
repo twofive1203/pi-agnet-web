@@ -142,6 +142,21 @@ Portal stacking must use the `--z-*` layer Tokens in `app/globals.css`, not new 
 - **Switcher**: top-bar `EN`/`中` button in `AppShell`, and Settings → Language section.
 - **Coverage status**: Wave A–C complete for product chrome. Catalogs live under `lib/i18n/messages/*` (including `errors.ts`). App locale drives selected date/number formatting via `lib/i18n/format.ts`. Stable error codes (`lib/i18n/error-codes.ts`) cover OAuth import / Grok not-logged-in / terminal env assist pilots. Key parity check: `npx tsx scripts/check-i18n-keys.ts` (also `npm run test:i18n`). Residual: ModelsConfig secondary strings, broader API error codes, type-safe `t()` keys.
 
+## Desktop pet UI (Electron companion)
+
+Separate from the Next.js WebUI. Lives under `desktop/` and is packaged independently of npm `spi`.
+
+| File | Purpose |
+| --- | --- |
+| `desktop/renderer/index.html` | Transparent pet shell + Activity tray markup; strict CSP (`default-src 'none'`). |
+| `desktop/renderer/pet.css` | Pet frames, tray layout, reduced-motion gate, non-color state cues. |
+| `desktop/renderer/pet-state.ts` | Pure presentation helpers (manifest frames, glyphs/labels, keyboard selection, elapsed). |
+| `desktop/renderer/pet-app.tsx` (+ `pet-app.js`) | Pet click toggles tray; rows open validated deep links via preload; mark-one/all-read; service-not-running copy/retry. No token/Node. |
+| `desktop/preload/pet-preload.ts` | Narrow `window.snailPet` bridge. |
+| `desktop/assets/pets/*` | Builtin versioned pet manifests (`snail-default`, `snail-classic`). |
+
+Smoke: `npm run test:desktop-contract`, packaging contract `npm run test:desktop-package`. Release/QA matrix: `docs/operations/desktop-pet-validation.md`.
+
 ## Automation UI
 
 | File | Purpose |

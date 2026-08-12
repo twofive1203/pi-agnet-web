@@ -70,6 +70,21 @@ npx @twofive/snail-pi-web@latest --port 8080
 PROXY_URL=http://127.0.0.1:7897 SOCKS_PROXY_URL=socks5://127.0.0.1:7897 spi
 ```
 
+## Windows 桌宠（可选，独立安装）
+
+桌宠是 attach-only 的 Windows 任务观察器，与 npm 包 `spi` **分开安装/发布**。它只连接已经运行的本地蜗牛派服务，**不会**启动、停止或托管 `spi`，卸载桌宠也不会删除 `~/.pi/agent`。
+
+```bash
+spi --no-open          # 先（或后）启动本机服务
+# 再打开 SnailPiPet / snail-pi-pet
+```
+
+- 默认连接 `http://127.0.0.1:62666`（仅 `127.0.0.1` 本地模式）。
+- 端口无服务时提示「蜗牛派服务未启动」，可复制 `spi --no-open`，桌宠不会自动执行该命令。
+- 点击宠物展开 Activity tray；点任务/通知才用默认浏览器打开 WebUI。
+- 验收与打包说明：[`docs/operations/desktop-pet-validation.md`](docs/operations/desktop-pet-validation.md)。
+- 源码合约测试：`npm run test:desktop-package`。
+
 ## 数据目录与配置
 
 默认读取：

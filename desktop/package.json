@@ -1,0 +1,21 @@
+{
+  "name": "snail-pi-pet",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Snail Pi Windows desktop pet (attach-only task observer). Separate from npm @twofive/snail-pi-web / spi.",
+  "main": "main/main.ts",
+  "productName": "SnailPiPet",
+  "author": "Snail Pi",
+  "license": "MIT",
+  "config": {
+    "forge": "../forge.config.ts"
+  },
+  "scripts": {
+    "start": "echo \"Use Electron Forge from repo root after installing electron devDependencies (U8 packaging).\" && exit 1",
+    "package": "echo \"Install @electron-forge/cli + electron, then: npx electron-forge package\" && exit 1",
+    "make": "echo \"Install @electron-forge/cli + electron, then: npx electron-forge make\" && exit 1"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

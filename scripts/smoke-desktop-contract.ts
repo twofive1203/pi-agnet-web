@@ -1,0 +1,631 @@
+/**
+ * Smoke checks for desktop pet UI/read/notification contracts (U7).
+ * Run: npx --yes tsx@4.23.1 scripts/smoke-desktop-contract.ts
+ *
+ * Pure domain + static source contracts — does not launch Electron.
+ */
+import assert from "node:assert/strict";
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import path from "node:path";
+
+import {
+  assertRendererViewSafe,
+  buildActivityView,
+  compareActivityRows,
+  findActivityById,
+  flattenActivities,
+  listUnreadTransitionIds,
+  markActivityRead,
+  markAllTerminalRead,
+  projectActivityRow,
+  sortProjectGroups,
+} from "../desktop/main/activity-store";
+import { applyLaunchAtLogin, readLaunchAtLogin } from "../desktop/main/autostart";
+import {
+  createInitialConnectionState,
+  DESKTOP_START_COMMAND,
+  reduceConnectionState,
+} from "../desktop/main/connection-state";
+import {
+  openValidatedDeepLink,
+  rejectArbitraryRendererUrl,
+} from "../desktop/main/deep-link-opener";
+import {
+  isRendererIpcChannel,
+  PET_IPC_CHANNELS,
+  PET_RENDERER_ALLOWED_CHANNELS,
+} from "../desktop/main/ipc-contract";
+import {
+  DesktopNotificationController,
+  selectNotifications,
+} from "../desktop/main/notification-controller";
+import {
+  loadDesktopSettingsFile,
+  saveDesktopSettingsFile,
+  settingsFilePath,
+  type SettingsFs,
+} from "../desktop/main/settings-persistence";
+import {
+  createDefaultDesktopSettings,
+  updateDesktopSettings,
+} from "../desktop/main/settings-store";
+import {
+  assertQuitLabelSafe,
+  buildTrayMenuModel,
+  buildTrayTooltip,
+  trayItemToAction,
+} from "../desktop/main/tray-controller";
+import {
+  createInitialWindowManagerState,
+  handleDisableClickThrough,
+  handlePetWindowCloseRequest,
+  handleSetClickThrough,
+  handleShowPet,
+  handleToggleTray,
+  petWindowWebPreferences,
+} from "../desktop/main/window-manager";
+import {
+  connectionBannerText,
+  formatElapsed,
+  getBuiltinPetManifest,
+  moveActivitySelection,
+  resolvePetFrame,
+} from "../desktop/renderer/pet-state";
+import { DESKTOP_PACKAGE_CONTRACT } from "../forge.config";
+import { buildAgentDeepLink } from "../lib/desktop-deep-link";
+import {
+  buildAgentActivityId,
+  buildAgentTaskKey,
+  buildAgentTransitionId,
+  buildTaskObserverSnapshot,
+  projectActivity,
+} from "../lib/task-observer-projection";
+import type {
+  TaskObserverActivityInput,
+  TaskObserverTransitionInput,
+} from "../lib/task-observer-types";
+
+function activityInput(input: {
+  sessionId: string;
+  projectKey: string;
+  projectName: string;
+  title: string;
+  executionState: TaskObserverActivityInput["executionState"];
+  outcome?: TaskObserverActivityInput["outcome"];
+  attention?: TaskObserverActivityInput["attention"];
+  promptEpoch?: number;
+  stateVersion?: number;
+  updatedAt?: string;
+}): TaskObserverActivityInput {
+  const instanceId = "inst-u7";
+  const promptEpoch = input.promptEpoch ?? 1;
+  const stateVersion = input.stateVersion ?? 1;
+  return {
+    taskKey: buildAgentTaskKey(input.sessionId),
+    activityId: buildAgentActivityId(instanceId, input.sessionId, promptEpoch),
+    source: "agent",
+    projectKey: input.projectKey,
+    projectName: input.projectName,
+    title: input.title,
+    executionState: input.executionState,
+    outcome: input.outcome ?? null,
+    attention: input.attention ?? "none",
+    progress: { kind: "indeterminate" },
+    deepLink: buildAgentDeepLink(input.sessionId),
+    lastTransitionId: buildAgentTransitionId(instanceId, input.sessionId, promptEpoch, stateVersion),
+    stateVersion,
+    updatedAt: input.updatedAt ?? "2026-08-12T12:00:00.000Z",
+    startedAt: "2026-08-12T11:00:00.000Z",
+  };
+}
+
+function collectDesktopSources(root: string): string[] {
+  const out: string[] = [];
+  const walk = (dir: string) => {
+    for (const name of readdirSync(dir)) {
+      const full = path.join(dir, name);
+      const st = statSync(full);
+      if (st.isDirectory()) {
+        walk(full);
+        continue;
+      }
+      if (/\.(ts|tsx|js|mjs|cjs)$/.test(name)) out.push(full);
+    }
+  };
+  walk(root);
+  return out;
+}
+
+function assertNoServiceControl(source: string, file: string): void {
+  assert.equal(
+    /from\s+["']child_process["']|require\(\s*["']child_process["']\s*\)/.test(source),
+    false,
+    `${file} must not import child_process`,
+  );
+  assert.equal(/\b(?:spawn|fork|execFile)\s*\(/.test(source), false, `${file} must not spawn/execFile`);
+  assert.equal(/\bprocess\.kill\b/.test(source), false, `${file} must not process.kill`);
+  assert.equal(/\bservicePid\b\s*[:=]/.test(source), false, `${file} must not track servicePid`);
+}
+
+async function main() {
+  console.log("smoke-desktop-contract: start");
+
+  // --- Multi-project priority + grouping ---
+  const activities = [
+    activityInput({
+      sessionId: "s-run",
+      projectKey: "proj-b",
+      projectName: "Beta",
+      title: "Running agent",
+      executionState: "running",
+      updatedAt: "2026-08-12T12:01:00.000Z",
+    }),
+    activityInput({
+      sessionId: "s-ready",
+      projectKey: "proj-a",
+      projectName: "Alpha",
+      title: "Ready agent",
+      executionState: "settled",
+      outcome: "succeeded",
+      promptEpoch: 2,
+      stateVersion: 3,
+      updatedAt: "2026-08-12T12:02:00.000Z",
+    }),
+    activityInput({
+      sessionId: "s-need",
+      projectKey: "proj-c",
+      projectName: "Gamma",
+      title: "Needs input agent",
+      executionState: "running",
+      attention: "needs_input",
+      promptEpoch: 3,
+      stateVersion: 2,
+      updatedAt: "2026-08-12T12:03:00.000Z",
+    }),
+    activityInput({
+      sessionId: "s-block",
+      projectKey: "proj-a",
+      projectName: "Alpha",
+      title: "Blocked agent",
+      executionState: "settled",
+      outcome: "failed",
+      promptEpoch: 4,
+      stateVersion: 2,
+      updatedAt: "2026-08-12T12:04:00.000Z",
+    }),
+  ];
+
+  const snapshot = buildTaskObserverSnapshot({
+    instanceId: "inst-u7",
+    revision: 1,
+    activities,
+    recentTransitions: activities.map((item, index) => {
+      const projected = projectActivity(item);
+      const presentation =
+        item.attention === "needs_input"
+          ? "needs_input"
+          : item.outcome === "failed"
+            ? "blocked"
+            : item.outcome === "succeeded"
+              ? "ready"
+              : "running";
+      const transition: TaskObserverTransitionInput = {
+        transitionId: projected.lastTransitionId,
+        taskKey: projected.taskKey,
+        activityId: projected.activityId,
+        source: projected.source,
+        projectKey: projected.projectKey,
+        presentation: presentation as TaskObserverTransitionInput["presentation"],
+        executionState: projected.executionState,
+        outcome: projected.outcome,
+        attention: projected.attention,
+        at: item.updatedAt ?? "2026-08-12T12:00:00.000Z",
+      };
+      void index;
+      return transition;
+    }),
+  });
+
+  let settings = createDefaultDesktopSettings();
+  let connection = createInitialConnectionState({ port: 62666, now: 1 });
+  connection = reduceConnectionState(
+    connection,
+    { type: "connected", instanceId: "inst-u7", resetBaseline: true },
+    2,
+  );
+
+  let view = buildActivityView({
+    snapshot,
+    connection,
+    settings,
+    now: Date.parse("2026-08-12T12:05:00.000Z"),
+  });
+
+  assert.equal(view.presentation, "needs_input");
+  assert.equal(view.projects.length, 3);
+  // Highest priority project first (Gamma needs input)
+  assert.equal(view.projects[0].projectKey, "proj-c");
+  assert.equal(view.projects[0].activities[0].presentation, "needs_input");
+  // Alpha has blocked before ready
+  const alpha = view.projects.find((p) => p.projectKey === "proj-a");
+  assert.ok(alpha);
+  assert.equal(alpha!.activities[0].presentation, "blocked");
+  assert.equal(alpha!.activities[1].presentation, "ready");
+
+  const sortedRows = flattenActivities(view.projects).slice().sort(compareActivityRows);
+  assert.equal(sortedRows[0].presentation, "needs_input");
+  assert.equal(sortedRows[1].presentation, "blocked");
+  assert.equal(sortedRows[2].presentation, "ready");
+  assert.equal(sortedRows[3].presentation, "running");
+
+  assertRendererViewSafe(view);
+
+  // --- Mark-read changes local priority only ---
+  const needs = findActivityById(view.projects, sortedRows[0].activityId);
+  assert.ok(needs);
+  // Mark blocked + ready read; needs_input remains highest
+  const blocked = sortedRows.find((r) => r.presentation === "blocked")!;
+  const ready = sortedRows.find((r) => r.presentation === "ready")!;
+  settings = markActivityRead(settings, blocked);
+  settings = markActivityRead(settings, ready);
+  view = buildActivityView({ snapshot, connection, settings, now: Date.parse("2026-08-12T12:05:00.000Z") });
+  assert.equal(view.presentation, "needs_input");
+  const readyAfter = flattenActivities(view.projects).find((r) => r.activityId === ready.activityId)!;
+  assert.equal(readyAfter.unread, false);
+  assert.equal(readyAfter.presentation, "idle");
+
+  settings = markAllTerminalRead(settings, view);
+  view = buildActivityView({ snapshot, connection, settings, now: Date.parse("2026-08-12T12:05:00.000Z") });
+  // needs_input still unread after mark-all terminal
+  const needAfter = flattenActivities(view.projects).find((r) => r.presentation === "needs_input");
+  assert.ok(needAfter);
+
+  // --- Notifications: baseline none; later once; replay none ---
+  const baseSettings = createDefaultDesktopSettings();
+  const baseline = selectNotifications({
+    settings: baseSettings,
+    snapshot,
+    resetBaseline: true,
+    appInBackground: true,
+  });
+  assert.equal(baseline.toNotify.length, 0);
+  assert.ok(baseline.notifiedTransitionIds.length >= 1);
+
+  let notifSettings = updateDesktopSettings(baseSettings, {
+    notifiedTransitionIds: baseline.notifiedTransitionIds,
+  });
+
+  // Fresh transition after baseline
+  const newTransitionId = buildAgentTransitionId("inst-u7", "s-new", 9, 1);
+  const newActivity = activityInput({
+    sessionId: "s-new",
+    projectKey: "proj-a",
+    projectName: "Alpha",
+    title: "New ready",
+    executionState: "settled",
+    outcome: "succeeded",
+    promptEpoch: 9,
+    stateVersion: 1,
+  });
+  const snap2 = buildTaskObserverSnapshot({
+    instanceId: "inst-u7",
+    revision: 2,
+    activities: [...activities, newActivity],
+    recentTransitions: [
+      {
+        transitionId: newTransitionId,
+        taskKey: buildAgentTaskKey("s-new"),
+        activityId: buildAgentActivityId("inst-u7", "s-new", 9),
+        source: "agent",
+        projectKey: "proj-a",
+        presentation: "ready",
+        executionState: "settled",
+        outcome: "succeeded",
+        attention: "none",
+        at: "2026-08-12T12:10:00.000Z",
+      },
+    ],
+  });
+
+  const first = selectNotifications({
+    settings: notifSettings,
+    snapshot: snap2,
+    resetBaseline: false,
+    appInBackground: true,
+  });
+  assert.equal(first.toNotify.length, 1);
+  assert.equal(first.toNotify[0].transitionId, newTransitionId);
+  assert.equal(first.toNotify[0].presentation, "ready");
+  notifSettings = updateDesktopSettings(notifSettings, {
+    notifiedTransitionIds: first.notifiedTransitionIds,
+  });
+
+  const replay = selectNotifications({
+    settings: notifSettings,
+    snapshot: snap2,
+    resetBaseline: false,
+    appInBackground: true,
+  });
+  assert.equal(replay.toNotify.length, 0);
+
+  // completion never
+  const neverSettings = updateDesktopSettings(createDefaultDesktopSettings(), {
+    notification: { completion: "never", needsInput: true, blocked: true },
+    notifiedTransitionIds: [],
+  });
+  const neverResult = selectNotifications({
+    settings: neverSettings,
+    snapshot: snap2,
+    resetBaseline: false,
+    appInBackground: true,
+    transitions: snap2.recentTransitions,
+  });
+  assert.equal(
+    neverResult.toNotify.filter((n) => n.presentation === "ready").length,
+    0,
+  );
+
+  // background-only suppresses when app focused
+  const bgSettings = updateDesktopSettings(createDefaultDesktopSettings(), {
+    notification: { completion: "background-only", needsInput: true, blocked: true },
+    notifiedTransitionIds: [],
+  });
+  const focused = selectNotifications({
+    settings: bgSettings,
+    snapshot: snap2,
+    resetBaseline: false,
+    appInBackground: false,
+    transitions: snap2.recentTransitions,
+  });
+  assert.equal(focused.toNotify.filter((n) => n.presentation === "ready").length, 0);
+
+  const controller = new DesktopNotificationController({
+    isSupported: () => true,
+    show: () => {
+      throw new Error("should not show on baseline");
+    },
+  });
+  const emittedBaseline = controller.handleSnapshot({
+    settings: createDefaultDesktopSettings(),
+    snapshot,
+    resetBaseline: true,
+  });
+  assert.equal(emittedBaseline.emitted.length, 0);
+
+  // --- Close-to-tray + click-through recovery ---
+  let win = createInitialWindowManagerState({ clickThrough: true, trayOpen: false });
+  win = handlePetWindowCloseRequest(win);
+  assert.equal(win.visible, false);
+  win = handleShowPet(win);
+  assert.equal(win.visible, true);
+  assert.equal(win.clickThrough, false);
+  win = handleSetClickThrough(win, true);
+  win = handleDisableClickThrough(win);
+  assert.equal(win.clickThrough, false);
+  assert.equal(win.visible, true);
+  win = handleToggleTray(win);
+  assert.equal(win.trayExpanded, true);
+
+  const prefs = petWindowWebPreferences("/tmp/preload.js");
+  assert.equal(prefs.nodeIntegration, false);
+  assert.equal(prefs.contextIsolation, true);
+  assert.equal(prefs.sandbox, true);
+
+  // --- Service-not-running copy cannot execute ---
+  let offline = createInitialConnectionState({ now: 10 });
+  offline = reduceConnectionState(offline, { type: "connection_refused" }, 11);
+  const offlineView = buildActivityView({
+    snapshot: null,
+    connection: offline,
+    settings: createDefaultDesktopSettings(),
+  });
+  assert.equal(offlineView.presentation, "service_not_running");
+  assert.equal(offlineView.canCopyStartCommand, true);
+  assert.equal(offlineView.startCommand, DESKTOP_START_COMMAND);
+  const banner = connectionBannerText({
+    connectionStatus: offlineView.connectionStatus,
+    canCopyStartCommand: true,
+    startCommand: offlineView.startCommand,
+  });
+  assert.ok(banner && banner.includes("蜗牛派服务未启动"));
+  assert.ok(banner && banner.includes(DESKTOP_START_COMMAND));
+
+  // --- Deep link gate ---
+  const opened: string[] = [];
+  const okOpen = openValidatedDeepLink({
+    origin: "http://127.0.0.1:62666",
+    relativeHref: "/?session=abc",
+    openExternal: (url) => {
+      opened.push(url);
+    },
+  });
+  assert.equal(okOpen.ok, true);
+  assert.deepEqual(opened, ["http://127.0.0.1:62666/?session=abc"]);
+
+  const evil = openValidatedDeepLink({
+    origin: "http://127.0.0.1:62666",
+    relativeHref: "https://evil.example/phish",
+    openExternal: () => {
+      throw new Error("should not open");
+    },
+  });
+  assert.equal(evil.ok, false);
+
+  const rejected = rejectArbitraryRendererUrl("https://evil.example");
+  assert.equal(rejected.ok, false);
+  assert.equal(rejected.reason, "absolute_url_rejected");
+
+  const remoteOrigin = openValidatedDeepLink({
+    origin: "https://example.com",
+    relativeHref: "/?session=abc",
+    openExternal: () => undefined,
+  });
+  assert.equal(remoteOrigin.ok, false);
+
+  // --- Tray menu recovery contract ---
+  const trayModel = buildTrayMenuModel({
+    presentation: "service_not_running",
+    connectionStatus: "service-not-running",
+    clickThrough: true,
+    activeCount: 0,
+    attentionCount: 0,
+    canCopyStartCommand: true,
+    startCommand: DESKTOP_START_COMMAND,
+  });
+  const labels = trayModel.map((i) => i.label).join(" | ");
+  assert.ok(labels.includes("显示桌宠"));
+  assert.ok(labels.includes("取消鼠标穿透"));
+  assert.ok(labels.includes("重试连接"));
+  assert.ok(labels.includes("打开 WebUI"));
+  assert.ok(labels.includes("退出桌宠"));
+  assert.ok(labels.includes(DESKTOP_START_COMMAND));
+  const quit = trayModel.find((i) => i.id === "quit");
+  assert.ok(quit);
+  assertQuitLabelSafe(quit!.label);
+  assert.equal(trayItemToAction("quit"), "quit");
+  assert.ok(buildTrayTooltip({ presentation: "running", activeCount: 2, attentionCount: 1 }).includes("Running"));
+
+  // --- Reduced motion + builtin pets ---
+  const manifest = getBuiltinPetManifest("snail-default");
+  const animated = resolvePetFrame(manifest, "running", false);
+  assert.equal(animated.animated, true);
+  const staticFrame = resolvePetFrame(manifest, "running", true);
+  assert.equal(staticFrame.animated, false);
+  assert.equal(staticFrame.frame, "running-static");
+  assert.ok(staticFrame.label);
+  assert.ok(staticFrame.glyph);
+  assert.equal(getBuiltinPetManifest("missing").id, "snail-default");
+  assert.equal(formatElapsed(65000), "1m 5s");
+  assert.equal(moveActivitySelection(["a", "b", "c"], "a", "next"), "b");
+  assert.equal(moveActivitySelection(["a", "b", "c"], "a", "prev"), "c");
+
+  // --- Settings persistence without tokens ---
+  const memory = new Map<string, string>();
+  const fsMock: SettingsFs = {
+    readFile: (p) => {
+      const v = memory.get(p);
+      if (v == null) throw new Error("missing");
+      return v;
+    },
+    writeFile: (p, data) => {
+      memory.set(p, data);
+    },
+    mkdirp: () => undefined,
+    exists: (p) => memory.has(p),
+  };
+  const userData = "/tmp/snail-pet-user";
+  saveDesktopSettingsFile(userData, createDefaultDesktopSettings({ port: 62667 }), fsMock);
+  const loaded = loadDesktopSettingsFile(userData, fsMock);
+  assert.equal(loaded.port, 62667);
+  assert.equal(settingsFilePath(userData).endsWith("desktop-pet-settings.json"), true);
+  assert.equal(JSON.stringify(loaded).includes("token"), false);
+
+  // --- Autostart host only toggles login item ---
+  let openAtLogin = false;
+  const loginHost = {
+    getLoginItemSettings: () => ({ openAtLogin }),
+    setLoginItemSettings: (s: { openAtLogin: boolean }) => {
+      openAtLogin = s.openAtLogin;
+    },
+  };
+  assert.equal(readLaunchAtLogin(loginHost), false);
+  assert.equal(applyLaunchAtLogin(loginHost, true), true);
+  assert.equal(openAtLogin, true);
+
+  // --- IPC allowlist ---
+  assert.equal(isRendererIpcChannel(PET_IPC_CHANNELS.getState), true);
+  assert.equal(isRendererIpcChannel("pet:eval"), false);
+  assert.ok(PET_RENDERER_ALLOWED_CHANNELS.includes(PET_IPC_CHANNELS.copyStartCommand));
+  assert.ok(!PET_RENDERER_ALLOWED_CHANNELS.includes(PET_IPC_CHANNELS.stateChanged));
+
+  // --- Preload surface must not expose token helpers ---
+  const preloadSrc = readFileSync(
+    path.join(process.cwd(), "desktop", "preload", "pet-preload.ts"),
+    "utf8",
+  );
+  assert.equal(/getToken|observerToken|process\.pid/.test(preloadSrc), false);
+  assert.ok(preloadSrc.includes("contextBridge.exposeInMainWorld"));
+  assert.ok(preloadSrc.includes("snailPet"));
+
+  // --- Static desktop tree: no service control ---
+  const desktopRoot = path.join(process.cwd(), "desktop");
+  for (const file of collectDesktopSources(desktopRoot)) {
+    const rel = path.relative(process.cwd(), file);
+    const source = readFileSync(file, "utf8");
+    assertNoServiceControl(source, rel);
+  }
+
+  // main.ts must not warn about interrupting tasks on quit
+  const mainSrc = readFileSync(path.join(process.cwd(), "desktop", "main", "main.ts"), "utf8");
+  assert.equal(/会中断任务|interrupt tasks|stop the service/.test(mainSrc), false);
+  assert.ok(mainSrc.includes("No task-interruption warning") || mainSrc.includes("cannot stop"));
+
+  // copyStartCommand must not execute
+  assert.ok(mainSrc.includes("Copy only"));
+  assert.equal(/\bexec\(|\bspawn\(|shell\.openPath\(\s*["']spi/.test(mainSrc), false);
+
+  // Package contract
+  assert.equal(DESKTOP_PACKAGE_CONTRACT.petOnly, true);
+  assert.equal(DESKTOP_PACKAGE_CONTRACT.separateFromNpmSpi, true);
+  assert.ok(DESKTOP_PACKAGE_CONTRACT.forbiddenBundlePaths.includes(".next"));
+  assert.ok(DESKTOP_PACKAGE_CONTRACT.forbiddenBundlePaths.includes("bin/pi-web.js"));
+
+  // Required asset manifests exist
+  for (const petId of ["snail-default", "snail-classic"]) {
+    const manifestPath = path.join(
+      process.cwd(),
+      "desktop",
+      "assets",
+      "pets",
+      petId,
+      "manifest.json",
+    );
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as { id: string; states: Record<string, unknown> };
+    assert.equal(manifest.id, petId);
+    for (const state of [
+      "idle",
+      "running",
+      "retrying",
+      "needs_input",
+      "ready",
+      "blocked",
+      "disconnected",
+      "service_not_running",
+    ]) {
+      assert.ok(manifest.states[state], `${petId} missing state ${state}`);
+    }
+  }
+
+  // Renderer HTML CSP + no inline node
+  const html = readFileSync(path.join(process.cwd(), "desktop", "renderer", "index.html"), "utf8");
+  assert.ok(html.includes("Content-Security-Policy"));
+  assert.ok(html.includes("default-src 'none'"));
+  assert.equal(html.includes("nodeIntegration"), false);
+
+  // Unread helper
+  const unreadIds = listUnreadTransitionIds(
+    buildActivityView({
+      snapshot,
+      connection,
+      settings: createDefaultDesktopSettings(),
+      now: Date.now(),
+    }),
+  );
+  assert.ok(unreadIds.length >= 2);
+
+  // projectActivityRow sanity
+  const row = projectActivityRow(projectActivity(activities[0]), { acknowledgedTransitionIds: [] }, Date.now());
+  assert.equal(row.source, "agent");
+  assert.ok(row.deepLink.startsWith("/"));
+
+  // sortProjectGroups stable
+  const groups = sortProjectGroups(view.projects);
+  assert.equal(groups.length, view.projects.length);
+
+  console.log("smoke-desktop-contract: ok");
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
