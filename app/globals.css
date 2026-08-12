@@ -3894,12 +3894,13 @@ html[data-glass="on"] .usage-modal-panel {
   opacity: 0.96;
 }
 
-/* Usage Token structure chart — domain visualization colors mapped to semantic roles. */
+/* Usage Token/cost chart — domain visualization colors mapped to semantic roles. */
 .usage-token-chart {
   --usage-series-input: var(--status-info-foreground);
   --usage-series-output: var(--accent-primary);
   --usage-series-cache-read: var(--status-success-foreground);
   --usage-series-cache-write: var(--status-warning-foreground);
+  --usage-series-cost: var(--accent-primary);
   min-width: 0;
 }
 
@@ -3924,8 +3925,22 @@ html[data-glass="on"] .usage-modal-panel {
   line-height: 1.4;
 }
 
+.usage-token-chart-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex: 0 1 auto;
+}
+
+.usage-token-metric-tabs,
 .usage-token-mode-tabs {
   flex: 0 0 auto;
+}
+
+.usage-token-chart.is-cost .usage-token-plot-wrap {
+  grid-template-columns: 56px minmax(0, 1fr);
 }
 
 .usage-token-legend {
@@ -3991,6 +4006,11 @@ html[data-glass="on"] .usage-modal-panel {
 .usage-token-seg-cache-write,
 .usage-token-legend-swatch.usage-token-seg-cache-write {
   background: var(--usage-series-cache-write);
+}
+
+.usage-token-seg-cost,
+.usage-token-legend-swatch.usage-token-seg-cost {
+  background: var(--usage-series-cost);
 }
 
 .usage-token-plot-wrap {

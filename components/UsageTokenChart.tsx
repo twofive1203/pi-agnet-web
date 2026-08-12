@@ -19,6 +19,7 @@ import type { UsageTotals } from "@/lib/usage-stats";
 import {
   USAGE_TOKEN_SERIES,
   clampUsageBucketIndex,
+  maxUsageTimelineCost,
   maxUsageTimelineTokenTotal,
   pickUsageAxisLabelIndices,
   pickUsageAxisScale,
@@ -30,6 +31,8 @@ import {
 } from "@/lib/usage-timeline";
 
 export type UsageChartMode = "absolute" | "percent";
+/** Primary chart metric: Token structure stack vs single-series cost bars. */
+export type UsageChartMetric = "tokens" | "cost";
 
 interface UsageTokenChartProps {
   timeline: UsageTimeline;
@@ -38,6 +41,9 @@ interface UsageTokenChartProps {
   locale: Locale;
   /** Optional busy flag while a newer range is loading over retained data. */
   refreshing?: boolean;
+  /** Controlled metric; omit to keep Token/Cost toggle state inside the chart. */
+  metric?: UsageChartMetric;
+  onMetricChange?: (metric: UsageChartMetric) => void;
 }
 
 interface TooltipModel {
@@ -70,6 +76,32 @@ export function formatCompactTokens(value: number, locale: Locale): string {
   return formatNumber(value, locale);
 }
 
+/**
+ * Compact USD axis labels; exact Tooltip cost uses {@link formatExactCost}.
+ */
+export function formatCompactCost(value: number, locale: Locale): string {
+  if (!Number.isFinite(value) || value === 0) return "$0";
+  const abs = Math.abs(value);
+  if (abs < 0.01) return "<$0.01";
+  if (abs >= 1_000_000) {
+    return `$${formatNumber(value / 1_000_000, locale, { maximumFractionDigits: 1 })}M`;
+  }
+  if (abs >= 1_000) {
+    return `$${formatNumber(value / 1_000, locale, { maximumFractionDigits: 1 })}K`;
+  }
+  if (abs >= 10) {
+    return `$${formatNumber(value, locale, { maximumFractionDigits: 1 })}`;
+  }
+  return `$${formatNumber(value, locale, { maximumFractionDigits: 2 })}`;
+}
+
+/** Exact USD for Tooltip / a11y (matches Usage modal summary cards). */
+export function formatExactCost(value: number): string {
+  if (!(value > 0)) return "$0.00";
+  if (value < 0.01) return "<$0.01";
+  return `$${value.toFixed(2)}`;
+}
+
 function formatPercent(share: number, locale: Locale): string {
   const pct = share * 100;
   if (!Number.isFinite(pct) || pct <= 0) return `${formatNumber(0, locale, { maximumFractionDigits: 1 })}%`;
@@ -86,8 +118,8 @@ function isNodeInside(container: HTMLElement | null, node: EventTarget | null): 
 }
 
 /**
- * Accessible four-series Token structure chart (absolute / 100% stacked).
- * Pointer, touch, and keyboard share one detail model; legends only highlight.
+ * Accessible Usage timeline chart: Token structure stack or single-series cost bars.
+ * Pointer, touch, and keyboard share one detail model; Token legends only highlight.
  */
 export function UsageTokenChart({
   timeline,
@@ -95,6 +127,8 @@ export function UsageTokenChart({
   onModeChange,
   locale,
   refreshing = false,
+  metric: controlledMetric,
+  onMetricChange,
 }: UsageTokenChartProps) {
   const { t } = useI18n();
   const labelId = useId();
@@ -102,6 +136,13 @@ export function UsageTokenChart({
   const plotRef = useRef<HTMLDivElement | null>(null);
   const tooltipRef = useRef<HTMLDivElement | null>(null);
   const bucketRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const [internalMetric, setInternalMetric] = useState<UsageChartMetric>("tokens");
+  const metric = controlledMetric ?? internalMetric;
+  const setMetric = useCallback((next: UsageChartMetric) => {
+    if (controlledMetric === undefined) setInternalMetric(next);
+    onMetricChange?.(next);
+  }, [controlledMetric, onMetricChange]);
+
   const [focusIndex, setFocusIndex] = useState(0);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const [pinnedIndex, setPinnedIndex] = useState<number | null>(null);
@@ -113,24 +154,29 @@ export function UsageTokenChart({
 
   const buckets = timeline.buckets;
   const bucketCount = buckets.length;
+  const isCost = metric === "cost";
+  // Cost is a single series — percent stacking has no composition meaning.
+  const effectiveMode: UsageChartMode = isCost ? "absolute" : mode;
   const maxTokens = maxUsageTimelineTokenTotal(timeline);
-  const allZero = maxTokens <= 0;
-  const activeHighlight = hoverSeries ?? highlightSeries;
+  const maxCost = maxUsageTimelineCost(timeline);
+  const maxValue = isCost ? maxCost : maxTokens;
+  const allZero = maxValue <= 0;
+  const activeHighlight = isCost ? null : (hoverSeries ?? highlightSeries);
 
   const labelIndices = useMemo(
     () => new Set(pickUsageAxisLabelIndices(bucketCount, bucketCount > 40 ? 5 : bucketCount > 14 ? 7 : 10)),
     [bucketCount],
   );
   const axisScale = useMemo(
-    () => (mode === "percent"
+    () => (effectiveMode === "percent"
       ? { ticks: [0, 25, 50, 75, 100], scaleMax: 100 }
-      : pickUsageAxisScale(maxTokens, 5)),
-    [mode, maxTokens],
+      : pickUsageAxisScale(maxValue, 5)),
+    [effectiveMode, maxValue],
   );
   const yTicks = axisScale.ticks;
   const scaleMax = axisScale.scaleMax;
 
-  // Reset interaction when the bucket identity set changes (new range/granularity).
+  // Reset interaction when the bucket identity set or metric changes.
   const bucketKeySignature = useMemo(() => buckets.map((b) => b.key).join("|"), [buckets]);
   useEffect(() => {
     setFocusIndex(0);
@@ -139,8 +185,9 @@ export function UsageTokenChart({
     setTooltipPos(null);
     setTooltipHovered(false);
     setHighlightSeries(null);
+    setHoverSeries(null);
     bucketRefs.current = [];
-  }, [bucketKeySignature]);
+  }, [bucketKeySignature, metric]);
 
   // Show detail for pinned, else hover (including while reading the Tooltip), else focused bucket.
   const shownIndex = pinnedIndex
@@ -163,8 +210,8 @@ export function UsageTokenChart({
     }
     const plotRect = plot.getBoundingClientRect();
     const btnRect = button.getBoundingClientRect();
-    const tooltipWidth = 220;
-    const tooltipHeight = 148;
+    const tooltipWidth = isCost ? 180 : 220;
+    const tooltipHeight = isCost ? 72 : 148;
     let left = btnRect.left - plotRect.left + btnRect.width / 2 - tooltipWidth / 2;
     let top = btnRect.top - plotRect.top - tooltipHeight - 8;
     left = Math.max(4, Math.min(left, plotRect.width - tooltipWidth - 4));
@@ -173,7 +220,7 @@ export function UsageTokenChart({
     }
     top = Math.max(4, Math.min(top, Math.max(4, plotRect.height - tooltipHeight - 4)));
     setTooltipPos({ left, top });
-  }, []);
+  }, [isCost]);
 
   useEffect(() => {
     if (tooltipIndex == null) {
@@ -181,7 +228,7 @@ export function UsageTokenChart({
       return;
     }
     updateTooltipPosition(tooltipIndex);
-  }, [tooltipIndex, updateTooltipPosition, mode, activeHighlight, bucketKeySignature]);
+  }, [tooltipIndex, updateTooltipPosition, effectiveMode, activeHighlight, bucketKeySignature, metric]);
 
   const moveFocus = useCallback((next: number) => {
     const index = clampUsageBucketIndex(next, bucketCount);
@@ -266,26 +313,33 @@ export function UsageTokenChart({
   const renderBucket = (index: number) => {
     const bucket = buckets[index]!;
     const tokenTotal = totalUsageTokens(bucket.totals);
+    const costValue = bucket.totals.cost;
+    const valueTotal = isCost ? costValue : tokenTotal;
     const heightPct =
-      mode === "percent"
-        ? tokenTotal > 0
+      effectiveMode === "percent"
+        ? valueTotal > 0
           ? 100
           : 0
         : scaleMax > 0
-          ? (tokenTotal / scaleMax) * 100
+          ? (valueTotal / scaleMax) * 100
           : 0;
     const shares = usageTokenSeriesShares(bucket.totals);
     const isActive = tooltip?.index === index;
     const tabIndex = index === focusIndex ? 0 : -1;
 
-    const ariaParts = [
-      bucket.from === bucket.to ? bucket.from : `${bucket.from} – ${bucket.to}`,
-      t("panels.usage.tooltipTotal", { value: formatNumber(tokenTotal, locale) }),
-      ...USAGE_TOKEN_SERIES.map((series) => {
-        const value = usageTokenSeriesValue(bucket.totals, series);
-        return `${t(seriesLabelKey(series))}: ${formatNumber(value, locale)} (${formatPercent(shares[series], locale)})`;
-      }),
-    ];
+    const ariaParts = isCost
+      ? [
+          bucket.from === bucket.to ? bucket.from : `${bucket.from} – ${bucket.to}`,
+          t("panels.usage.tooltipCost", { value: formatExactCost(costValue) }),
+        ]
+      : [
+          bucket.from === bucket.to ? bucket.from : `${bucket.from} – ${bucket.to}`,
+          t("panels.usage.tooltipTotal", { value: formatNumber(tokenTotal, locale) }),
+          ...USAGE_TOKEN_SERIES.map((series) => {
+            const value = usageTokenSeriesValue(bucket.totals, series);
+            return `${t(seriesLabelKey(series))}: ${formatNumber(value, locale)} (${formatPercent(shares[series], locale)})`;
+          }),
+        ];
 
     return (
       <button
@@ -294,7 +348,7 @@ export function UsageTokenChart({
           bucketRefs.current[index] = el;
         }}
         type="button"
-        className={`usage-token-bucket${isActive ? " is-active" : ""}${tokenTotal <= 0 ? " is-empty" : ""}`}
+        className={`usage-token-bucket${isActive ? " is-active" : ""}${valueTotal <= 0 ? " is-empty" : ""}`}
         style={{ ["--usage-bucket-height" as string]: `${Math.max(0, Math.min(100, heightPct))}%` }}
         tabIndex={tabIndex}
         aria-label={ariaParts.join(". ")}
@@ -325,20 +379,26 @@ export function UsageTokenChart({
         }}
       >
         <span className="usage-token-bucket-stack" aria-hidden="true">
-          {USAGE_TOKEN_SERIES.map((series) => {
-            const value = usageTokenSeriesValue(bucket.totals, series);
-            if (value <= 0 || tokenTotal <= 0) return null;
-            const segPct =
-              mode === "percent" ? shares[series] * 100 : (value / tokenTotal) * 100;
-            const dimmed = activeHighlight != null && activeHighlight !== series;
-            return (
-              <span
-                key={series}
-                className={`usage-token-seg ${SERIES_CLASS[series]}${dimmed ? " is-dimmed" : ""}${activeHighlight === series ? " is-emphasized" : ""}`}
-                style={{ flexGrow: segPct, flexBasis: 0 }}
-              />
-            );
-          })}
+          {isCost ? (
+            costValue > 0 ? (
+              <span className="usage-token-seg usage-token-seg-cost" style={{ flexGrow: 100, flexBasis: 0 }} />
+            ) : null
+          ) : (
+            USAGE_TOKEN_SERIES.map((series) => {
+              const value = usageTokenSeriesValue(bucket.totals, series);
+              if (value <= 0 || tokenTotal <= 0) return null;
+              const segPct =
+                effectiveMode === "percent" ? shares[series] * 100 : (value / tokenTotal) * 100;
+              const dimmed = activeHighlight != null && activeHighlight !== series;
+              return (
+                <span
+                  key={series}
+                  className={`usage-token-seg ${SERIES_CLASS[series]}${dimmed ? " is-dimmed" : ""}${activeHighlight === series ? " is-emphasized" : ""}`}
+                  style={{ flexGrow: segPct, flexBasis: 0 }}
+                />
+              );
+            })
+          )}
         </span>
       </button>
     );
@@ -346,11 +406,17 @@ export function UsageTokenChart({
 
   const tooltipBucket = tooltip ? buckets[tooltip.index] : null;
   const tooltipTotals = tooltipBucket?.totals;
-  const tooltipShares = tooltipTotals ? usageTokenSeriesShares(tooltipTotals) : null;
+  const tooltipShares = tooltipTotals && !isCost ? usageTokenSeriesShares(tooltipTotals) : null;
+
+  const title = isCost ? t("panels.usage.costChartTitle") : t("panels.usage.chartTitle");
+  const description = isCost
+    ? t("panels.usage.costChartDescription", { granularity: granularityLabel })
+    : t("panels.usage.chartDescription", { granularity: granularityLabel });
+  const emptyLabel = isCost ? t("panels.usage.costChartEmpty") : t("panels.usage.chartEmpty");
 
   return (
     <section
-      className={`usage-token-chart${refreshing ? " is-refreshing" : ""}`}
+      className={`usage-token-chart${isCost ? " is-cost" : ""}${refreshing ? " is-refreshing" : ""}`}
       aria-labelledby={labelId}
       aria-describedby={descId}
       aria-busy={refreshing || undefined}
@@ -358,63 +424,85 @@ export function UsageTokenChart({
       <div className="usage-token-chart-header">
         <div className="usage-token-chart-heading">
           <h3 id={labelId} className="usage-stats-card-title">
-            {t("panels.usage.chartTitle")}
+            {title}
           </h3>
           <p id={descId} className="usage-token-chart-desc">
-            {t("panels.usage.chartDescription", { granularity: granularityLabel })}
+            {description}
           </p>
         </div>
-        <SettingsTabs aria-label={t("panels.usage.modeAria")} className="usage-token-mode-tabs">
-          <SettingsTab
-            active={mode === "absolute"}
-            onClick={() => onModeChange("absolute")}
-          >
-            {t("panels.usage.modeAbsolute")}
-          </SettingsTab>
-          <SettingsTab
-            active={mode === "percent"}
-            onClick={() => onModeChange("percent")}
-          >
-            {t("panels.usage.modePercent")}
-          </SettingsTab>
-        </SettingsTabs>
+        <div className="usage-token-chart-controls">
+          <SettingsTabs aria-label={t("panels.usage.metricAria")} className="usage-token-metric-tabs">
+            <SettingsTab
+              active={metric === "tokens"}
+              onClick={() => setMetric("tokens")}
+            >
+              {t("panels.usage.metricTokens")}
+            </SettingsTab>
+            <SettingsTab
+              active={metric === "cost"}
+              onClick={() => setMetric("cost")}
+            >
+              {t("panels.usage.metricCost")}
+            </SettingsTab>
+          </SettingsTabs>
+          {!isCost && (
+            <SettingsTabs aria-label={t("panels.usage.modeAria")} className="usage-token-mode-tabs">
+              <SettingsTab
+                active={mode === "absolute"}
+                onClick={() => onModeChange("absolute")}
+              >
+                {t("panels.usage.modeAbsolute")}
+              </SettingsTab>
+              <SettingsTab
+                active={mode === "percent"}
+                onClick={() => onModeChange("percent")}
+              >
+                {t("panels.usage.modePercent")}
+              </SettingsTab>
+            </SettingsTabs>
+          )}
+        </div>
       </div>
 
-      <div className="usage-token-legend" role="group" aria-label={t("panels.usage.legendAria")}>
-        {USAGE_TOKEN_SERIES.map((series) => {
-          const active = highlightSeries === series;
-          const hovered = hoverSeries === series;
-          return (
-            <button
-              key={series}
-              type="button"
-              className={`usage-token-legend-item${active || hovered ? " is-active" : ""}${activeHighlight != null && activeHighlight !== series ? " is-dimmed" : ""}`}
-              aria-pressed={active}
-              onMouseEnter={() => setHoverSeries(series)}
-              onMouseLeave={() => setHoverSeries(null)}
-              onFocus={() => setHoverSeries(series)}
-              onBlur={() => setHoverSeries(null)}
-              onClick={() => setHighlightSeries((current) => (current === series ? null : series))}
-            >
-              <span className={`usage-token-legend-swatch ${SERIES_CLASS[series]}`} aria-hidden="true" />
-              <span>{t(seriesLabelKey(series))}</span>
-            </button>
-          );
-        })}
-      </div>
+      {!isCost && (
+        <div className="usage-token-legend" role="group" aria-label={t("panels.usage.legendAria")}>
+          {USAGE_TOKEN_SERIES.map((series) => {
+            const active = highlightSeries === series;
+            const hovered = hoverSeries === series;
+            return (
+              <button
+                key={series}
+                type="button"
+                className={`usage-token-legend-item${active || hovered ? " is-active" : ""}${activeHighlight != null && activeHighlight !== series ? " is-dimmed" : ""}`}
+                aria-pressed={active}
+                onMouseEnter={() => setHoverSeries(series)}
+                onMouseLeave={() => setHoverSeries(null)}
+                onFocus={() => setHoverSeries(series)}
+                onBlur={() => setHoverSeries(null)}
+                onClick={() => setHighlightSeries((current) => (current === series ? null : series))}
+              >
+                <span className={`usage-token-legend-swatch ${SERIES_CLASS[series]}`} aria-hidden="true" />
+                <span>{t(seriesLabelKey(series))}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {bucketCount === 0 || allZero ? (
         <div className="usage-stats-empty" role="status">
-          {t("panels.usage.chartEmpty")}
+          {emptyLabel}
         </div>
       ) : (
         <div className="usage-token-plot-wrap">
           <div className="usage-token-y-axis" aria-hidden="true">
             {[...yTicks].reverse().map((tick) => (
               <span key={tick} className="usage-token-y-tick">
-                {mode === "percent"
+                {effectiveMode === "percent"
                   ? `${formatNumber(tick, locale, { maximumFractionDigits: 0 })}%`
-                  : formatCompactTokens(tick, locale)}
+                  : isCost
+                    ? formatCompactCost(tick, locale)
+                    : formatCompactTokens(tick, locale)}
               </span>
             ))}
           </div>
@@ -426,7 +514,7 @@ export function UsageTokenChart({
             <div className="usage-token-grid" aria-hidden="true">
               {yTicks.map((tick) => {
                 const bottom =
-                  mode === "percent"
+                  effectiveMode === "percent"
                     ? tick
                     : scaleMax > 0
                       ? (tick / scaleMax) * 100
@@ -454,12 +542,12 @@ export function UsageTokenChart({
               ))}
             </div>
 
-            {tooltip && tooltipBucket && tooltipTotals && tooltipShares && tooltipPos && (
+            {tooltip && tooltipBucket && tooltipTotals && tooltipPos && (isCost || tooltipShares) && (
               <div
                 ref={tooltipRef}
                 className={`usage-token-tooltip${tooltip.pinned ? " is-pinned" : ""}`}
                 role="tooltip"
-                style={{ left: tooltipPos.left, top: tooltipPos.top }}
+                style={{ left: tooltipPos.left, top: tooltipPos.top, width: isCost ? 180 : undefined }}
                 onMouseEnter={() => {
                   setTooltipHovered(true);
                   if (tooltipIndex != null) setHoverIndex(tooltipIndex);
@@ -478,25 +566,35 @@ export function UsageTokenChart({
                     ? tooltipBucket.from
                     : `${tooltipBucket.from} – ${tooltipBucket.to}`}
                 </div>
-                <div className="usage-token-tooltip-total">
-                  {t("panels.usage.tooltipTotal", {
-                    value: formatNumber(totalUsageTokens(tooltipTotals), locale),
-                  })}
-                </div>
-                <ul className="usage-token-tooltip-rows">
-                  {USAGE_TOKEN_SERIES.map((series) => (
-                    <li key={series}>
-                      <span className={`usage-token-legend-swatch ${SERIES_CLASS[series]}`} aria-hidden="true" />
-                      <span className="usage-token-tooltip-name">{t(seriesLabelKey(series))}</span>
-                      <span className="usage-token-tooltip-value">
-                        {formatNumber(usageTokenSeriesValue(tooltipTotals, series), locale)}
-                      </span>
-                      <span className="usage-token-tooltip-pct">
-                        {formatPercent(tooltipShares[series], locale)}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
+                {isCost ? (
+                  <div className="usage-token-tooltip-total">
+                    {t("panels.usage.tooltipCost", {
+                      value: formatExactCost(tooltipTotals.cost),
+                    })}
+                  </div>
+                ) : (
+                  <>
+                    <div className="usage-token-tooltip-total">
+                      {t("panels.usage.tooltipTotal", {
+                        value: formatNumber(totalUsageTokens(tooltipTotals), locale),
+                      })}
+                    </div>
+                    <ul className="usage-token-tooltip-rows">
+                      {USAGE_TOKEN_SERIES.map((series) => (
+                        <li key={series}>
+                          <span className={`usage-token-legend-swatch ${SERIES_CLASS[series]}`} aria-hidden="true" />
+                          <span className="usage-token-tooltip-name">{t(seriesLabelKey(series))}</span>
+                          <span className="usage-token-tooltip-value">
+                            {formatNumber(usageTokenSeriesValue(tooltipTotals, series), locale)}
+                          </span>
+                          <span className="usage-token-tooltip-pct">
+                            {formatPercent(tooltipShares![series], locale)}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                )}
               </div>
             )}
           </div>
@@ -524,4 +622,10 @@ export function usageChartSeriesOrder(): readonly UsageTokenSeriesId[] {
 export function absoluteBucketHeightPct(totals: UsageTotals, scaleMax: number): number {
   if (!(scaleMax > 0)) return 0;
   return (totalUsageTokens(totals) / scaleMax) * 100;
+}
+
+/** Pure helper: absolute cost column height percent against a nice axis scale. */
+export function absoluteCostBucketHeightPct(cost: number, scaleMax: number): number {
+  if (!(scaleMax > 0) || !(cost > 0)) return 0;
+  return (cost / scaleMax) * 100;
 }

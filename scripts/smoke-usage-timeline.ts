@@ -9,6 +9,7 @@ import {
   clampUsageBucketIndex,
   createEmptyUsageTotals,
   inclusiveCalendarDays,
+  maxUsageTimelineCost,
   maxUsageTimelineTokenTotal,
   parseUsageCalendarDate,
   pickUsageAxisLabelIndices,
@@ -171,6 +172,7 @@ function main() {
 
   // Client geometry helpers stay finite.
   assert.equal(maxUsageTimelineTokenTotal(seven), totalUsageTokens(seven.buckets[6]!.totals));
+  assert.equal(maxUsageTimelineCost(seven), seven.buckets[6]!.totals.cost);
   assert.equal(clampUsageBucketIndex(-2, 7), 0);
   assert.equal(clampUsageBucketIndex(99, 7), 6);
   assert.equal(clampUsageBucketIndex(3, 0), 0);

@@ -298,6 +298,17 @@ export function maxUsageTimelineTokenTotal(timeline: UsageTimeline): number {
 }
 
 /**
+ * Largest bucket cost total; used for the cost-mode column scale.
+ */
+export function maxUsageTimelineCost(timeline: UsageTimeline): number {
+  let max = 0;
+  for (const bucket of timeline.buckets) {
+    max = Math.max(max, bucket.totals.cost);
+  }
+  return max;
+}
+
+/**
  * Clamp a focus index into [0, count-1], or 0 when empty.
  */
 export function clampUsageBucketIndex(index: number, count: number): number {
