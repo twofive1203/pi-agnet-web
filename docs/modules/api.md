@@ -117,6 +117,19 @@ API routes live under `app/api/`. When adding, removing, or changing routes, upd
 - Client-side command calls should use `lib/agent-client.ts`.
 - Normalize streamed/file-loaded tool calls through `lib/normalize.ts`.
 
+## Desktop observer routes
+
+Attach-only desktop pet API. **Direct IPv4 loopback (`127.0.0.1`) + local mode only** — never server mode. Host must be `127.0.0.1` (not `localhost`). Snapshot/events require a short-lived hashed token from `session`. Root server-access auth never relaxes these gates. Payloads never include cwd, Prompt/firstMessage, tool args, command text, or raw errors.
+
+| Route | Methods | Purpose |
+| --- | --- | --- |
+| `desktop-observer/protocol/` | GET | Loopback protocol/product/mode probe. Server mode returns `200` with `compatible:false` + `reasonCode:"server_mode"` (diagnostic). No token. |
+| `desktop-observer/session/` | POST | Mint short-lived observer token (`x-spi-desktop-observer-token`). Origin exact loopback match or absent (Electron main). |
+| `desktop-observer/snapshot/` | GET | Current bounded multi-source snapshot (`?reset=1` for baseline). Token required. `Cache-Control: no-store`. |
+| `desktop-observer/events/` | GET | Full-snapshot SSE + heartbeat comments. Initial event is always `reset`. Token expiry closes the stream. |
+
+Implementation: `lib/desktop-observer-access.ts`, `lib/task-observer-hub.ts`, adapters under `lib/task-observer-*.ts`.
+
 ## Automation routes
 
 Local-only (`direct loopback` + Automation control session). Sensitive mutations require a one-time approval challenge.

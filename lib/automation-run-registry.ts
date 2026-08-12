@@ -22,10 +22,22 @@ function registry(): Map<string, ActiveAutomationRun> {
 
 export function registerActiveRun(run: ActiveAutomationRun): void {
   registry().set(run.runId, run);
+  notifyObserverBestEffort();
 }
 
 export function unregisterActiveRun(runId: string): void {
   registry().delete(runId);
+  notifyObserverBestEffort();
+}
+
+function notifyObserverBestEffort(): void {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { notifyTaskObserverSourceChange } = require("./task-observer-invalidate") as typeof import("./task-observer-invalidate");
+    notifyTaskObserverSourceChange();
+  } catch {
+    // Observer must never break Automation registry mutations.
+  }
 }
 
 export function getActiveRun(runId: string): ActiveAutomationRun | undefined {

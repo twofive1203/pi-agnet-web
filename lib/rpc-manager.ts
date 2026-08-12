@@ -26,6 +26,9 @@ import {
   recordSubagentDuration,
   recordSubagentMetric,
 } from "./subagent-observability";
+import { getProcessInstanceId } from "./process-runtime";
+import { AgentTaskObserver } from "./task-observer-agent";
+import type { TaskObserverActivityInput } from "./task-observer-types";
 
 // ============================================================================
 // Types
@@ -102,11 +105,24 @@ export class AgentSessionWrapper {
   private activeToolCallIds = new Set<string>();
   private activeSubagentToolCallIds = new Set<string>();
   private performanceRecorder: SessionPerformanceRecorder | null = null;
+  private taskObserver: AgentTaskObserver;
   private _alive = true;
+
+  /** Idle retention after genuine settlement (ms). */
+  static readonly IDLE_TEARDOWN_MS = 10 * 60 * 1000;
 
   constructor(public readonly inner: AgentSessionLike, public readonly cwd: string) {
     this.extensionUiBridge = new ExtensionWebUiBridge(
-      (event) => this.emitEvent(event),
+      (event) => {
+        // Observe blocking UI at the bridge edge before browser delivery.
+        try {
+          this.taskObserver.observeEvent(event);
+        } catch {
+          // Observation must never break extension UI delivery.
+        }
+        this.emitEvent(event);
+        this.scheduleIdleTeardownIfEligible();
+      },
       () => this.listeners.length > 0,
     );
     this.agentEventThrottler = new AgentEventThrottler(
@@ -120,6 +136,29 @@ export class AgentSessionWrapper {
       () => recordSubagentMetric("coalescedProgress"),
       () => recordSubagentMetric("immediateProgress"),
     );
+    const sessionName =
+      typeof this.inner.sessionManager?.getSessionName === "function"
+        ? this.inner.sessionManager.getSessionName()
+        : undefined;
+    this.taskObserver = new AgentTaskObserver({
+      instanceId: getProcessInstanceId(),
+      sessionId: this.inner.sessionId,
+      cwd: this.cwd,
+      explicitTitle: sessionName ?? null,
+    });
+  }
+
+  /**
+   * Bounded ordinary-Agent observation for the desktop pet hub.
+   * Does not register as a chat SSE listener and does not extend idle lifetime.
+   */
+  getTaskObservation(): TaskObserverActivityInput | null {
+    return this.taskObserver.toActivityInput();
+  }
+
+  /** Test/ops helper: prompt epoch and idle eligibility without activity payload. */
+  getTaskObserverDebugSnapshot() {
+    return this.taskObserver.getDebugSnapshot();
   }
 
   get sessionId(): string {
@@ -162,12 +201,18 @@ export class AgentSessionWrapper {
 
     this.unsubscribe = this.inner.subscribe((event: AgentEvent) => {
       const handlerStartedAt = nowForSubagentMetric();
-      this.resetIdleTimer();
 
       try {
         this.performanceRecorder?.observe(event);
       } catch {
         // Performance observation must never interrupt normal agent event delivery.
+      }
+
+      try {
+        // Task observation runs on the raw event boundary (before SSE throttling).
+        this.taskObserver.observeEvent(event);
+      } catch {
+        // Observation must never interrupt normal agent event delivery.
       }
 
       const toolCallId = typeof event.toolCallId === "string" ? event.toolCallId : undefined;
@@ -214,9 +259,12 @@ export class AgentSessionWrapper {
       if (event.type === "tool_execution_end" && toolCallId) {
         this.activeSubagentToolCallIds.delete(toolCallId);
       }
+      // Idle teardown is settlement-based; silent long tools must not be destroyed
+      // merely because no further events arrive within 10 minutes.
+      this.scheduleIdleTeardownIfEligible();
       recordSubagentDuration("handlerMs", handlerStartedAt);
     });
-    this.resetIdleTimer();
+    this.scheduleIdleTeardownIfEligible();
   }
 
   private deliverAgentEvent(event: AgentEvent): void {
@@ -233,9 +281,29 @@ export class AgentSessionWrapper {
     this.publishEvent(browserEvent);
   }
 
-  private resetIdleTimer(): void {
-    if (this.idleTimer) clearTimeout(this.idleTimer);
-    this.idleTimer = setTimeout(() => this.destroy(), 10 * 60 * 1000);
+  /**
+   * Start the idle destroy timer only after genuine settlement with no active
+   * tools, Subagents, or blocking extension UI. Chat SSE listener count and
+   * task-observer reads never influence eligibility.
+   */
+  private scheduleIdleTeardownIfEligible(): void {
+    if (this.idleTimer) {
+      clearTimeout(this.idleTimer);
+      this.idleTimer = null;
+    }
+    if (!this._alive) return;
+    const eligibility = this.taskObserver.getIdleEligibility(
+      this.extensionUiBridge.getPendingBlockingCount(),
+    );
+    // Wrapper-level tool sets are the hard backstop if observation drifts.
+    if (
+      !eligibility.canSchedule ||
+      this.activeToolCallIds.size > 0 ||
+      this.activeSubagentToolCallIds.size > 0
+    ) {
+      return;
+    }
+    this.idleTimer = setTimeout(() => this.destroy(), AgentSessionWrapper.IDLE_TEARDOWN_MS);
   }
 
   onEvent(listener: EventListener): () => void {
@@ -252,6 +320,17 @@ export class AgentSessionWrapper {
   }
 
   emitEvent(event: AgentEvent): void {
+    // Wrapper-synthesized lifecycle edges (prompt_settled / prompt_error) never pass
+    // through inner.subscribe; observe them here. Extension UI is observed at the
+    // bridge edge to avoid double stateVersion bumps.
+    if (event.type === "prompt_settled" || event.type === "prompt_error") {
+      try {
+        this.taskObserver.observeEvent(event);
+      } catch {
+        // Observation must never interrupt event delivery.
+      }
+      this.scheduleIdleTeardownIfEligible();
+    }
     // Extension/UI events share the same ordering barrier as SDK lifecycle events.
     this.agentEventThrottler.handle(event);
   }
@@ -347,7 +426,6 @@ export class AgentSessionWrapper {
   }
 
   async send(command: Record<string, unknown>): Promise<unknown> {
-    this.resetIdleTimer();
     const type = command.type as string;
 
     switch (type) {
@@ -355,6 +433,12 @@ export class AgentSessionWrapper {
         // Fire-and-forget HTTP response; lifecycle still arrives over SSE.
         // Extension slash commands (e.g. /brainstorm) return from prompt() without
         // agent_start/agent_end — emit prompt_settled so the browser can clear the spinner.
+        try {
+          this.taskObserver.beginUserPrompt();
+        } catch {
+          // Observation must never block prompt dispatch.
+        }
+        this.scheduleIdleTeardownIfEligible();
         const promptImages = command.images as VisionAttachment[] | undefined;
         void this.resolveVisionMessage(command.message as string, promptImages)
           .then((resolvedMessage) => this.inner.prompt(resolvedMessage, promptImages?.length ? { images: promptImages } : undefined))
@@ -488,6 +572,12 @@ export class AgentSessionWrapper {
       }
 
       case "steer": {
+        try {
+          this.taskObserver.noteInActivityControl("steer");
+        } catch {
+          // Observation must never block steer.
+        }
+        this.scheduleIdleTeardownIfEligible();
         const steerImages = command.images as VisionAttachment[] | undefined;
         const resolvedMessage = await this.resolveVisionMessage(command.message as string, steerImages);
         await this.inner.steer(resolvedMessage, steerImages?.length ? steerImages : undefined);
@@ -495,6 +585,12 @@ export class AgentSessionWrapper {
       }
 
       case "follow_up": {
+        try {
+          this.taskObserver.noteInActivityControl("follow_up");
+        } catch {
+          // Observation must never block follow_up.
+        }
+        this.scheduleIdleTeardownIfEligible();
         const followImages = command.images as VisionAttachment[] | undefined;
         const resolvedMessage = await this.resolveVisionMessage(command.message as string, followImages);
         await this.inner.followUp(resolvedMessage, followImages?.length ? followImages : undefined);
@@ -522,7 +618,16 @@ export class AgentSessionWrapper {
       }
 
       case "extension_ui_response": {
-        const handled = this.extensionUiBridge.respond(command as { id: string; cancelled?: boolean; value?: string; confirmed?: boolean });
+        const response = command as { id: string; cancelled?: boolean; value?: string; confirmed?: boolean };
+        const handled = this.extensionUiBridge.respond(response);
+        if (handled && typeof response.id === "string") {
+          try {
+            this.taskObserver.noteExtensionUiResolved(response.id);
+          } catch {
+            // Observation must never block UI response handling.
+          }
+          this.scheduleIdleTeardownIfEligible();
+        }
         return { handled };
       }
 
@@ -636,6 +741,34 @@ function getLocks(): Map<string, Promise<{ session: AgentSessionWrapper; realSes
 
 export function getRpcSession(sessionId: string): AgentSessionWrapper | undefined {
   return getRegistry().get(sessionId);
+}
+
+/**
+ * Live ordinary-Agent observer activities for the desktop pet hub.
+ * Does not touch SSE listener counts or idle timers.
+ */
+export function listLiveAgentTaskObservations(): TaskObserverActivityInput[] {
+  const out: TaskObserverActivityInput[] = [];
+  for (const wrapper of getRegistry().values()) {
+    if (!wrapper.isAlive()) continue;
+    try {
+      const activity = wrapper.getTaskObservation();
+      if (activity) out.push(activity);
+    } catch {
+      // Isolate malformed observation from a single wrapper.
+    }
+  }
+  return out;
+}
+
+/** Distinct live wrapper cwds for SnFlow multi-project collection. */
+export function listLiveAgentObserverCwds(): string[] {
+  const set = new Set<string>();
+  for (const wrapper of getRegistry().values()) {
+    if (!wrapper.isAlive()) continue;
+    if (wrapper.cwd) set.add(wrapper.cwd);
+  }
+  return [...set];
 }
 
 /** Aggregate in-process chat session / SSE counts for ops health (no session ids). */

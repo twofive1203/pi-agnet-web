@@ -1152,7 +1152,18 @@ export function writeWorkflowRunRecord(cwd: string, taskId: string, run: Workflo
   const runsDir = path.join(located.dir, "runs");
   mkdirSync(runsDir, { recursive: true });
   atomicWriteJson(path.join(runsDir, `${parsed.id}.json`), parsed, ctx.workspaceRoot);
+  notifySnflowObserverBestEffort();
   return parsed;
+}
+
+function notifySnflowObserverBestEffort(): void {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { notifyTaskObserverSourceChange } = require("./task-observer-invalidate") as typeof import("./task-observer-invalidate");
+    notifyTaskObserverSourceChange();
+  } catch {
+    // Observer failure must never fail SnFlow persistence.
+  }
 }
 
 export function readWorkflowRunRecord(cwd: string, taskId: string, runId: string): WorkflowRunRecord {

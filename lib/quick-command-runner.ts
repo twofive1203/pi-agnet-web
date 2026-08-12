@@ -79,9 +79,28 @@ export type QuickCommandSseEvent =
   | { type: "status"; run: QuickCommandRunSummary }
   | { type: "error"; error: string };
 
+/**
+ * Privacy-safe Quick Command row for the desktop task observer.
+ * Intentionally omits command text, resolved cwd path strings used as payload,
+ * env, output, and exitReason text.
+ */
+export type QuickCommandObserverSource = {
+  runId: string;
+  commandId: string;
+  name: string;
+  status: QuickCommandRunStatus;
+  startedAt: string;
+  endedAt: string | null;
+  /** Canonical project cwd used only to derive path-free projectKey — never wire as-is. */
+  projectCwd: string;
+};
+
+export type QuickCommandObserverListener = (source: QuickCommandObserverSource) => void;
+
 declare global {
   var __piQuickCommandRuns: Map<string, QuickCommandRunRecord> | undefined;
   var __piQuickCommandProjectIndex: Map<string, string[]> | undefined;
+  var __piQuickCommandObserverListeners: Set<QuickCommandObserverListener> | undefined;
 }
 
 function getRuns(): Map<string, QuickCommandRunRecord> {
@@ -223,6 +242,44 @@ function toSummary(run: QuickCommandRunRecord): QuickCommandRunSummary {
   };
 }
 
+function toObserverSource(run: QuickCommandRunRecord): QuickCommandObserverSource {
+  return {
+    runId: run.id,
+    commandId: run.commandId,
+    name: run.name,
+    status: run.status,
+    startedAt: nowIso(run.startedAtMs),
+    endedAt: run.endedAtMs == null ? null : nowIso(run.endedAtMs),
+    projectCwd: run.cwd,
+  };
+}
+
+function observerListeners(): Set<QuickCommandObserverListener> {
+  if (!globalThis.__piQuickCommandObserverListeners) {
+    globalThis.__piQuickCommandObserverListeners = new Set();
+  }
+  return globalThis.__piQuickCommandObserverListeners;
+}
+
+function notifyObserverListeners(run: QuickCommandRunRecord): void {
+  const source = toObserverSource(run);
+  for (const listener of observerListeners()) {
+    try {
+      listener(source);
+    } catch {
+      // Observer listeners must not break the runner.
+    }
+  }
+  try {
+    // Lazy import keeps unit smokes that mock runner free of observer cycles when unused.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { notifyTaskObserverSourceChange } = require("./task-observer-invalidate") as typeof import("./task-observer-invalidate");
+    notifyTaskObserverSourceChange();
+  } catch {
+    // best-effort
+  }
+}
+
 function toDetail(run: QuickCommandRunRecord): QuickCommandRunDetail {
   return {
     ...toSummary(run),
@@ -322,6 +379,7 @@ function finalizeRun(
   }
   run.child = null;
   emit(run, { type: "status", run: toSummary(run) });
+  notifyObserverListeners(run);
 }
 
 function killProcessTree(child: ChildProcessWithoutNullStreams): void {
@@ -442,6 +500,7 @@ function startProcess(run: QuickCommandRunRecord, definition: QuickCommandDefini
   run.child = child;
   run.status = "running";
   emit(run, { type: "status", run: toSummary(run) });
+  notifyObserverListeners(run);
 
   const onChunk = (buf: Buffer) => {
     appendOutput(run, buf.toString("utf8"));
@@ -619,6 +678,7 @@ export async function startQuickCommandRun(input: {
 
   getRuns().set(run.id, run);
   trackProjectRun(projectCwd, run.id);
+  notifyObserverListeners(run);
 
   // Defer spawn so the HTTP response can return the starting snapshot first.
   setImmediate(() => {
@@ -627,6 +687,42 @@ export async function startQuickCommandRun(input: {
   });
 
   return { ok: true, run: toSummary(run) };
+}
+
+/** Privacy-safe list of remembered Quick Command runs for the task observer. */
+export function listQuickCommandObserverSources(): QuickCommandObserverSource[] {
+  const out: QuickCommandObserverSource[] = [];
+  for (const run of getRuns().values()) {
+    out.push(toObserverSource(run));
+  }
+  // Active first, then newest startedAt.
+  out.sort((a, b) => {
+    const aActive = isQuickCommandActiveStatus(a.status) ? 0 : 1;
+    const bActive = isQuickCommandActiveStatus(b.status) ? 0 : 1;
+    if (aActive !== bActive) return aActive - bActive;
+    return b.startedAt.localeCompare(a.startedAt);
+  });
+  return out;
+}
+
+/**
+ * Subscribe to safe status transitions only (no output chunks / command text).
+ * Immediately receives current sources as individual events.
+ */
+export function subscribeQuickCommandObserver(
+  listener: QuickCommandObserverListener,
+): () => void {
+  observerListeners().add(listener);
+  try {
+    for (const source of listQuickCommandObserverSources()) {
+      listener(source);
+    }
+  } catch {
+    // ignore snapshot failures
+  }
+  return () => {
+    observerListeners().delete(listener);
+  };
 }
 
 export function getQuickCommandRun(runId: string): QuickCommandRunDetail | null {
@@ -712,4 +808,5 @@ export function resetQuickCommandRunnerForTests(): void {
   }
   getRuns().clear();
   getProjectIndex().clear();
+  observerListeners().clear();
 }

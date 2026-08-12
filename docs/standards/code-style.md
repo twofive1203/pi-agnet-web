@@ -45,6 +45,7 @@ npm run test:agent-stream    # token-stream coalescing, agent_settled barriers, 
 npm run test:chat-errors     # chat/provider error classification + pre-send model readiness gate
 npm run test:session-changes # async changed-file projection ordering smoke
 npm run test:session-performance # durable session TPS/TTFT aggregate + lifecycle smoke
+npm run test:task-observer      # desktop pet observer domain identity/privacy/budgets
 npm run test:session-stats   # parent-session lifetime token/cost aggregation smoke
 npm run test:usage           # Usage auto timeline projection + subagent/archive accounting
 npm run test:scale-baseline  # Usage/index/allowed-roots scale + accelerated-path correctness

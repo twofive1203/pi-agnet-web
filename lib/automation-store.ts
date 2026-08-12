@@ -307,6 +307,13 @@ export function writeRunRecord(run: AutomationRunRecord, agentDir?: string): voi
     terminal,
     completedAt: terminal ? run.completedAt ?? nowIso() : run.completedAt,
   });
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { notifyTaskObserverSourceChange } = require("./task-observer-invalidate") as typeof import("./task-observer-invalidate");
+    notifyTaskObserverSourceChange();
+  } catch {
+    // Observer failure must never fail Automation run persistence.
+  }
 }
 
 /**

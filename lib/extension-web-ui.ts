@@ -213,6 +213,23 @@ export class ExtensionWebUiBridge {
     return Array.from(this.pending.values()).map((request) => request.event);
   }
 
+  /** Count of pending dialog requests that block agent progress (select/confirm/input/editor). */
+  getPendingBlockingCount(): number {
+    let count = 0;
+    for (const request of this.pending.values()) {
+      const method = request.event.method;
+      if (
+        method === "select" ||
+        method === "confirm" ||
+        method === "input" ||
+        method === "editor"
+      ) {
+        count += 1;
+      }
+    }
+    return count;
+  }
+
   rejectAll(): void {
     for (const [id, request] of this.pending) {
       request.resolve({ id, cancelled: true });
