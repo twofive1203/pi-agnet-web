@@ -65,11 +65,13 @@ export function createInitialWindowManagerState(input?: {
   alwaysOnTop?: boolean;
   clickThrough?: boolean;
   trayOpen?: boolean;
+  /** Used only when no saved position (typically primary work-area bottom-right). */
+  defaultPosition?: { x: number; y: number } | null;
 }): WindowManagerState {
   const trayExpanded = input?.trayOpen === true;
   const width = trayExpanded ? PET_WINDOW_DEFAULTS.trayWidth : PET_WINDOW_DEFAULTS.petOnlyWidth;
   const height = trayExpanded ? PET_WINDOW_DEFAULTS.trayHeight : PET_WINDOW_DEFAULTS.petOnlyHeight;
-  const position = input?.position ?? null;
+  const position = input?.position ?? input?.defaultPosition ?? null;
   return {
     visible: true,
     clickThrough: input?.clickThrough === true,
@@ -77,7 +79,21 @@ export function createInitialWindowManagerState(input?: {
     trayExpanded,
     bounds: position
       ? { x: position.x, y: position.y, width, height }
-      : { x: 0, y: 0, width, height },
+      : { x: 40, y: 40, width, height },
+  };
+}
+
+/** Place the collapsed pet near the bottom-right of a work area (with padding). */
+export function defaultPetWindowPosition(workArea: {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}): { x: number; y: number } {
+  const pad = 24;
+  return {
+    x: Math.round(workArea.x + workArea.width - PET_WINDOW_DEFAULTS.petOnlyWidth - pad),
+    y: Math.round(workArea.y + workArea.height - PET_WINDOW_DEFAULTS.petOnlyHeight - pad),
   };
 }
 

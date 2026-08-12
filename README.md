@@ -110,18 +110,44 @@ PI_CODING_AGENT_DIR=/path/to/pi-agent-data spi
 
 桌宠与 npm 包 `spi` **分开发布**：安装/卸载桌宠不影响 `~/.pi/agent` 数据，也不会附带 Next/pi/node-pty 服务运行时。
 
-推荐启动顺序（可颠倒；桌宠会重试连接）：
+### 源码开发启动（推荐本地试用）
+
+需要已安装依赖（含 devDependency `electron` / `esbuild`）：
 
 ```bash
-spi --no-open          # 本机服务，不自动打开浏览器
-# 然后启动已安装的 SnailPiPet / snail-pi-pet
+# 终端 A — 蜗牛派服务
+npm run dev
+# 或：spi --no-open
+
+# 终端 B — 桌宠窗口
+npm run desktop:dev            # 过期自动 rebuild 后启动 Electron
+# npm run desktop:build        # 仅编译 main/preload → desktop/**/*.js
+# npm run desktop:dev:rebuild  # 强制重新编译再启动
 ```
 
-- 默认探测 `http://127.0.0.1:62666`（仅 IPv4 回环本地模式）。
-- 服务未启动时显示「蜗牛派服务未启动」，可复制 `spi --no-open`，**不会**自动执行命令。
-- 退出桌宠不会中断 Agent / Automation / Quick Command。
-- 打包与验收清单：[`docs/operations/desktop-pet-validation.md`](docs/operations/desktop-pet-validation.md)、[`docs/deployment/README.md`](docs/deployment/README.md)。
-- 合约测试：`npm run test:desktop-observer` / `npm run test:desktop-package`。
+`desktop:dev` **不会**启动 `spi`。默认探测 `http://127.0.0.1:62666`（仅 `127.0.0.1` 本地模式）。
+
+### 基本操作
+
+| 操作 | 说明 |
+| --- | --- |
+| 拖动顶部灰色条 | 移动无边框窗口（默认出现在屏幕右下角） |
+| 点击宠物本体 | 展开/收起 Activity tray |
+| 点击 × | **隐藏到系统托盘**（不退出进程，不中断任务） |
+| 托盘 → 显示桌宠 | 恢复窗口 |
+| 托盘 → 退出桌宠 | 结束桌宠进程；**不影响** `spi` 与任务 |
+| 服务未启动 | 显示「蜗牛派服务未启动」，可复制 `spi --no-open`（不会自动执行） |
+
+### 合约测试与文档
+
+```bash
+npm run test:desktop-observer   # 含 connection/contract/package
+npm run test:desktop-package
+```
+
+- 验收矩阵：[`docs/operations/desktop-pet-validation.md`](docs/operations/desktop-pet-validation.md)
+- 部署说明：[`docs/deployment/README.md`](docs/deployment/README.md)
+- 开发入口：`desktop/README.md`
 
 ## 从源码运行
 

@@ -230,12 +230,30 @@ The desktop pet is an **attach-only** Electron companion. It is **not** part of 
 
 ### Independent startup
 
-Either order works; the pet reconnects when the service becomes available:
+Either order works; the pet reconnects when the service becomes available.
+
+**From this repo (dev):**
+
+```bash
+# terminal A
+npm run dev                   # or: spi --no-open
+
+# terminal B
+npm run desktop:build         # esbuild → desktop/main/main.js + preload
+npm run desktop:dev           # rebuild if stale, then Electron
+# npm run desktop:dev:rebuild
+```
+
+`desktop:dev` never starts `spi`. Requires devDependencies `electron` and `esbuild` (not published in the npm `spi` tarball).
+
+**Installed / packaged pet:**
 
 ```bash
 spi --no-open                 # local service, default http://127.0.0.1:62666
 # then launch SnailPiPet / snail-pi-pet (installer or packaged exe)
 ```
+
+**UI basics:** drag the top grip to move; click the pet to toggle Activity tray; **×** hides to tray; tray Quit ends only the pet.
 
 | Rule | Detail |
 | --- | --- |

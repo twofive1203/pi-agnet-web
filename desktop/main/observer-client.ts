@@ -1,8 +1,8 @@
 /**
- * Attach-only desktop observer client (U6).
+ * Attach-only desktop observer client (U6 + SSE stream).
  *
  * Probes 127.0.0.1 health + protocol, mints a short-lived token in main, and
- * consumes one service-level SSE. Injectable fetch for tests.
+ * consumes one service-level SSE. Injectable fetch/SSE transport for tests.
  *
  * HARD RULES:
  * - Never import child_process / spawn / kill / pid helpers.
@@ -10,8 +10,8 @@
  * - Token stays in main-process memory only (not settings, not renderer).
  */
 
+import { DESKTOP_OBSERVER_PRODUCT } from "../../lib/desktop-observer-constants";
 import { TASK_OBSERVER_PROTOCOL_VERSION } from "../../lib/task-observer-types";
-import { DESKTOP_OBSERVER_PRODUCT } from "../../lib/desktop-observer-access";
 import {
   acknowledgeConnectionBaseline,
   buildDesktopOrigin,
@@ -44,6 +44,27 @@ export type DesktopFetchResponse = {
   text(): Promise<string>;
 };
 
+/** Minimal SSE transport so tests need not supply a real byte stream. */
+export type DesktopSseTransport = (input: {
+  url: string;
+  headers: Record<string, string>;
+  signal: AbortSignal;
+}) => Promise<DesktopSseTransportResult>;
+
+export type DesktopSseTransportResult =
+  | {
+      ok: true;
+      status: number;
+      /** Yield UTF-8 text chunks until the stream ends. */
+      chunks: AsyncIterable<string>;
+    }
+  | {
+      ok: false;
+      status: number;
+      connectionRefused?: boolean;
+      detail?: string;
+    };
+
 export type DesktopProtocolPayload = {
   protocolVersion?: unknown;
   product?: unknown;
@@ -63,8 +84,14 @@ export type DesktopSessionPayload = {
 export type ObserverClientOptions = {
   port?: number;
   fetch?: DesktopFetch;
+  /** Override SSE byte/text transport (defaults to fetch streaming). */
+  sseTransport?: DesktopSseTransport;
+  /**
+   * When false, stop after probe/token (unit tests). Default true for the pet.
+   */
+  enableSse?: boolean;
   now?: () => number;
-  /** Optional low-rate reconnect backoff (ms). */
+  /** Base reconnect delay after stream loss (ms). */
   reconnectDelayMs?: number;
   onStateChange?: (state: DesktopConnectionState) => void;
   /** Called for each full snapshot JSON text from SSE (main-only). */
@@ -89,7 +116,6 @@ export function classifyFetchFailure(error: unknown): DesktopConnectionEvent {
     lower.includes("connect etimedout") ||
     lower.includes("enotfound")
   ) {
-    // Prefer service-not-running for cold attach failures; client maps via refused flag too.
     if (lower.includes("econnrefused") || lower.includes("connection refused")) {
       return { type: "connection_refused" };
     }
@@ -107,7 +133,6 @@ export function interpretHealthPayload(payload: unknown, httpStatus: number): De
     return { type: "incompatible", reasonCode: "health_invalid", detail: "non_object" };
   }
   const record = payload as Record<string, unknown>;
-  // Minimal health should expose instanceId; missing → unknown service.
   if (typeof record.instanceId !== "string" || !record.instanceId.trim()) {
     return { type: "incompatible", reasonCode: "health_invalid", detail: "missing_instance" };
   }
@@ -118,7 +143,7 @@ export function interpretProtocolPayload(
   payload: unknown,
   httpStatus: number,
   expectedProtocolVersion = TASK_OBSERVER_PROTOCOL_VERSION,
-): ProbeResult extends { ok: true } ? never : DesktopConnectionEvent | { type: "protocol_ok"; instanceId: string } {
+): DesktopConnectionEvent | { type: "protocol_ok"; instanceId: string } {
   if (httpStatus === 0) return { type: "connection_refused" };
   if (httpStatus < 200 || httpStatus >= 300) {
     return { type: "incompatible", reasonCode: "protocol_http_error", detail: `http_${httpStatus}` };
@@ -198,9 +223,63 @@ export function parseSseBlock(block: string): { event: string | null; data: stri
   return { event, data: dataLines.join("\n") };
 }
 
+/**
+ * Server `/api/desktop-observer/events` wraps snapshots:
+ * `{ type: "reset"|"snapshot"|"error", snapshot?: object, code?: string }`
+ * Legacy plain snapshot objects (with instanceId) are also accepted.
+ */
+export function unwrapObserverSseData(rawData: string): {
+  kind: "snapshot" | "error" | "ignore";
+  snapshotJson?: string;
+  reset?: boolean;
+  code?: string;
+} {
+  const trimmed = rawData.trim();
+  if (!trimmed) return { kind: "ignore" };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed) as unknown;
+  } catch {
+    return { kind: "error", code: "bad_json" };
+  }
+  if (!parsed || typeof parsed !== "object") {
+    return { kind: "error", code: "not_object" };
+  }
+  const record = parsed as Record<string, unknown>;
+
+  if (record.type === "error") {
+    return {
+      kind: "error",
+      code: typeof record.code === "string" ? record.code : "stream_error",
+    };
+  }
+
+  if (record.snapshot && typeof record.snapshot === "object") {
+    return {
+      kind: "snapshot",
+      snapshotJson: JSON.stringify(record.snapshot),
+      reset: record.type === "reset" || (record.snapshot as { reset?: unknown }).reset === true,
+    };
+  }
+
+  // Legacy / test: body is the snapshot itself.
+  if (typeof record.instanceId === "string" || typeof record.revision === "number") {
+    return {
+      kind: "snapshot",
+      snapshotJson: trimmed,
+      reset: record.reset === true,
+    };
+  }
+
+  return { kind: "ignore" };
+}
+
 export class DesktopObserverClient {
   private state: DesktopConnectionState;
   private readonly fetchImpl: DesktopFetch;
+  private readonly sseTransport: DesktopSseTransport;
+  private readonly enableSse: boolean;
+  private readonly reconnectDelayMs: number;
   private readonly now: () => number;
   private readonly onStateChange?: (state: DesktopConnectionState) => void;
   private readonly onSnapshot?: (
@@ -211,11 +290,17 @@ export class DesktopObserverClient {
   private tokenExpiresAt = 0;
   private stopped = false;
   private probeController: AbortController | null = null;
+  private sseController: AbortController | null = null;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private reconnectAttempt = 0;
 
   constructor(options: ObserverClientOptions = {}) {
     const port = options.port ?? DESKTOP_DEFAULT_PORT;
     this.state = createInitialConnectionState({ port, now: options.now?.() ?? Date.now() });
     this.fetchImpl = options.fetch ?? defaultDesktopFetch;
+    this.sseTransport = options.sseTransport ?? defaultSseTransport;
+    this.enableSse = options.enableSse !== false;
+    this.reconnectDelayMs = Math.max(250, options.reconnectDelayMs ?? 1500);
     this.now = options.now ?? Date.now;
     this.onStateChange = options.onStateChange;
     this.onSnapshot = options.onSnapshot;
@@ -246,13 +331,16 @@ export class DesktopObserverClient {
 
   start(): void {
     this.stopped = false;
+    this.clearReconnectTimer();
     this.dispatch({ type: "start_probe" });
     void this.probeAndAttach();
   }
 
   retry(): void {
     if (this.stopped) return;
-    this.abortProbe();
+    this.clearReconnectTimer();
+    this.abortNetworking();
+    this.reconnectAttempt = 0;
     this.dispatch({ type: "retry" });
     void this.probeAndAttach();
   }
@@ -260,7 +348,8 @@ export class DesktopObserverClient {
   /** Stop only this client's timers/networking. Never signals a service. */
   quit(): void {
     this.stopped = true;
-    this.abortProbe();
+    this.clearReconnectTimer();
+    this.abortNetworking();
     this.token = null;
     this.tokenExpiresAt = 0;
     this.dispatch({ type: "quit" });
@@ -272,16 +361,43 @@ export class DesktopObserverClient {
     this.onStateChange?.(this.state);
   }
 
-  private abortProbe(): void {
+  private abortNetworking(): void {
     if (this.probeController) {
       this.probeController.abort();
       this.probeController = null;
     }
+    if (this.sseController) {
+      this.sseController.abort();
+      this.sseController = null;
+    }
+  }
+
+  private clearReconnectTimer(): void {
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+  }
+
+  private scheduleReconnect(detail?: string): void {
+    if (this.stopped) return;
+    this.clearReconnectTimer();
+    this.reconnectAttempt += 1;
+    const delay = Math.min(
+      30_000,
+      this.reconnectDelayMs * Math.min(8, this.reconnectAttempt),
+    );
+    this.dispatch({ type: "stream_lost", detail: detail ?? `reconnect_in_${delay}ms` });
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      if (this.stopped) return;
+      void this.probeAndAttach();
+    }, delay);
   }
 
   private async probeAndAttach(): Promise<void> {
     if (this.stopped) return;
-    this.abortProbe();
+    this.abortNetworking();
     const controller = new AbortController();
     this.probeController = controller;
 
@@ -291,6 +407,14 @@ export class DesktopObserverClient {
     if (!result.ok) {
       this.token = null;
       this.dispatch(result.event);
+      // Soft reconnect only after we were previously live / probing retries.
+      if (
+        result.event.type === "connection_refused" ||
+        result.event.type === "network_error"
+      ) {
+        // Leave service-not-running visible; still low-rate retry while running.
+        this.scheduleReconnect(result.event.type);
+      }
       return;
     }
 
@@ -306,12 +430,16 @@ export class DesktopObserverClient {
       instanceId: result.instanceId,
       resetBaseline,
     });
+    this.reconnectAttempt = 0;
+
+    if (this.enableSse) {
+      void this.runSseLoop();
+    }
   }
 
   async probe(signal?: AbortSignal): Promise<ProbeResult> {
     const origin = buildDesktopOrigin(this.state.port);
 
-    // 1) Health
     const health = await this.safeFetch(`${origin}/api/health`, { method: "GET", signal });
     if (!health.okResponse) {
       return { ok: false, event: health.event };
@@ -328,7 +456,6 @@ export class DesktopObserverClient {
     const healthEvent = interpretHealthPayload(healthJson, health.okResponse.status);
     if (healthEvent) return { ok: false, event: healthEvent };
 
-    // 2) Protocol
     const protocol = await this.safeFetch(`${origin}/api/desktop-observer/protocol`, {
       method: "GET",
       signal,
@@ -350,7 +477,6 @@ export class DesktopObserverClient {
       return { ok: false, event: protocolResult };
     }
 
-    // 3) Session token (main only)
     const session = await this.safeFetch(`${origin}/api/desktop-observer/session`, {
       method: "POST",
       signal,
@@ -393,18 +519,107 @@ export class DesktopObserverClient {
     };
   }
 
+  private async runSseLoop(): Promise<void> {
+    if (this.stopped || !this.token || !this.enableSse) return;
+
+    const controller = new AbortController();
+    this.sseController = controller;
+    const origin = buildDesktopOrigin(this.state.port);
+    const url = `${origin}/api/desktop-observer/events`;
+
+    try {
+      const result = await this.sseTransport({
+        url,
+        headers: {
+          Accept: "text/event-stream",
+          [DESKTOP_OBSERVER_TOKEN_HEADER]: this.token,
+        },
+        signal: controller.signal,
+      });
+
+      if (this.stopped || controller.signal.aborted) return;
+
+      if (!result.ok) {
+        if (result.status === 401 || result.status === 403) {
+          this.handleTokenExpiry();
+          return;
+        }
+        if (result.connectionRefused) {
+          this.token = null;
+          this.dispatch({ type: "connection_refused" });
+          this.scheduleReconnect("sse_refused");
+          return;
+        }
+        this.scheduleReconnect(result.detail ?? `sse_http_${result.status}`);
+        return;
+      }
+
+      let buffer = "";
+      for await (const chunk of result.chunks) {
+        if (this.stopped || controller.signal.aborted) return;
+        buffer += chunk;
+        // SSE events are separated by blank lines.
+        let splitAt = buffer.indexOf("\n\n");
+        while (splitAt !== -1) {
+          const block = buffer.slice(0, splitAt);
+          buffer = buffer.slice(splitAt + 2);
+          const parsed = parseSseBlock(block);
+          if (parsed) {
+            this.handleSseMessage(parsed);
+          }
+          splitAt = buffer.indexOf("\n\n");
+        }
+        // Also accept CRLF separators.
+        let splitAtCr = buffer.indexOf("\r\n\r\n");
+        while (splitAtCr !== -1) {
+          const block = buffer.slice(0, splitAtCr);
+          buffer = buffer.slice(splitAtCr + 4);
+          const parsed = parseSseBlock(block);
+          if (parsed) {
+            this.handleSseMessage(parsed);
+          }
+          splitAtCr = buffer.indexOf("\r\n\r\n");
+        }
+      }
+
+      if (!this.stopped) {
+        this.scheduleReconnect("sse_ended");
+      }
+    } catch (error) {
+      if (this.stopped || controller.signal.aborted) return;
+      const classified = classifyFetchFailure(error);
+      if (classified.type === "connection_refused") {
+        this.token = null;
+        this.dispatch({ type: "connection_refused" });
+      }
+      this.scheduleReconnect(
+        classified.type === "network_error" ? classified.detail ?? "sse_error" : classified.type,
+      );
+    }
+  }
+
   /**
    * Feed one SSE message payload already parsed by the transport layer.
-   * Used by tests and by a future main SSE reader.
    */
   handleSseMessage(input: { event?: string | null; data: string }): void {
     if (this.stopped) return;
-    const eventName = input.event ?? "snapshot";
     if (!input.data.trim()) return;
 
+    const unwrapped = unwrapObserverSseData(input.data);
+    if (unwrapped.kind === "ignore") return;
+    if (unwrapped.kind === "error") {
+      if (unwrapped.code === "token_expired") {
+        this.handleTokenExpiry();
+        return;
+      }
+      this.handleSseError(unwrapped.code);
+      return;
+    }
+
+    const snapshotJson = unwrapped.snapshotJson ?? "";
     let parsed: unknown;
     try {
-      parsed = JSON.parse(input.data) as unknown;
+      parsed = JSON.parse(snapshotJson) as unknown;
     } catch {
       this.dispatch({ type: "stream_lost", detail: "bad_snapshot_json" });
       return;
@@ -418,18 +633,18 @@ export class DesktopObserverClient {
       typeof record.instanceId === "string" && record.instanceId.trim()
         ? record.instanceId.trim()
         : this.state.instanceId;
-    if (
-      this.state.instanceId &&
-      instanceId &&
-      instanceId !== this.state.instanceId
-    ) {
+    if (this.state.instanceId && instanceId && instanceId !== this.state.instanceId) {
       this.dispatch({ type: "instance_changed", instanceId });
       this.token = null;
       void this.probeAndAttach();
       return;
     }
 
-    const reset = eventName === "reset" || record.reset === true;
+    const eventName = input.event ?? null;
+    const reset =
+      unwrapped.reset === true ||
+      eventName === "reset" ||
+      record.reset === true;
     if (this.state.status !== "connected") {
       this.dispatch({
         type: "connected",
@@ -437,7 +652,7 @@ export class DesktopObserverClient {
         resetBaseline: reset || this.state.resetNotificationBaseline,
       });
     }
-    this.onSnapshot?.(input.data, {
+    this.onSnapshot?.(snapshotJson, {
       reset: reset || this.state.resetNotificationBaseline,
       instanceId: this.state.instanceId,
     });
@@ -454,6 +669,7 @@ export class DesktopObserverClient {
   handleTokenExpiry(): void {
     if (this.stopped) return;
     this.token = null;
+    this.abortNetworking();
     this.dispatch({ type: "token_rejected" });
     void this.probeAndAttach();
   }
@@ -519,6 +735,60 @@ async function defaultDesktopFetch(
       };
     }
     throw error;
+  }
+}
+
+async function defaultSseTransport(input: {
+  url: string;
+  headers: Record<string, string>;
+  signal: AbortSignal;
+}): Promise<DesktopSseTransportResult> {
+  try {
+    const response = await fetch(input.url, {
+      method: "GET",
+      headers: input.headers,
+      signal: input.signal,
+    });
+    if (!response.ok || !response.body) {
+      return {
+        ok: false,
+        status: response.status,
+        detail: `sse_http_${response.status}`,
+      };
+    }
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder("utf-8");
+    const chunks: AsyncIterable<string> = {
+      async *[Symbol.asyncIterator]() {
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            if (value) yield decoder.decode(value, { stream: true });
+          }
+          const tail = decoder.decode();
+          if (tail) yield tail;
+        } finally {
+          try {
+            reader.releaseLock();
+          } catch {
+            // ignore
+          }
+        }
+      },
+    };
+    return { ok: true, status: response.status, chunks };
+  } catch (error) {
+    if (input.signal.aborted) {
+      return { ok: false, status: 0, detail: "aborted" };
+    }
+    const event = classifyFetchFailure(error);
+    return {
+      ok: false,
+      status: 0,
+      connectionRefused: event.type === "connection_refused",
+      detail: event.type === "network_error" ? event.detail ?? "sse_error" : event.type,
+    };
   }
 }
 

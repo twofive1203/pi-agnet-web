@@ -24,6 +24,7 @@ import {
   interpretProtocolPayload,
   interpretSessionPayload,
   parseSseBlock,
+  unwrapObserverSseData,
 } from "../desktop/main/observer-client";
 import {
   assertDesktopSettingsSafe,
@@ -199,6 +200,7 @@ async function main() {
   const client = new DesktopObserverClient({
     port: 62666,
     now: () => 1000,
+    enableSse: false,
     onStateChange: (s) => states.push(s.status),
     fetch: mockFetch([
       {
@@ -237,6 +239,7 @@ async function main() {
   // Connection refused → service-not-running
   const refusedClient = new DesktopObserverClient({
     port: 62666,
+    enableSse: false,
     fetch: mockFetch([{ match: /\/api\/health$/, connectionRefused: true }]),
   });
   refusedClient.start();
@@ -245,10 +248,12 @@ async function main() {
   assert.equal(refusedClient.getState().status, "service-not-running");
   assert.equal(refusedClient.getState().startCommand, "spi --no-open");
   assert.equal(refusedClient.getTokenForTests(), null);
+  refusedClient.quit();
 
   // Server mode → incompatible
   const serverClient = new DesktopObserverClient({
     port: 62666,
+    enableSse: false,
     fetch: mockFetch([
       { match: /\/api\/health$/, body: { ok: true, instanceId: "i" } },
       {
@@ -268,10 +273,12 @@ async function main() {
   await new Promise((r) => setTimeout(r, 0));
   assert.equal(serverClient.getState().status, "incompatible");
   assert.equal(serverClient.getState().reasonCode, "server_mode");
+  serverClient.quit();
 
   // Connected client + instance change resets notification baseline
   const live = new DesktopObserverClient({
     port: 62666,
+    enableSse: false,
     fetch: mockFetch([
       { match: /\/api\/health$/, body: { ok: true, instanceId: "old" } },
       {
@@ -323,6 +330,74 @@ async function main() {
   live.quit();
   assert.equal(live.getState().status, "service-not-running");
   assert.equal(live.getTokenForTests(), null);
+
+  // --- SSE envelope unwrap (server events route shape) ---
+  const envReset = unwrapObserverSseData(
+    JSON.stringify({
+      type: "reset",
+      snapshot: { instanceId: "i1", revision: 1, reset: true, projects: [] },
+    }),
+  );
+  assert.equal(envReset.kind, "snapshot");
+  assert.equal(envReset.reset, true);
+  assert.ok(envReset.snapshotJson?.includes("\"instanceId\":\"i1\""));
+
+  const envErr = unwrapObserverSseData(JSON.stringify({ type: "error", code: "token_expired" }));
+  assert.equal(envErr.kind, "error");
+  assert.equal(envErr.code, "token_expired");
+
+  const legacy = unwrapObserverSseData(JSON.stringify({ instanceId: "x", revision: 3 }));
+  assert.equal(legacy.kind, "snapshot");
+
+  // SSE transport injects one reset envelope then ends → snapshot callback fires
+  const snapshots: string[] = [];
+  async function* oneChunk() {
+    yield `data: ${
+      JSON.stringify({
+        type: "reset",
+        snapshot: { instanceId: "sse-1", revision: 1, reset: true, projects: [] },
+      })
+    }\n\n`;
+    // Keep the stream open until the client aborts (matches long-lived SSE).
+    await new Promise<void>(() => undefined);
+  }
+  const sseClient = new DesktopObserverClient({
+    port: 62666,
+    enableSse: true,
+    reconnectDelayMs: 60_000,
+    fetch: mockFetch([
+      { match: /\/api\/health$/, body: { ok: true, instanceId: "sse-1" } },
+      {
+        match: /\/protocol$/,
+        body: {
+          product: DESKTOP_OBSERVER_PRODUCT,
+          protocolVersion: TASK_OBSERVER_PROTOCOL_VERSION,
+          mode: "local",
+          compatible: true,
+          instanceId: "sse-1",
+        },
+      },
+      {
+        match: /\/session$/,
+        body: { token: "sse-token", expiresAt: Date.now() + 60_000, instanceId: "sse-1" },
+      },
+    ]),
+    sseTransport: async () => ({
+      ok: true as const,
+      status: 200,
+      chunks: oneChunk(),
+    }),
+    onSnapshot: (json) => {
+      snapshots.push(json);
+    },
+  });
+  sseClient.start();
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(sseClient.getState().status, "connected");
+  assert.equal(sseClient.getTokenForTests(), "sse-token");
+  assert.ok(snapshots.length >= 1);
+  assert.ok(snapshots[0].includes("sse-1"));
+  sseClient.quit();
 
   const desktopDir = path.join(process.cwd(), "desktop", "main");
   for (const file of ["connection-state.ts", "observer-client.ts", "settings-store.ts"]) {

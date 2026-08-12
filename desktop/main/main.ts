@@ -44,6 +44,7 @@ import {
 import {
   applyWindowManagerState,
   createInitialWindowManagerState,
+  defaultPetWindowPosition,
   handleBoundsChanged,
   handleDisableClickThrough,
   handlePetWindowCloseRequest,
@@ -66,6 +67,7 @@ type ElectronTray = typeof import("electron").Tray;
 type ElectronMenu = typeof import("electron").Menu;
 type ElectronNotification = typeof import("electron").Notification;
 type ElectronNativeImage = typeof import("electron").nativeImage;
+type ElectronScreen = typeof import("electron").screen;
 
 export type DesktopMainDeps = {
   app: ElectronApp;
@@ -77,6 +79,7 @@ export type DesktopMainDeps = {
   Menu: ElectronMenu;
   Notification: ElectronNotification;
   nativeImage: ElectronNativeImage;
+  screen?: ElectronScreen;
   userDataDir?: string;
   assetRoot?: string;
   settingsFs?: SettingsFs;
@@ -154,8 +157,26 @@ export async function startDesktopPetMain(deps: DesktopMainDeps): Promise<{
   let stale = false;
   let reducedMotion = false;
   let selectedActivityId: string | null = null;
+  const defaultPosition = (() => {
+    try {
+      const screenApi = deps.screen;
+      if (!screenApi) return { x: 80, y: 80 };
+      return defaultPetWindowPosition(screenApi.getPrimaryDisplay().workArea);
+    } catch {
+      return { x: 80, y: 80 };
+    }
+  })();
+
+  // Treat missing/origin corner (0,0) as unset so first-run is not stuck top-left.
+  const savedPosition =
+    settings.windowPosition &&
+    !(settings.windowPosition.x === 0 && settings.windowPosition.y === 0)
+      ? settings.windowPosition
+      : null;
+
   let windowState = createInitialWindowManagerState({
-    position: settings.windowPosition,
+    position: savedPosition,
+    defaultPosition,
     alwaysOnTop: settings.alwaysOnTop,
     clickThrough: settings.clickThrough,
     trayOpen: settings.activityTrayOpen,
@@ -393,11 +414,14 @@ export async function startDesktopPetMain(deps: DesktopMainDeps): Promise<{
       frame: false,
       transparent: true,
       resizable: false,
+      movable: true,
+      minimizable: false,
+      maximizable: false,
+      closable: true,
       skipTaskbar: true,
       alwaysOnTop: windowState.alwaysOnTop,
       hasShadow: false,
       fullscreenable: false,
-      maximizable: false,
       backgroundColor: "#00000000",
       webPreferences: petWindowWebPreferences(preloadPath),
     });
@@ -495,6 +519,10 @@ export async function startDesktopPetMain(deps: DesktopMainDeps): Promise<{
 
     ipcMain.on(PET_IPC_CHANNELS.toggleTray, () => {
       applyWindowState(handleToggleTray(windowState));
+    });
+
+    ipcMain.on(PET_IPC_CHANNELS.hideToTray, () => {
+      applyWindowState(handlePetWindowCloseRequest(windowState));
     });
 
     ipcMain.on(PET_IPC_CHANNELS.selectActivity, (_event, activityId: unknown) => {
@@ -658,15 +686,20 @@ export async function main(): Promise<void> {
     Menu: electron.Menu,
     Notification: electron.Notification,
     nativeImage: electron.nativeImage,
+    screen: electron.screen,
   });
 }
 
-const launchedAsElectronMain =
-  typeof process !== "undefined" &&
-  Boolean(process.versions && (process.versions as { electron?: string }).electron) &&
-  (process.argv[1]?.includes(`${path.sep}main`) || process.env.SNAIL_PET_MAIN === "1");
+function shouldAutoStartMain(): boolean {
+  if (typeof process === "undefined") return false;
+  if (!(process.versions as { electron?: string } | undefined)?.electron) return false;
+  if (process.env.SNAIL_PET_DISABLE_AUTOMAIN === "1") return false;
+  if (process.env.SNAIL_PET_MAIN === "1") return true;
+  const entry = (process.argv[1] ?? "").replace(/\\/g, "/");
+  return /\/main(\.(js|cjs|mjs|ts))?$/i.test(entry) || entry.includes("/main.");
+}
 
-if (launchedAsElectronMain) {
+if (shouldAutoStartMain()) {
   void main().catch((error) => {
     console.error(error);
     process.exitCode = 1;

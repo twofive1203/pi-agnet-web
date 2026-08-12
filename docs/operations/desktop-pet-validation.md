@@ -49,6 +49,26 @@ npm run test:quick-commands
 
 ## Independent startup (either order)
 
+### Dev (source tree)
+
+```bash
+# terminal A — service
+npm run dev
+# or: spi --no-open
+
+# terminal B — pet window
+npm run desktop:build   # once / after main|preload changes
+npm run desktop:dev     # rebuilds when stale, then launches Electron
+# npm run desktop:dev:rebuild
+```
+
+`desktop:dev` does **not** start `spi`. Default probe origin: `http://127.0.0.1:62666`.
+Developer map: `desktop/README.md`.
+
+UI: drag top grip to move; **×** hides to tray; tray Quit ends pet only.
+
+### Packaged / installed
+
 1. Start service without auto-opening a browser:
    ```bash
    spi --no-open

@@ -8,6 +8,8 @@ export const PET_IPC_CHANNELS = {
   getState: "pet:get-state",
   stateChanged: "pet:state-changed",
   toggleTray: "pet:toggle-tray",
+  /** Hide pet window to tray (close affordance on frameless window). */
+  hideToTray: "pet:hide-to-tray",
   selectActivity: "pet:select-activity",
   markRead: "pet:mark-read",
   markAllRead: "pet:mark-all-read",
@@ -26,6 +28,7 @@ export type PetIpcChannel = (typeof PET_IPC_CHANNELS)[keyof typeof PET_IPC_CHANN
 export const PET_RENDERER_ALLOWED_CHANNELS: readonly string[] = [
   PET_IPC_CHANNELS.getState,
   PET_IPC_CHANNELS.toggleTray,
+  PET_IPC_CHANNELS.hideToTray,
   PET_IPC_CHANNELS.selectActivity,
   PET_IPC_CHANNELS.markRead,
   PET_IPC_CHANNELS.markAllRead,

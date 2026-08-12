@@ -18,7 +18,13 @@
   const btnMarkAll = document.getElementById("btn-mark-all");
   const btnRetry = document.getElementById("btn-retry");
   const btnCopy = document.getElementById("btn-copy-cmd");
+  const btnHide = document.getElementById("btn-hide");
+  const btnHideTray = document.getElementById("btn-hide-tray");
   const staleFlag = document.getElementById("stale-flag");
+
+  function hideToTray() {
+    if (bridge && typeof bridge.hideToTray === "function") bridge.hideToTray();
+  }
 
   const LABELS = {
     service_not_running: "Service not running",
@@ -213,6 +219,20 @@
   if (btnCopy) {
     btnCopy.addEventListener("click", function () {
       if (bridge) bridge.copyStartCommand();
+    });
+  }
+  if (btnHide) {
+    btnHide.addEventListener("click", function (event) {
+      event.preventDefault();
+      event.stopPropagation();
+      hideToTray();
+    });
+  }
+  if (btnHideTray) {
+    btnHideTray.addEventListener("click", function (event) {
+      event.preventDefault();
+      event.stopPropagation();
+      hideToTray();
     });
   }
 

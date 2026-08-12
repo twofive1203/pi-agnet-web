@@ -58,7 +58,13 @@ export function renderPetApp(root: Document = document): {
   const btnMarkAll = root.getElementById("btn-mark-all");
   const btnRetry = root.getElementById("btn-retry");
   const btnCopy = root.getElementById("btn-copy-cmd");
+  const btnHide = root.getElementById("btn-hide");
+  const btnHideTray = root.getElementById("btn-hide-tray");
   const staleFlag = root.getElementById("stale-flag");
+
+  const hideToTray = () => {
+    bridge?.hideToTray();
+  };
 
   let current: DesktopActivityView | null = null;
   let reducedMotion =
@@ -229,6 +235,18 @@ export function renderPetApp(root: Document = document): {
 
   btnCopy?.addEventListener("click", () => {
     void bridge?.copyStartCommand();
+  });
+
+  btnHide?.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    hideToTray();
+  });
+
+  btnHideTray?.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    hideToTray();
   });
 
   const onKeyDown = (event: KeyboardEvent) => {

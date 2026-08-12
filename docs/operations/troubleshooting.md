@@ -39,14 +39,18 @@
 
 ## Windows desktop pet
 
+- **How to run from source:** `npm run dev` (or `spi --no-open`) in one terminal, `npm run desktop:dev` in another. Build only: `npm run desktop:build`. See `desktop/README.md`.
+- **Pet stuck at top-left / cannot move:** drag the **grey grip bar above the pet** (frameless window has no title bar). First launch defaults to bottom-right; if an old settings file pinned `(0,0)`, delete Electron userData (`%APPDATA%\SnailPiPet` or `%APPDATA%\snail-pi-pet`) and relaunch.
+- **No window close button / cannot dismiss:** use the **×** on the pet chrome or Activity tray header — it **hides to tray**, it does not quit. Restore via tray → 显示桌宠. Only tray 退出桌宠 ends the process.
 - **Pet shows 蜗牛派服务未启动 / Service not running:** no compatible listener on `127.0.0.1:<port>` (default `62666`). Start the service separately with `spi --no-open`, then use Retry. The pet never auto-runs that command or spawns a service process.
 - **Copy start command does nothing visible:** it only writes `spi --no-open` to the clipboard — paste into a terminal yourself.
 - **Incompatible / protocol mismatch / server mode:** port owner is not a local-mode Snail Pi observer. Fix the service (`spi` without server-mode attach expectations) or change the pet port setting; the pet will not kill or replace the process.
-- **Pet connected but tasks missing after browser close:** confirm `spi` is still running (ordinary Agent wrappers live in the service process). Restarting the service drops in-memory ordinary/Quick Command work; SnFlow/Automation may reconcile from disk.
+- **Pet connected but tasks missing after browser close:** confirm `spi` is still running (ordinary Agent wrappers live in the service process). Restarting the service drops in-memory ordinary/Quick Command work; SnFlow/Automation may reconcile from disk. Also confirm the pet SSE path is live (dev builds use `desktop/main/observer-client.ts` stream).
 - **Duplicate notifications after reconnect:** should not happen for the same `transitionId`. If it does, file a bug with instanceId/reset details; baseline on first snapshot after connect/reset is intentional (no backfill).
 - **Click-through cannot click the pet:** use tray → 取消鼠标穿透 / 显示桌宠.
-- **Closed the window and pet “disappeared”:** close hides to tray; use tray → 显示桌宠. Only tray 退出桌宠 ends the pet process.
+- **Closed the window and pet “disappeared”:** close/× hides to tray; use tray → 显示桌宠. Only tray 退出桌宠 ends the pet process.
 - **Quit pet while Agent is running:** expected that tasks keep running; there is no “will interrupt tasks” warning because the pet cannot stop them.
+- **`desktop:dev` fails missing electron/esbuild:** run `npm install` at repo root (they are devDependencies). They are not part of the published npm `spi` package.
 - **Uninstalled pet, sessions gone?** should not happen — agent data is under `~/.pi/agent` owned by `spi`. If data is missing, check `PI_CODING_AGENT_DIR` / accidental deletion, not pet uninstall.
 - **npm `spi` install pulled Electron?** it must not; pet packaging is separate. Report if `npm pack` contents include `desktop/`.
 - **Validation / packaging contracts:** `npm run test:desktop-observer`, `npm run test:desktop-package`, and `docs/operations/desktop-pet-validation.md`.

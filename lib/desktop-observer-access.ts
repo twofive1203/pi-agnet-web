@@ -16,13 +16,20 @@ import {
   isLoopbackIp,
   normalizeIp,
 } from "./automation-connection-context";
+import {
+  DESKTOP_OBSERVER_PRODUCT,
+  DESKTOP_OBSERVER_TOKEN_HEADER,
+  DESKTOP_OBSERVER_TOKEN_TTL_MS,
+} from "./desktop-observer-constants";
 import { getProcessInstanceId } from "./process-runtime";
 import { isServerAccessAuthEnabled } from "./server-access-policy";
 import { TASK_OBSERVER_PROTOCOL_VERSION } from "./task-observer-types";
 
-export const DESKTOP_OBSERVER_TOKEN_HEADER = "x-spi-desktop-observer-token";
-export const DESKTOP_OBSERVER_TOKEN_TTL_MS = 15 * 60 * 1000;
-export const DESKTOP_OBSERVER_PRODUCT = "snail-pi-web" as const;
+export {
+  DESKTOP_OBSERVER_PRODUCT,
+  DESKTOP_OBSERVER_TOKEN_HEADER,
+  DESKTOP_OBSERVER_TOKEN_TTL_MS,
+} from "./desktop-observer-constants";
 
 export class DesktopObserverAccessError extends Error {
   readonly status: number;

@@ -12,6 +12,15 @@ const eslintConfig = [
       "lib/automation-worker-runtime.meta.json",
       "lib/automation-extension-discovery-runtime.cjs",
       "lib/automation-extension-discovery-runtime.meta.json",
+      // Desktop pet Electron bundles (esbuild CJS output).
+      "desktop/main/main.js",
+      "desktop/main/main.js.map",
+      "desktop/preload/pet-preload.js",
+      "desktop/preload/pet-preload.js.map",
+      "desktop/.build-stamp.json",
+      // Plain runtime companion checked in for file:// loading without a bundler step.
+      // Keep lint on pet-app.tsx / pet-state.ts instead.
+      "desktop/renderer/pet-app.js",
     ],
   },
   ...coreWebVitals,

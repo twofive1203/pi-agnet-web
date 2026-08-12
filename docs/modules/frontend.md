@@ -155,7 +155,7 @@ Separate from the Next.js WebUI. Lives under `desktop/` and is packaged independ
 | `desktop/preload/pet-preload.ts` | Narrow `window.snailPet` bridge. |
 | `desktop/assets/pets/*` | Builtin versioned pet manifests (`snail-default`, `snail-classic`). |
 
-Smoke: `npm run test:desktop-contract`, packaging contract `npm run test:desktop-package`. Release/QA matrix: `docs/operations/desktop-pet-validation.md`.
+Smoke: `npm run test:desktop-contract`, packaging contract `npm run test:desktop-package`. Dev launch: `npm run desktop:build` / `npm run desktop:dev` (see `desktop/README.md`). Release/QA matrix: `docs/operations/desktop-pet-validation.md`. UI: drag grip moves window; **×** hides to tray.
 
 ## Automation UI
 

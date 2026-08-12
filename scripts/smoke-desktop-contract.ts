@@ -58,6 +58,7 @@ import {
 import {
   createInitialWindowManagerState,
   handleDisableClickThrough,
+  defaultPetWindowPosition,
   handlePetWindowCloseRequest,
   handleSetClickThrough,
   handleShowPet,
@@ -392,8 +393,19 @@ async function main() {
   });
   assert.equal(emittedBaseline.emitted.length, 0);
 
+  // --- Default position is bottom-right of work area (not 0,0) ---
+  const pos = defaultPetWindowPosition({ x: 0, y: 0, width: 1920, height: 1080 });
+  assert.ok(pos.x > 1000);
+  assert.ok(pos.y > 500);
+
   // --- Close-to-tray + click-through recovery ---
-  let win = createInitialWindowManagerState({ clickThrough: true, trayOpen: false });
+  let win = createInitialWindowManagerState({
+    clickThrough: true,
+    trayOpen: false,
+    defaultPosition: pos,
+  });
+  assert.equal(win.bounds?.x, pos.x);
+  assert.equal(win.bounds?.y, pos.y);
   win = handlePetWindowCloseRequest(win);
   assert.equal(win.visible, false);
   win = handleShowPet(win);
@@ -596,11 +608,20 @@ async function main() {
     }
   }
 
-  // Renderer HTML CSP + no inline node
+  // Renderer HTML CSP + no inline node + drag/close affordances
   const html = readFileSync(path.join(process.cwd(), "desktop", "renderer", "index.html"), "utf8");
   assert.ok(html.includes("Content-Security-Policy"));
   assert.ok(html.includes("default-src 'none'"));
   assert.equal(html.includes("nodeIntegration"), false);
+  assert.ok(html.includes("pet-drag-bar"));
+  assert.ok(html.includes('id="btn-hide"'));
+  assert.ok(html.includes("隐藏到托盘"));
+
+  const css = readFileSync(path.join(process.cwd(), "desktop", "renderer", "pet.css"), "utf8");
+  assert.ok(css.includes("-webkit-app-region: drag"));
+  assert.ok(css.includes("-webkit-app-region: no-drag"));
+
+  assert.equal(isRendererIpcChannel(PET_IPC_CHANNELS.hideToTray), true);
 
   // Unread helper
   const unreadIds = listUnreadTransitionIds(

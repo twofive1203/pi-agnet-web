@@ -12,6 +12,22 @@
   </head>
   <body>
     <div id="root" class="pet-root" aria-live="polite">
+      <div class="pet-chrome">
+        <!-- Drag region: frameless window has no title bar; this strip moves the window. -->
+        <div class="pet-drag-bar" title="拖动桌宠" aria-hidden="true">
+          <span class="pet-drag-dots"></span>
+        </div>
+        <button
+          type="button"
+          id="btn-hide"
+          class="pet-chrome-btn pet-close-btn"
+          title="隐藏到托盘"
+          aria-label="隐藏到托盘"
+        >
+          ×
+        </button>
+      </div>
+
       <button
         type="button"
         id="pet-button"
@@ -36,6 +52,15 @@
           <div class="tray-actions">
             <button type="button" id="btn-mark-all" class="tray-btn">全部已读</button>
             <button type="button" id="btn-retry" class="tray-btn">重试</button>
+            <button
+              type="button"
+              id="btn-hide-tray"
+              class="tray-btn tray-btn-close"
+              title="隐藏到托盘"
+              aria-label="隐藏到托盘"
+            >
+              ×
+            </button>
           </div>
         </header>
         <div id="connection-banner" class="connection-banner" hidden></div>

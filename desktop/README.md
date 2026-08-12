@@ -1,0 +1,67 @@
+# Windows Desktop Pet (SnailPiPet)
+
+Attach-only Electron companion for Snail Pi Web. Observes local tasks; never starts/stops `spi`.
+
+## Prerequisites
+
+- Windows 10/11 (primary target)
+- Repo `npm install` completed (devDependencies: `electron`, `esbuild`, `@electron-forge/*`)
+- A running local Snail Pi service on `127.0.0.1` (default port `62666`)
+
+## Dev commands (repo root)
+
+| Command | Purpose |
+| --- | --- |
+| `npm run desktop:build` | Bundle `desktop/main/main.ts` → `main.js` and `preload/pet-preload.ts` → `pet-preload.js` |
+| `npm run desktop:dev` | Build if stale, then launch Electron |
+| `npm run desktop:dev:rebuild` | Force rebuild, then launch |
+| `npm run test:desktop-observer` | Domain + API + connection + UI contract + package smokes |
+| `npm run test:desktop-package` | Pet-only packaging contract |
+
+```bash
+# terminal A
+npm run dev                 # or: spi --no-open
+
+# terminal B
+npm run desktop:dev
+```
+
+Generated bundles (`main.js`, `pet-preload.js`, maps, `.build-stamp.json`) are gitignored — always build before packaging.
+
+## UI cheatsheet
+
+| Action | Result |
+| --- | --- |
+| Drag top grey grip | Move frameless window |
+| Click pet body | Toggle Activity tray |
+| Click **×** | Hide to system tray (process keeps observing) |
+| Tray → 显示桌宠 | Show window again |
+| Tray → 退出桌宠 | Quit pet only; `spi` / tasks continue |
+| Tray / UI → 复制启动命令 | Clipboard `spi --no-open` (never executed) |
+
+Default first-run position: primary work-area bottom-right. Saved `(0,0)` is treated as unset.
+
+## Layout
+
+```text
+desktop/
+  main/           # Electron main (connection, SSE, tray, window, notifications)
+  preload/        # Narrow contextBridge (window.snailPet)
+  renderer/       # index.html + pet-app + CSS (no Node)
+  assets/pets/    # Builtin pet manifests
+  package.json    # private snail-pi-pet; main → main/main.js
+```
+
+Wire constants shared with the server live in `lib/desktop-observer-constants.ts` so the pet bundle does not import Automation/rpc graphs.
+
+## Packaging notes
+
+- Root `forge.config.ts` is pet-only; npm `package.json#files` must not include `desktop/`.
+- After `electron-forge make`, optional: `DESKTOP_PACKAGE_OUT=out npm run test:desktop-package`.
+- Full matrix: `docs/operations/desktop-pet-validation.md`.
+
+## Security reminders
+
+- Token stays in main memory only.
+- Renderer: no Node, no absolute URL open; deep links re-validated before `shell.openExternal`.
+- No `child_process` / service PID / signal APIs in `desktop/`.
