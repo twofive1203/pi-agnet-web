@@ -55,6 +55,10 @@ export function renderPetApp(root: Document = document): {
   const projectList = root.getElementById("project-list");
   const trayCounts = root.getElementById("tray-counts");
   const banner = root.getElementById("connection-banner");
+  const authPanel = root.getElementById("auth-panel");
+  const accessKeyInput = root.getElementById("access-key-input") as HTMLInputElement | null;
+  const btnSaveKey = root.getElementById("btn-save-key");
+  const btnClearKey = root.getElementById("btn-clear-key");
   const btnMarkAll = root.getElementById("btn-mark-all");
   const btnRetry = root.getElementById("btn-retry");
   const btnCopy = root.getElementById("btn-copy-cmd");
@@ -138,6 +142,14 @@ export function renderPetApp(root: Document = document): {
         banner.hidden = true;
         banner.textContent = "";
       }
+    }
+
+    if (authPanel) {
+      const showAuth = view.needsAccessKey === true || view.hasAccessKey === true;
+      authPanel.hidden = !showAuth;
+    }
+    if (btnClearKey) {
+      btnClearKey.hidden = view.hasAccessKey !== true;
     }
 
     if (btnCopy) {
@@ -231,6 +243,29 @@ export function renderPetApp(root: Document = document): {
 
   btnRetry?.addEventListener("click", () => {
     bridge?.retry();
+  });
+
+  const submitAccessKey = () => {
+    const value = accessKeyInput?.value?.trim() ?? "";
+    if (!value) return;
+    void bridge?.setAccessKey(value).then(() => {
+      if (accessKeyInput) accessKeyInput.value = "";
+    });
+  };
+
+  btnSaveKey?.addEventListener("click", () => {
+    submitAccessKey();
+  });
+
+  accessKeyInput?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      submitAccessKey();
+    }
+  });
+
+  btnClearKey?.addEventListener("click", () => {
+    void bridge?.clearAccessKey();
   });
 
   btnCopy?.addEventListener("click", () => {

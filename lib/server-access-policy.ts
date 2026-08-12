@@ -44,6 +44,8 @@ export const HEALTH_API_PATH = "/api/health";
  */
 export const BROWSER_PAIR_API_PATH = "/api/browser/pair";
 export const BROWSER_UNPAIR_API_PATH = "/api/browser/unpair";
+/** Desktop pet attach API prefix (loopback-only; not anonymously public). */
+export const DESKTOP_OBSERVER_API_PREFIX = "/api/desktop-observer";
 
 /** Max access-key length accepted by login. */
 export const MAX_ACCESS_KEY_LENGTH = 512;
@@ -426,6 +428,19 @@ export function isBrowserExtensionPairingPath(pathname: string): boolean {
     || pathname === `${BROWSER_PAIR_API_PATH}/`
     || pathname === BROWSER_UNPAIR_API_PATH
     || pathname === `${BROWSER_UNPAIR_API_PATH}/`
+  );
+}
+
+/**
+ * Desktop pet observer routes. Never globally public: Proxy may skip the
+ * browser session cookie only for a proven loopback TCP peer; handlers still
+ * enforce Host 127.0.0.1 + loopback remote, and session mint verifies the
+ * access key when server auth is on.
+ */
+export function isDesktopObserverPath(pathname: string): boolean {
+  return (
+    pathname === DESKTOP_OBSERVER_API_PREFIX
+    || pathname.startsWith(`${DESKTOP_OBSERVER_API_PREFIX}/`)
   );
 }
 

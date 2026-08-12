@@ -264,7 +264,7 @@ Performance policy:
 
 - Reuse/extract server-derived direct-loopback connection capture used by Automation.
 - Require loopback TCP peer, IPv4 loopback Host/origin, and local service mode.
-- Reject non-loopback forwarded identity and server mode.
+- Reject non-loopback forwarded identity. Server mode is attachable on proven loopback when the pet supplies a valid access key at session mint.
 - `session` accepts exact verified origin or no Origin for Electron main.
 - Store only token hash, expiry, instance id and loopback binding in memory.
 - Read routes require a dedicated header and `Cache-Control: no-store`.
@@ -304,7 +304,7 @@ When an unknown/incompatible response is returned, distinguish:
 
 - port occupied by non-Snail-Pi service;
 - observer protocol version mismatch;
-- Snail Pi server mode unsupported;
+- Remote (non-loopback) attach unsupported; server mode on loopback requires access key;
 - temporary health/protocol failure.
 
 Quitting or crashing the pet has no effect on the service or tasks.

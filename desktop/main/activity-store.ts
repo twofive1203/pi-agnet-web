@@ -95,6 +95,10 @@ export type DesktopActivityView = {
   /** Copyable only — never executed. */
   startCommand: string;
   canCopyStartCommand: boolean;
+  /** True when main holds a server access key (value never included). */
+  hasAccessKey: boolean;
+  /** Show the access-key entry panel (server mode / invalid key). */
+  needsAccessKey: boolean;
   /** True when last snapshot is retained under reconnect/disconnect. */
   stale: boolean;
   trayOpen: boolean;
@@ -125,6 +129,8 @@ export type ActivityStoreSnapshotInput = {
   selectedActivityId?: string | null;
   /** When true, keep last projects but mark stale (SSE lost). */
   stale?: boolean;
+  /** Whether main currently holds an access key (never the key itself). */
+  hasAccessKey?: boolean;
 };
 
 const PRESENTATION_RANK = new Map(
@@ -346,6 +352,10 @@ export function buildActivityView(input: ActivityStoreSnapshotInput): DesktopAct
   const selectedExists =
     selectedActivityId != null && findActivityById(projects, selectedActivityId) != null;
 
+  const reason = input.connection.reasonCode;
+  const needsAccessKey =
+    reason === "auth_required" || reason === "auth_invalid";
+
   return {
     presentation,
     connectionStatus: input.connection.status,
@@ -354,6 +364,8 @@ export function buildActivityView(input: ActivityStoreSnapshotInput): DesktopAct
     port: input.connection.port,
     startCommand: DESKTOP_START_COMMAND,
     canCopyStartCommand: canCopyStartCommand(input.connection),
+    hasAccessKey: input.hasAccessKey === true,
+    needsAccessKey,
     stale,
     trayOpen: input.settings.activityTrayOpen,
     selectedActivityId: selectedExists ? selectedActivityId : null,

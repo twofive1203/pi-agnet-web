@@ -71,6 +71,7 @@ export type DesktopProtocolPayload = {
   mode?: unknown;
   instanceId?: unknown;
   compatible?: unknown;
+  authRequired?: unknown;
   reasonCode?: unknown;
 };
 
@@ -93,6 +94,11 @@ export type ObserverClientOptions = {
   now?: () => number;
   /** Base reconnect delay after stream loss (ms). */
   reconnectDelayMs?: number;
+  /**
+   * Optional server-mode access key (main memory only).
+   * Used only for POST /desktop-observer/session when authRequired.
+   */
+  accessKey?: string | null;
   onStateChange?: (state: DesktopConnectionState) => void;
   /** Called for each full snapshot JSON text from SSE (main-only). */
   onSnapshot?: (snapshotJson: string, meta: { reset: boolean; instanceId: string | null }) => void;
@@ -143,8 +149,16 @@ export function interpretProtocolPayload(
   payload: unknown,
   httpStatus: number,
   expectedProtocolVersion = TASK_OBSERVER_PROTOCOL_VERSION,
-): DesktopConnectionEvent | { type: "protocol_ok"; instanceId: string } {
+): DesktopConnectionEvent | {
+  type: "protocol_ok";
+  instanceId: string;
+  authRequired: boolean;
+} {
   if (httpStatus === 0) return { type: "connection_refused" };
+  // 401/403 on the pre-session probe almost always means server-mode access auth.
+  if (httpStatus === 401 || httpStatus === 403) {
+    return { type: "incompatible", reasonCode: "auth_required", detail: `http_${httpStatus}` };
+  }
   if (httpStatus < 200 || httpStatus >= 300) {
     return { type: "incompatible", reasonCode: "protocol_http_error", detail: `http_${httpStatus}` };
   }
@@ -162,13 +176,26 @@ export function interpretProtocolPayload(
       detail: `got_${String(p.protocolVersion)}`,
     };
   }
-  if (p.mode === "server" || p.compatible === false || p.reasonCode === "server_mode") {
-    return { type: "incompatible", reasonCode: "server_mode" };
+  // Legacy servers rejected server mode with compatible:false / reasonCode server_mode.
+  if (p.compatible === false) {
+    const reason =
+      p.reasonCode === "server_mode" || p.mode === "server" ? "server_mode" : "protocol_invalid";
+    return {
+      type: "incompatible",
+      reasonCode: reason,
+      detail: typeof p.reasonCode === "string" ? p.reasonCode : undefined,
+    };
   }
   if (typeof p.instanceId !== "string" || !p.instanceId.trim()) {
     return { type: "incompatible", reasonCode: "protocol_invalid", detail: "missing_instance" };
   }
-  return { type: "protocol_ok", instanceId: p.instanceId.trim() };
+  const authRequired =
+    p.authRequired === true || p.mode === "server" || p.reasonCode === "auth_required";
+  return {
+    type: "protocol_ok",
+    instanceId: p.instanceId.trim(),
+    authRequired,
+  };
 }
 
 export function interpretSessionPayload(
@@ -176,7 +203,21 @@ export function interpretSessionPayload(
   httpStatus: number,
 ): { ok: true; token: string; expiresAt: number; instanceId: string } | DesktopConnectionEvent {
   if (httpStatus === 0) return { type: "connection_refused" };
-  if (httpStatus === 401 || httpStatus === 403) return { type: "token_rejected" };
+  if (httpStatus === 401 || httpStatus === 403) {
+    const code =
+      payload &&
+      typeof payload === "object" &&
+      typeof (payload as { code?: unknown }).code === "string"
+        ? String((payload as { code: string }).code)
+        : "";
+    if (code === "auth_invalid") {
+      return { type: "incompatible", reasonCode: "auth_invalid", detail: `session_http_${httpStatus}` };
+    }
+    if (code === "auth_required" || code === "unauthorized" || !code) {
+      return { type: "incompatible", reasonCode: "auth_required", detail: `session_http_${httpStatus}` };
+    }
+    return { type: "incompatible", reasonCode: "auth_invalid", detail: code };
+  }
   if (httpStatus < 200 || httpStatus >= 300) {
     return { type: "incompatible", reasonCode: "protocol_http_error", detail: `session_http_${httpStatus}` };
   }
@@ -286,6 +327,8 @@ export class DesktopObserverClient {
     snapshotJson: string,
     meta: { reset: boolean; instanceId: string | null },
   ) => void;
+  /** Main-memory only — never written to settings JSON. */
+  private accessKey: string | null = null;
   private token: string | null = null;
   private tokenExpiresAt = 0;
   private stopped = false;
@@ -304,6 +347,7 @@ export class DesktopObserverClient {
     this.now = options.now ?? Date.now;
     this.onStateChange = options.onStateChange;
     this.onSnapshot = options.onSnapshot;
+    this.accessKey = normalizeClientAccessKey(options.accessKey);
   }
 
   getState(): DesktopConnectionState {
@@ -317,6 +361,15 @@ export class DesktopObserverClient {
   /** Main-only token accessor — never expose to renderer. */
   getTokenForTests(): string | null {
     return this.token;
+  }
+
+  hasAccessKey(): boolean {
+    return Boolean(this.accessKey);
+  }
+
+  /** Replace the in-memory access key used for server-mode session mint. */
+  setAccessKey(accessKey: string | null | undefined): void {
+    this.accessKey = normalizeClientAccessKey(accessKey);
   }
 
   /** True when this module graph must not reference process control APIs. */
@@ -477,11 +530,19 @@ export class DesktopObserverClient {
       return { ok: false, event: protocolResult };
     }
 
+    if (protocolResult.authRequired && !this.accessKey) {
+      return {
+        ok: false,
+        event: { type: "incompatible", reasonCode: "auth_required", detail: "missing_access_key" },
+      };
+    }
+
+    const sessionBody = this.accessKey ? { accessKey: this.accessKey } : {};
     const session = await this.safeFetch(`${origin}/api/desktop-observer/session`, {
       method: "POST",
       signal,
       headers: { "content-type": "application/json" },
-      body: "{}",
+      body: JSON.stringify(sessionBody),
     });
     if (!session.okResponse) {
       return { ok: false, event: session.event };
@@ -490,6 +551,16 @@ export class DesktopObserverClient {
     try {
       sessionJson = await session.okResponse.json();
     } catch {
+      if (session.okResponse.status === 401 || session.okResponse.status === 403) {
+        return {
+          ok: false,
+          event: {
+            type: "incompatible",
+            reasonCode: this.accessKey ? "auth_invalid" : "auth_required",
+            detail: "session_bad_json",
+          },
+        };
+      }
       return {
         ok: false,
         event: { type: "incompatible", reasonCode: "protocol_invalid", detail: "session_bad_json" },
@@ -799,6 +870,10 @@ export function connectionReasonLabel(code: DesktopConnectionReasonCode | null):
       return "Service not running";
     case "server_mode":
       return "Server mode unsupported";
+    case "auth_required":
+      return "Access key required";
+    case "auth_invalid":
+      return "Invalid access key";
     case "protocol_mismatch":
       return "Observer protocol mismatch";
     case "product_mismatch":
@@ -813,4 +888,11 @@ export function connectionReasonLabel(code: DesktopConnectionReasonCode | null):
     default:
       return code ? `Connection issue (${code})` : "Connection issue";
   }
+}
+
+function normalizeClientAccessKey(value: string | null | undefined): string | null {
+  if (typeof value !== "string") return null;
+  const key = value.trim();
+  if (!key || key.length > 512) return null;
+  return key;
 }

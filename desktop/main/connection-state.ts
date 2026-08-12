@@ -26,6 +26,8 @@ export type DesktopConnectionReasonCode =
   | "protocol_mismatch"
   | "product_mismatch"
   | "server_mode"
+  | "auth_required"
+  | "auth_invalid"
   | "token_rejected"
   | "instance_changed"
   | "stream_error"

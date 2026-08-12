@@ -1,7 +1,7 @@
 /**
- * GET /api/desktop-observer/protocol — local product/protocol/mode compatibility.
+ * GET /api/desktop-observer/protocol — product/protocol/mode compatibility.
  * Loopback only; no observer token required (pre-session probe).
- * Server mode returns 200 with compatible:false for pet diagnostics.
+ * Server mode remains attachable on loopback and reports authRequired:true.
  */
 
 import {

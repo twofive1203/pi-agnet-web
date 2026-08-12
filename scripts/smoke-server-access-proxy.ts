@@ -21,6 +21,7 @@ import {
   isApiPath,
   isBrowserExtensionPairingPath,
   isClientIpAuthBypassed,
+  isDesktopObserverPath,
   isInsecureHttpAllowed,
   isLoopbackClientAddress,
   isPublicPath,
@@ -84,6 +85,10 @@ function testPublicPaths(): void {
   assert(!isPublicPath("/api/agent/events"), "agent sse not public");
   assert(!isPublicPath(BROWSER_PAIR_API_PATH), "browser pair is not globally public");
   assert(!isPublicPath(BROWSER_UNPAIR_API_PATH), "browser unpair is not globally public");
+  assert(!isPublicPath("/api/desktop-observer/protocol"), "desktop observer not globally public");
+  assert(isDesktopObserverPath("/api/desktop-observer/protocol"), "desktop observer path classified");
+  assert(isDesktopObserverPath("/api/desktop-observer/session"), "desktop observer session classified");
+  assert(!isDesktopObserverPath("/api/sessions"), "sessions is not desktop observer");
   assert(isBrowserExtensionPairingPath(BROWSER_PAIR_API_PATH), "pair path classified");
   assert(isBrowserExtensionPairingPath(`${BROWSER_PAIR_API_PATH}/`), "pair slash classified");
   assert(isBrowserExtensionPairingPath(BROWSER_UNPAIR_API_PATH), "unpair path classified");
@@ -95,6 +100,10 @@ function testPublicPaths(): void {
   assert(
     proxySource.includes("isBrowserExtensionPairingPath"),
     "proxy must special-case extension pairing paths",
+  );
+  assert(
+    proxySource.includes("isDesktopObserverPath"),
+    "proxy must special-case desktop observer loopback attach",
   );
   assert(
     proxySource.includes('action === "exchange"') || proxySource.includes("action === 'exchange'"),

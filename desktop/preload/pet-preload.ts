@@ -31,6 +31,9 @@ export type SnailPetBridge = {
   copyStartCommand: () => Promise<unknown>;
   setPrefs: (patch: PetPrefsPatch) => void;
   setReducedMotion: (value: boolean) => void;
+  /** Submit server access key (main never echoes it back). */
+  setAccessKey: (accessKey: string) => Promise<unknown>;
+  clearAccessKey: () => Promise<unknown>;
 };
 
 function send(channel: string, ...args: unknown[]): void {
@@ -69,6 +72,8 @@ const bridge: SnailPetBridge = {
   copyStartCommand: () => invoke(PET_IPC_CHANNELS.copyStartCommand),
   setPrefs: (patch) => send(PET_IPC_CHANNELS.setPrefs, patch),
   setReducedMotion: (value) => send(PET_IPC_CHANNELS.setReducedMotion, value),
+  setAccessKey: (accessKey) => invoke(PET_IPC_CHANNELS.setAccessKey, accessKey),
+  clearAccessKey: () => invoke(PET_IPC_CHANNELS.clearAccessKey),
 };
 
 contextBridge.exposeInMainWorld("snailPet", bridge);

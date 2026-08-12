@@ -20,6 +20,9 @@ export const PET_IPC_CHANNELS = {
   copyStartCommand: "pet:copy-start-command",
   setPrefs: "pet:set-prefs",
   setReducedMotion: "pet:set-reduced-motion",
+  /** Main-only: set/clear server access key (never echoed back). */
+  setAccessKey: "pet:set-access-key",
+  clearAccessKey: "pet:clear-access-key",
 } as const;
 
 export type PetIpcChannel = (typeof PET_IPC_CHANNELS)[keyof typeof PET_IPC_CHANNELS];
@@ -38,6 +41,8 @@ export const PET_RENDERER_ALLOWED_CHANNELS: readonly string[] = [
   PET_IPC_CHANNELS.copyStartCommand,
   PET_IPC_CHANNELS.setPrefs,
   PET_IPC_CHANNELS.setReducedMotion,
+  PET_IPC_CHANNELS.setAccessKey,
+  PET_IPC_CHANNELS.clearAccessKey,
 ];
 
 /** Channels main may push to renderer. */
@@ -56,6 +61,11 @@ export type PetPrefsPatch = Partial<{
   }>;
   port: number;
 }>;
+
+/** Renderer never receives the key — only whether one is configured. */
+export type PetAccessKeyPatch = {
+  accessKey: string;
+};
 
 /** Static allowlist check used by smoke + preload hardening. */
 export function isRendererIpcChannel(channel: string): boolean {

@@ -27,6 +27,13 @@ import {
   unwrapObserverSseData,
 } from "../desktop/main/observer-client";
 import {
+  clearDesktopAccessKey,
+  createMemoryAccessKeyCodec,
+  loadDesktopAccessKey,
+  normalizeAccessKeyInput,
+  saveDesktopAccessKey,
+} from "../desktop/main/access-key-store";
+import {
   assertDesktopSettingsSafe,
   createDefaultDesktopSettings,
   DESKTOP_SETTINGS_FORBIDDEN_KEYS,
@@ -140,7 +147,8 @@ async function main() {
     interpretHealthPayload({ ok: true }, 200)?.type,
     "incompatible",
   );
-  const serverProto = interpretProtocolPayload(
+  // Legacy server payload (compatible:false) stays incompatible.
+  const legacyServerProto = interpretProtocolPayload(
     {
       product: DESKTOP_OBSERVER_PRODUCT,
       protocolVersion: TASK_OBSERVER_PROTOCOL_VERSION,
@@ -151,9 +159,33 @@ async function main() {
     },
     200,
   );
-  assert.equal(serverProto.type, "incompatible");
-  if (serverProto.type === "incompatible") {
-    assert.equal(serverProto.reasonCode, "server_mode");
+  assert.equal(legacyServerProto.type, "incompatible");
+  if (legacyServerProto.type === "incompatible") {
+    assert.equal(legacyServerProto.reasonCode, "server_mode");
+  }
+
+  // Current server payload is compatible but requires access key.
+  const serverProto = interpretProtocolPayload(
+    {
+      product: DESKTOP_OBSERVER_PRODUCT,
+      protocolVersion: TASK_OBSERVER_PROTOCOL_VERSION,
+      mode: "server",
+      compatible: true,
+      authRequired: true,
+      reasonCode: null,
+      instanceId: "i1",
+    },
+    200,
+  );
+  assert.equal(serverProto.type, "protocol_ok");
+  if (serverProto.type === "protocol_ok") {
+    assert.equal(serverProto.authRequired, true);
+  }
+
+  const authHttp = interpretProtocolPayload({}, 401);
+  assert.equal(authHttp.type, "incompatible");
+  if (authHttp.type === "incompatible") {
+    assert.equal(authHttp.reasonCode, "auth_required");
   }
 
   const mismatch = interpretProtocolPayload(
@@ -250,8 +282,8 @@ async function main() {
   assert.equal(refusedClient.getTokenForTests(), null);
   refusedClient.quit();
 
-  // Server mode → incompatible
-  const serverClient = new DesktopObserverClient({
+  // Legacy server mode (compatible:false) → incompatible
+  const legacyServerClient = new DesktopObserverClient({
     port: 62666,
     enableSse: false,
     fetch: mockFetch([
@@ -269,11 +301,118 @@ async function main() {
       },
     ]),
   });
-  serverClient.start();
+  legacyServerClient.start();
   await new Promise((r) => setTimeout(r, 0));
-  assert.equal(serverClient.getState().status, "incompatible");
-  assert.equal(serverClient.getState().reasonCode, "server_mode");
-  serverClient.quit();
+  assert.equal(legacyServerClient.getState().status, "incompatible");
+  assert.equal(legacyServerClient.getState().reasonCode, "server_mode");
+  legacyServerClient.quit();
+
+  // Server mode without access key → auth_required
+  const authRequiredClient = new DesktopObserverClient({
+    port: 62666,
+    enableSse: false,
+    fetch: mockFetch([
+      { match: /\/api\/health$/, body: { ok: true, instanceId: "i" } },
+      {
+        match: /\/protocol$/,
+        body: {
+          product: DESKTOP_OBSERVER_PRODUCT,
+          protocolVersion: TASK_OBSERVER_PROTOCOL_VERSION,
+          mode: "server",
+          compatible: true,
+          authRequired: true,
+          instanceId: "i",
+        },
+      },
+    ]),
+  });
+  authRequiredClient.start();
+  await new Promise((r) => setTimeout(r, 0));
+  assert.equal(authRequiredClient.getState().status, "incompatible");
+  assert.equal(authRequiredClient.getState().reasonCode, "auth_required");
+  authRequiredClient.quit();
+
+  // Server mode with access key → connected
+  const bodies: string[] = [];
+  const authOkClient = new DesktopObserverClient({
+    port: 62666,
+    enableSse: false,
+    accessKey: "test-access-key",
+    fetch: async (url, init) => {
+      if (typeof init?.body === "string") bodies.push(init.body);
+      if (/\/api\/health$/.test(url)) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ ok: true, instanceId: "i-auth" }),
+          text: async () => "",
+        };
+      }
+      if (/\/protocol$/.test(url)) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            product: DESKTOP_OBSERVER_PRODUCT,
+            protocolVersion: TASK_OBSERVER_PROTOCOL_VERSION,
+            mode: "server",
+            compatible: true,
+            authRequired: true,
+            instanceId: "i-auth",
+          }),
+          text: async () => "",
+        };
+      }
+      if (/\/session$/.test(url)) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            token: "tok-auth",
+            expiresAt: 999999,
+            instanceId: "i-auth",
+          }),
+          text: async () => "",
+        };
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    },
+  });
+  const authProbe = await authOkClient.probe();
+  assert.equal(authProbe.ok, true);
+  assert.ok(bodies.some((body) => body.includes("test-access-key")));
+  authOkClient.quit();
+
+  // Invalid access key → auth_invalid
+  const badKeyClient = new DesktopObserverClient({
+    port: 62666,
+    enableSse: false,
+    accessKey: "wrong",
+    fetch: mockFetch([
+      { match: /\/api\/health$/, body: { ok: true, instanceId: "i" } },
+      {
+        match: /\/protocol$/,
+        body: {
+          product: DESKTOP_OBSERVER_PRODUCT,
+          protocolVersion: TASK_OBSERVER_PROTOCOL_VERSION,
+          mode: "server",
+          compatible: true,
+          authRequired: true,
+          instanceId: "i",
+        },
+      },
+      {
+        match: /\/session$/,
+        status: 401,
+        body: { error: "Invalid access key", code: "auth_invalid" },
+      },
+    ]),
+  });
+  badKeyClient.start();
+  await new Promise((r) => setTimeout(r, 0));
+  assert.equal(badKeyClient.getState().status, "incompatible");
+  assert.equal(badKeyClient.getState().reasonCode, "auth_invalid");
+  badKeyClient.quit();
 
   // Connected client + instance change resets notification baseline
   const live = new DesktopObserverClient({
@@ -450,6 +589,49 @@ async function main() {
     if (key === "startCommand") continue;
     assert.throws(() => assertDesktopSettingsSafe({ [key]: "x" }));
   }
+  assert.ok(DESKTOP_SETTINGS_FORBIDDEN_KEYS.includes("accessKey"));
+  assert.equal(normalizeAccessKeyInput("  abc  "), "abc");
+  assert.equal(normalizeAccessKeyInput(""), null);
+
+  // Memory codec refuses disk persistence (no encryption available).
+  const memFs: Record<string, string> = {};
+  const memStore = {
+    readFile: (p: string) => {
+      if (!(p in memFs)) throw new Error("missing");
+      return memFs[p]!;
+    },
+    writeFile: (p: string, data: string) => {
+      memFs[p] = data;
+    },
+    mkdirp: () => undefined,
+    exists: (p: string) => p in memFs,
+    unlink: (p: string) => {
+      delete memFs[p];
+    },
+  };
+  const memCodec = createMemoryAccessKeyCodec();
+  assert.equal(memCodec.isAvailable(), false);
+  const memSave = saveDesktopAccessKey("/tmp/pet-test", "secret-key", memStore, memCodec);
+  assert.equal(memSave.persisted, false);
+  assert.equal(loadDesktopAccessKey("/tmp/pet-test", memStore, memCodec), null);
+
+  // Encrypting codec round-trips on disk without plaintext.
+  const encCodec = {
+    isAvailable: () => true,
+    encrypt: (plain: string) => Buffer.from(`enc:${plain}`, "utf8").toString("base64"),
+    decrypt: (blob: string) => {
+      const raw = Buffer.from(blob, "base64").toString("utf8");
+      assert.ok(raw.startsWith("enc:"));
+      return raw.slice(4);
+    },
+  };
+  const encSave = saveDesktopAccessKey("/tmp/pet-test", "secret-key", memStore, encCodec);
+  assert.equal(encSave.persisted, true);
+  const stored = Object.values(memFs)[0] ?? "";
+  assert.equal(stored.includes("secret-key"), false);
+  assert.equal(loadDesktopAccessKey("/tmp/pet-test", memStore, encCodec), "secret-key");
+  clearDesktopAccessKey("/tmp/pet-test", memStore);
+  assert.equal(loadDesktopAccessKey("/tmp/pet-test", memStore, encCodec), null);
 
   console.log("smoke-desktop-connection: ok");
 }

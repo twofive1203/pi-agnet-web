@@ -19,6 +19,16 @@ import {
   markAllTerminalRead,
   type DesktopActivityView,
 } from "./activity-store";
+import {
+  clearDesktopAccessKey,
+  createMemoryAccessKeyCodec,
+  createSafeStorageAccessKeyCodec,
+  loadDesktopAccessKey,
+  normalizeAccessKeyInput,
+  saveDesktopAccessKey,
+  type AccessKeyCodec,
+  type AccessKeyFs,
+} from "./access-key-store";
 import { applyLaunchAtLogin } from "./autostart";
 import type { DesktopConnectionState } from "./connection-state";
 import { openValidatedDeepLink, rejectArbitraryRendererUrl } from "./deep-link-opener";
@@ -83,6 +93,14 @@ export type DesktopMainDeps = {
   userDataDir?: string;
   assetRoot?: string;
   settingsFs?: SettingsFs;
+  accessKeyFs?: AccessKeyFs;
+  accessKeyCodec?: AccessKeyCodec;
+  /** Optional Electron safeStorage; used when accessKeyCodec is omitted. */
+  safeStorage?: {
+    isEncryptionAvailable: () => boolean;
+    encryptString: (plain: string) => Buffer;
+    decryptString: (blob: Buffer) => string;
+  };
   createObserverClient?: (options: ConstructorParameters<typeof DesktopObserverClient>[0]) => DesktopObserverClient;
 };
 
@@ -149,7 +167,20 @@ export async function startDesktopPetMain(deps: DesktopMainDeps): Promise<{
 
   const userDataDir = deps.userDataDir ?? app.getPath("userData");
   const settingsFs = deps.settingsFs ?? nodeSettingsFs;
+  const accessKeyFs: AccessKeyFs = deps.accessKeyFs ?? {
+    readFile: (p, enc) => fs.readFileSync(p, enc),
+    writeFile: (p, data, enc) => fs.writeFileSync(p, data, enc),
+    mkdirp: (dir) => fs.mkdirSync(dir, { recursive: true }),
+    exists: (p) => fs.existsSync(p),
+    unlink: (p) => fs.unlinkSync(p),
+  };
+  const accessKeyCodec =
+    deps.accessKeyCodec ??
+    (deps.safeStorage
+      ? createSafeStorageAccessKeyCodec(deps.safeStorage)
+      : createMemoryAccessKeyCodec());
   let settings = loadDesktopSettingsFile(userDataDir, settingsFs);
+  let accessKey = loadDesktopAccessKey(userDataDir, accessKeyFs, accessKeyCodec);
 
   applyLaunchAtLogin(app, settings.launchAtLogin);
 
@@ -235,6 +266,7 @@ export async function startDesktopPetMain(deps: DesktopMainDeps): Promise<{
       reducedMotion,
       selectedActivityId,
       stale,
+      hasAccessKey: Boolean(accessKey),
     });
     assertRendererViewSafe(view);
     return view;
@@ -251,6 +283,16 @@ export async function startDesktopPetMain(deps: DesktopMainDeps): Promise<{
   const onConnectionState = (state: DesktopConnectionState) => {
     if (state.status !== "connected") {
       stale = snapshot != null;
+    }
+    // Surface the access-key form when server auth blocks attach.
+    if (
+      state.reasonCode === "auth_required" ||
+      state.reasonCode === "auth_invalid"
+    ) {
+      if (!windowState.trayExpanded) {
+        applyWindowState(handleToggleTray(windowState));
+        return;
+      }
     }
     pushState();
   };
@@ -275,11 +317,13 @@ export async function startDesktopPetMain(deps: DesktopMainDeps): Promise<{
   const client =
     deps.createObserverClient?.({
       port: settings.port,
+      accessKey,
       onStateChange: onConnectionState,
       onSnapshot,
     }) ??
     new DesktopObserverClient({
       port: settings.port,
+      accessKey,
       onStateChange: onConnectionState,
       onSnapshot,
     });
@@ -621,6 +665,28 @@ export async function startDesktopPetMain(deps: DesktopMainDeps): Promise<{
       reducedMotion = value === true;
       pushState();
     });
+
+    ipcMain.handle(PET_IPC_CHANNELS.setAccessKey, (_event, value: unknown) => {
+      const next = normalizeAccessKeyInput(value);
+      if (!next) {
+        return { ok: false, reason: "invalid_key" };
+      }
+      accessKey = next;
+      client.setAccessKey(next);
+      const saved = saveDesktopAccessKey(userDataDir, next, accessKeyFs, accessKeyCodec);
+      client.retry();
+      pushState();
+      return { ok: true, persisted: saved.persisted };
+    });
+
+    ipcMain.handle(PET_IPC_CHANNELS.clearAccessKey, () => {
+      accessKey = null;
+      client.setAccessKey(null);
+      clearDesktopAccessKey(userDataDir, accessKeyFs);
+      client.retry();
+      pushState();
+      return { ok: true };
+    });
   }
 
   let stopped = false;
@@ -687,6 +753,7 @@ export async function main(): Promise<void> {
     Notification: electron.Notification,
     nativeImage: electron.nativeImage,
     screen: electron.screen,
+    safeStorage: electron.safeStorage,
   });
 }
 

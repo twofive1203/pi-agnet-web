@@ -61,9 +61,13 @@ async function main() {
 
   const serverProtocol = buildDesktopObserverProtocolPayload({ PI_WEB_SERVER_MODE: "1" });
   assert.equal(serverProtocol.mode, "server");
-  assert.equal(serverProtocol.compatible, false);
-  assert.equal(serverProtocol.reasonCode, "server_mode");
+  assert.equal(serverProtocol.compatible, true);
+  assert.equal(serverProtocol.authRequired, true);
+  assert.equal(serverProtocol.reasonCode, null);
   assert.equal(isDesktopObserverServerMode({ PI_WEB_SERVER_MODE: "1" }), true);
+
+  const localProtocol = buildDesktopObserverProtocolPayload({ PI_WEB_SERVER_MODE: "0" });
+  assert.equal(localProtocol.authRequired, false);
 
   // --- Access: missing remote fails closed ---
   assert.throws(
@@ -130,22 +134,18 @@ async function main() {
     assert.ok(remote);
   });
 
-  // --- Server mode full access rejected ---
+  // --- Server mode loopback attach is allowed (access key checked separately) ---
   const prevMode = process.env.PI_WEB_SERVER_MODE;
   process.env.PI_WEB_SERVER_MODE = "1";
   try {
     withTestRemoteAddress("127.0.0.1", () => {
-      assert.throws(
-        () =>
-          assertDesktopObserverLocalAccess(
-            req("http://127.0.0.1:62666/api/desktop-observer/session", {
-              headers: { host: "127.0.0.1:62666" },
-              method: "POST",
-            }),
-          ),
-        (error: unknown) =>
-          error instanceof DesktopObserverAccessError && error.code === "server_mode",
+      const remote = assertDesktopObserverLocalAccess(
+        req("http://127.0.0.1:62666/api/desktop-observer/session", {
+          headers: { host: "127.0.0.1:62666" },
+          method: "POST",
+        }),
       );
+      assert.ok(remote);
     });
   } finally {
     if (prevMode === undefined) delete process.env.PI_WEB_SERVER_MODE;

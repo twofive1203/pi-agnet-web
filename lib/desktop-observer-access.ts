@@ -1,9 +1,11 @@
 /**
  * Local-only access gate for /api/desktop-observer/**.
  *
- * Attach-only desktop pet: direct IPv4 loopback + local mode + short-lived
- * hashed observer tokens. Server mode, non-loopback peers, and non-loopback
- * forwarded identity are rejected. Root server-access auth never relaxes these gates.
+ * Attach-only desktop pet: direct IPv4 loopback + short-lived hashed observer
+ * tokens. Non-loopback peers and non-loopback forwarded identity are always
+ * rejected. Server mode is allowed only on proven loopback; when global
+ * access-key auth is on, session mint additionally verifies the access key.
+ * Root server-access auth never relaxes the loopback gate.
  */
 
 import { createHash, randomBytes, timingSafeEqual } from "crypto";
@@ -22,7 +24,17 @@ import {
   DESKTOP_OBSERVER_TOKEN_TTL_MS,
 } from "./desktop-observer-constants";
 import { getProcessInstanceId } from "./process-runtime";
-import { isServerAccessAuthEnabled } from "./server-access-policy";
+import {
+  assertAccessKeyValid,
+  consumeLoginAttempt,
+  recordLoginSuccess,
+  ServerAccessError,
+} from "./server-access-auth";
+import {
+  clientKeyFromRequest,
+  isServerAccessAuthEnabled,
+  MAX_ACCESS_KEY_LENGTH,
+} from "./server-access-policy";
 import { TASK_OBSERVER_PROTOCOL_VERSION } from "./task-observer-types";
 
 export {
@@ -73,7 +85,7 @@ function isIpv4LoopbackHostLabel(host: string): boolean {
   return false;
 }
 
-/** True when this process is in server mode (desktop observer unsupported in v1). */
+/** True when this process has global access-key auth enabled. */
 export function isDesktopObserverServerMode(
   env: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env,
 ): boolean {
@@ -82,7 +94,7 @@ export function isDesktopObserverServerMode(
 
 /**
  * Prove direct loopback TCP peer + IPv4 loopback Host (127.x).
- * Does not check server mode (protocol probe needs that separately).
+ * Server mode is allowed; remote peers are still rejected.
  */
 export function assertDesktopObserverLoopback(req: Request): string {
   let remote: string;
@@ -126,18 +138,71 @@ export function assertDesktopObserverLoopback(req: Request): string {
 }
 
 /**
- * Full attach gate: loopback + local mode (not server mode).
+ * Full attach gate: proven loopback only.
+ * Server mode is allowed on loopback; access-key check happens at session mint.
  * Returns normalized remote address.
  */
 export function assertDesktopObserverLocalAccess(req: Request): string {
-  if (isDesktopObserverServerMode()) {
+  return assertDesktopObserverLoopback(req);
+}
+
+/**
+ * When server auth is on, verify the desktop-provided access key before minting
+ * an observer token. Local mode is a no-op. Uses the login attempt budget so
+ * brute-force against the pet attach path shares the same socket-IP limits.
+ */
+export async function assertDesktopObserverAccessKey(
+  req: Request,
+  accessKey: unknown,
+): Promise<void> {
+  if (!isDesktopObserverServerMode()) return;
+
+  const remote = getAutomationRemoteAddress();
+  const clientKey = clientKeyFromRequest(req, remote);
+  const rate = consumeLoginAttempt(clientKey);
+  if (!rate.allowed) {
     throw new DesktopObserverAccessError(
-      "Desktop observer is unavailable in server mode",
-      403,
-      "server_mode",
+      "Too many attempts. Try again later.",
+      429,
+      "rate_limited",
     );
   }
-  return assertDesktopObserverLoopback(req);
+
+  const key = typeof accessKey === "string" ? accessKey : "";
+  if (!key) {
+    throw new DesktopObserverAccessError(
+      "Access key required",
+      401,
+      "auth_required",
+    );
+  }
+  if (key.length > MAX_ACCESS_KEY_LENGTH) {
+    throw new DesktopObserverAccessError("Invalid access key", 401, "auth_invalid");
+  }
+
+  try {
+    await assertAccessKeyValid(key);
+    recordLoginSuccess(clientKey);
+  } catch (error) {
+    if (error instanceof ServerAccessError) {
+      if (error.code === "invalid_credentials") {
+        throw new DesktopObserverAccessError("Invalid access key", 401, "auth_invalid");
+      }
+      if (error.code === "rate_limited") {
+        throw new DesktopObserverAccessError(
+          "Too many attempts. Try again later.",
+          429,
+          "rate_limited",
+        );
+      }
+      throw new DesktopObserverAccessError(
+        "Authentication unavailable",
+        503,
+        "auth_unavailable",
+      );
+    }
+    throw error;
+  }
 }
 
 /**
@@ -256,7 +321,10 @@ export function buildDesktopObserverProtocolPayload(
   product: typeof DESKTOP_OBSERVER_PRODUCT;
   mode: "local" | "server";
   instanceId: string;
+  /** Loopback attach is supported in both local and server mode. */
   compatible: boolean;
+  /** When true, POST /session must include a valid access key. */
+  authRequired: boolean;
   reasonCode: string | null;
 } {
   const serverMode = isDesktopObserverServerMode(env);
@@ -265,8 +333,9 @@ export function buildDesktopObserverProtocolPayload(
     product: DESKTOP_OBSERVER_PRODUCT,
     mode: serverMode ? "server" : "local",
     instanceId: getProcessInstanceId(env as NodeJS.ProcessEnv),
-    compatible: !serverMode,
-    reasonCode: serverMode ? "server_mode" : null,
+    compatible: true,
+    authRequired: serverMode,
+    reasonCode: null,
   };
 }
 

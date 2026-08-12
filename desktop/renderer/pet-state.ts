@@ -174,6 +174,12 @@ export function connectionBannerText(input: {
     return `蜗牛派服务未启动 — 复制 \`${input.startCommand}\` 后在终端启动，然后重试`;
   }
   if (input.connectionStatus === "incompatible") {
+    if (input.reasonCode === "auth_required") {
+      return "服务已开启访问密钥 — 请在下方粘贴密钥后连接";
+    }
+    if (input.reasonCode === "auth_invalid") {
+      return "访问密钥无效 — 请重新粘贴正确的密钥";
+    }
     return `不兼容的服务${input.reasonCode ? ` (${input.reasonCode})` : ""} — 请检查端口后重试`;
   }
   if (input.connectionStatus === "reconnecting" || input.connectionStatus === "probing") {

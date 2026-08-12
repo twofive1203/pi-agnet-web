@@ -119,12 +119,12 @@ API routes live under `app/api/`. When adding, removing, or changing routes, upd
 
 ## Desktop observer routes
 
-Attach-only desktop pet API. **Direct IPv4 loopback (`127.0.0.1`) + local mode only** — never server mode. Host must be `127.0.0.1` (not `localhost`). Snapshot/events require a short-lived hashed token from `session`. Root server-access auth never relaxes these gates. Payloads never include cwd, Prompt/firstMessage, tool args, command text, or raw errors.
+Attach-only desktop pet API. **Direct IPv4 loopback (`127.0.0.1`) only** — Host must be `127.0.0.1` (not `localhost`). Server mode is allowed on proven loopback; when global access-key auth is on, `session` requires a valid access key in the JSON body. Snapshot/events require a short-lived hashed token from `session`. Root server-access auth never relaxes the loopback gate. Proxy may skip the browser session cookie for proven loopback peers on these paths. Payloads never include cwd, Prompt/firstMessage, tool args, command text, or raw errors.
 
 | Route | Methods | Purpose |
 | --- | --- | --- |
-| `desktop-observer/protocol/` | GET | Loopback protocol/product/mode probe. Server mode returns `200` with `compatible:false` + `reasonCode:"server_mode"` (diagnostic). No token. |
-| `desktop-observer/session/` | POST | Mint short-lived observer token (`x-spi-desktop-observer-token`). Origin exact loopback match or absent (Electron main). |
+| `desktop-observer/protocol/` | GET | Loopback protocol/product/mode probe. Reports `authRequired:true` in server mode; always `compatible:true` for loopback-capable builds. No token. |
+| `desktop-observer/session/` | POST | Mint short-lived observer token (`x-spi-desktop-observer-token`). Origin exact loopback match or absent (Electron main). Server mode body: `{ accessKey }`. |
 | `desktop-observer/snapshot/` | GET | Current bounded multi-source snapshot (`?reset=1` for baseline). Token required. `Cache-Control: no-store`. |
 | `desktop-observer/events/` | GET | Full-snapshot SSE + heartbeat comments. Initial event is always `reset`. Token expiry closes the stream. |
 

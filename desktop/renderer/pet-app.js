@@ -15,6 +15,10 @@
   const projectList = document.getElementById("project-list");
   const trayCounts = document.getElementById("tray-counts");
   const banner = document.getElementById("connection-banner");
+  const authPanel = document.getElementById("auth-panel");
+  const accessKeyInput = document.getElementById("access-key-input");
+  const btnSaveKey = document.getElementById("btn-save-key");
+  const btnClearKey = document.getElementById("btn-clear-key");
   const btnMarkAll = document.getElementById("btn-mark-all");
   const btnRetry = document.getElementById("btn-retry");
   const btnCopy = document.getElementById("btn-copy-cmd");
@@ -83,6 +87,12 @@
       return "蜗牛派服务未启动 — 复制 `" + view.startCommand + "` 后在终端启动，然后重试";
     }
     if (view.connectionStatus === "incompatible") {
+      if (view.connectionReasonCode === "auth_required") {
+        return "服务已开启访问密钥 — 请在下方粘贴密钥后连接";
+      }
+      if (view.connectionReasonCode === "auth_invalid") {
+        return "访问密钥无效 — 请重新粘贴正确的密钥";
+      }
       return (
         "不兼容的服务" +
         (view.connectionReasonCode ? " (" + view.connectionReasonCode + ")" : "") +
@@ -136,6 +146,11 @@
         banner.textContent = "";
       }
     }
+    if (authPanel) {
+      const showAuth = view.needsAccessKey === true || view.hasAccessKey === true;
+      authPanel.hidden = !showAuth;
+    }
+    if (btnClearKey) btnClearKey.hidden = view.hasAccessKey !== true;
     if (btnCopy) btnCopy.hidden = !view.canCopyStartCommand;
     if (staleFlag) staleFlag.hidden = !view.stale;
 
@@ -214,6 +229,32 @@
   if (btnRetry) {
     btnRetry.addEventListener("click", function () {
       if (bridge) bridge.retry();
+    });
+  }
+  function submitAccessKey() {
+    if (!bridge || !accessKeyInput) return;
+    const value = String(accessKeyInput.value || "").trim();
+    if (!value) return;
+    Promise.resolve(bridge.setAccessKey(value)).then(function () {
+      accessKeyInput.value = "";
+    });
+  }
+  if (btnSaveKey) {
+    btnSaveKey.addEventListener("click", function () {
+      submitAccessKey();
+    });
+  }
+  if (accessKeyInput) {
+    accessKeyInput.addEventListener("keydown", function (event) {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        submitAccessKey();
+      }
+    });
+  }
+  if (btnClearKey) {
+    btnClearKey.addEventListener("click", function () {
+      if (bridge) bridge.clearAccessKey();
     });
   }
   if (btnCopy) {

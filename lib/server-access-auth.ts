@@ -493,6 +493,25 @@ export function verifyAccessKey(
   return safeEqualBase64(candidate, state.verifier);
 }
 
+/**
+ * Async access-key check for non-browser attachers (desktop pet).
+ * Uses the same scrypt path/concurrency budget as login, but does not mint a
+ * browser session cookie — observer tokens stay separate.
+ */
+export async function assertAccessKeyValid(
+  accessKey: string,
+  agentDir = getAgentDir(),
+): Promise<void> {
+  if (typeof accessKey !== "string" || accessKey.length === 0 || accessKey.length > 512) {
+    throw new ServerAccessError("invalid_credentials", "Invalid access key", 401);
+  }
+  const state = readServerAccessState(agentDir);
+  const candidate = await deriveLoginVerifier(accessKey, state);
+  if (!safeEqualBase64(candidate, state.verifier)) {
+    throw new ServerAccessError("invalid_credentials", "Invalid access key", 401);
+  }
+}
+
 export type CreateSessionResult = {
   token: string;
   expiresAt: number;

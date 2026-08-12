@@ -23,6 +23,7 @@ import {
   isApiPath,
   isBrowserExtensionPairingPath,
   isClientIpAuthBypassed,
+  isDesktopObserverPath,
   isLoopbackClientAddress,
   isPublicPath,
   isSecureTransportRequired,
@@ -99,6 +100,17 @@ export async function proxy(request: NextRequest): Promise<NextResponse | Respon
       }
     } catch {
       // Fall through to normal origin/auth gates when the body is not JSON.
+    }
+  }
+
+  // Desktop pet attaches from Electron main over http://127.0.0.1 and cannot carry a
+  // browser session cookie or satisfy same-origin/HTTPS unlock UX. Proven loopback peers
+  // skip the cookie/HTTPS gate here; route handlers still enforce Host 127.0.0.1 + loopback
+  // remote, and session mint verifies the access key when server auth is on.
+  if (isDesktopObserverPath(pathname)) {
+    const remote = resolveSocketRemoteAddress();
+    if (isLoopbackClientAddress(remote)) {
+      return NextResponse.next();
     }
   }
 
