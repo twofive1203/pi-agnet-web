@@ -128,7 +128,7 @@ Attach-only desktop pet API. **Direct IPv4 loopback (`127.0.0.1`) + local mode o
 | `desktop-observer/snapshot/` | GET | Current bounded multi-source snapshot (`?reset=1` for baseline). Token required. `Cache-Control: no-store`. |
 | `desktop-observer/events/` | GET | Full-snapshot SSE + heartbeat comments. Initial event is always `reset`. Token expiry closes the stream. |
 
-Implementation: `lib/desktop-observer-access.ts`, `lib/task-observer-hub.ts`, adapters under `lib/task-observer-*.ts`.
+Implementation: `lib/desktop-observer-access.ts`, `lib/task-observer-hub.ts`, adapters under `lib/task-observer-*.ts`. Activity `deepLink` values are allowlisted relative WebUI paths from `lib/desktop-deep-link.ts` (Agent `?session=`, SnFlow `inspector=snflow&task=`, Automation `panel=automation`, Quick Command `panel=quick-commands`).
 
 ## Automation routes
 

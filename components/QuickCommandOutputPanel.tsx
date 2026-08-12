@@ -89,6 +89,8 @@ export function QuickCommandOutputPanel({ api }: Props) {
     rerunActive,
     clearEndedView,
     streamError,
+    deepLinkUnavailable,
+    clearDeepLinkUnavailable,
   } = api;
 
   const [dockHeight, setDockHeight] = useState(DEFAULT_DOCK_HEIGHT);
@@ -270,6 +272,7 @@ export function QuickCommandOutputPanel({ api }: Props) {
             title={t("panels.quickCommands.closePanel")}
             onClick={() => {
               // Closing the panel must not stop the run (R9).
+              clearDeepLinkUnavailable();
               setPanelOpen(false);
             }}
           >
@@ -301,10 +304,20 @@ export function QuickCommandOutputPanel({ api }: Props) {
         <div className="quick-command-panel-stream-error" role="status">{streamError}</div>
       )}
 
+      {!panelCollapsed && deepLinkUnavailable && (
+        <div className="quick-command-panel-stream-error" role="status">
+          {t("panels.quickCommands.deepLinkUnavailable")}
+        </div>
+      )}
+
       {!panelCollapsed && (
         <div className="quick-command-panel-body">
           {!active ? (
-            <div className="quick-command-panel-empty">{t("panels.quickCommands.noActiveOutput")}</div>
+            <div className="quick-command-panel-empty">
+              {deepLinkUnavailable
+                ? t("panels.quickCommands.deepLinkUnavailable")
+                : t("panels.quickCommands.noActiveOutput")}
+            </div>
           ) : (
             <div ref={hostRef} className="quick-command-xterm-host" />
           )}

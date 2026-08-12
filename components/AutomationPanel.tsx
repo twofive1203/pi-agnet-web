@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "@/components/I18nProvider";
 import { useAppDialog } from "@/components/AppDialogProvider";
 import { useAutomations } from "@/hooks/useAutomations";
@@ -67,6 +67,9 @@ export function AutomationPanel(props: {
   onUnreadChange?: (count: number) => void;
   /** Open a promoted normal session in the main chat UI using canonical cwd/path. */
   onOpenSession?: (session: { id: string; cwd: string; path: string }) => void;
+  /** One-time desktop-pet deep link; consumed once while open. */
+  initialDeepLink?: { taskId: string; runId: string } | null;
+  onInitialDeepLinkConsumed?: () => void;
 }) {
   const { t } = useI18n();
   const dialog = useAppDialog();
@@ -103,6 +106,29 @@ export function AutomationPanel(props: {
     },
   });
   const [editorDirty, setEditorDirty] = useState(false);
+  const [deepLinkUnavailable, setDeepLinkUnavailable] = useState(false);
+  const deepLinkConsumedKeyRef = useRef<string | null>(null);
+
+  // One-time desktop deep link: open the intended run once per intent key.
+  useEffect(() => {
+    if (!props.open || !props.initialDeepLink) return;
+    const key = `${props.initialDeepLink.taskId}\0${props.initialDeepLink.runId}`;
+    if (deepLinkConsumedKeyRef.current === key) return;
+    deepLinkConsumedKeyRef.current = key;
+    const { taskId, runId } = props.initialDeepLink;
+    let cancelled = false;
+    void (async () => {
+      const found = await auto.openRunWithDetails(taskId, runId);
+      if (cancelled) return;
+      setDeepLinkUnavailable(!found);
+      props.onInitialDeepLinkConsumed?.();
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // Intentionally only reacts to open + intent identity; auto methods are stable enough for one-shot.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.open, props.initialDeepLink?.taskId, props.initialDeepLink?.runId]);
 
   const selectedTask = useMemo(() => {
     if (auto.view.kind !== "task" && auto.view.kind !== "run" && auto.view.kind !== "editor") return null;
@@ -300,6 +326,11 @@ export function AutomationPanel(props: {
       {auto.error ? (
         <div className="error" role="alert">
           {auto.error}
+        </div>
+      ) : null}
+      {deepLinkUnavailable ? (
+        <div className="error" role="status">
+          {t("automation.deepLinkUnavailable")}
         </div>
       ) : null}
 

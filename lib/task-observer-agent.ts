@@ -9,6 +9,7 @@
 import { createHash } from "node:crypto";
 import { classifyChatProviderError } from "./chat-provider-errors";
 import { getAgentLifecycleDirective } from "./agent-lifecycle";
+import { buildAgentDeepLink } from "./desktop-deep-link";
 import { isSubagentToolName } from "./subagent-runs";
 import { getPathBaseName } from "./workspace-title";
 import {
@@ -440,7 +441,7 @@ export class AgentTaskObserver {
       updatedAt: activity.updatedAt,
       endedAt: activity.endedAt,
       children: Array.from(activity.children.values()),
-      deepLink: `/?session=${encodeURIComponent(sessionId)}`,
+      deepLink: buildAgentDeepLink(sessionId),
       lastTransitionId: this.transitionIdFor(activity),
       stateVersion: activity.stateVersion,
     };

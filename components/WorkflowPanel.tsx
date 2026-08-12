@@ -93,6 +93,8 @@ export function WorkflowPanel({
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const [bundledVersion, setBundledVersion] = useState<string | null>(null);
   const [projectVersion, setProjectVersion] = useState<string | null>(null);
+  const [deepLinkUnavailable, setDeepLinkUnavailable] = useState(false);
+  const tasksLoadedOnceRef = useRef(false);
 
   // Draft fields
   const [draftTitle, setDraftTitle] = useState("");
@@ -312,9 +314,28 @@ export function WorkflowPanel({
   }, [includeArchivedDefault]);
 
   useEffect(() => {
-    if (!focusedTaskId) return;
-    if (tasks.some((task) => task.id === focusedTaskId)) setSelectedId(focusedTaskId);
-  }, [focusedTaskId, tasks]);
+    if (!listLoading && cwd) tasksLoadedOnceRef.current = true;
+  }, [listLoading, cwd]);
+
+  useEffect(() => {
+    tasksLoadedOnceRef.current = false;
+    setDeepLinkUnavailable(false);
+  }, [cwd]);
+
+  useEffect(() => {
+    if (!focusedTaskId) {
+      setDeepLinkUnavailable(false);
+      return;
+    }
+    // Wait until the first list load for this cwd finishes before declaring miss.
+    if (!tasksLoadedOnceRef.current || listLoading) return;
+    if (tasks.some((task) => task.id === focusedTaskId)) {
+      setSelectedId(focusedTaskId);
+      setDeepLinkUnavailable(false);
+      return;
+    }
+    setDeepLinkUnavailable(true);
+  }, [focusedTaskId, tasks, listLoading]);
 
   useEffect(() => {
     if (!selectedId) {
@@ -723,6 +744,11 @@ export function WorkflowPanel({
         <div className="workflow-task-list">
           {listLoading && <div className="inspector-state inspector-state-loading workflow-list-state">{t("workflow.loadingTasks")}</div>}
           {listError && <div className="inspector-state inspector-state-error workflow-list-state" role="alert">{listError}</div>}
+          {deepLinkUnavailable && (
+            <div className="inspector-state inspector-state-error workflow-list-state" role="status">
+              {t("workflow.deepLinkUnavailable")}
+            </div>
+          )}
           {!listLoading && resolvedCwd && (
             <div className="workflow-cwd-row" title={resolvedCwd}>
               cwd: {shortPath(resolvedCwd, 42)}

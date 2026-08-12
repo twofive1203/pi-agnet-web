@@ -5,6 +5,7 @@
  * secrets, run summaries that embed model text, or document contents.
  */
 
+import { buildSnflowDeepLink as buildSnflowDeepLinkHref } from "./desktop-deep-link";
 import {
   buildProjectDisplayNameFromCwd,
   buildProjectKeyFromCwd,
@@ -159,11 +160,10 @@ export function projectSnflowRun(input: {
 
 function buildSnflowDeepLink(run: WorkflowRunRecord): string {
   const sessionId = (run.parentSessionId || run.hostSessionId || "").trim();
-  const taskId = encodeURIComponent(run.taskId);
-  if (sessionId) {
-    return `/?session=${encodeURIComponent(sessionId)}&inspector=snflow&task=${taskId}`;
-  }
-  return `/?inspector=snflow&task=${taskId}`;
+  return buildSnflowDeepLinkHref({
+    taskId: run.taskId,
+    sessionId: sessionId || null,
+  });
 }
 
 /**

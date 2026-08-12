@@ -350,7 +350,7 @@ flowchart LR
 
 ---
 
-### [ ] U5. Add one-time WebUI deep links
+### [x] U5. Add one-time WebUI deep links
 
 **Goal:** Open the exact ordinary session, SnFlow task, Automation run or Quick Command output in the existing browser WebUI.
 
@@ -387,9 +387,11 @@ flowchart LR
 
 **Verification:** Every activity has a safe route or explicit unavailable fallback.
 
+**Completed:** 2026-08-12 — `lib/desktop-deep-link.ts` allowlist builders/parse/intent/strip; AppShell one-time intent consumption; Workflow/Automation/Quick Command unavailable fallbacks; adapters emit shared builders; `npm run test:desktop-deep-links`.
+
 ---
 
-### [ ] U6. Implement desktop connection client and service-not-running UX
+### [x] U6. Implement desktop connection client and service-not-running UX
 
 **Goal:** Connect only to an already running compatible local service and provide clear no-service/incompatible/reconnect behavior.
 
@@ -424,6 +426,8 @@ flowchart LR
 - Quit creates no child-process or service mutation call.
 
 **Verification:** Connection handling cannot affect service lifecycle.
+
+**Completed:** 2026-08-12 — pure `desktop/main/connection-state.ts` machine; `observer-client.ts` health/protocol/session probe + SSE handlers (injectable fetch, token main-only); `settings-store.ts` safe defaults/LRU; static no child_process/PID contract; `npm run test:desktop-connection`.
 
 ---
 

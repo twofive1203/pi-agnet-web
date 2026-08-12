@@ -5,6 +5,7 @@
  * or exit reason strings — only name, status codes, and timestamps.
  */
 
+import { buildQuickCommandDeepLink } from "./desktop-deep-link";
 import {
   buildProjectDisplayNameFromCwd,
   buildProjectKeyFromCwd,
@@ -103,7 +104,7 @@ export function projectQuickCommandSource(
       updatedAt: at,
       endedAt: source.endedAt || undefined,
       children: [],
-      deepLink: `/?panel=quick-commands&run=${encodeURIComponent(source.runId)}`,
+      deepLink: buildQuickCommandDeepLink({ runId: source.runId }),
       lastTransitionId: transitionId,
       stateVersion: 1,
     };

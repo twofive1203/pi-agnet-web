@@ -35,6 +35,11 @@ import { recordSubagentClientMetric } from "@/lib/subagent-observability-client"
 import { SubagentStore } from "@/lib/subagent-store";
 import { makeTempSessionId } from "./sidebar/sidebar-utils";
 import { useQuickCommands } from "@/hooks/useQuickCommands";
+import {
+  parseDesktopDeepLinkIntent,
+  stripDesktopDeepLinkIntentParams,
+  type DesktopDeepLinkIntent,
+} from "@/lib/desktop-deep-link";
 import { QuickCommandBar } from "./QuickCommandBar";
 import { QuickCommandConfigModal } from "./QuickCommandConfigModal";
 import { QuickCommandOutputPanel } from "./QuickCommandOutputPanel";
@@ -389,6 +394,8 @@ export function AppShell() {
   const inspectorTabRefs = useRef<Partial<Record<InspectorMode, HTMLButtonElement | null>>>({});
   const inspectorButtonRef = useRef<HTMLButtonElement>(null);
   const [automationOpen, setAutomationOpen] = useState(false);
+  /** One-shot Automation deep link from desktop pet / URL; cleared after panel consumes it. */
+  const [automationDeepLink, setAutomationDeepLink] = useState<{ taskId: string; runId: string } | null>(null);
   // Lightweight owner keeps badge live while the heavy drawer stays code-split.
   // While open, the drawer owns updates; keep last polled value until it reports.
   const polledAutomationUnread = useAutomationUnread(!automationOpen);
@@ -507,6 +514,12 @@ export function AppShell() {
   }, [commitRightPanelWidth, rightPanelOpen, rightPanelResizable]);
 
   const [initialSessionId] = useState<string | null>(() => searchParams.get("session"));
+  /** Capture desktop-pet panel intents once on mount; never re-read after consumption. */
+  const [pendingDesktopIntent] = useState<DesktopDeepLinkIntent | null>(() => {
+    const parsed = parseDesktopDeepLinkIntent(searchParams);
+    return parsed.ok ? parsed.intent : null;
+  });
+  const desktopIntentAppliedRef = useRef(false);
   const [activeCwd, setActiveCwd] = useState<string | null>(null);
   const [activeCwdGit, setActiveCwdGit] = useState<GitInfo | undefined>(undefined);
   // True once the initial ?session= URL param has been resolved (or confirmed absent)
@@ -769,6 +782,48 @@ export function AppShell() {
   useEffect(() => {
     setFocusedWorkflowTaskId(null);
   }, [workflowCwd]);
+
+  // One-time desktop-pet / URL panel intents. Consumed once so closing a panel is not undone by rerender.
+  useEffect(() => {
+    if (desktopIntentAppliedRef.current) return;
+    if (!pendingDesktopIntent) {
+      desktopIntentAppliedRef.current = true;
+      return;
+    }
+
+    const intent = pendingDesktopIntent;
+    const needsSessionGate =
+      Boolean(initialSessionId) ||
+      (intent.kind === "snflow" && Boolean(intent.sessionId));
+    if (needsSessionGate && !initialSessionRestored) return;
+
+    desktopIntentAppliedRef.current = true;
+
+    if (intent.kind === "snflow") {
+      setFocusedWorkflowTaskId(intent.taskId);
+      void openInspectorTab("workflow");
+    } else if (intent.kind === "automation") {
+      void loadAutomationPanel();
+      setAutomationDeepLink({ taskId: intent.taskId, runId: intent.runId });
+      setAutomationOpen(true);
+    } else if (intent.kind === "quick_command") {
+      void quickCommands.openRunById(intent.runId);
+    }
+
+    // Drop one-time query keys; keep ?session= so ordinary restore stays stable.
+    const currentSearch = typeof window !== "undefined" ? window.location.search : "";
+    const { search } = stripDesktopDeepLinkIntentParams(currentSearch);
+    if (currentSearch !== search) {
+      router.replace(search || "/", { scroll: false });
+    }
+  }, [
+    pendingDesktopIntent,
+    initialSessionId,
+    initialSessionRestored,
+    openInspectorTab,
+    quickCommands,
+    router,
+  ]);
 
   // Clear the session widget when changing sessions — the pointer is
   // session-scoped and an old task should not surface in a new session.
@@ -1525,7 +1580,12 @@ export function AppShell() {
       >
         <AutomationPanel
           open={automationOpen}
-          onClose={() => setAutomationOpen(false)}
+          onClose={() => {
+            setAutomationOpen(false);
+            setAutomationDeepLink(null);
+          }}
+          initialDeepLink={automationDeepLink}
+          onInitialDeepLinkConsumed={() => setAutomationDeepLink(null)}
           onUnreadChange={setAutomationUnread}
           onOpenSession={(session) => {
             // Open/select promoted session using promotion cwd/path (not activeCwdRef synthetic empty path).

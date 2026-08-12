@@ -467,14 +467,19 @@ export function useAutomations(options?: {
     [runsLimit],
   );
 
-  /** Inbox/list deep link: fetch/insert the specific run record, then select + load details. */
+  /**
+   * Inbox/list/desktop deep link: fetch/insert the specific run record, then select + load details.
+   * @returns false when the run cannot be loaded (missing/unavailable target).
+   */
   const openRunWithDetails = useCallback(
-    async (taskId: string, runId: string) => {
+    async (taskId: string, runId: string): Promise<boolean> => {
       await ensureControlSession();
       // Always fetch the specific run so inbox entries outside the loaded page still resolve.
+      let found = false;
       try {
         const data = await api<{ run: Run }>(`/api/automations/runs/${encodeURIComponent(runId)}`);
         if (data.run) {
+          found = true;
           setRuns((prev) => {
             const others = prev.filter((r) => r.id !== runId);
             return [...others, data.run];
@@ -485,7 +490,10 @@ export function useAutomations(options?: {
       }
       setView(openRun(taskId, runId));
       setTranscriptOffset(0);
-      await Promise.all([loadRunSession(runId, 0), loadRunChanges(runId)]);
+      if (found) {
+        await Promise.all([loadRunSession(runId, 0), loadRunChanges(runId)]);
+      }
+      return found;
     },
     [loadRunSession, loadRunChanges],
   );

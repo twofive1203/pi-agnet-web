@@ -102,6 +102,8 @@ export function useQuickCommands(projectCwd: string | null | undefined) {
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [runDetail, setRunDetail] = useState<QuickCommandRunDetail | null>(null);
   const [streamError, setStreamError] = useState<string | null>(null);
+  /** One-time deep-link miss (e.g. run gone after service restart). */
+  const [deepLinkUnavailable, setDeepLinkUnavailable] = useState(false);
 
   const [configOpen, setConfigOpen] = useState(false);
   const [configLoading, setConfigLoading] = useState(false);
@@ -246,12 +248,14 @@ export function useQuickCommands(projectCwd: string | null | undefined) {
     setRunDetail(null);
     setPanelOpen(false);
     setPanelCollapsed(false);
+    setDeepLinkUnavailable(false);
     setTrustPreview(null);
     setPendingCommandId(null);
     setConfigOpen(false);
   }, [projectCwd, detachStream]);
 
   const focusRun = useCallback((run: QuickCommandRunSummary | QuickCommandRunDetail, options?: { expand?: boolean }) => {
+    setDeepLinkUnavailable(false);
     setActiveRunId(run.id);
     setPanelOpen(true);
     if (options?.expand !== false) setPanelCollapsed(false);
@@ -262,6 +266,45 @@ export function useQuickCommands(projectCwd: string | null | undefined) {
     }
     attachStream(run.id);
   }, [attachStream]);
+
+  /**
+   * Desktop-pet / URL deep link: open a run by stable id.
+   * Missing runs (common after service restart) open the panel with an unavailable fallback.
+   */
+  const openRunById = useCallback(async (runId: string): Promise<boolean> => {
+    const id = runId.trim();
+    if (!id) return false;
+    setDeepLinkUnavailable(false);
+    setPanelOpen(true);
+    setPanelCollapsed(false);
+    try {
+      const res = await fetch(`/api/quick-commands/runs/${encodeURIComponent(id)}`);
+      const data = (await res.json().catch(() => ({}))) as {
+        run?: QuickCommandRunDetail;
+        error?: string;
+      };
+      if (res.status === 404 || !res.ok || !data.run) {
+        detachStream();
+        setRunDetail(null);
+        setActiveRunId(null);
+        setDeepLinkUnavailable(true);
+        return false;
+      }
+      focusRun(data.run, { expand: true });
+      void refresh();
+      return true;
+    } catch {
+      detachStream();
+      setRunDetail(null);
+      setActiveRunId(null);
+      setDeepLinkUnavailable(true);
+      return false;
+    }
+  }, [detachStream, focusRun, refresh]);
+
+  const clearDeepLinkUnavailable = useCallback(() => {
+    setDeepLinkUnavailable(false);
+  }, []);
 
   const startCommand = useCallback(async (
     commandId: string,
@@ -503,7 +546,10 @@ export function useQuickCommands(projectCwd: string | null | undefined) {
     activeRunId,
     runDetail,
     streamError,
+    deepLinkUnavailable,
+    clearDeepLinkUnavailable,
     focusRun,
+    openRunById,
     startCommand,
     cancelActiveRun,
     rerunActive,

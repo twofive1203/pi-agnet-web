@@ -13,6 +13,7 @@ import {
   type AutomationRunStatus,
   type AutomationTaskRecord,
 } from "./automation-types";
+import { buildAutomationDeepLink } from "./desktop-deep-link";
 import {
   buildProjectDisplayNameFromCwd,
   buildProjectKeyFromCwd,
@@ -146,7 +147,7 @@ export function projectAutomationRun(input: {
       updatedAt: at,
       endedAt: run.completedAt || undefined,
       children: [],
-      deepLink: `/?panel=automation&task=${encodeURIComponent(run.taskId)}&run=${encodeURIComponent(run.id)}`,
+      deepLink: buildAutomationDeepLink({ taskId: run.taskId, runId: run.id }),
       lastTransitionId: transitionId,
       stateVersion: 1,
     };

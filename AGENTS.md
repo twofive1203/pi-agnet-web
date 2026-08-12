@@ -26,7 +26,9 @@ npm run dev     # http://localhost:62666
 | `npm run test:session-performance` | Durable session performance (weighted TPS/TTFT) domain, sidecar, and lifecycle smoke suite. |
 | `npm run test:task-observer` | Desktop pet task-observer domain contract (identity/presentation/privacy/budgets) smoke suite. |
 | `npm run test:desktop-observer-api` | Desktop observer access gate, hub revision/coalesce, and health boundary smoke suite. |
-| `npm run test:desktop-observer` | Combined task-observer domain + desktop-observer API smokes. |
+| `npm run test:desktop-deep-links` | Allowlisted WebUI deep-link builders/parse/intent/strip smoke suite. |
+| `npm run test:desktop-connection` | Desktop attach-only connection state machine + probe client + settings smoke suite. |
+| `npm run test:desktop-observer` | Combined task-observer domain + desktop-observer API + deep-link + connection smokes. |
 | `npm run test:scale-baseline` | Usage/allowed-roots/session-index/long-JSONL scale baseline + accelerated-path correctness smoke. |
 | `npm run test:usage` | Usage timeline projection + parent/subagent/archive accounting smoke suite. |
 | `npm run test:session-tabs` | Same-session multi-tab write-lock coordination pure smoke. |
