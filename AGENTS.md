@@ -30,6 +30,7 @@ npm run dev     # http://localhost:62666
 | `npm run test:git-diff` | Commit and staged/unstaged working-tree diff smoke suite. |
 | `npm run test:file-search` | Bounded async workspace filename search smoke suite. |
 | `npm run test:file-upload` | Chat upload path-boundary/sanitize/exclusive-write smoke suite. |
+| `npm run test:quick-commands` | Project quick-command config/trust/runner/SSE/cancel/bounded-output smoke suite. |
 | `npm run test:snflow` | SnFlow setup/store/session-link/spec-review smoke suite. |
 | `npm run test:automation` | Automation store/schedule/policy/runner/API smoke suite. |
 | `npm run test:mcp` | MCP configuration domain/API smoke suite (adapter-native files, secrets, revisions). |
@@ -101,6 +102,7 @@ npm run dev     # http://localhost:62666
 | WebUI-owned SnFlow tasks/runs | `lib/workflow-store.ts`, `lib/workflow-chat-lifecycle.ts`, `lib/workflow-run-manager.ts`, `app/api/workflows/**`, `components/WorkflowPanel.tsx` | `docs/modules/api.md`, `docs/modules/library.md`, `docs/modules/frontend.md` |
 | Scheduled Agent Automation | `lib/automation-service.ts`, `lib/automation-scheduler.ts`, `lib/automation-runner.ts`, `app/api/automations/**`, `components/AutomationPanel.tsx`, `instrumentation.ts` | `docs/architecture/decisions/automation-scheduler.md`, `docs/modules/api.md`, `docs/modules/library.md`, `docs/modules/frontend.md` |
 | Chrome tab debugging (local bridge + extension) | `lib/browser-*.ts`, `app/api/browser/**`, `components/BrowserBindingPanel.tsx`, `extensions/chrome-tab-debug/` | `docs/modules/api.md`, `docs/modules/library.md`, `docs/modules/frontend.md`, `docs/operations/troubleshooting.md`, `extensions/chrome-tab-debug/README.md` |
+| Project quick commands (one-shot task runner + output dock) | `lib/quick-command-*.ts`, `app/api/quick-commands/**`, `hooks/useQuickCommands.ts`, `components/QuickCommand*.tsx` | `docs/modules/api.md`, `docs/modules/library.md`, `docs/modules/frontend.md`, `docs/brainstorms/2026-08-12-project-quick-commands-requirements.md` |
 
 ## Project Invariants
 
@@ -164,6 +166,7 @@ node_modules/.bin/tsc --noEmit
 | Server access policy (optional auth-bypass CIDRs; env can override) | `~/.pi/agent/server-access-policy.json` |
 | Bundled Web Search provider/API key/base URL config | XDG-aware `~/.config/rpiv-web-tools/config.json` (or `XDG_CONFIG_HOME`) |
 | WebUI SnFlow tasks | `<cwd>/.pi/snflows/tasks/<task-id>/` (archived: `<cwd>/.pi/snflows/archived/<task-id>/`; version/assets: `.pi/snflows/.version`, `.pi/extensions/snflow/`, `.pi/skills/snflow-dev/`, `.pi/agents/snflow-*.md`) |
+| Project quick commands | `<cwd>/.pi/quick-commands.json` (definitions); `~/.pi/agent/quick-command-trust.json` (executable digests only); runs are in-memory per process |
 | Automation tasks/runs/sessions | `~/.pi/agent/automations/` (`tasks.json`, locks, claims, runs, promotions, audit, sessions); default cwd `~/pi-automation-cwd` (canonical path persisted once) |
 
 ## Archive Rules

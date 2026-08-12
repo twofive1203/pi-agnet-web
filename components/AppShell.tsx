@@ -34,6 +34,11 @@ import type { ChatInputHandle } from "./ChatInput";
 import { recordSubagentClientMetric } from "@/lib/subagent-observability-client";
 import { SubagentStore } from "@/lib/subagent-store";
 import { makeTempSessionId } from "./sidebar/sidebar-utils";
+import { useQuickCommands } from "@/hooks/useQuickCommands";
+import { QuickCommandBar } from "./QuickCommandBar";
+import { QuickCommandConfigModal } from "./QuickCommandConfigModal";
+import { QuickCommandOutputPanel } from "./QuickCommandOutputPanel";
+import { QuickCommandTrustDialog } from "./QuickCommandTrustDialog";
 
 // Settings-class surfaces stay out of the initial chat shell chunk.
 // loading: null — never inject an in-flow placeholder (that flashed the chat shell).
@@ -755,6 +760,9 @@ export function AppShell() {
   const workspaceCwd = activeCwd ?? selectedSession?.cwd ?? newSessionCwd;
   const workflowCwd = selectedSession?.cwd ?? newSessionCwd ?? activeCwd;
   const terminalCwd = activeCwd ?? selectedSession?.cwd ?? newSessionCwd;
+  // Quick commands follow activeCwd / project workspace isolation (not session id).
+  const quickCommandCwd = activeCwd ?? selectedSession?.cwd ?? newSessionCwd;
+  const quickCommands = useQuickCommands(quickCommandCwd);
   const browserTitleCwd = selectedSession?.cwd ?? newSessionCwd ?? activeCwd;
   const browserTitleGit = selectedSession?.cwd === browserTitleCwd ? selectedSession.git : activeCwdGit;
 
@@ -1293,6 +1301,7 @@ export function AppShell() {
                 void loadModelsConfig();
                 setModelsConfigOpen(true);
               }}
+              composerTopSlot={quickCommandCwd ? <QuickCommandBar api={quickCommands} /> : null}
             />
           ) : showPlaceholder ? (
             <div className="workbench-empty-state">
@@ -1333,6 +1342,7 @@ export function AppShell() {
             />
           )}
           </div>
+          <QuickCommandOutputPanel api={quickCommands} />
           {terminalOpen && terminalEnabled && terminalDockCwd && (
             <TerminalPanel
               cwd={terminalDockCwd}
@@ -1346,6 +1356,14 @@ export function AppShell() {
             />
           )}
         </div>
+        <QuickCommandConfigModal api={quickCommands} />
+        {quickCommands.trustPreview && (
+          <QuickCommandTrustDialog
+            trust={quickCommands.trustPreview}
+            onConfirm={() => { void quickCommands.confirmTrustAndRun(); }}
+            onCancel={quickCommands.cancelTrust}
+          />
+        )}
         </div>
       </div>
 

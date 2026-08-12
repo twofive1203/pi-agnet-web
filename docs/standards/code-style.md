@@ -51,6 +51,7 @@ npm run test:scale-baseline  # Usage/index/allowed-roots scale + accelerated-pat
 npm run test:git-diff        # commit and staged/unstaged working-tree diff smoke
 npm run test:file-search     # bounded async workspace filename search smoke
 npm run test:file-upload     # chat upload path-boundary / sanitize / exclusive-write smoke
+npm run test:quick-commands # project quick-command config/trust/runner/cancel/output bounds
 npm run test:snflow       # SnFlow setup/store/session-link/spec-review smokes
 npm run test:runtime      # Next server externals + published launcher invariants
 npm run test:automation   # Automation store/schedule/policy/runner/API/security smokes

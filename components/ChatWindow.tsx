@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { AgentMessage, SessionInfo, SessionTreeNode } from "@/lib/types";
 import { MessageView } from "./MessageView";
 import { ChatInput, type ChatInputHandle } from "./ChatInput";
@@ -70,6 +70,8 @@ interface Props {
   onTodoActiveChange?: (active: boolean) => void;
   /** Open Models configuration (send-block / failure fix path). */
   onOpenModels?: () => void;
+  /** Optional slot rendered above the composer (project quick commands). */
+  composerTopSlot?: ReactNode;
 }
 
 function isPowerbarExtensionItem(item: { key: string }): boolean {
@@ -153,7 +155,7 @@ function Typewriter({ phrases }: { phrases: string[] }) {
   );
 }
 
-export const ChatWindow = memo(function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSubagentChange, onSessionStatsChange, onSessionPerformanceChange, onContextUsageChange, onAgentRunningChange, onTodoActiveChange, onOpenModels }: Props) {
+export const ChatWindow = memo(function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSubagentChange, onSessionStatsChange, onSessionPerformanceChange, onContextUsageChange, onAgentRunningChange, onTodoActiveChange, onOpenModels, composerTopSlot }: Props) {
   const { t } = useI18n();
   const typewriterPhrases = useMemo(
     () => TYPEWRITER_KEYS.map((key) => t(key)),
@@ -541,6 +543,7 @@ export const ChatWindow = memo(function ChatWindow({ session, newSessionCwd, onA
             <ExtensionWidgetStack
               items={visibleExtensionWidgets.filter((item) => item.placement === "aboveEditor")}
             />
+            {composerTopSlot}
             {chatInputElement}
             <ExtensionWidgetStack
               items={visibleExtensionWidgets.filter((item) => item.placement === "belowEditor")}
@@ -711,6 +714,7 @@ export const ChatWindow = memo(function ChatWindow({ session, newSessionCwd, onA
         <ExtensionWidgetStack
           items={visibleExtensionWidgets.filter((item) => item.placement === "aboveEditor")}
         />
+        {composerTopSlot}
         {chatInputElement}
         <ExtensionWidgetStack
           items={visibleExtensionWidgets.filter((item) => item.placement === "belowEditor")}
