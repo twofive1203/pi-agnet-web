@@ -112,7 +112,7 @@ Run on clean Windows 10 and Windows 11 profiles when a signed or unsigned instal
 | Server mode refusal | `spi --server` on loopback/non-loopback | Pet shows server-mode unsupported; does not attach | **未执行** |
 | Notification permission denied | Deny Windows notifications | Activity tray still works | **未执行** — U6 自动契约已覆盖通知 host 不支持/抛错时不影响 Activity tray，并验证本地化安全文案；Windows 权限拒绝实机未执行 |
 | Launch at login | Enable option, reboot | Pet starts; does **not** auto-start `spi` | **未执行** |
-| DPI / multi-monitor | 100%/150%/200%, move across displays | Pet position sane; not off-screen permanently | **未执行** — U2/U6 自动契约已覆盖 settings 迁移、三档 `petScale` 同比缩放、离屏位置拉回最近 workArea、恢复默认位置与中等尺寸；Windows 100/150/200% 与主副屏实机未执行 |
+| DPI / multi-monitor | 100%/150%/200%, move across displays in both directions | Pet position sane; crosses each display boundary; not off-screen permanently | **未执行** — 自动契约已覆盖 settings 迁移、三档 `petScale` 同比缩放、离屏位置拉回最近 workArea、恢复默认位置与中等尺寸，以及拖拽使用完整虚拟桌面边界而非锁定当前显示器；Windows 100/150/200% 与 1K↔2K 双向拖拽实机未执行 |
 | Virtual desktop / focus | Hide pet; keep another app focused on another virtual desktop; let a task go Running → Ready, then drop/reconnect SSE | Current app keeps focus; virtual desktop does not switch; hidden pet stays hidden; OS toast (if allowed) does not raise the pet window | **未执行** — U1 自动契约已覆盖 show/focus 调用序列；Windows 虚拟桌面实机未执行 |
 | User activation | Tray “显示桌宠”, tray icon click, or second-instance while hidden | Pet becomes visible, click-through is cleared, and the pet window focuses | **未执行** — U1 自动契约已覆盖 user-show / second-instance host 序列 |
 | Taskbar positions | Bottom/left/top | Tray menu usable | **未执行** |

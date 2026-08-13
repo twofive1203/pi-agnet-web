@@ -35,14 +35,16 @@ Generated main/preload bundles (`main.js`, `pet-preload.js`, maps, `.build-stamp
 | --- | --- |
 | Drag pet body (or top grey grip) | Move frameless window (body uses click-vs-drag threshold) |
 | Click pet body | Toggle Activity tray (pet icon stays put; tray grows down/right, or up/left near edges) |
-| Activity tray → **⚙** | Choose the built-in snail or size, restore default position and medium size, and adjust always-on-top, click-through, login launch, and notifications |
+| Activity tray → **⚙** | Manage the server access key, choose the built-in snail or size, restore default position and medium size, and adjust always-on-top, click-through, login launch, and notifications |
 | Activity tray → **⌄** | Collapse only the Activity tray; the pet stays visible |
 | Pet chrome → **×** | Hide to system tray (process keeps observing) |
 | Tray → 显示桌宠 | Show window again |
 | Tray → 退出桌宠 | Quit pet only; `spi` / tasks continue |
 | Tray / UI → 复制启动命令 | Clipboard `spi --no-open` (never executed) |
 
-Default first-run position: primary work-area bottom-right. Saved `(0,0)` is treated as unset. Display add/remove/metrics changes clamp the window back into the nearest work area.
+Default first-run position: primary work-area bottom-right. Saved `(0,0)` is treated as unset. Display add/remove/metrics changes clamp the window back into the nearest work area. During drag, the pet is constrained by the full virtual desktop rather than one display so mixed-resolution / mixed-DPI screens remain traversable in both directions.
+
+Running activity durations refresh locally once per second only while the Activity tray is visible; this does not poll the service or rebuild the activity snapshot.
 
 ## Layout
 

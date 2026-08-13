@@ -213,6 +213,17 @@ export function formatActivityProgress(
   return childCount > 0 ? `${childCount} Subagent` : null;
 }
 
+/** Recompute an activity duration locally without requesting a new server snapshot. */
+export function resolveActivityElapsedMs(
+  activity: Pick<DesktopActivityRow, "startedAt" | "endedAt" | "elapsedMs">,
+  now: number,
+): number | null {
+  const start = Date.parse(activity.startedAt ?? "");
+  const end = activity.endedAt ? Date.parse(activity.endedAt) : now;
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return activity.elapsedMs;
+  return Math.max(0, Math.floor(end - start));
+}
+
 /** Format elapsed duration for tray rows (client-side only). */
 export function formatElapsed(ms: number | null | undefined): string {
   if (ms == null || !Number.isFinite(ms) || ms < 0) return "—";
@@ -451,10 +462,10 @@ export function connectionBannerText(input: {
   }
   if (input.connectionStatus === "incompatible") {
     if (input.reasonCode === "auth_required") {
-      return "服务已开启访问密钥 — 请在下方粘贴密钥后连接";
+      return "服务已开启访问密钥 — 请在桌宠设置中粘贴密钥后连接";
     }
     if (input.reasonCode === "auth_invalid") {
-      return "访问密钥无效 — 请重新粘贴正确的密钥";
+      return "访问密钥无效 — 请在桌宠设置中重新填写";
     }
     return `不兼容的服务${input.reasonCode ? ` (${input.reasonCode})` : ""} — 请检查端口后重试`;
   }

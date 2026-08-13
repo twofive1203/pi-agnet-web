@@ -100,21 +100,6 @@
           </div>
         </header>
         <div id="connection-banner" class="connection-banner" hidden></div>
-        <div id="auth-panel" class="auth-panel" hidden>
-          <label class="auth-label" for="access-key-input">访问密钥</label>
-          <input
-            id="access-key-input"
-            class="auth-input"
-            type="password"
-            autocomplete="off"
-            spellcheck="false"
-            placeholder="粘贴 spi --server 启动时显示的密钥"
-          />
-          <div class="auth-actions">
-            <button type="button" id="btn-save-key" class="tray-btn">连接</button>
-            <button type="button" id="btn-clear-key" class="tray-btn" hidden>清除密钥</button>
-          </div>
-        </div>
         <div id="activity-filters" class="activity-filters" role="group" aria-label="筛选活动">
           <button type="button" class="activity-filter" data-activity-filter="all" aria-pressed="true">
             全部 <span data-filter-count>0</span>
@@ -130,6 +115,21 @@
           </button>
         </div>
         <section id="settings-panel" class="settings-panel" hidden aria-label="桌宠设置">
+          <div id="auth-panel" class="auth-panel" hidden>
+            <label class="auth-label" for="access-key-input">连接 · 访问密钥</label>
+            <input
+              id="access-key-input"
+              class="auth-input"
+              type="password"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="粘贴 spi --server 启动时显示的密钥"
+            />
+            <div class="auth-actions">
+              <button type="button" id="btn-save-key" class="tray-btn">连接</button>
+              <button type="button" id="btn-clear-key" class="tray-btn" hidden>清除密钥</button>
+            </div>
+          </div>
           <div class="settings-heading">角色</div>
           <div id="pet-picker" class="pet-picker" role="radiogroup" aria-label="选择桌宠">
             <button type="button" class="pet-option" data-pet-id="snail-default" role="radio">

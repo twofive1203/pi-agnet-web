@@ -78,6 +78,7 @@ import {
   resolvePetLayoutSpec,
   resolvePetWindowReveal,
   sendPetWindowChannel,
+  unionWorkAreas,
   PET_LAYOUT,
   PET_WINDOW_DEFAULTS,
   type PetWindowHandle,
@@ -99,6 +100,7 @@ import {
   moveActivitySelection,
   petSourceLabel,
   reducePetBubbleState,
+  resolveActivityElapsedMs,
   resolveActivitySelection,
   resolveBuiltinPetManifest,
   resolvePetFrame,
@@ -900,6 +902,23 @@ async function main() {
   const moved = handleMoveBy(win, { dx: 12, dy: -8 }, workArea);
   assert.equal(moved.bounds?.x, win.bounds!.x + 12);
   assert.equal(moved.bounds?.y, win.bounds!.y - 8);
+  const mixedDisplayAreas = [
+    { x: 0, y: 0, width: 1920, height: 1080 },
+    { x: 1920, y: 0, width: 2560, height: 1440 },
+  ];
+  assert.deepEqual(unionWorkAreas(mixedDisplayAreas), {
+    x: 0,
+    y: 0,
+    width: 4480,
+    height: 1440,
+  });
+  const boundaryState = {
+    ...win,
+    bounds: { x: 1780, y: 300, width: 140, height: 160 },
+  };
+  const crossedDisplay = handleMoveBy(boundaryState, { dx: 200, dy: 0 }, mixedDisplayAreas);
+  assert.equal(crossedDisplay.bounds?.x, 1980);
+  assert.ok(crossedDisplay.bounds!.x >= mixedDisplayAreas[1]!.x);
   const clamped = clampWindowBounds(
     { x: 5000, y: -200, width: 140, height: 160 },
     workArea,
@@ -935,6 +954,14 @@ async function main() {
   });
   assert.ok(banner && banner.includes("蜗牛派服务未启动"));
   assert.ok(banner && banner.includes(DESKTOP_START_COMMAND));
+  assert.ok(
+    connectionBannerText({
+      connectionStatus: "incompatible",
+      canCopyStartCommand: false,
+      startCommand: DESKTOP_START_COMMAND,
+      reasonCode: "auth_required",
+    })?.includes("桌宠设置"),
+  );
 
   // --- Deep link gate ---
   const opened: string[] = [];
@@ -1191,6 +1218,24 @@ async function main() {
   assert.ok(staticFrame.glyph);
   assert.equal(getBuiltinPetManifest("missing").id, "snail-default");
   assert.equal(formatElapsed(65000), "1m 5s");
+  assert.equal(
+    resolveActivityElapsedMs(
+      { startedAt: "2026-08-13T00:00:00.000Z", elapsedMs: 1000 },
+      Date.parse("2026-08-13T00:01:05.000Z"),
+    ),
+    65000,
+  );
+  assert.equal(
+    resolveActivityElapsedMs(
+      {
+        startedAt: "2026-08-13T00:00:00.000Z",
+        endedAt: "2026-08-13T00:00:30.000Z",
+        elapsedMs: 1000,
+      },
+      Date.parse("2026-08-13T00:01:05.000Z"),
+    ),
+    30000,
+  );
   assert.equal(petSourceLabel("quick_command"), "快捷命令");
   assert.equal(formatActivityProgress({ kind: "ratio", current: 3, total: 4 }), "3/4 · 75%");
   assert.equal(
@@ -1363,6 +1408,7 @@ async function main() {
   const mainSrc = readFileSync(path.join(process.cwd(), "desktop", "main", "main.ts"), "utf8");
   assert.equal(/会中断任务|interrupt tasks|stop the service/.test(mainSrc), false);
   assert.ok(mainSrc.includes("No task-interruption warning") || mainSrc.includes("cannot stop"));
+  assert.ok(mainSrc.includes("dragWorkAreas.length > 0 ? dragWorkAreas : resolveWorkArea()"));
 
   // copyStartCommand must not execute
   assert.ok(mainSrc.includes("Copy only"));
@@ -1434,6 +1480,11 @@ async function main() {
   assert.ok(html.includes("隐藏到托盘"));
   assert.ok(html.includes('id="pet-caption"'));
   assert.ok(html.includes('id="settings-panel"'));
+  assert.ok(html.includes('id="auth-panel"'));
+  assert.ok(
+    html.indexOf('id="settings-panel"') < html.indexOf('id="auth-panel"'),
+    "access key controls must live inside desktop pet settings",
+  );
   assert.ok(html.includes('data-pet-id="snail-classic"'));
   assert.ok(html.includes('data-pet-scale="large"'));
   assert.ok(html.includes("恢复默认位置与尺寸"));
@@ -1482,6 +1533,11 @@ async function main() {
   assert.ok(petAppSource.includes("打开任务"));
   assert.ok(petAppSource.includes("标记已读"));
   assert.ok(petAppSource.includes("Subagent 安全摘要"));
+  assert.ok(petAppSource.includes("syncElapsedTimer"));
+  assert.ok(petAppSource.includes("current?.trayOpen === true"));
+  assert.ok(petAppSource.includes("!settingsOpen"));
+  assert.ok(petAppSource.includes("setInterval(refreshElapsedLabels, 1000)"));
+  assert.ok(petAppSource.includes("clearElapsedTimer"));
   const markReadHandler = petAppSource.match(
     /readButton\.addEventListener\("click",[\s\S]{0,160}?\n\s*}\);/,
   );

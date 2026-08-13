@@ -429,11 +429,29 @@ export function handleToggleTray(
   };
 }
 
+/** Bounding rectangle of all displays, used only while dragging between screens. */
+export function unionWorkAreas(
+  workAreas: readonly WorkAreaRect[],
+): WorkAreaRect | null {
+  if (workAreas.length === 0) return null;
+  const left = Math.min(...workAreas.map((area) => area.x));
+  const top = Math.min(...workAreas.map((area) => area.y));
+  const right = Math.max(...workAreas.map((area) => area.x + area.width));
+  const bottom = Math.max(...workAreas.map((area) => area.y + area.height));
+  return { x: left, y: top, width: right - left, height: bottom - top };
+}
+
+function isWorkAreaList(
+  value: WorkAreaRect | readonly WorkAreaRect[],
+): value is readonly WorkAreaRect[] {
+  return Array.isArray(value);
+}
+
 /** Apply a renderer-driven drag delta (click-vs-drag on the pet body). */
 export function handleMoveBy(
   state: WindowManagerState,
   delta: { dx: number; dy: number },
-  workArea?: WorkAreaRect | null,
+  workAreaOrAreas?: WorkAreaRect | readonly WorkAreaRect[] | null,
 ): WindowManagerState {
   if (!state.bounds) return state;
   const dx = Number.isFinite(delta.dx) ? delta.dx : 0;
@@ -444,14 +462,19 @@ export function handleMoveBy(
     x: Math.round(state.bounds.x + dx),
     y: Math.round(state.bounds.y + dy),
   };
-  if (workArea) {
-    // Soft clamp: allow partial overhang of at most half the window so drag feels free
-    // near edges, but never lose the window completely.
+  const dragWorkArea = workAreaOrAreas
+    ? isWorkAreaList(workAreaOrAreas)
+      ? unionWorkAreas(workAreaOrAreas)
+      : workAreaOrAreas
+    : null;
+  if (dragWorkArea) {
+    // Clamp against the virtual desktop, not the current display. Clamping to one
+    // display traps the window at that display's half-window soft edge.
     const soft: WorkAreaRect = {
-      x: workArea.x - Math.floor(bounds.width / 2),
-      y: workArea.y - Math.floor(bounds.height / 2),
-      width: workArea.width + bounds.width,
-      height: workArea.height + bounds.height,
+      x: dragWorkArea.x - Math.floor(bounds.width / 2),
+      y: dragWorkArea.y - Math.floor(bounds.height / 2),
+      width: dragWorkArea.width + bounds.width,
+      height: dragWorkArea.height + bounds.height,
     };
     bounds = clampWindowBounds(bounds, soft);
   }

@@ -29,6 +29,7 @@ import {
   petStateGlyph,
   petStateLabel,
   reducePetBubbleState,
+  resolveActivityElapsedMs,
   resolveActivitySelection,
   resolvePetFrame,
   type DesktopActivityFilter,
@@ -113,6 +114,7 @@ export function renderPetApp(root: Document = document): {
   const expandedActivityIds = new Set<string>();
   let bubbleState = createInitialPetBubbleState();
   let bubbleTimer: ReturnType<typeof setTimeout> | null = null;
+  let elapsedTimer: ReturnType<typeof setInterval> | null = null;
   let reducedMotion =
     typeof window.matchMedia === "function" &&
     window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -138,6 +140,51 @@ export function renderPetApp(root: Document = document): {
 
   function primaryActivity(view: DesktopActivityView): DesktopActivityRow | null {
     return view.projects[0]?.activities[0] ?? null;
+  }
+
+  function clearElapsedTimer(): void {
+    if (elapsedTimer != null) {
+      clearInterval(elapsedTimer);
+      elapsedTimer = null;
+    }
+  }
+
+  function visibleActivities(): DesktopActivityRow[] {
+    if (!current) return [];
+    return filterProjectGroups(current.projects, activityFilter).flatMap(
+      (project) => project.activities,
+    );
+  }
+
+  function refreshElapsedLabels(now = Date.now()): void {
+    if (!projectList || !current) return;
+    const activities = new Map(
+      visibleActivities().map((activity) => [activity.activityId, activity]),
+    );
+    for (const label of projectList.querySelectorAll<HTMLElement>(".row-elapsed[data-activity-id]")) {
+      const activityId = label.dataset.activityId;
+      const activity = activityId ? activities.get(activityId) : undefined;
+      if (activity) {
+        label.textContent = formatElapsed(resolveActivityElapsedMs(activity, now));
+      }
+    }
+  }
+
+  function syncElapsedTimer(): void {
+    const shouldTick =
+      current?.trayOpen === true &&
+      !settingsOpen &&
+      visibleActivities().some(
+        (activity) => !activity.endedAt && Number.isFinite(Date.parse(activity.startedAt ?? "")),
+      );
+    if (!shouldTick) {
+      clearElapsedTimer();
+      return;
+    }
+    refreshElapsedLabels();
+    if (elapsedTimer == null) {
+      elapsedTimer = setInterval(refreshElapsedLabels, 1000);
+    }
   }
 
   function clearBubbleTimer(): void {
@@ -400,6 +447,7 @@ export function renderPetApp(root: Document = document): {
         }
       }
     }
+    syncElapsedTimer();
   }
 
   function childStatusText(child: DesktopActivityRow["children"][number]): string {
@@ -483,7 +531,8 @@ export function renderPetApp(root: Document = document): {
 
     const elapsed = document.createElement("span");
     elapsed.className = "row-elapsed";
-    elapsed.textContent = formatElapsed(activity.elapsedMs);
+    elapsed.dataset.activityId = activity.activityId;
+    elapsed.textContent = formatElapsed(resolveActivityElapsedMs(activity, Date.now()));
     summary.append(glyph, main, elapsed);
 
     const actions = document.createElement("div");
@@ -876,6 +925,7 @@ export function renderPetApp(root: Document = document): {
     update,
     destroy: () => {
       clearBubbleTimer();
+      clearElapsedTimer();
       root.removeEventListener("keydown", onKeyDown);
       unsubscribe?.();
     },

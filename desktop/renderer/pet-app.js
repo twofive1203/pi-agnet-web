@@ -558,6 +558,12 @@
     }
     return childCount > 0 ? `${childCount} Subagent` : null;
   }
+  function resolveActivityElapsedMs(activity, now) {
+    const start = Date.parse(activity.startedAt ?? "");
+    const end = activity.endedAt ? Date.parse(activity.endedAt) : now;
+    if (!Number.isFinite(start) || !Number.isFinite(end)) return activity.elapsedMs;
+    return Math.max(0, Math.floor(end - start));
+  }
   function formatElapsed(ms) {
     if (ms == null || !Number.isFinite(ms) || ms < 0) return "\u2014";
     const totalSec = Math.floor(ms / 1e3);
@@ -708,10 +714,10 @@
     }
     if (input.connectionStatus === "incompatible") {
       if (input.reasonCode === "auth_required") {
-        return "\u670D\u52A1\u5DF2\u5F00\u542F\u8BBF\u95EE\u5BC6\u94A5 \u2014 \u8BF7\u5728\u4E0B\u65B9\u7C98\u8D34\u5BC6\u94A5\u540E\u8FDE\u63A5";
+        return "\u670D\u52A1\u5DF2\u5F00\u542F\u8BBF\u95EE\u5BC6\u94A5 \u2014 \u8BF7\u5728\u684C\u5BA0\u8BBE\u7F6E\u4E2D\u7C98\u8D34\u5BC6\u94A5\u540E\u8FDE\u63A5";
       }
       if (input.reasonCode === "auth_invalid") {
-        return "\u8BBF\u95EE\u5BC6\u94A5\u65E0\u6548 \u2014 \u8BF7\u91CD\u65B0\u7C98\u8D34\u6B63\u786E\u7684\u5BC6\u94A5";
+        return "\u8BBF\u95EE\u5BC6\u94A5\u65E0\u6548 \u2014 \u8BF7\u5728\u684C\u5BA0\u8BBE\u7F6E\u4E2D\u91CD\u65B0\u586B\u5199";
       }
       return `\u4E0D\u517C\u5BB9\u7684\u670D\u52A1${input.reasonCode ? ` (${input.reasonCode})` : ""} \u2014 \u8BF7\u68C0\u67E5\u7AEF\u53E3\u540E\u91CD\u8BD5`;
     }
@@ -773,6 +779,7 @@
     const expandedActivityIds = /* @__PURE__ */ new Set();
     let bubbleState = createInitialPetBubbleState();
     let bubbleTimer = null;
+    let elapsedTimer = null;
     let reducedMotion = typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     bridge?.setReducedMotion(reducedMotion);
     if (typeof window.matchMedia === "function") {
@@ -793,6 +800,44 @@
     }
     function primaryActivity(view) {
       return view.projects[0]?.activities[0] ?? null;
+    }
+    function clearElapsedTimer() {
+      if (elapsedTimer != null) {
+        clearInterval(elapsedTimer);
+        elapsedTimer = null;
+      }
+    }
+    function visibleActivities() {
+      if (!current) return [];
+      return filterProjectGroups(current.projects, activityFilter).flatMap(
+        (project) => project.activities
+      );
+    }
+    function refreshElapsedLabels(now = Date.now()) {
+      if (!projectList || !current) return;
+      const activities = new Map(
+        visibleActivities().map((activity) => [activity.activityId, activity])
+      );
+      for (const label of projectList.querySelectorAll(".row-elapsed[data-activity-id]")) {
+        const activityId = label.dataset.activityId;
+        const activity = activityId ? activities.get(activityId) : void 0;
+        if (activity) {
+          label.textContent = formatElapsed(resolveActivityElapsedMs(activity, now));
+        }
+      }
+    }
+    function syncElapsedTimer() {
+      const shouldTick = current?.trayOpen === true && !settingsOpen && visibleActivities().some(
+        (activity) => !activity.endedAt && Number.isFinite(Date.parse(activity.startedAt ?? ""))
+      );
+      if (!shouldTick) {
+        clearElapsedTimer();
+        return;
+      }
+      refreshElapsedLabels();
+      if (elapsedTimer == null) {
+        elapsedTimer = setInterval(refreshElapsedLabels, 1e3);
+      }
     }
     function clearBubbleTimer() {
       if (bubbleTimer != null) {
@@ -1018,6 +1063,7 @@
           }
         }
       }
+      syncElapsedTimer();
     }
     function childStatusText(child) {
       if (child.attention === "needs_input") return "\u5F85\u8F93\u5165";
@@ -1084,7 +1130,8 @@
       }
       const elapsed = document.createElement("span");
       elapsed.className = "row-elapsed";
-      elapsed.textContent = formatElapsed(activity.elapsedMs);
+      elapsed.dataset.activityId = activity.activityId;
+      elapsed.textContent = formatElapsed(resolveActivityElapsedMs(activity, Date.now()));
       summary.append(glyph, main, elapsed);
       const actions = document.createElement("div");
       actions.className = "row-actions";
@@ -1404,6 +1451,7 @@
       update,
       destroy: () => {
         clearBubbleTimer();
+        clearElapsedTimer();
         root.removeEventListener("keydown", onKeyDown);
         unsubscribe?.();
       }

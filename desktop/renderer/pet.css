@@ -732,6 +732,11 @@ select {
   background: rgba(255, 255, 255, 0.035);
 }
 
+.settings-panel {
+  min-height: 0;
+  overflow-y: auto;
+}
+
 .auth-label,
 .settings-heading {
   color: var(--pet-muted);

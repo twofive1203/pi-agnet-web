@@ -58,15 +58,15 @@ status: approved
 
 **Activity tray**
 
-- R5. Activity tray 必须强化信息层级：项目、任务标题、状态、来源、可信阶段/进度、运行时长和未读状态可快速扫描。
+- R5. Activity tray 必须强化信息层级：项目、任务标题、状态、来源、可信阶段/进度、运行时长和未读状态可快速扫描；未结束活动的运行时长应在列表可见时自动刷新，无需用户点击，也不得为此增加服务端轮询。
 - R6. 当观察快照包含真实 ratio/counters 或 Subagent 摘要时，Activity tray 应展示这些信息；没有真实分母时不得伪造百分比。
 - R7. Activity tray 的关闭动作应只收起活动列表；“隐藏桌宠到系统托盘”保留为宠物自身控制和系统托盘动作，避免两个关闭语义混淆。
 
 **设置与桌面可靠性**
 
-- R8. Activity tray 内必须提供可发现的本地设置入口，至少覆盖内置宠物选择、置顶、鼠标穿透、开机启动和通知策略，并复用现有本地设置边界。
+- R8. Activity tray 内必须提供可发现的本地设置入口，至少覆盖访问密钥、内置宠物选择、置顶、鼠标穿透、开机启动和通知策略，并复用现有本地设置边界；访问密钥输入不得长期占用活动列表的固定高度。
 - R9. 内置宠物选择必须产生可感知的视觉差异并即时预览；选择、窗口位置与偏好重启后保持。
-- R10. 桌宠在 Windows 多屏、100%–200% DPI、屏幕边缘与任务栏附近不得被永久裁切；状态更新不得主动切换虚拟桌面或抢走当前应用焦点。
+- R10. 桌宠在 Windows 多屏、100%–200% DPI、屏幕边缘与任务栏附近不得被永久裁切，并且必须能在不同分辨率/缩放的屏幕之间双向拖动，不得卡在单个显示器边缘；状态更新不得主动切换虚拟桌面或抢走当前应用焦点。
 - R11. 体验重塑不得放宽现有只读、loopback、deep-link allowlist、renderer 隔离和退出不影响任务等安全边界。
 
 ---
@@ -75,10 +75,10 @@ status: approved
 
 - AE1. **Covers R1–R4.** Given 桌宠空闲且 Activity tray 收起，when 用户查看桌面，then 看到透明蜗牛角色和低干扰空闲动作，而不是深色方形应用卡片；开启 reduced-motion 后角色使用静态姿态。
 - AE2. **Covers R2, R3.** Given 一个任务进入 Needs input，when 状态到达桌宠，then 蜗牛使用问询姿态和文字/图形提示表达待输入，不显示 Prompt 或请求正文。
-- AE3. **Covers R5, R6.** Given 一个 Agent 正在使用工具且有两个 Subagent，when 用户展开 Activity tray，then 任务行展示安全工具/阶段、真实计数或 Subagent 摘要；若进度为 indeterminate，则不显示猜测百分比。
+- AE3. **Covers R5, R6.** Given 一个 Agent 正在使用工具且有两个 Subagent，when 用户展开 Activity tray，then 任务行展示安全工具/阶段、真实计数或 Subagent 摘要；若进度为 indeterminate，则不显示猜测百分比；保持列表展开时运行时长自动递增且不发起额外服务请求。
 - AE4. **Covers R7.** Given Activity tray 已展开，when 用户点击 tray 的收起按钮，then 只收起 tray，桌宠继续显示；点击宠物自身隐藏按钮才隐藏到系统托盘。
-- AE5. **Covers R8, R9.** Given 用户从设置区选择 Classic Snail 并关闭再启动桌宠，then 角色保持 Classic 外观；选择过程中可即时看到视觉差异。
-- AE6. **Covers R10.** Given 桌宠位于副屏右下角且显示缩放为 150%，when 展开/收起 tray 或状态更新，then 宠物保持可见且当前前台应用不被抢焦点。
+- AE5. **Covers R8, R9.** Given 用户从设置区选择 Classic Snail 并关闭再启动桌宠，then 角色保持 Classic 外观；选择过程中可即时看到视觉差异；需要访问密钥时可在同一设置区填写或清除，而活动列表不被密钥表单持续占高。
+- AE6. **Covers R10.** Given 桌宠位于副屏右下角且显示缩放为 150%，when 展开/收起 tray、状态更新，或从低分辨率屏拖向高分辨率屏，then 宠物保持可见、可跨过屏幕边界且当前前台应用不被抢焦点。
 - AE7. **Covers R11.** Given renderer 尝试打开绝对 URL 或执行服务命令，when 请求到达主进程，then 仍被现有安全边界拒绝。
 
 ---

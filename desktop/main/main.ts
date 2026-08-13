@@ -647,7 +647,12 @@ export async function startDesktopPetMain(deps: DesktopMainDeps): Promise<{
         dy: Math.max(-240, Math.min(240, dy)),
       };
       // Drag path: move only — skip pushState (view unchanged) to keep pointer smooth.
-      const next = handleMoveBy(windowState, capped, resolveWorkArea());
+      const dragWorkAreas = collectWorkAreas();
+      const next = handleMoveBy(
+        windowState,
+        capped,
+        dragWorkAreas.length > 0 ? dragWorkAreas : resolveWorkArea(),
+      );
       if (next === windowState) return;
       windowState = next;
       if (petWindow && !petWindow.isDestroyed() && windowState.bounds) {
