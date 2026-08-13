@@ -5,7 +5,14 @@
  * subscribe; failures in listeners must never fail the source mutation.
  */
 
-export type TaskObserverInvalidateListener = () => void;
+export type TaskObserverInvalidateOptions = {
+  /** When true, the hub flushes immediately (terminal / attention / new prompt). */
+  urgent?: boolean;
+};
+
+export type TaskObserverInvalidateListener = (
+  options?: TaskObserverInvalidateOptions,
+) => void;
 
 declare global {
   var __piTaskObserverInvalidateListeners: Set<TaskObserverInvalidateListener> | undefined;
@@ -29,10 +36,12 @@ export function subscribeTaskObserverInvalidate(
 }
 
 /** Fire-and-forget invalidate. Never throws to callers. */
-export function notifyTaskObserverSourceChange(): void {
+export function notifyTaskObserverSourceChange(
+  options?: TaskObserverInvalidateOptions,
+): void {
   for (const listener of listeners()) {
     try {
-      listener();
+      listener(options);
     } catch {
       // Observer failure must never fail source mutation (U3).
     }

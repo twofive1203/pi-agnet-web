@@ -28,7 +28,22 @@ import {
 } from "./subagent-observability";
 import { getProcessInstanceId } from "./process-runtime";
 import { AgentTaskObserver } from "./task-observer-agent";
+import { notifyTaskObserverSourceChange } from "./task-observer-invalidate";
 import type { TaskObserverActivityInput } from "./task-observer-types";
+
+/** Agent lifecycle edges that should flush the desktop-observer hub immediately. */
+function isUrgentTaskObserverEvent(type: string): boolean {
+  return (
+    type === "prompt_settled" ||
+    type === "prompt_error" ||
+    type === "agent_end" ||
+    type === "agent_start" ||
+    type === "auto_retry_start" ||
+    type === "auto_retry_end" ||
+    type === "extension_ui_request" ||
+    type === "extension_ui_response"
+  );
+}
 
 // ============================================================================
 // Types
@@ -117,6 +132,9 @@ export class AgentSessionWrapper {
         // Observe blocking UI at the bridge edge before browser delivery.
         try {
           this.taskObserver.observeEvent(event);
+          this.notifyTaskObserverChanged(
+            typeof event.type === "string" && isUrgentTaskObserverEvent(event.type),
+          );
         } catch {
           // Observation must never break extension UI delivery.
         }
@@ -159,6 +177,18 @@ export class AgentSessionWrapper {
   /** Test/ops helper: prompt epoch and idle eligibility without activity payload. */
   getTaskObserverDebugSnapshot() {
     return this.taskObserver.getDebugSnapshot();
+  }
+
+  /**
+   * Push ordinary-Agent observation changes to the desktop-observer hub.
+   * Without this, the pet only sees Agent rows on its initial SSE baseline.
+   */
+  private notifyTaskObserverChanged(urgent = false): void {
+    try {
+      notifyTaskObserverSourceChange(urgent ? { urgent: true } : undefined);
+    } catch {
+      // Observer bus must never break agent execution.
+    }
   }
 
   get sessionId(): string {
@@ -211,6 +241,9 @@ export class AgentSessionWrapper {
       try {
         // Task observation runs on the raw event boundary (before SSE throttling).
         this.taskObserver.observeEvent(event);
+        this.notifyTaskObserverChanged(
+          typeof event.type === "string" && isUrgentTaskObserverEvent(event.type),
+        );
       } catch {
         // Observation must never interrupt normal agent event delivery.
       }
@@ -326,6 +359,7 @@ export class AgentSessionWrapper {
     if (event.type === "prompt_settled" || event.type === "prompt_error") {
       try {
         this.taskObserver.observeEvent(event);
+        this.notifyTaskObserverChanged(true);
       } catch {
         // Observation must never interrupt event delivery.
       }
@@ -435,6 +469,8 @@ export class AgentSessionWrapper {
         // agent_start/agent_end — emit prompt_settled so the browser can clear the spinner.
         try {
           this.taskObserver.beginUserPrompt();
+          // New prompt must surface promptly as Running in the pet Activity tray.
+          this.notifyTaskObserverChanged(true);
         } catch {
           // Observation must never block prompt dispatch.
         }
@@ -574,6 +610,7 @@ export class AgentSessionWrapper {
       case "steer": {
         try {
           this.taskObserver.noteInActivityControl("steer");
+          this.notifyTaskObserverChanged(true);
         } catch {
           // Observation must never block steer.
         }
@@ -587,6 +624,7 @@ export class AgentSessionWrapper {
       case "follow_up": {
         try {
           this.taskObserver.noteInActivityControl("follow_up");
+          this.notifyTaskObserverChanged(true);
         } catch {
           // Observation must never block follow_up.
         }
@@ -623,6 +661,7 @@ export class AgentSessionWrapper {
         if (handled && typeof response.id === "string") {
           try {
             this.taskObserver.noteExtensionUiResolved(response.id);
+            this.notifyTaskObserverChanged(true);
           } catch {
             // Observation must never block UI response handling.
           }
@@ -719,7 +758,6 @@ export class AgentSessionWrapper {
 // ============================================================================
 
 declare global {
-  var __piSessions: Map<string, AgentSessionWrapper> | undefined;
   var __piStartLocks: Map<string, Promise<{ session: AgentSessionWrapper; realSessionId: string }>> | undefined;
 }
 
@@ -731,7 +769,9 @@ function getRegistry(): Map<string, AgentSessionWrapper> {
     process.once("SIGINT", cleanup);
     process.once("SIGTERM", cleanup);
   }
-  return globalThis.__piSessions;
+  // rpc-manager is the sole writer and stores only AgentSessionWrapper values;
+  // the shared declaration intentionally exposes the smaller observer surface.
+  return globalThis.__piSessions as Map<string, AgentSessionWrapper>;
 }
 
 function getLocks(): Map<string, Promise<{ session: AgentSessionWrapper; realSessionId: string }>> {
@@ -741,34 +781,6 @@ function getLocks(): Map<string, Promise<{ session: AgentSessionWrapper; realSes
 
 export function getRpcSession(sessionId: string): AgentSessionWrapper | undefined {
   return getRegistry().get(sessionId);
-}
-
-/**
- * Live ordinary-Agent observer activities for the desktop pet hub.
- * Does not touch SSE listener counts or idle timers.
- */
-export function listLiveAgentTaskObservations(): TaskObserverActivityInput[] {
-  const out: TaskObserverActivityInput[] = [];
-  for (const wrapper of getRegistry().values()) {
-    if (!wrapper.isAlive()) continue;
-    try {
-      const activity = wrapper.getTaskObservation();
-      if (activity) out.push(activity);
-    } catch {
-      // Isolate malformed observation from a single wrapper.
-    }
-  }
-  return out;
-}
-
-/** Distinct live wrapper cwds for SnFlow multi-project collection. */
-export function listLiveAgentObserverCwds(): string[] {
-  const set = new Set<string>();
-  for (const wrapper of getRegistry().values()) {
-    if (!wrapper.isAlive()) continue;
-    if (wrapper.cwd) set.add(wrapper.cwd);
-  }
-  return [...set];
 }
 
 /** Aggregate in-process chat session / SSE counts for ops health (no session ids). */

@@ -4,6 +4,10 @@
  */
 
 import { getProcessInstanceId } from "./process-runtime";
+import {
+  listLiveAgentObserverCwds,
+  listLiveAgentTaskObservations,
+} from "./task-observer-agent-registry";
 import { subscribeTaskObserverInvalidate } from "./task-observer-invalidate";
 import type { SnflowObserverProjection } from "./task-observer-snflow";
 import {
@@ -37,16 +41,8 @@ export type TaskObserverCollectors = {
 
 function defaultCollectors(): TaskObserverCollectors {
   return {
-    listAgentActivities: () => {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { listLiveAgentTaskObservations } = require("./rpc-manager") as typeof import("./rpc-manager");
-      return listLiveAgentTaskObservations();
-    },
-    listAgentCwds: () => {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { listLiveAgentObserverCwds } = require("./rpc-manager") as typeof import("./rpc-manager");
-      return listLiveAgentObserverCwds();
-    },
+    listAgentActivities: listLiveAgentTaskObservations,
+    listAgentCwds: listLiveAgentObserverCwds,
     listSnflowProjections: (cwd: string) => {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       const { listSnflowObserverProjections } = require("./task-observer-snflow") as typeof import("./task-observer-snflow");
@@ -376,9 +372,9 @@ export function getTaskObserverHub(): TaskObserverHub {
   const state = hubState();
   if (!state.hub) {
     state.hub = new TaskObserverHub();
-    state.invalidateUnsub = subscribeTaskObserverInvalidate(() => {
+    state.invalidateUnsub = subscribeTaskObserverInvalidate((options) => {
       try {
-        state.hub?.invalidate();
+        state.hub?.invalidate(options?.urgent ? { urgent: true } : undefined);
       } catch {
         // never throw into source adapters
       }

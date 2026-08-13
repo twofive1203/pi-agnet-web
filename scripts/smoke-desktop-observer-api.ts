@@ -281,6 +281,51 @@ async function main() {
   notifyTaskObserverSourceChange();
   assert.equal(TASK_OBSERVER_PROGRESS_COALESCE_MS, 500);
 
+  // Urgent option must reach the hub (Agent prompt/settle path).
+  let urgentHits = 0;
+  const unsubUrgent = globalHub.subscribe(() => {
+    urgentHits += 1;
+  });
+  notifyTaskObserverSourceChange({ urgent: true });
+  assert.equal(urgentHits >= 1, true, "urgent source notify flushes hub");
+  unsubUrgent();
+
+  // Regression: ordinary Agent wrappers must push observer invalidates.
+  // Without this wire, the pet stays at 活动 0 for chat prompts forever.
+  const fsPromises = await import("node:fs/promises");
+  const rpcSource = await fsPromises.readFile(
+    new URL("../lib/rpc-manager.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    rpcSource,
+    /notifyTaskObserverSourceChange/,
+    "rpc-manager must notify desktop-observer hub on Agent activity",
+  );
+  assert.match(
+    rpcSource,
+    /beginUserPrompt\(\)[\s\S]{0,200}notifyTaskObserverChanged/,
+    "prompt dispatch must invalidate the observer hub",
+  );
+
+  // Production Next bundles rpc-manager as an async module because it imports
+  // the Pi SDK. Synchronously requiring it from the observer hub makes Agent
+  // collection fail even though health still sees live wrappers.
+  const hubSource = await fsPromises.readFile(
+    new URL("../lib/task-observer-hub.ts", import.meta.url),
+    "utf8",
+  );
+  assert.doesNotMatch(
+    hubSource,
+    /require\(["']\.\/rpc-manager["']\)/,
+    "observer hub must not synchronously require async rpc-manager",
+  );
+  assert.match(
+    hubSource,
+    /task-observer-agent-registry/,
+    "observer hub must collect Agent rows through the SDK-free registry adapter",
+  );
+
   // --- Health remains task-metadata-free ---
   const health = await buildProcessHealthSnapshot();
   const healthJson = JSON.stringify(health);
