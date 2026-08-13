@@ -1082,6 +1082,7 @@ export function AppShell() {
           )}
           <div className="top-primary-tools" aria-label={t("app.primaryTools")}>
             <ThemePicker />
+            <QuickCommandBar api={quickCommands} />
             <Tooltip content={t("app.languageSwitch")} position="bottom">
               <button
                 className="icon-round context-action language-switch"
@@ -1356,7 +1357,6 @@ export function AppShell() {
                 void loadModelsConfig();
                 setModelsConfigOpen(true);
               }}
-              composerTopSlot={quickCommandCwd ? <QuickCommandBar api={quickCommands} /> : null}
             />
           ) : showPlaceholder ? (
             <div className="workbench-empty-state">
