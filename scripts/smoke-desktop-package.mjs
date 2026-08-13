@@ -143,6 +143,7 @@ async function main() {
   // Desktop scripts must exist and not be the only publish surface
   assert.ok(rootPkg.scripts?.["test:desktop-package"], "test:desktop-package script required");
   assert.ok(rootPkg.scripts?.["test:desktop-observer"], "test:desktop-observer script required");
+  assert.ok(rootPkg.scripts?.["desktop:preview"], "desktop:preview script required");
 
   // desktop/package.json is private and not the npm package
   const desktopPkgPath = path.join(ROOT, "desktop", "package.json");
@@ -168,9 +169,12 @@ async function main() {
     "desktop/renderer/pet-app.tsx",
     "desktop/renderer/pet-app.js",
     "desktop/renderer/pet-state.ts",
+    "desktop/renderer/pet-assets.ts",
     "desktop/renderer/pet.css",
     "desktop/assets/pets/snail-default/manifest.json",
     "desktop/assets/pets/snail-classic/manifest.json",
+    "scripts/preview-desktop-pet-states.mjs",
+    "docs/operations/desktop-pet-visual-review.md",
     "forge.config.ts",
     "docs/operations/desktop-pet-validation.md",
   ];
@@ -199,6 +203,37 @@ async function main() {
   const html = readText(path.join(ROOT, "desktop", "renderer", "index.html"));
   assert.ok(html.includes("Content-Security-Policy"));
   assert.ok(html.includes("default-src 'none'"));
+
+  const forgeIgnoreSrc = readText(path.join(ROOT, "forge.config.ts"));
+  assert.ok(/\^\\\/scripts/.test(forgeIgnoreSrc) || /scripts/.test(forgeIgnoreSrc), "packager ignore must cover preview scripts");
+  assert.ok(/\^\\\/docs/.test(forgeIgnoreSrc) || /docs/.test(forgeIgnoreSrc), "packager ignore must cover review docs");
+  assert.ok(
+    /desktop\/\.preview|\.preview/.test(readText(path.join(ROOT, ".gitignore"))),
+    "preview output must stay gitignored",
+  );
+
+  for (const petId of ["snail-default", "snail-classic"]) {
+    const manifest = JSON.parse(
+      readText(path.join(ROOT, "desktop", "assets", "pets", petId, "manifest.json")),
+    );
+    assert.equal(manifest.id, petId);
+    assert.equal(manifest.version, 2);
+    assert.equal(manifest.renderMode, "css");
+    assert.equal(manifest.sheet, undefined);
+    assert.equal(/\.\.\/|file:|https?:/i.test(JSON.stringify(manifest)), false);
+    for (const state of [
+      "idle",
+      "running",
+      "retrying",
+      "needs_input",
+      "ready",
+      "blocked",
+      "disconnected",
+      "service_not_running",
+    ]) {
+      assert.ok(manifest.states?.[state], `${petId} missing state ${state}`);
+    }
+  }
 
   // Window security contract source
   const winSrc = readText(path.join(ROOT, "desktop", "main", "window-manager.ts"));

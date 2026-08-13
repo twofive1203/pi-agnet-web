@@ -150,12 +150,13 @@ Separate from the Next.js WebUI. Lives under `desktop/` and is packaged independ
 | --- | --- |
 | `desktop/renderer/index.html` | Transparent pet shell + Activity tray markup; strict CSP (`default-src 'none'`). |
 | `desktop/renderer/pet.css` | Transparent CSS/vector snail personalities, state posture/animation, tray/settings layout, small/medium/large scale tokens, reduced-motion gate, and non-color cues. |
-| `desktop/renderer/pet-state.ts` | Pure presentation helpers (manifest frames, glyphs/labels, localized source labels, verifiable progress formatting, keyboard selection, elapsed). |
+| `desktop/renderer/pet-state.ts` | Pure presentation helpers (manifest frames, glyphs/labels, localized source labels, verifiable progress formatting, keyboard selection, elapsed). Invalid packaged manifests fall back to CSS snails. |
+| `desktop/renderer/pet-assets.ts` | Manifest v2 allowlist/path/size/state contract used by renderer fallback, build, and package smokes. |
 | `desktop/renderer/pet-app.tsx` (+ generated `pet-app.js`) | Pet click toggles tray; compact safe status caption; task rows show source/phase/real progress/Subagents and open validated deep links; inline local pet/size/always-on-top/click-through/autostart/notification settings plus restore-default-position; mark-one/all-read; service-not-running copy/retry. No token/Node. |
 | `desktop/preload/pet-preload.ts` | Narrow `window.snailPet` bridge. |
-| `desktop/assets/pets/*` | Builtin versioned pet manifests (`snail-default`, `snail-classic`). |
+| `desktop/assets/pets/*` | Builtin versioned pet manifests (`snail-default`, `snail-classic`); current render mode is CSS until approved spritesheets exist. |
 
-Smoke: `npm run test:desktop-contract`, packaging contract `npm run test:desktop-package`. Dev launch: `npm run desktop:build` / `npm run desktop:dev` (see `desktop/README.md`). Release/QA matrix: `docs/operations/desktop-pet-validation.md`. UI: drag grip moves window; **×** hides to tray; settings can switch small/medium/large and restore the default dock. Snapshot/reconnect/notification updates never `show()`/`focus()` a hidden pet; tray click, “显示桌宠”, and second-instance may activate.
+Smoke: `npm run test:desktop-contract`, packaging contract `npm run test:desktop-package`. Dev launch: `npm run desktop:build` / `npm run desktop:dev` (see `desktop/README.md`). Visual matrix: `npm run desktop:preview` and `docs/operations/desktop-pet-visual-review.md`. Release/QA matrix: `docs/operations/desktop-pet-validation.md`. UI: drag grip moves window; **×** hides to tray; settings can switch small/medium/large and restore the default dock. Snapshot/reconnect/notification updates never `show()`/`focus()` a hidden pet; tray click, “显示桌宠”, and second-instance may activate.
 
 ## Automation UI
 

@@ -5,7 +5,7 @@
  * Pure domain + static source contracts — does not launch Electron.
  */
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 
 import {
@@ -82,12 +82,19 @@ import {
   type PetWindowHandle,
 } from "../desktop/main/window-manager";
 import {
+  acceptStaticPetPreview,
+  isSafePetAssetPath,
+  validatePackagedPetAssets,
+  validatePetManifestDocument,
+} from "../desktop/renderer/pet-assets";
+import {
   connectionBannerText,
   formatActivityProgress,
   formatElapsed,
   getBuiltinPetManifest,
   moveActivitySelection,
   petSourceLabel,
+  resolveBuiltinPetManifest,
   resolvePetFrame,
 } from "../desktop/renderer/pet-state";
 import { DESKTOP_PACKAGE_CONTRACT } from "../forge.config";
@@ -808,6 +815,102 @@ async function main() {
   assertQuitLabelSafe(quit!.label);
   assert.equal(trayItemToAction("quit"), "quit");
   assert.ok(buildTrayTooltip({ presentation: "running", activeCount: 2, attentionCount: 1 }).includes("运行中"));
+
+  // --- Preview isolation + builtin pet manifest v2 ---
+  const previewSrc = readFileSync(
+    path.join(process.cwd(), "scripts", "preview-desktop-pet-states.mjs"),
+    "utf8",
+  );
+  assert.ok(previewSrc.includes("desktop/.preview"));
+  assert.equal(/\bgetToken\s*\(|PI_CODING_AGENT_DIR/.test(previewSrc), false);
+  assert.equal(/fetch\s*\(|EventSource|127\.0\.0\.1:\d+\/api/.test(previewSrc), false);
+  assert.ok(existsSync(path.join(process.cwd(), "docs", "operations", "desktop-pet-visual-review.md")));
+  const previewPreloadSrc = readFileSync(
+    path.join(process.cwd(), "desktop", "preload", "pet-preload.ts"),
+    "utf8",
+  );
+  assert.ok(previewPreloadSrc.includes("setReducedMotion"));
+  assert.equal(/__SNAIL_PET_PREVIEW__|preview-desktop-pet/.test(previewPreloadSrc), false);
+  assert.equal(isRendererIpcChannel("pet:preview"), false);
+  assert.equal(PET_RENDERER_ALLOWED_CHANNELS.includes("pet:preview"), false);
+
+  const defaultManifest = JSON.parse(
+    readFileSync(
+      path.join(process.cwd(), "desktop", "assets", "pets", "snail-default", "manifest.json"),
+      "utf8",
+    ),
+  );
+  const accepted = validatePetManifestDocument(defaultManifest);
+  assert.equal(accepted.ok, true);
+  if (accepted.ok) {
+    assert.equal(accepted.manifest.version, 2);
+    assert.equal(accepted.manifest.renderMode, "css");
+    assert.equal(accepted.manifest.sheet, undefined);
+  }
+  assert.equal(validatePetManifestDocument({ ...defaultManifest, version: 1 }).ok, false);
+  assert.equal(
+    validatePetManifestDocument({
+      ...defaultManifest,
+      states: { ...defaultManifest.states, flying: defaultManifest.states.idle },
+    }).ok,
+    false,
+  );
+  assert.equal(
+    validatePetManifestDocument({
+      ...defaultManifest,
+      renderMode: "spritesheet",
+      sheet: { src: "../secret.png", frameWidth: 32, frameHeight: 32, columns: 2, rows: 2 },
+    }).ok,
+    false,
+  );
+  assert.equal(
+    validatePetManifestDocument({
+      ...defaultManifest,
+      renderMode: "spritesheet",
+      sheet: { src: "http://example.com/sheet.png", frameWidth: 32, frameHeight: 32, columns: 2, rows: 2 },
+    }).ok,
+    false,
+  );
+  assert.equal(
+    validatePetManifestDocument({
+      ...defaultManifest,
+      command: "calc.exe",
+    }).ok,
+    false,
+  );
+  assert.equal(isSafePetAssetPath("../x.png"), false);
+  assert.equal(isSafePetAssetPath("file://x.png"), false);
+  assert.equal(resolveBuiltinPetManifest("missing", { id: "evil" }).id, "snail-default");
+  assert.equal(
+    resolveBuiltinPetManifest("snail-classic", {
+      ...defaultManifest,
+      id: "snail-classic",
+      name: "Broken",
+      version: 9,
+    }).renderMode,
+    "css",
+  );
+  validatePackagedPetAssets(path.join(process.cwd(), "desktop", "assets", "pets"), {
+    readFile: (filePath) => readFileSync(filePath, "utf8"),
+    exists: existsSync,
+    size: (filePath) => statSync(filePath).size,
+    join: path.join,
+  });
+  assert.equal(
+    acceptStaticPetPreview({
+      presentation: "idle",
+      projects: [],
+      token: "leak",
+    }),
+    null,
+  );
+  assert.ok(
+    acceptStaticPetPreview({
+      presentation: "idle",
+      projects: [],
+      origin: "http://127.0.0.1:62666",
+    }),
+  );
 
   // --- Reduced motion + builtin pets ---
   const manifest = getBuiltinPetManifest("snail-default");

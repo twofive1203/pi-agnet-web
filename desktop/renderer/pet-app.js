@@ -75,6 +75,40 @@
     };
   }
 
+  // desktop/renderer/pet-assets.ts
+  var PET_ASSET_LIMITS = {
+    maxManifestBytes: 16 * 1024,
+    maxPathLength: 80,
+    maxFileBytes: 256 * 1024,
+    maxFrames: 16,
+    minDurationMs: 50,
+    maxDurationMs: 5e3,
+    maxSheetWidth: 2048,
+    maxSheetHeight: 2048
+  };
+  var PREVIEW_FORBIDDEN_KEY = /"(token|observerToken|accessKey|password|pid|servicePid|cwd|firstMessage|prompt|command|output|child_process)"\s*:/;
+  function isPlainObject(value) {
+    return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+  }
+  function acceptStaticPetPreview(raw) {
+    if (!isPlainObject(raw)) return null;
+    let json;
+    try {
+      json = JSON.stringify(raw);
+    } catch {
+      return null;
+    }
+    if (PREVIEW_FORBIDDEN_KEY.test(json)) return null;
+    const absoluteUrls = json.match(/https?:\/\/[^"\s]+/gi) ?? [];
+    for (const url of absoluteUrls) {
+      if (!/^https?:\/\/127\.0\.0\.1(?::\d+)?\/?$/i.test(url)) return null;
+    }
+    if (typeof raw.presentation !== "string") return null;
+    if (!Array.isArray(raw.projects)) return null;
+    if (Object.hasOwn(raw, "__proto__") || Object.hasOwn(raw, "constructor")) return null;
+    return raw;
+  }
+
   // lib/task-observer-types.ts
   var TASK_OBSERVER_BUDGETS = {
     maxProjects: 50,
@@ -148,11 +182,12 @@
       glyph: "\xB7"
     }
   };
-  function buildDefaultPetManifest(id, name, version = 1) {
+  function buildDefaultPetManifest(id, name, version = 2) {
     return {
       id,
       name,
       version,
+      renderMode: "css",
       states: { ...DEFAULT_FRAMES }
     };
   }
@@ -320,6 +355,10 @@
     }
     function update(view) {
       current = view;
+      const previewSettingsOpen = view.settingsOpen;
+      if (!bridge && typeof previewSettingsOpen === "boolean") {
+        settingsOpen = previewSettingsOpen;
+      }
       const state = isPetVisualState(view.presentation) ? view.presentation : "idle";
       const manifest = getBuiltinPetManifest(view.selectedPetId);
       const frame = resolvePetFrame(manifest, state, view.reducedMotion || reducedMotion);
@@ -717,10 +756,17 @@
       }
     };
   }
+  function readPreviewFixture() {
+    if (typeof window === "undefined") return null;
+    const accepted = acceptStaticPetPreview(window.__SNAIL_PET_PREVIEW__);
+    return accepted ? accepted : null;
+  }
   function boot() {
     if (typeof document === "undefined") return;
     if (!document.getElementById("root")) return;
-    renderPetApp(document);
+    const app = renderPetApp(document);
+    const preview = readPreviewFixture();
+    if (preview) app.update(preview);
   }
   boot();
 })();

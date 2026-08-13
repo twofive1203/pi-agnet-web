@@ -10,6 +10,12 @@ import type {
   TaskObserverSource,
 } from "../../lib/task-observer-types";
 import { TASK_OBSERVER_PRESENTATION_PRIORITY } from "../../lib/task-observer-types";
+import {
+  type BuiltinPetId,
+  type PetManifestV2,
+  type PetRenderMode,
+  validatePetManifestDocument,
+} from "./pet-assets";
 
 export type PetVisualState = TaskObserverPresentationState;
 
@@ -28,7 +34,9 @@ export type PetManifest = {
   id: string;
   name: string;
   version: number;
+  renderMode: PetRenderMode;
   states: Record<PetVisualState, PetManifestStateFrame>;
+  sheet?: PetManifestV2["sheet"];
 };
 
 export const PET_STATE_ORDER: readonly PetVisualState[] = TASK_OBSERVER_PRESENTATION_PRIORITY;
@@ -86,14 +94,15 @@ const DEFAULT_FRAMES: Record<PetVisualState, PetManifestStateFrame> = {
 };
 
 export function buildDefaultPetManifest(
-  id: string,
+  id: BuiltinPetId,
   name: string,
-  version = 1,
+  version = 2,
 ): PetManifest {
   return {
     id,
     name,
     version,
+    renderMode: "css",
     states: { ...DEFAULT_FRAMES },
   };
 }
@@ -107,6 +116,26 @@ export function getBuiltinPetManifest(petId: string): PetManifest {
   return (
     BUILTIN_PET_MANIFESTS.find((pet) => pet.id === petId) ?? BUILTIN_PET_MANIFESTS[0]
   );
+}
+
+/**
+ * Runtime load: accept a validated v2 document or fall back to CSS defaults.
+ * Unknown ids, illegal versions, capability fields, or path traversal never throw.
+ */
+export function resolveBuiltinPetManifest(petId: string, raw?: unknown): PetManifest {
+  const fallback = getBuiltinPetManifest(petId);
+  if (raw === undefined) return fallback;
+  const validated = validatePetManifestDocument(raw);
+  if (!validated.ok) return fallback;
+  if (validated.manifest.id !== fallback.id) return fallback;
+  return {
+    id: validated.manifest.id,
+    name: validated.manifest.name,
+    version: validated.manifest.version,
+    renderMode: validated.manifest.renderMode,
+    states: validated.manifest.states,
+    sheet: validated.manifest.sheet,
+  };
 }
 
 export function resolvePetFrame(

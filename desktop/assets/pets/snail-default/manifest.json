@@ -1,7 +1,8 @@
 {
   "id": "snail-default",
   "name": "Snail",
-  "version": 1,
+  "version": 2,
+  "renderMode": "css",
   "states": {
     "idle": { "frame": "idle", "staticFrame": "idle", "label": "空闲", "glyph": "·" },
     "running": {

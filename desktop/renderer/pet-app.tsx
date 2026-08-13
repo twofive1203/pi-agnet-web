@@ -11,6 +11,7 @@
 import type { DesktopActivityRow, DesktopActivityView } from "../main/activity-store";
 import { resolvePetLayoutSpec } from "../main/window-manager";
 import type { SnailPetBridge } from "../preload/pet-preload";
+import { acceptStaticPetPreview } from "./pet-assets";
 import {
   connectionBannerText,
   formatActivityProgress,
@@ -27,6 +28,8 @@ import {
 declare global {
   interface Window {
     snailPet?: SnailPetBridge;
+    /** Dev-only static fixture. Production preload never sets this. */
+    __SNAIL_PET_PREVIEW__?: unknown;
     matchMedia: (query: string) => MediaQueryList;
   }
 }
@@ -118,6 +121,10 @@ export function renderPetApp(root: Document = document): {
 
   function update(view: DesktopActivityView): void {
     current = view;
+    const previewSettingsOpen = (view as unknown as { settingsOpen?: unknown }).settingsOpen;
+    if (!bridge && typeof previewSettingsOpen === "boolean") {
+      settingsOpen = previewSettingsOpen;
+    }
     const state = isPetVisualState(view.presentation) ? view.presentation : "idle";
     const manifest = getBuiltinPetManifest(view.selectedPetId);
     const frame = resolvePetFrame(manifest, state, view.reducedMotion || reducedMotion);
@@ -584,10 +591,18 @@ export function renderPetApp(root: Document = document): {
   };
 }
 
+function readPreviewFixture(): DesktopActivityView | null {
+  if (typeof window === "undefined") return null;
+  const accepted = acceptStaticPetPreview(window.__SNAIL_PET_PREVIEW__);
+  return accepted ? (accepted as DesktopActivityView) : null;
+}
+
 function boot(): void {
   if (typeof document === "undefined") return;
   if (!document.getElementById("root")) return;
-  renderPetApp(document);
+  const app = renderPetApp(document);
+  const preview = readPreviewFixture();
+  if (preview) app.update(preview);
 }
 
 boot();

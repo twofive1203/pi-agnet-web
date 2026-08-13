@@ -43,6 +43,7 @@ export const DESKTOP_PACKAGER_IGNORE: Array<RegExp | string> = [
   /^\/extensions(\/|$)/,
   /^\/docs(\/|$)/,
   /^\/scripts(\/|$)/,
+  /^\/desktop\/\.preview(\/|$)/,
   /^\/tests(\/|$)/,
   /^\/\.pi(\/|$)/,
   /^\/\.trellis(\/|$)/,

@@ -70,6 +70,7 @@
     "test:desktop-contract": "npx --yes tsx@4.23.1 scripts/smoke-desktop-contract.ts",
     "test:desktop-package": "node scripts/smoke-desktop-package.mjs",
     "desktop:build": "node scripts/build-desktop-pet.mjs",
+    "desktop:preview": "node scripts/preview-desktop-pet-states.mjs",
     "desktop:dev": "node scripts/run-desktop-pet.mjs",
     "desktop:dev:rebuild": "node scripts/run-desktop-pet.mjs --rebuild",
     "test:scale-baseline": "npx --yes tsx@4.23.1 scripts/smoke-scale-baseline.ts",

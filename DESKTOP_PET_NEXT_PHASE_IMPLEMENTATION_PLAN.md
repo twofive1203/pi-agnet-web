@@ -213,7 +213,9 @@ flowchart LR
 
 ---
 
-- [ ] U3. **建立桌宠视觉状态验收台与可访问性回归**
+- [x] U3. **建立桌宠视觉状态验收台与可访问性回归**
+
+**Completed:** 2026-08-13 — 开发态 `desktop:preview` 生成静态状态矩阵；preview 只接受清洗后的 view fixture，不进生产 preload/IPC/package。人工八状态/两角色/三尺寸/tray/settings/reduced-motion 视觉矩阵仍未执行。
 
 **Goal:** 用可重复方式检查八种状态、两种角色、三种尺寸、tray/设置和 reduced-motion，避免依靠单一 idle 截图判断质量。
 
@@ -247,7 +249,9 @@ flowchart LR
 
 ---
 
-- [ ] U4. **建立版本化内置角色资源契约**
+- [x] U4. **建立版本化内置角色资源契约**
+
+**Completed:** 2026-08-13 — 资源契约完成：manifest v2 + allowlist/path/size/state validator，失败回退 CSS 蜗牛。正式 spritesheet 待美术，当前两只内置角色保持 `renderMode: css`。
 
 **Goal:** 让内置角色可从安全、版本化的包内资源描述动画，同时在资源失败时可靠回退当前 CSS 蜗牛。
 

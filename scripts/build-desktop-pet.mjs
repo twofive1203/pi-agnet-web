@@ -4,7 +4,7 @@
  * Usage: node scripts/build-desktop-pet.mjs
  *        npm run desktop:build
  */
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import * as esbuild from "esbuild";
@@ -71,6 +71,34 @@ async function build() {
     sourcemap: false,
     logLevel: "info",
   });
+
+  for (const petId of ["snail-default", "snail-classic"]) {
+    const manifestPath = path.join(ROOT, "desktop", "assets", "pets", petId, "manifest.json");
+    if (!existsSync(manifestPath)) {
+      throw new Error(`missing pet manifest: ${petId}`);
+    }
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+    if (manifest.id !== petId || manifest.version !== 2 || manifest.renderMode !== "css") {
+      throw new Error(`invalid pet manifest contract: ${petId}`);
+    }
+    for (const state of [
+      "idle",
+      "running",
+      "retrying",
+      "needs_input",
+      "ready",
+      "blocked",
+      "disconnected",
+      "service_not_running",
+    ]) {
+      if (!manifest.states?.[state]) {
+        throw new Error(`pet manifest ${petId} missing state ${state}`);
+      }
+    }
+    if (manifest.sheet || /\.\.\/|file:|https?:/i.test(JSON.stringify(manifest))) {
+      throw new Error(`pet manifest ${petId} must stay CSS-only until approved art lands`);
+    }
+  }
 
   // Small stamp for smoke/debug.
   writeFileSync(

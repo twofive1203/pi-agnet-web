@@ -18,6 +18,7 @@ const eslintConfig = [
       "desktop/preload/pet-preload.js",
       "desktop/preload/pet-preload.js.map",
       "desktop/.build-stamp.json",
+      "desktop/.preview/**",
       // Plain runtime companion checked in for file:// loading without a bundler step.
       // Keep lint on pet-app.tsx / pet-state.ts instead.
       "desktop/renderer/pet-app.js",

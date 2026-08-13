@@ -44,6 +44,7 @@ npm run test:quick-commands
 | `test:desktop-connection` | Connection state machine + no process control (U6) |
 | `test:desktop-contract` | Tray/read/notification/window/renderer safety (U7) |
 | `test:desktop-package` | Pet-only forge/npm separation + source contracts (U8) |
+| `desktop:preview` | Dev-only visual state matrix under `desktop/.preview/` (U3); not packaged |
 
 **Optional artifact scan:** after `electron-forge make`, set `DESKTOP_PACKAGE_OUT` to the output directory and re-run `npm run test:desktop-package` so forbidden runtime paths are scanned inside the package tree.
 

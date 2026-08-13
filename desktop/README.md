@@ -14,6 +14,7 @@ Attach-only Electron companion for Snail Pi Web. Observes local tasks; never sta
 | --- | --- |
 | `npm run desktop:build` | Bundle `desktop/main/main.ts` → `main.js` and `preload/pet-preload.ts` → `pet-preload.js` |
 | `npm run desktop:dev` | Build if stale, then launch Electron |
+| `npm run desktop:preview` | Generate the static visual-state matrix under `desktop/.preview/` |
 | `npm run desktop:dev:rebuild` | Force rebuild, then launch |
 | `npm run test:desktop-observer` | Domain + API + connection + UI contract + package smokes |
 | `npm run test:desktop-package` | Pet-only packaging contract |
@@ -50,7 +51,7 @@ desktop/
   main/           # Electron main (connection, SSE, tray, window, notifications)
   preload/        # Narrow contextBridge (window.snailPet)
   renderer/       # index.html + pet-app + CSS (no Node)
-  assets/pets/    # Builtin pet manifests
+  assets/pets/    # Builtin pet manifests (v2 CSS contract; spritesheet optional later)
   package.json    # private snail-pi-pet; main → main/main.js
 ```
 

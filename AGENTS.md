@@ -32,6 +32,7 @@ npm run dev     # http://localhost:62666
 | `npm run test:desktop-package` | Pet-only packaging contract (forge/npm separation, no server runtime, validation doc gates). |
 | `npm run test:desktop-observer` | Combined task-observer domain + desktop-observer API + deep-link + connection + contract + package smokes. |
 | `npm run desktop:build` | Bundle desktop pet main/preload JS for Electron (`scripts/build-desktop-pet.mjs`). |
+| `npm run desktop:preview` | Generate the local visual-state matrix under `desktop/.preview/` (not packaged). |
 | `npm run desktop:dev` | Build if needed and launch the pet under Electron (does not start `spi`). |
 | `npm run test:scale-baseline` | Usage/allowed-roots/session-index/long-JSONL scale baseline + accelerated-path correctness smoke. |
 | `npm run test:usage` | Usage timeline projection + parent/subagent/archive accounting smoke suite. |
