@@ -33,49 +33,50 @@ const DEFAULT_FRAMES: Record<PetVisualState, PetManifestStateFrame> = {
   service_not_running: {
     frame: "service-not-running",
     staticFrame: "service-not-running",
-    label: "Service not running",
+    // Short zh labels fit the collapsed avatar without clipping.
+    label: "未启动",
     glyph: "⏻",
   },
   disconnected: {
     frame: "disconnected",
     staticFrame: "disconnected",
-    label: "Disconnected",
+    label: "未连接",
     glyph: "⚠",
   },
   needs_input: {
     frame: "needs-input",
     staticFrame: "needs-input",
-    label: "Needs input",
+    label: "待输入",
     glyph: "?",
   },
   blocked: {
     frame: "blocked",
     staticFrame: "blocked",
-    label: "Blocked",
+    label: "受阻",
     glyph: "!",
   },
   ready: {
     frame: "ready",
     staticFrame: "ready",
-    label: "Ready",
+    label: "已完成",
     glyph: "✓",
   },
   retrying: {
     frame: "retrying",
     staticFrame: "retrying-static",
-    label: "Retrying",
+    label: "重试中",
     glyph: "↻",
   },
   running: {
     frame: "running",
     staticFrame: "running-static",
-    label: "Running",
+    label: "运行中",
     glyph: "›",
   },
   idle: {
     frame: "idle",
     staticFrame: "idle",
-    label: "Idle",
+    label: "空闲",
     glyph: "·",
   },
 };

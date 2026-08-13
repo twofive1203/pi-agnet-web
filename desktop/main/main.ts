@@ -57,6 +57,7 @@ import {
   defaultPetWindowPosition,
   handleBoundsChanged,
   handleDisableClickThrough,
+  handleMoveBy,
   handlePetWindowCloseRequest,
   handleSetAlwaysOnTop,
   handleSetClickThrough,
@@ -66,6 +67,7 @@ import {
   PET_WINDOW_DEFAULTS,
   type PetWindowHandle,
   type WindowManagerState,
+  type WorkAreaRect,
 } from "./window-manager";
 
 type ElectronApp = typeof import("electron").app;
@@ -267,6 +269,7 @@ export async function startDesktopPetMain(deps: DesktopMainDeps): Promise<{
       selectedActivityId,
       stale,
       hasAccessKey: Boolean(accessKey),
+      trayAnchor: windowState.trayExpanded ? windowState.trayAnchor : "top-left",
     });
     assertRendererViewSafe(view);
     return view;
@@ -290,7 +293,7 @@ export async function startDesktopPetMain(deps: DesktopMainDeps): Promise<{
       state.reasonCode === "auth_invalid"
     ) {
       if (!windowState.trayExpanded) {
-        applyWindowState(handleToggleTray(windowState));
+        applyWindowState(handleToggleTray(windowState, resolveWorkArea()));
         return;
       }
     }
@@ -350,6 +353,17 @@ export async function startDesktopPetMain(deps: DesktopMainDeps): Promise<{
       return true;
     } catch {
       return false;
+    }
+  }
+
+  function resolveWorkArea(bounds?: { x: number; y: number } | null): WorkAreaRect | null {
+    try {
+      const screenApi = deps.screen;
+      if (!screenApi) return null;
+      const point = bounds ?? windowState.bounds ?? { x: 0, y: 0 };
+      return screenApi.getDisplayNearestPoint({ x: point.x, y: point.y }).workArea;
+    } catch {
+      return null;
     }
   }
 
@@ -562,11 +576,36 @@ export async function startDesktopPetMain(deps: DesktopMainDeps): Promise<{
     ipcMain.handle(PET_IPC_CHANNELS.getState, () => buildView());
 
     ipcMain.on(PET_IPC_CHANNELS.toggleTray, () => {
-      applyWindowState(handleToggleTray(windowState));
+      applyWindowState(handleToggleTray(windowState, resolveWorkArea()));
     });
 
     ipcMain.on(PET_IPC_CHANNELS.hideToTray, () => {
       applyWindowState(handlePetWindowCloseRequest(windowState));
+    });
+
+    ipcMain.on(PET_IPC_CHANNELS.moveBy, (_event, payload: unknown) => {
+      if (!payload || typeof payload !== "object") return;
+      const raw = payload as { dx?: unknown; dy?: unknown };
+      const dx = typeof raw.dx === "number" && Number.isFinite(raw.dx) ? raw.dx : 0;
+      const dy = typeof raw.dy === "number" && Number.isFinite(raw.dy) ? raw.dy : 0;
+      if (dx === 0 && dy === 0) return;
+      // Cap a single IPC tick so a buggy renderer cannot teleport the window.
+      const capped = {
+        dx: Math.max(-240, Math.min(240, dx)),
+        dy: Math.max(-240, Math.min(240, dy)),
+      };
+      // Drag path: move only — skip pushState (view unchanged) to keep pointer smooth.
+      const next = handleMoveBy(windowState, capped, resolveWorkArea());
+      if (next === windowState) return;
+      windowState = next;
+      if (petWindow && !petWindow.isDestroyed() && windowState.bounds) {
+        petWindow.setBounds(windowState.bounds);
+      }
+      const pos = windowState.bounds
+        ? { x: windowState.bounds.x, y: windowState.bounds.y }
+        : settings.windowPosition;
+      settings = updateDesktopSettings(settings, { windowPosition: pos });
+      // Persist on native moved/resized; here only update in-memory. Flush via onMoved.
     });
 
     ipcMain.on(PET_IPC_CHANNELS.selectActivity, (_event, activityId: unknown) => {

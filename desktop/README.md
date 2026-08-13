@@ -32,8 +32,8 @@ Generated bundles (`main.js`, `pet-preload.js`, maps, `.build-stamp.json`) are g
 
 | Action | Result |
 | --- | --- |
-| Drag top grey grip | Move frameless window |
-| Click pet body | Toggle Activity tray |
+| Drag pet body (or top grey grip) | Move frameless window (body uses click-vs-drag threshold) |
+| Click pet body | Toggle Activity tray (pet icon stays put; tray grows down/right, or up/left near edges) |
 | Click **×** | Hide to system tray (process keeps observing) |
 | Tray → 显示桌宠 | Show window again |
 | Tray → 退出桌宠 | Quit pet only; `spi` / tasks continue |

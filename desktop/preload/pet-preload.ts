@@ -21,6 +21,8 @@ export type SnailPetBridge = {
   toggleTray: () => void;
   /** Close affordance: hide window to tray (does not quit). */
   hideToTray: () => void;
+  /** Move frameless window by screen-pixel delta (custom pet-body drag). */
+  moveBy: (dx: number, dy: number) => void;
   selectActivity: (activityId: string) => void;
   markRead: (activityId: string) => void;
   markAllRead: () => void;
@@ -63,6 +65,7 @@ const bridge: SnailPetBridge = {
   },
   toggleTray: () => send(PET_IPC_CHANNELS.toggleTray),
   hideToTray: () => send(PET_IPC_CHANNELS.hideToTray),
+  moveBy: (dx, dy) => send(PET_IPC_CHANNELS.moveBy, { dx, dy }),
   selectActivity: (activityId) => send(PET_IPC_CHANNELS.selectActivity, activityId),
   markRead: (activityId) => send(PET_IPC_CHANNELS.markRead, activityId),
   markAllRead: () => send(PET_IPC_CHANNELS.markAllRead),

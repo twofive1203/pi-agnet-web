@@ -46,6 +46,7 @@ export function renderPetApp(root: Document = document): {
   destroy: () => void;
 } {
   const bridge = window.snailPet;
+  const petRoot = root.getElementById("root");
   const petButton = root.getElementById("pet-button");
   const petAvatar = root.getElementById("pet-avatar");
   const petGlyph = root.getElementById("pet-glyph");
@@ -69,6 +70,9 @@ export function renderPetApp(root: Document = document): {
   const hideToTray = () => {
     bridge?.hideToTray();
   };
+
+  /** Pixel threshold before a pointer gesture becomes a window drag. */
+  const DRAG_THRESHOLD_PX = 5;
 
   let current: DesktopActivityView | null = null;
   let reducedMotion =
@@ -118,8 +122,23 @@ export function renderPetApp(root: Document = document): {
     }
 
     if (tray) tray.hidden = !view.trayOpen;
+    if (petRoot) {
+      petRoot.classList.toggle("is-collapsed", !view.trayOpen);
+      petRoot.classList.toggle("is-expanded", view.trayOpen);
+      const anchor =
+        view.trayAnchor === "top-right" ||
+        view.trayAnchor === "bottom-left" ||
+        view.trayAnchor === "bottom-right"
+          ? view.trayAnchor
+          : "top-left";
+      petRoot.setAttribute("data-tray-anchor", view.trayOpen ? anchor : "top-left");
+    }
     if (petButton) {
       petButton.setAttribute("aria-expanded", view.trayOpen ? "true" : "false");
+      petButton.setAttribute(
+        "aria-label",
+        view.trayOpen ? "桌宠，点击收起活动列表，拖动可移动" : "桌宠，点击展开活动列表，拖动可移动",
+      );
     }
 
     if (trayCounts) {
@@ -233,8 +252,89 @@ export function renderPetApp(root: Document = document): {
     return btn;
   }
 
-  petButton?.addEventListener("click", () => {
-    bridge?.toggleTray();
+  // Click opens/closes the tray; drag past threshold moves the frameless window.
+  // CSS -webkit-app-region:drag cannot coexist with click on the same node.
+  let petPointerId: number | null = null;
+  let petDragOriginX = 0;
+  let petDragOriginY = 0;
+  let petLastScreenX = 0;
+  let petLastScreenY = 0;
+  let petDragging = false;
+
+  const endPetPointer = (target: HTMLElement, pointerId: number) => {
+    if (petPointerId !== pointerId) return;
+    try {
+      if (target.hasPointerCapture?.(pointerId)) {
+        target.releasePointerCapture(pointerId);
+      }
+    } catch {
+      // ignore release errors when the element is gone
+    }
+    target.classList.remove("is-dragging");
+    const wasDragging = petDragging;
+    petPointerId = null;
+    petDragging = false;
+    if (!wasDragging) {
+      bridge?.toggleTray();
+    }
+  };
+
+  petButton?.addEventListener("pointerdown", (event) => {
+    if (!(petButton instanceof HTMLElement)) return;
+    if (event.button !== 0) return;
+    petPointerId = event.pointerId;
+    petDragOriginX = event.screenX;
+    petDragOriginY = event.screenY;
+    petLastScreenX = event.screenX;
+    petLastScreenY = event.screenY;
+    petDragging = false;
+    try {
+      petButton.setPointerCapture(event.pointerId);
+    } catch {
+      // older hosts may lack capture; move/up still work while over the button
+    }
+  });
+
+  petButton?.addEventListener("pointermove", (event) => {
+    if (!(petButton instanceof HTMLElement)) return;
+    if (petPointerId !== event.pointerId) return;
+    const totalDx = event.screenX - petDragOriginX;
+    const totalDy = event.screenY - petDragOriginY;
+    if (
+      !petDragging &&
+      (Math.abs(totalDx) >= DRAG_THRESHOLD_PX || Math.abs(totalDy) >= DRAG_THRESHOLD_PX)
+    ) {
+      petDragging = true;
+      petButton.classList.add("is-dragging");
+    }
+    if (!petDragging) return;
+    const dx = event.screenX - petLastScreenX;
+    const dy = event.screenY - petLastScreenY;
+    petLastScreenX = event.screenX;
+    petLastScreenY = event.screenY;
+    if (dx !== 0 || dy !== 0) {
+      bridge?.moveBy(dx, dy);
+    }
+  });
+
+  petButton?.addEventListener("pointerup", (event) => {
+    if (!(petButton instanceof HTMLElement)) return;
+    endPetPointer(petButton, event.pointerId);
+  });
+
+  petButton?.addEventListener("pointercancel", (event) => {
+    if (!(petButton instanceof HTMLElement)) return;
+    // Cancelled gestures should not toggle the tray.
+    if (petPointerId === event.pointerId) {
+      petDragging = true;
+      endPetPointer(petButton, event.pointerId);
+    }
+  });
+
+  // Suppress the synthetic click after pointerup so we do not double-toggle.
+  petButton?.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
   });
 
   btnMarkAll?.addEventListener("click", () => {

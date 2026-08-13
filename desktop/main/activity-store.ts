@@ -102,6 +102,11 @@ export type DesktopActivityView = {
   /** True when last snapshot is retained under reconnect/disconnect. */
   stale: boolean;
   trayOpen: boolean;
+  /**
+   * Where the pet stack sits while trayOpen (mirrors window-manager trayAnchor).
+   * Drives flex layout so the icon stays fixed while the tray grows outward.
+   */
+  trayAnchor: "top-left" | "top-right" | "bottom-left" | "bottom-right";
   selectedActivityId: string | null;
   selectedPetId: string;
   alwaysOnTop: boolean;
@@ -131,6 +136,8 @@ export type ActivityStoreSnapshotInput = {
   stale?: boolean;
   /** Whether main currently holds an access key (never the key itself). */
   hasAccessKey?: boolean;
+  /** Layout anchor while tray is open (from window-manager). */
+  trayAnchor?: "top-left" | "top-right" | "bottom-left" | "bottom-right";
 };
 
 const PRESENTATION_RANK = new Map(
@@ -368,6 +375,7 @@ export function buildActivityView(input: ActivityStoreSnapshotInput): DesktopAct
     needsAccessKey,
     stale,
     trayOpen: input.settings.activityTrayOpen,
+    trayAnchor: input.trayAnchor ?? "top-left",
     selectedActivityId: selectedExists ? selectedActivityId : null,
     selectedPetId: input.settings.selectedPetId,
     alwaysOnTop: input.settings.alwaysOnTop,

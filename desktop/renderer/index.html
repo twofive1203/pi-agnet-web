@@ -11,37 +11,46 @@
     <link rel="stylesheet" href="./pet.css" />
   </head>
   <body>
-    <div id="root" class="pet-root" aria-live="polite">
-      <div class="pet-chrome">
-        <!-- Drag region: frameless window has no title bar; this strip moves the window. -->
-        <div class="pet-drag-bar" title="拖动桌宠" aria-hidden="true">
-          <span class="pet-drag-dots"></span>
+    <div
+      id="root"
+      class="pet-root is-collapsed"
+      data-tray-anchor="top-left"
+      aria-live="polite"
+    >
+      <!-- pet-stack stays fixed on screen; tray grows around it via data-tray-anchor. -->
+      <div class="pet-stack">
+        <div class="pet-chrome">
+          <!-- Native drag strip (backup). Pet body also supports click-vs-drag. -->
+          <div class="pet-drag-bar" title="拖动桌宠" aria-hidden="true">
+            <span class="pet-drag-dots"></span>
+          </div>
+          <button
+            type="button"
+            id="btn-hide"
+            class="pet-chrome-btn pet-close-btn"
+            title="隐藏到托盘"
+            aria-label="隐藏到托盘"
+          >
+            ×
+          </button>
         </div>
+
         <button
           type="button"
-          id="btn-hide"
-          class="pet-chrome-btn pet-close-btn"
-          title="隐藏到托盘"
-          aria-label="隐藏到托盘"
+          id="pet-button"
+          class="pet-surface"
+          aria-label="桌宠，点击展开活动列表，拖动可移动"
+          aria-expanded="false"
         >
-          ×
+          <div id="pet-avatar" class="pet-avatar frame-idle" data-state="idle">
+            <span id="pet-glyph" class="pet-glyph" aria-hidden="true">·</span>
+            <span class="pet-shell" aria-hidden="true"></span>
+            <span class="pet-body" aria-hidden="true"></span>
+          </div>
+          <div id="pet-badge" class="pet-badge" hidden>0</div>
+          <div id="pet-label" class="pet-label">空闲</div>
         </button>
       </div>
-
-      <button
-        type="button"
-        id="pet-button"
-        class="pet-surface"
-        aria-label="桌宠，点击展开活动列表"
-      >
-        <div id="pet-avatar" class="pet-avatar frame-idle" data-state="idle">
-          <span id="pet-glyph" class="pet-glyph" aria-hidden="true">·</span>
-          <span class="pet-shell" aria-hidden="true"></span>
-          <span class="pet-body" aria-hidden="true"></span>
-        </div>
-        <div id="pet-badge" class="pet-badge" hidden>0</div>
-        <div id="pet-label" class="pet-label">Idle</div>
-      </button>
 
       <section id="activity-tray" class="activity-tray" hidden aria-label="活动列表">
         <header class="tray-header">

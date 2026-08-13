@@ -56,14 +56,20 @@ import {
   trayItemToAction,
 } from "../desktop/main/tray-controller";
 import {
+  clampWindowBounds,
   createInitialWindowManagerState,
   handleDisableClickThrough,
   defaultPetWindowPosition,
+  handleMoveBy,
   handlePetWindowCloseRequest,
   handleSetClickThrough,
   handleShowPet,
   handleToggleTray,
+  petStackScreenRect,
   petWindowWebPreferences,
+  pickTrayLayoutAnchor,
+  PET_LAYOUT,
+  PET_WINDOW_DEFAULTS,
 } from "../desktop/main/window-manager";
 import {
   connectionBannerText,
@@ -397,6 +403,9 @@ async function main() {
   const pos = defaultPetWindowPosition({ x: 0, y: 0, width: 1920, height: 1080 });
   assert.ok(pos.x > 1000);
   assert.ok(pos.y > 500);
+  // Collapsed window must fit chrome + avatar (not the old 128² clip box).
+  assert.ok(PET_WINDOW_DEFAULTS.petOnlyWidth >= 140);
+  assert.ok(PET_WINDOW_DEFAULTS.petOnlyHeight >= 160);
 
   // --- Close-to-tray + click-through recovery ---
   let win = createInitialWindowManagerState({
@@ -406,6 +415,8 @@ async function main() {
   });
   assert.equal(win.bounds?.x, pos.x);
   assert.equal(win.bounds?.y, pos.y);
+  assert.equal(win.bounds?.width, PET_WINDOW_DEFAULTS.petOnlyWidth);
+  assert.equal(win.bounds?.height, PET_WINDOW_DEFAULTS.petOnlyHeight);
   win = handlePetWindowCloseRequest(win);
   assert.equal(win.visible, false);
   win = handleShowPet(win);
@@ -415,7 +426,82 @@ async function main() {
   win = handleDisableClickThrough(win);
   assert.equal(win.clickThrough, false);
   assert.equal(win.visible, true);
-  win = handleToggleTray(win);
+
+  // Pet icon stays fixed on screen; tray grows outward (prefer down/right).
+  const workArea = { x: 0, y: 0, width: 1920, height: 1080 };
+  const centerPos = { x: 800, y: 300 };
+  win = {
+    ...win,
+    trayExpanded: false,
+    trayAnchor: "top-left",
+    bounds: {
+      x: centerPos.x,
+      y: centerPos.y,
+      width: PET_WINDOW_DEFAULTS.petOnlyWidth,
+      height: PET_WINDOW_DEFAULTS.petOnlyHeight,
+    },
+  };
+  const centerStack = petStackScreenRect(win.bounds!, "top-left");
+  win = handleToggleTray(win, workArea);
+  assert.equal(win.trayExpanded, true);
+  assert.equal(win.trayAnchor, "top-left");
+  assert.equal(win.bounds?.width, PET_WINDOW_DEFAULTS.trayWidth);
+  assert.equal(win.bounds?.height, PET_WINDOW_DEFAULTS.trayHeight);
+  assert.deepEqual(petStackScreenRect(win.bounds!, win.trayAnchor), centerStack);
+
+  // Collapse keeps the same pet-stack screen position.
+  win = handleToggleTray(win, workArea);
+  assert.equal(win.trayExpanded, false);
+  assert.equal(win.bounds?.width, PET_WINDOW_DEFAULTS.petOnlyWidth);
+  assert.equal(win.bounds?.height, PET_WINDOW_DEFAULTS.petOnlyHeight);
+  assert.deepEqual(petStackScreenRect(win.bounds!, "top-left"), centerStack);
+
+  // Bottom-right docked pet expands UP+LEFT so the icon does not jump to the card corner.
+  const corner = defaultPetWindowPosition(workArea);
+  win = {
+    ...win,
+    trayExpanded: false,
+    trayAnchor: "top-left",
+    bounds: {
+      x: corner.x,
+      y: corner.y,
+      width: PET_WINDOW_DEFAULTS.petOnlyWidth,
+      height: PET_WINDOW_DEFAULTS.petOnlyHeight,
+    },
+  };
+  const cornerStack = petStackScreenRect(win.bounds!, "top-left");
+  assert.equal(
+    pickTrayLayoutAnchor(
+      cornerStack,
+      { width: PET_WINDOW_DEFAULTS.trayWidth, height: PET_WINDOW_DEFAULTS.trayHeight },
+      workArea,
+    ),
+    "bottom-right",
+  );
+  win = handleToggleTray(win, workArea);
+  assert.equal(win.trayExpanded, true);
+  assert.equal(win.trayAnchor, "bottom-right");
+  assert.ok(win.bounds!.x + win.bounds!.width <= workArea.x + workArea.width);
+  assert.ok(win.bounds!.y + win.bounds!.height <= workArea.y + workArea.height);
+  assert.deepEqual(petStackScreenRect(win.bounds!, win.trayAnchor), cornerStack);
+  win = handleToggleTray(win, workArea);
+  assert.equal(win.trayExpanded, false);
+  assert.deepEqual(petStackScreenRect(win.bounds!, "top-left"), cornerStack);
+  assert.ok(PET_LAYOUT.stackHeight === 136);
+
+  // Custom body drag delta + soft edge clamp.
+  const moved = handleMoveBy(win, { dx: 12, dy: -8 }, workArea);
+  assert.equal(moved.bounds?.x, win.bounds!.x + 12);
+  assert.equal(moved.bounds?.y, win.bounds!.y - 8);
+  const clamped = clampWindowBounds(
+    { x: 5000, y: -200, width: 140, height: 160 },
+    workArea,
+  );
+  assert.equal(clamped.x, 1920 - 140);
+  assert.equal(clamped.y, 0);
+
+  // Re-expand for remaining assertions that expect tray open is optional.
+  win = handleToggleTray(win, workArea);
   assert.equal(win.trayExpanded, true);
 
   const prefs = petWindowWebPreferences("/tmp/preload.js");
@@ -495,7 +581,7 @@ async function main() {
   assert.ok(quit);
   assertQuitLabelSafe(quit!.label);
   assert.equal(trayItemToAction("quit"), "quit");
-  assert.ok(buildTrayTooltip({ presentation: "running", activeCount: 2, attentionCount: 1 }).includes("Running"));
+  assert.ok(buildTrayTooltip({ presentation: "running", activeCount: 2, attentionCount: 1 }).includes("运行中"));
 
   // --- Reduced motion + builtin pets ---
   const manifest = getBuiltinPetManifest("snail-default");
@@ -620,8 +706,38 @@ async function main() {
   const css = readFileSync(path.join(process.cwd(), "desktop", "renderer", "pet.css"), "utf8");
   assert.ok(css.includes("-webkit-app-region: drag"));
   assert.ok(css.includes("-webkit-app-region: no-drag"));
+  // Author display rules must not resurrect [hidden] surfaces (collapsed tray bleed).
+  assert.ok(css.includes(".activity-tray[hidden]"));
+  assert.ok(css.includes(".pet-badge[hidden]"));
+  assert.ok(css.includes("display: none !important"));
+  assert.ok(css.includes('data-tray-anchor="bottom-right"'));
+  assert.ok(css.includes("column-reverse"));
+  assert.ok(html.includes("pet-stack"));
+  assert.ok(html.includes("data-tray-anchor"));
 
   assert.equal(isRendererIpcChannel(PET_IPC_CHANNELS.hideToTray), true);
+  assert.equal(isRendererIpcChannel(PET_IPC_CHANNELS.moveBy), true);
+
+  const preloadBridge = readFileSync(
+    path.join(process.cwd(), "desktop", "preload", "pet-preload.ts"),
+    "utf8",
+  );
+  assert.ok(preloadBridge.includes("moveBy"));
+
+  const petAppJs = readFileSync(
+    path.join(process.cwd(), "desktop", "renderer", "pet-app.js"),
+    "utf8",
+  );
+  assert.ok(petAppJs.includes("DRAG_THRESHOLD_PX"));
+  assert.ok(petAppJs.includes("moveBy"));
+  assert.ok(petAppJs.includes("is-collapsed"));
+
+  // Collapsed avatar labels stay short Chinese strings (fit 112px surface).
+  assert.equal(resolvePetFrame(getBuiltinPetManifest("snail-default"), "idle", false).label, "空闲");
+  assert.equal(
+    resolvePetFrame(getBuiltinPetManifest("snail-default"), "service_not_running", false).label,
+    "未启动",
+  );
 
   // Unread helper
   const unreadIds = listUnreadTransitionIds(

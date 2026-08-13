@@ -6,6 +6,7 @@
   "use strict";
 
   const bridge = window.snailPet;
+  const petRoot = document.getElementById("root");
   const petButton = document.getElementById("pet-button");
   const petAvatar = document.getElementById("pet-avatar");
   const petGlyph = document.getElementById("pet-glyph");
@@ -26,19 +27,21 @@
   const btnHideTray = document.getElementById("btn-hide-tray");
   const staleFlag = document.getElementById("stale-flag");
 
+  const DRAG_THRESHOLD_PX = 5;
+
   function hideToTray() {
     if (bridge && typeof bridge.hideToTray === "function") bridge.hideToTray();
   }
 
   const LABELS = {
-    service_not_running: "Service not running",
-    disconnected: "Disconnected",
-    needs_input: "Needs input",
-    blocked: "Blocked",
-    ready: "Ready",
-    retrying: "Retrying",
-    running: "Running",
-    idle: "Idle",
+    service_not_running: "未启动",
+    disconnected: "未连接",
+    needs_input: "待输入",
+    blocked: "受阻",
+    ready: "已完成",
+    retrying: "重试中",
+    running: "运行中",
+    idle: "空闲",
   };
   const GLYPHS = {
     service_not_running: "⏻",
@@ -130,7 +133,24 @@
     }
 
     if (tray) tray.hidden = !view.trayOpen;
-    if (petButton) petButton.setAttribute("aria-expanded", view.trayOpen ? "true" : "false");
+    if (petRoot) {
+      petRoot.classList.toggle("is-collapsed", !view.trayOpen);
+      petRoot.classList.toggle("is-expanded", !!view.trayOpen);
+      var anchor =
+        view.trayAnchor === "top-right" ||
+        view.trayAnchor === "bottom-left" ||
+        view.trayAnchor === "bottom-right"
+          ? view.trayAnchor
+          : "top-left";
+      petRoot.setAttribute("data-tray-anchor", view.trayOpen ? anchor : "top-left");
+    }
+    if (petButton) {
+      petButton.setAttribute("aria-expanded", view.trayOpen ? "true" : "false");
+      petButton.setAttribute(
+        "aria-label",
+        view.trayOpen ? "桌宠，点击收起活动列表，拖动可移动" : "桌宠，点击展开活动列表，拖动可移动",
+      );
+    }
     if (trayCounts) {
       trayCounts.textContent =
         "活动 " + (view.activeCount || 0) + " · 关注 " + (view.attentionCount || 0);
@@ -216,9 +236,77 @@
     return btn;
   }
 
+  // Click opens/closes the tray; drag past threshold moves the frameless window.
+  let petPointerId = null;
+  let petDragOriginX = 0;
+  let petDragOriginY = 0;
+  let petLastScreenX = 0;
+  let petLastScreenY = 0;
+  let petDragging = false;
+
+  function endPetPointer(pointerId) {
+    if (!petButton || petPointerId !== pointerId) return;
+    try {
+      if (petButton.hasPointerCapture && petButton.hasPointerCapture(pointerId)) {
+        petButton.releasePointerCapture(pointerId);
+      }
+    } catch (_err) {
+      // ignore
+    }
+    petButton.classList.remove("is-dragging");
+    const wasDragging = petDragging;
+    petPointerId = null;
+    petDragging = false;
+    if (!wasDragging && bridge) bridge.toggleTray();
+  }
+
   if (petButton) {
-    petButton.addEventListener("click", function () {
-      if (bridge) bridge.toggleTray();
+    petButton.addEventListener("pointerdown", function (event) {
+      if (event.button !== 0) return;
+      petPointerId = event.pointerId;
+      petDragOriginX = event.screenX;
+      petDragOriginY = event.screenY;
+      petLastScreenX = event.screenX;
+      petLastScreenY = event.screenY;
+      petDragging = false;
+      try {
+        petButton.setPointerCapture(event.pointerId);
+      } catch (_err) {
+        // ignore
+      }
+    });
+    petButton.addEventListener("pointermove", function (event) {
+      if (petPointerId !== event.pointerId) return;
+      const totalDx = event.screenX - petDragOriginX;
+      const totalDy = event.screenY - petDragOriginY;
+      if (
+        !petDragging &&
+        (Math.abs(totalDx) >= DRAG_THRESHOLD_PX || Math.abs(totalDy) >= DRAG_THRESHOLD_PX)
+      ) {
+        petDragging = true;
+        petButton.classList.add("is-dragging");
+      }
+      if (!petDragging) return;
+      const dx = event.screenX - petLastScreenX;
+      const dy = event.screenY - petLastScreenY;
+      petLastScreenX = event.screenX;
+      petLastScreenY = event.screenY;
+      if ((dx !== 0 || dy !== 0) && bridge && typeof bridge.moveBy === "function") {
+        bridge.moveBy(dx, dy);
+      }
+    });
+    petButton.addEventListener("pointerup", function (event) {
+      endPetPointer(event.pointerId);
+    });
+    petButton.addEventListener("pointercancel", function (event) {
+      if (petPointerId === event.pointerId) {
+        petDragging = true;
+        endPetPointer(event.pointerId);
+      }
+    });
+    petButton.addEventListener("click", function (event) {
+      event.preventDefault();
+      event.stopPropagation();
     });
   }
   if (btnMarkAll) {
