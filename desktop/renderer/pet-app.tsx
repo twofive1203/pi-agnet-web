@@ -12,9 +12,11 @@ import type { DesktopActivityRow, DesktopActivityView } from "../main/activity-s
 import type { SnailPetBridge } from "../preload/pet-preload";
 import {
   connectionBannerText,
+  formatActivityProgress,
   formatElapsed,
   getBuiltinPetManifest,
   moveActivitySelection,
+  petSourceLabel,
   petStateGlyph,
   petStateLabel,
   resolvePetFrame,
@@ -52,6 +54,9 @@ export function renderPetApp(root: Document = document): {
   const petGlyph = root.getElementById("pet-glyph");
   const petLabel = root.getElementById("pet-label");
   const petBadge = root.getElementById("pet-badge");
+  const petCaption = root.getElementById("pet-caption");
+  const petCaptionState = root.getElementById("pet-caption-state");
+  const petCaptionTitle = root.getElementById("pet-caption-title");
   const tray = root.getElementById("activity-tray");
   const projectList = root.getElementById("project-list");
   const trayCounts = root.getElementById("tray-counts");
@@ -65,6 +70,15 @@ export function renderPetApp(root: Document = document): {
   const btnCopy = root.getElementById("btn-copy-cmd");
   const btnHide = root.getElementById("btn-hide");
   const btnHideTray = root.getElementById("btn-hide-tray");
+  const btnSettings = root.getElementById("btn-settings");
+  const settingsPanel = root.getElementById("settings-panel");
+  const petPicker = root.getElementById("pet-picker");
+  const prefAlwaysOnTop = root.getElementById("pref-always-on-top") as HTMLInputElement | null;
+  const prefClickThrough = root.getElementById("pref-click-through") as HTMLInputElement | null;
+  const prefLaunchAtLogin = root.getElementById("pref-launch-at-login") as HTMLInputElement | null;
+  const prefCompletion = root.getElementById("pref-completion") as HTMLSelectElement | null;
+  const prefNeedsInput = root.getElementById("pref-needs-input") as HTMLInputElement | null;
+  const prefBlocked = root.getElementById("pref-blocked") as HTMLInputElement | null;
   const staleFlag = root.getElementById("stale-flag");
 
   const hideToTray = () => {
@@ -75,6 +89,7 @@ export function renderPetApp(root: Document = document): {
   const DRAG_THRESHOLD_PX = 5;
 
   let current: DesktopActivityView | null = null;
+  let settingsOpen = false;
   let reducedMotion =
     typeof window.matchMedia === "function" &&
     window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -108,8 +123,22 @@ export function renderPetApp(root: Document = document): {
       petAvatar.className = `pet-avatar frame-${frame.frame}${frame.animated ? " is-animated" : ""}`;
       petAvatar.setAttribute("data-state", state);
     }
+    if (petRoot) petRoot.setAttribute("data-pet", manifest.id);
     if (petGlyph) petGlyph.textContent = frame.glyph || petStateGlyph(state);
     if (petLabel) petLabel.textContent = frame.label || petStateLabel(state);
+
+    const primaryActivity = view.projects[0]?.activities[0] ?? null;
+    const showCaption = primaryActivity != null || state !== "idle";
+    if (petCaption) petCaption.hidden = !showCaption;
+    if (petCaptionState) petCaptionState.textContent = frame.label || petStateLabel(state);
+    if (petCaptionTitle) {
+      petCaptionTitle.textContent = primaryActivity?.title ?? connectionBannerText({
+        connectionStatus: view.connectionStatus,
+        canCopyStartCommand: view.canCopyStartCommand,
+        startCommand: view.startCommand,
+        reasonCode: view.connectionReasonCode,
+      }) ?? "";
+    }
 
     if (petBadge) {
       const count = view.attentionCount + (view.aggregate?.ready ?? 0);
@@ -122,6 +151,12 @@ export function renderPetApp(root: Document = document): {
     }
 
     if (tray) tray.hidden = !view.trayOpen;
+    if (!view.trayOpen) settingsOpen = false;
+    if (settingsPanel) settingsPanel.hidden = !settingsOpen;
+    if (projectList) projectList.hidden = settingsOpen;
+    if (btnSettings) {
+      btnSettings.setAttribute("aria-expanded", settingsOpen ? "true" : "false");
+    }
     if (petRoot) {
       petRoot.classList.toggle("is-collapsed", !view.trayOpen);
       petRoot.classList.toggle("is-expanded", view.trayOpen);
@@ -178,6 +213,17 @@ export function renderPetApp(root: Document = document): {
       staleFlag.hidden = !view.stale;
     }
 
+    if (prefAlwaysOnTop) prefAlwaysOnTop.checked = view.alwaysOnTop;
+    if (prefClickThrough) prefClickThrough.checked = view.clickThrough;
+    if (prefLaunchAtLogin) prefLaunchAtLogin.checked = view.launchAtLogin;
+    if (prefCompletion) prefCompletion.value = view.notification.completion;
+    if (prefNeedsInput) prefNeedsInput.checked = view.notification.needsInput;
+    if (prefBlocked) prefBlocked.checked = view.notification.blocked;
+    petPicker?.querySelectorAll<HTMLElement>("[data-pet-id]").forEach((option) => {
+      const selected = option.dataset.petId === view.selectedPetId;
+      option.setAttribute("aria-checked", selected ? "true" : "false");
+    });
+
     if (projectList) {
       projectList.replaceChildren();
       if (view.projects.length === 0) {
@@ -221,13 +267,54 @@ export function renderPetApp(root: Document = document): {
 
     const main = document.createElement("span");
     main.className = "row-main";
-    const title = document.createElement("div");
+
+    const heading = document.createElement("span");
+    heading.className = "row-heading";
+    const title = document.createElement("span");
     title.className = "row-title";
     title.textContent = activity.title;
-    const meta = document.createElement("div");
+    const source = document.createElement("span");
+    source.className = "row-source";
+    source.textContent = petSourceLabel(activity.source);
+    heading.append(title, source);
+
+    const meta = document.createElement("span");
     meta.className = "row-meta";
-    meta.textContent = `${petStateLabel(activity.presentation)} · ${activity.source}`;
-    main.append(title, meta);
+    meta.textContent = [petStateLabel(activity.presentation), activity.phase]
+      .filter(Boolean)
+      .join(" · ");
+    main.append(heading, meta);
+
+    const progressLabel = formatActivityProgress(activity.progress, activity.children.length);
+    if (progressLabel) {
+      const progress = document.createElement("span");
+      progress.className = "row-progress";
+      progress.textContent = progressLabel;
+      main.appendChild(progress);
+    }
+
+    if (activity.progress.kind === "ratio" && activity.progress.total > 0) {
+      const track = document.createElement("span");
+      track.className = "row-progress-track";
+      const bar = document.createElement("span");
+      bar.className = "row-progress-bar";
+      const ratio = Math.max(0, Math.min(1, activity.progress.current / activity.progress.total));
+      bar.style.width = `${Math.round(ratio * 100)}%`;
+      track.appendChild(bar);
+      main.appendChild(track);
+    }
+
+    if (activity.children.length > 0) {
+      const children = document.createElement("span");
+      children.className = "row-children";
+      for (const child of activity.children.slice(0, 3)) {
+        const chip = document.createElement("span");
+        chip.className = "row-child";
+        chip.textContent = `${child.executionState === "settled" ? "✓" : "↳"} ${child.title}`;
+        children.appendChild(chip);
+      }
+      main.appendChild(children);
+    }
 
     const elapsed = document.createElement("span");
     elapsed.className = "row-elapsed";
@@ -381,7 +468,43 @@ export function renderPetApp(root: Document = document): {
   btnHideTray?.addEventListener("click", (event) => {
     event.preventDefault();
     event.stopPropagation();
-    hideToTray();
+    bridge?.toggleTray();
+  });
+
+  btnSettings?.addEventListener("click", () => {
+    settingsOpen = !settingsOpen;
+    if (current) update(current);
+  });
+
+  petPicker?.addEventListener("click", (event) => {
+    const target = event.target instanceof Element
+      ? event.target.closest<HTMLElement>("[data-pet-id]")
+      : null;
+    const selectedPetId = target?.dataset.petId;
+    if (!selectedPetId) return;
+    bridge?.setPrefs({ selectedPetId });
+  });
+
+  prefAlwaysOnTop?.addEventListener("change", () => {
+    bridge?.setPrefs({ alwaysOnTop: prefAlwaysOnTop.checked });
+  });
+  prefClickThrough?.addEventListener("change", () => {
+    bridge?.setPrefs({ clickThrough: prefClickThrough.checked });
+  });
+  prefLaunchAtLogin?.addEventListener("change", () => {
+    bridge?.setPrefs({ launchAtLogin: prefLaunchAtLogin.checked });
+  });
+  prefCompletion?.addEventListener("change", () => {
+    const completion = prefCompletion.value;
+    if (completion === "never" || completion === "background-only" || completion === "always") {
+      bridge?.setPrefs({ notification: { completion } });
+    }
+  });
+  prefNeedsInput?.addEventListener("change", () => {
+    bridge?.setPrefs({ notification: { needsInput: prefNeedsInput.checked } });
+  });
+  prefBlocked?.addEventListener("change", () => {
+    bridge?.setPrefs({ notification: { blocked: prefBlocked.checked } });
   });
 
   const onKeyDown = (event: KeyboardEvent) => {
@@ -402,7 +525,12 @@ export function renderPetApp(root: Document = document): {
     }
     if (event.key === "Escape") {
       event.preventDefault();
-      if (current.trayOpen) bridge?.toggleTray();
+      if (settingsOpen) {
+        settingsOpen = false;
+        update(current);
+      } else if (current.trayOpen) {
+        bridge?.toggleTray();
+      }
     }
   };
   root.addEventListener("keydown", onKeyDown);

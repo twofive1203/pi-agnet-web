@@ -26,7 +26,7 @@ npm run dev                 # or: spi --no-open
 npm run desktop:dev
 ```
 
-Generated bundles (`main.js`, `pet-preload.js`, maps, `.build-stamp.json`) are gitignored — always build before packaging.
+Generated main/preload bundles (`main.js`, `pet-preload.js`, maps, `.build-stamp.json`) are gitignored. `desktop:build` also regenerates the checked-in browser runtime `renderer/pet-app.js` from `pet-app.tsx`; always build before packaging and commit that renderer output when its source changes.
 
 ## UI cheatsheet
 
@@ -34,7 +34,9 @@ Generated bundles (`main.js`, `pet-preload.js`, maps, `.build-stamp.json`) are g
 | --- | --- |
 | Drag pet body (or top grey grip) | Move frameless window (body uses click-vs-drag threshold) |
 | Click pet body | Toggle Activity tray (pet icon stays put; tray grows down/right, or up/left near edges) |
-| Click **×** | Hide to system tray (process keeps observing) |
+| Activity tray → **⚙** | Choose the built-in snail and adjust always-on-top, click-through, login launch, and notifications |
+| Activity tray → **⌄** | Collapse only the Activity tray; the pet stays visible |
+| Pet chrome → **×** | Hide to system tray (process keeps observing) |
 | Tray → 显示桌宠 | Show window again |
 | Tray → 退出桌宠 | Quit pet only; `spi` / tasks continue |
 | Tray / UI → 复制启动命令 | Clipboard `spi --no-open` (never executed) |

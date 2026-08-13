@@ -149,9 +149,9 @@ Separate from the Next.js WebUI. Lives under `desktop/` and is packaged independ
 | File | Purpose |
 | --- | --- |
 | `desktop/renderer/index.html` | Transparent pet shell + Activity tray markup; strict CSP (`default-src 'none'`). |
-| `desktop/renderer/pet.css` | Pet frames, tray layout, reduced-motion gate, non-color state cues. |
-| `desktop/renderer/pet-state.ts` | Pure presentation helpers (manifest frames, glyphs/labels, keyboard selection, elapsed). |
-| `desktop/renderer/pet-app.tsx` (+ `pet-app.js`) | Pet click toggles tray; rows open validated deep links via preload; mark-one/all-read; service-not-running copy/retry. No token/Node. |
+| `desktop/renderer/pet.css` | Transparent CSS/vector snail personalities, state posture/animation, tray/settings layout, reduced-motion gate, and non-color cues. |
+| `desktop/renderer/pet-state.ts` | Pure presentation helpers (manifest frames, glyphs/labels, localized source labels, verifiable progress formatting, keyboard selection, elapsed). |
+| `desktop/renderer/pet-app.tsx` (+ generated `pet-app.js`) | Pet click toggles tray; compact safe status caption; task rows show source/phase/real progress/Subagents and open validated deep links; inline local pet/always-on-top/click-through/autostart/notification settings; mark-one/all-read; service-not-running copy/retry. No token/Node. |
 | `desktop/preload/pet-preload.ts` | Narrow `window.snailPet` bridge. |
 | `desktop/assets/pets/*` | Builtin versioned pet manifests (`snail-default`, `snail-classic`). |
 

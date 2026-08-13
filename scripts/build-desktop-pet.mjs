@@ -1,5 +1,5 @@
 /**
- * Bundle desktop pet main + preload for Electron (dev and package).
+ * Bundle desktop pet main, preload, and browser renderer for Electron.
  *
  * Usage: node scripts/build-desktop-pet.mjs
  *        npm run desktop:build
@@ -12,6 +12,7 @@ import * as esbuild from "esbuild";
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const outMain = path.join(ROOT, "desktop", "main", "main.js");
 const outPreload = path.join(ROOT, "desktop", "preload", "pet-preload.js");
+const outRenderer = path.join(ROOT, "desktop", "renderer", "pet-app.js");
 
 async function build() {
   mkdirSync(path.dirname(outMain), { recursive: true });
@@ -59,6 +60,18 @@ async function build() {
     logLevel: "info",
   });
 
+  await esbuild.build({
+    absWorkingDir: ROOT,
+    entryPoints: [path.join(ROOT, "desktop", "renderer", "pet-app.tsx")],
+    outfile: outRenderer,
+    bundle: true,
+    platform: "browser",
+    format: "iife",
+    target: "chrome120",
+    sourcemap: false,
+    logLevel: "info",
+  });
+
   // Small stamp for smoke/debug.
   writeFileSync(
     path.join(ROOT, "desktop", ".build-stamp.json"),
@@ -67,6 +80,7 @@ async function build() {
         builtAt: new Date().toISOString(),
         main: "desktop/main/main.js",
         preload: "desktop/preload/pet-preload.js",
+        renderer: "desktop/renderer/pet-app.js",
       },
       null,
       2,
@@ -75,8 +89,9 @@ async function build() {
   );
 
   console.log("desktop-pet build ok");
-  console.log(`  main:    ${path.relative(ROOT, outMain)}`);
-  console.log(`  preload: ${path.relative(ROOT, outPreload)}`);
+  console.log(`  main:     ${path.relative(ROOT, outMain)}`);
+  console.log(`  preload:  ${path.relative(ROOT, outPreload)}`);
+  console.log(`  renderer: ${path.relative(ROOT, outRenderer)}`);
 }
 
 build().catch((error) => {

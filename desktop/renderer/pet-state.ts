@@ -4,7 +4,11 @@
  * No Node, no token, no absolute URL execution — presentation only.
  */
 
-import type { TaskObserverPresentationState } from "../../lib/task-observer-types";
+import type {
+  TaskObserverPresentationState,
+  TaskObserverProgress,
+  TaskObserverSource,
+} from "../../lib/task-observer-types";
 import { TASK_OBSERVER_PRESENTATION_PRIORITY } from "../../lib/task-observer-types";
 
 export type PetVisualState = TaskObserverPresentationState;
@@ -112,7 +116,9 @@ export function resolvePetFrame(
 ): { frame: string; label: string; glyph: string; animated: boolean } {
   const entry = manifest.states[state] ?? DEFAULT_FRAMES[state] ?? DEFAULT_FRAMES.idle;
   const frame = reducedMotion ? entry.staticFrame : entry.frame;
-  const animated = !reducedMotion && entry.frame !== entry.staticFrame;
+  // CSS personalities add posture/micro-motion even when the manifest frame key is shared.
+  const animated =
+    !reducedMotion && state !== "service_not_running" && state !== "disconnected";
   return {
     frame,
     label: entry.label,
@@ -127,6 +133,43 @@ export function petStateLabel(state: PetVisualState): string {
 
 export function petStateGlyph(state: PetVisualState): string {
   return DEFAULT_FRAMES[state]?.glyph ?? "·";
+}
+
+const SOURCE_LABELS: Record<TaskObserverSource, string> = {
+  agent: "Agent",
+  snflow: "SnFlow",
+  automation: "自动化",
+  quick_command: "快捷命令",
+};
+
+export function petSourceLabel(source: TaskObserverSource): string {
+  return SOURCE_LABELS[source] ?? source;
+}
+
+/** Format only verifiable observer progress; never invent a percentage. */
+export function formatActivityProgress(
+  progress: TaskObserverProgress,
+  childCount = 0,
+): string | null {
+  if (progress.kind === "ratio") {
+    const current = Math.max(0, Math.floor(progress.current));
+    const total = Math.max(0, Math.floor(progress.total));
+    if (total <= 0) return null;
+    const boundedCurrent = Math.min(current, total);
+    return `${boundedCurrent}/${total} · ${Math.round((boundedCurrent / total) * 100)}%`;
+  }
+  if (progress.kind === "counters") {
+    const parts: string[] = [];
+    if (progress.currentToolName) parts.push(progress.currentToolName);
+    if (typeof progress.turnCount === "number") parts.push(`${progress.turnCount} 回合`);
+    if (typeof progress.toolCount === "number") parts.push(`${progress.toolCount} 工具`);
+    const active = progress.activeSubagents ?? 0;
+    const completed = progress.completedSubagents ?? 0;
+    const subagents = Math.max(childCount, active + completed);
+    if (subagents > 0) parts.push(`${subagents} Subagent`);
+    return parts.length > 0 ? parts.join(" · ") : null;
+  }
+  return childCount > 0 ? `${childCount} Subagent` : null;
 }
 
 /** Format elapsed duration for tray rows (client-side only). */

@@ -42,10 +42,25 @@
           aria-label="桌宠，点击展开活动列表，拖动可移动"
           aria-expanded="false"
         >
+          <div id="pet-caption" class="pet-caption" hidden>
+            <span id="pet-caption-state" class="pet-caption-state">空闲</span>
+            <span id="pet-caption-title" class="pet-caption-title"></span>
+          </div>
           <div id="pet-avatar" class="pet-avatar frame-idle" data-state="idle">
-            <span id="pet-glyph" class="pet-glyph" aria-hidden="true">·</span>
-            <span class="pet-shell" aria-hidden="true"></span>
+            <span class="pet-shadow" aria-hidden="true"></span>
+            <span class="pet-tail" aria-hidden="true"></span>
             <span class="pet-body" aria-hidden="true"></span>
+            <span class="pet-head" aria-hidden="true">
+              <span class="pet-antenna pet-antenna-left"></span>
+              <span class="pet-antenna pet-antenna-right"></span>
+              <span class="pet-eye pet-eye-left"></span>
+              <span class="pet-eye pet-eye-right"></span>
+              <span class="pet-mouth"></span>
+            </span>
+            <span class="pet-shell" aria-hidden="true">
+              <span class="pet-shell-spiral"></span>
+            </span>
+            <span id="pet-glyph" class="pet-glyph" aria-hidden="true">·</span>
           </div>
           <div id="pet-badge" class="pet-badge" hidden>0</div>
           <div id="pet-label" class="pet-label">空闲</div>
@@ -63,12 +78,22 @@
             <button type="button" id="btn-retry" class="tray-btn">重试</button>
             <button
               type="button"
+              id="btn-settings"
+              class="tray-btn tray-btn-icon"
+              title="桌宠设置"
+              aria-label="桌宠设置"
+              aria-expanded="false"
+            >
+              ⚙
+            </button>
+            <button
+              type="button"
               id="btn-hide-tray"
               class="tray-btn tray-btn-close"
-              title="隐藏到托盘"
-              aria-label="隐藏到托盘"
+              title="收起活动列表"
+              aria-label="收起活动列表"
             >
-              ×
+              ⌄
             </button>
           </div>
         </header>
@@ -88,6 +113,52 @@
             <button type="button" id="btn-clear-key" class="tray-btn" hidden>清除密钥</button>
           </div>
         </div>
+        <section id="settings-panel" class="settings-panel" hidden aria-label="桌宠设置">
+          <div class="settings-heading">角色</div>
+          <div id="pet-picker" class="pet-picker" role="radiogroup" aria-label="选择桌宠">
+            <button type="button" class="pet-option" data-pet-id="snail-default" role="radio">
+              <span class="pet-option-preview preview-default" aria-hidden="true">◉</span>
+              <span>星海蜗牛</span>
+            </button>
+            <button type="button" class="pet-option" data-pet-id="snail-classic" role="radio">
+              <span class="pet-option-preview preview-classic" aria-hidden="true">◉</span>
+              <span>经典蜗牛</span>
+            </button>
+          </div>
+          <div class="settings-grid">
+            <label class="setting-toggle">
+              <input id="pref-always-on-top" type="checkbox" />
+              <span>始终置顶</span>
+            </label>
+            <label class="setting-toggle">
+              <input id="pref-launch-at-login" type="checkbox" />
+              <span>开机启动</span>
+            </label>
+            <label class="setting-toggle setting-toggle-warning">
+              <input id="pref-click-through" type="checkbox" />
+              <span>鼠标穿透（可从系统托盘恢复）</span>
+            </label>
+          </div>
+          <div class="settings-heading">通知</div>
+          <label class="setting-field">
+            <span>完成通知</span>
+            <select id="pref-completion" class="setting-select">
+              <option value="never">从不</option>
+              <option value="background-only">仅后台</option>
+              <option value="always">始终</option>
+            </select>
+          </label>
+          <div class="settings-grid settings-grid-compact">
+            <label class="setting-toggle">
+              <input id="pref-needs-input" type="checkbox" />
+              <span>待输入</span>
+            </label>
+            <label class="setting-toggle">
+              <input id="pref-blocked" type="checkbox" />
+              <span>受阻/失败</span>
+            </label>
+          </div>
+        </section>
         <div id="project-list" class="project-list" role="list"></div>
         <footer class="tray-footer">
           <button type="button" id="btn-copy-cmd" class="tray-btn" hidden>

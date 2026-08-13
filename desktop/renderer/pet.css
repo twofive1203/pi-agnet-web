@@ -1,17 +1,18 @@
-/* Desktop pet + Activity tray (U7). Prefer non-color cues (glyph/label/frame). */
+/* Desktop pet + Activity tray. The pet stays visually transparent; chrome appears on intent. */
 
 :root {
   color-scheme: dark;
-  --pet-bg: rgba(18, 22, 28, 0.72);
-  --pet-border: rgba(255, 255, 255, 0.14);
   --pet-text: #f4f7fb;
-  --pet-muted: #a9b4c4;
-  --pet-accent: #7dd3c0;
-  --pet-warn: #f0b429;
-  --pet-danger: #f07178;
-  --pet-ok: #9ece6a;
-  --tray-bg: rgba(16, 20, 26, 0.92);
-  --focus: #89b4fa;
+  --pet-muted: #9daabc;
+  --pet-accent: #77dbc6;
+  --pet-warn: #f3b95f;
+  --pet-danger: #f47c83;
+  --pet-ok: #9bd875;
+  --tray-bg: rgba(16, 20, 27, 0.94);
+  --surface-raised: rgba(255, 255, 255, 0.055);
+  --surface-hover: rgba(255, 255, 255, 0.09);
+  --pet-border: rgba(255, 255, 255, 0.13);
+  --focus: #8bb8ff;
   font-family: "Segoe UI", system-ui, sans-serif;
 }
 
@@ -30,332 +31,600 @@ body {
   user-select: none;
 }
 
+button,
+input,
+select {
+  font: inherit;
+}
+
 .pet-root {
   display: flex;
-  /* Keep padding/gap identical in collapsed + expanded so the pet icon
-   * does not visually drift inside the window when the tray toggles.
-   * Metrics must match PET_LAYOUT in desktop/main/window-manager.ts. */
   flex-direction: column;
   align-items: flex-start;
   gap: 6px;
-  padding: 6px;
   width: 100%;
   height: 100%;
+  padding: 6px;
   overflow: hidden;
-  /* Interactive children opt out; drag bar opts in. */
   -webkit-app-region: no-drag;
 }
 
-/*
- * Tray grows out from the pet. data-tray-anchor is chosen so the pet stack
- * keeps its screen position (prefer down/right; flip up/left near edges).
- */
 .pet-root[data-tray-anchor="top-left"] {
   flex-direction: column;
   align-items: flex-start;
 }
+
 .pet-root[data-tray-anchor="top-right"] {
   flex-direction: column;
   align-items: flex-end;
 }
+
 .pet-root[data-tray-anchor="bottom-left"] {
   flex-direction: column-reverse;
   align-items: flex-start;
 }
+
 .pet-root[data-tray-anchor="bottom-right"] {
   flex-direction: column-reverse;
   align-items: flex-end;
 }
 
 .pet-stack {
+  position: relative;
   display: flex;
+  flex: 0 0 auto;
   flex-direction: column;
   gap: 6px;
-  flex: 0 0 auto;
   width: 112px;
 }
 
-/*
- * .pet-root.is-collapsed is toggled from JS for state hooks.
- * Do not change padding/gap there — mismatched metrics shift the pet icon.
- */
-
-/*
- * Author `display` rules override the UA [hidden] stylesheet.
- * Force true hide for every toggled surface in this frameless UI.
- */
 .activity-tray[hidden],
+.pet-caption[hidden],
 .pet-badge[hidden],
 .connection-banner[hidden],
 .auth-panel[hidden],
+.settings-panel[hidden],
+.project-list[hidden],
 .stale-flag[hidden],
 #btn-copy-cmd[hidden],
 #btn-clear-key[hidden] {
   display: none !important;
 }
 
-/* Frameless window drag handle (Windows requires an explicit drag region). */
+/* Frameless recovery chrome is quiet until hover/focus. */
 .pet-chrome {
   position: relative;
-  width: 112px;
-  height: 18px;
-  flex: 0 0 auto;
+  z-index: 10;
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   justify-content: center;
+  width: 112px;
+  height: 18px;
+  opacity: 0.18;
+  transition: opacity 160ms ease;
+}
+
+.pet-stack:hover .pet-chrome,
+.pet-stack:focus-within .pet-chrome,
+.pet-surface.is-dragging + .pet-chrome {
+  opacity: 1;
 }
 
 .pet-drag-bar {
-  flex: 1;
-  height: 100%;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid var(--pet-border);
   display: flex;
+  flex: 1;
   align-items: center;
   justify-content: center;
+  height: 100%;
+  border-radius: 999px;
   cursor: grab;
   -webkit-app-region: drag;
 }
 
 .pet-drag-dots {
-  width: 28px;
-  height: 4px;
+  width: 26px;
+  height: 3px;
   border-radius: 999px;
   background: repeating-linear-gradient(
     90deg,
-    rgba(255, 255, 255, 0.45) 0 3px,
+    rgba(255, 255, 255, 0.48) 0 3px,
     transparent 3px 6px
   );
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.65));
   pointer-events: none;
 }
 
 .pet-chrome-btn,
 .pet-close-btn {
   position: absolute;
-  right: -2px;
   top: -2px;
+  right: -2px;
+  z-index: 3;
+  display: grid;
+  place-items: center;
   width: 20px;
   height: 20px;
-  border-radius: 999px;
+  padding: 0;
   border: 1px solid var(--pet-border);
-  background: rgba(16, 20, 26, 0.92);
+  border-radius: 999px;
+  background: rgba(19, 24, 32, 0.9);
   color: var(--pet-text);
   font-size: 14px;
   line-height: 1;
-  padding: 0;
   cursor: pointer;
-  display: grid;
-  place-items: center;
   -webkit-app-region: no-drag;
-  z-index: 3;
 }
 
 .pet-close-btn:hover,
 .tray-btn-close:hover {
-  background: rgba(240, 113, 120, 0.25);
-  border-color: rgba(240, 113, 120, 0.55);
+  border-color: rgba(244, 124, 131, 0.6);
+  background: rgba(244, 124, 131, 0.24);
 }
 
 .pet-close-btn:focus-visible,
-.tray-btn:focus-visible {
+.tray-btn:focus-visible,
+.pet-option:focus-visible,
+.setting-select:focus-visible,
+.setting-toggle:focus-within {
   outline: 2px solid var(--focus);
-  outline-offset: 1px;
+  outline-offset: 2px;
 }
 
+/* The pet itself has no card/background: transparent sprite-like presentation. */
 .pet-surface {
   position: relative;
+  display: block;
+  flex: 0 0 auto;
   width: 112px;
   height: 112px;
-  flex: 0 0 auto;
-  border: 1px solid var(--pet-border);
-  border-radius: 24px;
-  background: var(--pet-bg);
-  backdrop-filter: blur(10px);
+  padding: 0;
+  overflow: visible;
+  border: 0;
+  background: transparent;
   color: inherit;
   cursor: grab;
-  display: grid;
-  place-items: center;
-  padding: 0;
-  overflow: hidden;
-  /* Custom click-vs-drag in pet-app; must stay no-drag for pointer events. */
-  -webkit-app-region: no-drag;
   touch-action: none;
+  -webkit-app-region: no-drag;
 }
 
-.pet-surface.is-dragging {
-  cursor: grabbing;
-}
-
+.pet-surface.is-dragging,
 .pet-surface:active:not(.is-dragging) {
   cursor: grabbing;
 }
 
 .pet-surface:focus-visible {
   outline: 2px solid var(--focus);
-  outline-offset: 2px;
+  outline-offset: 1px;
+  border-radius: 18px;
+}
+
+.pet-caption {
+  position: absolute;
+  top: 0;
+  left: 2px;
+  z-index: 8;
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  max-width: 108px;
+  min-height: 25px;
+  padding: 5px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 10px 10px 10px 3px;
+  background: rgba(18, 23, 31, 0.91);
+  box-shadow: 0 5px 16px rgba(0, 0, 0, 0.25);
+  pointer-events: none;
+}
+
+.pet-caption::after {
+  position: absolute;
+  bottom: -5px;
+  left: 12px;
+  width: 8px;
+  height: 8px;
+  border-right: 1px solid rgba(255, 255, 255, 0.14);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(18, 23, 31, 0.91);
+  content: "";
+  transform: rotate(45deg);
+}
+
+.pet-caption-state {
+  flex: 0 0 auto;
+  color: var(--pet-accent);
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.pet-caption-title {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--pet-text);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .pet-avatar {
-  position: relative;
-  width: 72px;
-  height: 72px;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  background: radial-gradient(circle at 35% 30%, #2a3340, #151a22 70%);
-  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.06);
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 108px;
+  height: 92px;
+  filter: drop-shadow(0 5px 5px rgba(0, 0, 0, 0.35));
+  transform-origin: 56px 80px;
 }
 
-.pet-shell {
+.pet-shadow {
   position: absolute;
-  width: 42px;
-  height: 32px;
-  border-radius: 50% 50% 45% 45%;
-  background: #6f8f7a;
-  top: 18px;
-  left: 15px;
+  bottom: 5px;
+  left: 20px;
+  width: 76px;
+  height: 10px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.24);
+  filter: blur(2px);
+}
+
+.pet-tail {
+  position: absolute;
+  bottom: 18px;
+  left: 11px;
+  width: 28px;
+  height: 14px;
+  border-radius: 70% 15% 55% 45%;
+  background: #b9ead8;
+  transform: rotate(-7deg);
 }
 
 .pet-body {
   position: absolute;
-  width: 36px;
-  height: 16px;
-  border-radius: 12px;
-  background: #c4b59a;
-  /* Leave room for the status label under the body. */
-  bottom: 22px;
-  left: 18px;
+  bottom: 14px;
+  left: 17px;
+  width: 76px;
+  height: 22px;
+  border: 2px solid rgba(22, 51, 50, 0.35);
+  border-radius: 52% 42% 44% 38%;
+  background: linear-gradient(180deg, #d7f7ea 0%, #9bd8c8 100%);
+  box-shadow: inset 0 -4px 0 rgba(40, 103, 94, 0.13);
+}
+
+.pet-head {
+  position: absolute;
+  right: 8px;
+  bottom: 18px;
+  z-index: 3;
+  width: 34px;
+  height: 35px;
+  border: 2px solid rgba(22, 51, 50, 0.35);
+  border-radius: 48% 52% 45% 48%;
+  background: linear-gradient(145deg, #dff9ef 0%, #a6dfcf 82%);
+}
+
+.pet-antenna {
+  position: absolute;
+  top: -14px;
+  width: 2px;
+  height: 18px;
+  border-radius: 999px;
+  background: #8dcbbb;
+  transform-origin: bottom;
+}
+
+.pet-antenna::before {
+  position: absolute;
+  top: -3px;
+  left: -3px;
+  width: 7px;
+  height: 7px;
+  border: 2px solid rgba(22, 51, 50, 0.32);
+  border-radius: 50%;
+  background: #dff9ef;
+  content: "";
+}
+
+.pet-antenna-left {
+  left: 8px;
+  transform: rotate(-16deg);
+}
+
+.pet-antenna-right {
+  right: 8px;
+  transform: rotate(16deg);
+}
+
+.pet-eye {
+  position: absolute;
+  top: 10px;
+  width: 6px;
+  height: 8px;
+  border-radius: 50%;
+  background: #17363a;
+  box-shadow: inset 2px 1px 0 rgba(255, 255, 255, 0.72);
+}
+
+.pet-eye-left {
+  left: 8px;
+}
+
+.pet-eye-right {
+  right: 8px;
+}
+
+.pet-mouth {
+  position: absolute;
+  bottom: 7px;
+  left: 13px;
+  width: 8px;
+  height: 4px;
+  border-bottom: 2px solid #3f7c71;
+  border-radius: 0 0 50% 50%;
+}
+
+.pet-shell {
+  position: absolute;
+  bottom: 27px;
+  left: 19px;
+  z-index: 2;
+  width: 56px;
+  height: 53px;
+  border: 3px solid rgba(12, 45, 56, 0.36);
+  border-radius: 52% 50% 46% 52%;
+  background: linear-gradient(145deg, #85e0d0 0%, #3b91a8 58%, #286275 100%);
+  box-shadow:
+    inset 5px 6px 0 rgba(255, 255, 255, 0.14),
+    inset -5px -6px 0 rgba(13, 51, 67, 0.18);
+  transform-origin: center;
+}
+
+.pet-shell-spiral {
+  position: absolute;
+  top: 11px;
+  left: 12px;
+  width: 28px;
+  height: 27px;
+  border: 4px solid rgba(216, 255, 244, 0.7);
+  border-right-color: rgba(216, 255, 244, 0.24);
+  border-radius: 50%;
+}
+
+.pet-shell-spiral::after {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  width: 8px;
+  height: 8px;
+  border: 3px solid rgba(216, 255, 244, 0.64);
+  border-left-color: transparent;
+  border-radius: 50%;
+  content: "";
 }
 
 .pet-glyph {
   position: absolute;
-  z-index: 2;
-  top: 6px;
-  right: 8px;
-  font-size: 16px;
-  font-weight: 700;
+  top: 8px;
+  right: 5px;
+  z-index: 6;
+  display: grid;
+  place-items: center;
+  min-width: 23px;
+  height: 23px;
+  padding: 0 5px;
+  border: 2px solid rgba(255, 255, 255, 0.8);
+  border-radius: 999px;
+  background: #273440;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 800;
   line-height: 1;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
 }
 
 .pet-label {
   position: absolute;
-  left: 4px;
-  right: 4px;
-  bottom: 6px;
-  text-align: center;
-  font-size: 10px;
-  line-height: 1.2;
-  letter-spacing: 0.02em;
-  color: var(--pet-muted);
-  white-space: nowrap;
+  right: 6px;
+  bottom: 0;
+  z-index: 7;
+  max-width: 68px;
+  padding: 2px 6px;
   overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  background: rgba(18, 23, 31, 0.85);
+  color: var(--pet-text);
+  font-size: 9px;
+  line-height: 1.2;
   text-overflow: ellipsis;
+  white-space: nowrap;
   pointer-events: none;
-  /* Keep label readable over the snail body. */
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.75);
-  z-index: 2;
 }
 
 .pet-badge {
   position: absolute;
-  top: 6px;
-  right: 6px;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 5px;
-  border-radius: 999px;
-  background: var(--pet-danger);
-  color: #111;
-  font-size: 11px;
-  font-weight: 700;
+  top: 25px;
+  right: 0;
+  z-index: 9;
   display: grid;
   place-items: center;
-  z-index: 3;
+  min-width: 19px;
+  height: 19px;
+  padding: 0 5px;
+  border: 2px solid rgba(20, 24, 31, 0.88);
+  border-radius: 999px;
+  background: var(--pet-danger);
+  color: #111820;
+  font-size: 10px;
+  font-weight: 800;
   pointer-events: none;
 }
 
-/* State frames — color is secondary; glyph/label remain primary cues. */
-.frame-idle .pet-shell {
-  background: #6f8f7a;
-}
-.frame-running .pet-shell,
-.frame-running-static .pet-shell {
-  background: #5b8def;
-}
-.frame-retrying .pet-shell,
-.frame-retrying-static .pet-shell {
-  background: var(--pet-warn);
-}
-.frame-needs-input .pet-shell {
-  background: #e0af68;
-}
-.frame-blocked .pet-shell {
-  background: var(--pet-danger);
-}
-.frame-ready .pet-shell {
-  background: var(--pet-ok);
-}
-.frame-disconnected .pet-shell,
-.frame-service-not-running .pet-shell {
-  background: #6c7086;
-  opacity: 0.85;
+/* Built-in personalities share anatomy but have clearly different palettes. */
+.pet-root[data-pet="snail-classic"] .pet-shell {
+  border-color: rgba(82, 47, 25, 0.42);
+  background: linear-gradient(145deg, #d9a66f 0%, #9b6542 58%, #67412f 100%);
 }
 
-.pet-avatar.is-animated.frame-running .pet-body {
-  animation: scoot 0.9s ease-in-out infinite;
-}
-.pet-avatar.is-animated.frame-retrying .pet-glyph {
-  animation: spin 1.2s linear infinite;
-}
-
-@keyframes scoot {
-  0%,
-  100% {
-    transform: translateX(0);
-  }
-  50% {
-    transform: translateX(3px);
-  }
+.pet-root[data-pet="snail-classic"] .pet-shell-spiral,
+.pet-root[data-pet="snail-classic"] .pet-shell-spiral::after {
+  border-top-color: rgba(255, 231, 190, 0.74);
+  border-bottom-color: rgba(255, 231, 190, 0.74);
 }
 
-@keyframes spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+.pet-root[data-pet="snail-classic"] .pet-body,
+.pet-root[data-pet="snail-classic"] .pet-head,
+.pet-root[data-pet="snail-classic"] .pet-tail {
+  background: linear-gradient(180deg, #f1d9ad 0%, #c7a979 100%);
+}
+
+/* State posture and non-color cues. */
+.frame-running .pet-glyph,
+.frame-running-static .pet-glyph {
+  background: #3d77d7;
+}
+
+.frame-retrying .pet-glyph,
+.frame-retrying-static .pet-glyph,
+.frame-needs-input .pet-glyph {
+  background: #bd7c24;
+}
+
+.frame-blocked .pet-glyph {
+  background: #b64f59;
+}
+
+.frame-ready .pet-glyph {
+  background: #5f963f;
+}
+
+.frame-disconnected,
+.frame-service-not-running {
+  filter: grayscale(0.8) drop-shadow(0 5px 5px rgba(0, 0, 0, 0.28));
+  opacity: 0.76;
+}
+
+.frame-blocked .pet-head {
+  transform: translateY(5px) rotate(8deg);
+}
+
+.frame-blocked .pet-mouth {
+  border-top: 2px solid #7d4e52;
+  border-bottom: 0;
+  border-radius: 50% 50% 0 0;
+}
+
+.frame-needs-input .pet-antenna-left {
+  transform: rotate(-32deg) scaleY(1.12);
+}
+
+.frame-needs-input .pet-antenna-right {
+  transform: rotate(32deg) scaleY(1.12);
+}
+
+.frame-ready .pet-mouth {
+  width: 12px;
+  height: 6px;
+  left: 11px;
+}
+
+.pet-avatar.is-animated.frame-idle .pet-eye {
+  animation: pet-blink 4.8s ease-in-out infinite;
+}
+
+.pet-avatar.is-animated.frame-running {
+  animation: pet-scoot 1s ease-in-out infinite;
+}
+
+.pet-avatar.is-animated.frame-running .pet-shell {
+  animation: shell-focus 1s ease-in-out infinite;
+}
+
+.pet-avatar.is-animated.frame-retrying {
+  animation: pet-retry 0.72s ease-in-out infinite;
+}
+
+.pet-avatar.is-animated.frame-needs-input .pet-glyph {
+  animation: pet-pulse 1.3s ease-in-out infinite;
+}
+
+.pet-avatar.is-animated.frame-ready {
+  animation: pet-celebrate 1.8s ease-in-out infinite;
+}
+
+.pet-avatar.is-animated.frame-blocked .pet-antenna {
+  animation: antenna-droop 1.8s ease-in-out infinite;
+}
+
+@keyframes pet-blink {
+  0%, 44%, 48%, 100% { transform: scaleY(1); }
+  46% { transform: scaleY(0.12); }
+}
+
+@keyframes pet-scoot {
+  0%, 100% { transform: translateX(-2px) translateY(0); }
+  50% { transform: translateX(3px) translateY(-2px); }
+}
+
+@keyframes shell-focus {
+  0%, 100% { transform: rotate(-2deg); }
+  50% { transform: rotate(3deg); }
+}
+
+@keyframes pet-retry {
+  0%, 100% { transform: translateX(0) rotate(0); }
+  33% { transform: translateX(-3px) rotate(-2deg); }
+  66% { transform: translateX(3px) rotate(2deg); }
+}
+
+@keyframes pet-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.16); }
+}
+
+@keyframes pet-celebrate {
+  0%, 72%, 100% { transform: translateY(0) rotate(0); }
+  82% { transform: translateY(-7px) rotate(-3deg); }
+  91% { transform: translateY(0) rotate(2deg); }
+}
+
+@keyframes antenna-droop {
+  0%, 100% { transform: scaleY(0.75) rotate(8deg); }
+  50% { transform: scaleY(0.62) rotate(13deg); }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .pet-avatar.is-animated.frame-running .pet-body,
-  .pet-avatar.is-animated.frame-retrying .pet-glyph {
-    animation: none !important;
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
   }
 }
 
+/* Activity tray */
 .activity-tray {
-  flex: 1;
-  min-height: 0;
   display: flex;
+  flex: 1;
   flex-direction: column;
-  gap: 8px;
-  padding: 10px;
-  border-radius: 16px;
+  gap: 9px;
+  min-height: 0;
+  padding: 12px;
   border: 1px solid var(--pet-border);
+  border-radius: 18px;
   background: var(--tray-bg);
-  backdrop-filter: blur(14px);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.34);
+  backdrop-filter: blur(18px);
   -webkit-app-region: no-drag;
 }
 
-/* Allow dragging the tray by its header background (buttons stay no-drag). */
 .tray-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  min-height: 28px;
   -webkit-app-region: drag;
 }
 
@@ -363,80 +632,88 @@ body {
 .tray-btn,
 .activity-row,
 .connection-banner,
+.auth-panel,
+.settings-panel,
 .project-list {
   -webkit-app-region: no-drag;
 }
 
 .tray-counts {
-  margin-left: 8px;
+  margin-left: 7px;
   color: var(--pet-muted);
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .tray-actions {
   display: flex;
-  gap: 6px;
+  gap: 5px;
 }
 
 .tray-btn {
+  min-height: 26px;
+  padding: 4px 8px;
   border: 1px solid var(--pet-border);
+  border-radius: 8px;
   background: rgba(255, 255, 255, 0.04);
   color: var(--pet-text);
-  border-radius: 8px;
-  padding: 4px 8px;
-  font-size: 12px;
+  font-size: 11px;
   cursor: pointer;
 }
 
-.tray-btn-close {
-  min-width: 28px;
-  font-size: 14px;
-  line-height: 1;
-  padding-left: 0;
-  padding-right: 0;
+.tray-btn:hover {
+  background: var(--surface-hover);
 }
 
-.tray-btn:focus-visible,
-.activity-row:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 1px;
+.tray-btn-icon,
+.tray-btn-close {
+  display: grid;
+  place-items: center;
+  min-width: 28px;
+  padding-right: 0;
+  padding-left: 0;
+  font-size: 13px;
 }
 
 .connection-banner {
-  border-radius: 10px;
   padding: 8px 10px;
-  background: rgba(240, 180, 41, 0.12);
-  border: 1px solid rgba(240, 180, 41, 0.35);
-  color: #f3d59a;
-  font-size: 12px;
-  line-height: 1.4;
+  border: 1px solid rgba(243, 185, 95, 0.36);
+  border-radius: 10px;
+  background: rgba(243, 185, 95, 0.11);
+  color: #f6d7a1;
+  font-size: 11px;
+  line-height: 1.45;
 }
 
-.auth-panel {
+.auth-panel,
+.settings-panel {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  border-radius: 10px;
-  padding: 8px 10px;
-  background: rgba(255, 255, 255, 0.04);
+  gap: 8px;
+  padding: 10px;
   border: 1px solid var(--pet-border);
-  -webkit-app-region: no-drag;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.035);
 }
 
-.auth-label {
-  font-size: 11px;
+.auth-label,
+.settings-heading {
   color: var(--pet-muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
 }
 
-.auth-input {
+.auth-input,
+.setting-select {
   width: 100%;
+  padding: 6px 8px;
   border: 1px solid var(--pet-border);
   border-radius: 8px;
-  background: rgba(0, 0, 0, 0.25);
-  color: var(--pet-text);
-  padding: 6px 8px;
-  font-size: 12px;
   outline: none;
+  background: rgba(0, 0, 0, 0.24);
+  color: var(--pet-text);
+  font-size: 11px;
 }
 
 .auth-input:focus-visible {
@@ -444,100 +721,262 @@ body {
   box-shadow: 0 0 0 1px var(--focus);
 }
 
-.auth-actions {
-  display: flex;
+.auth-actions,
+.pet-picker {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
 }
 
+.pet-option {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 7px;
+  border: 1px solid var(--pet-border);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.025);
+  color: var(--pet-text);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.pet-option[aria-checked="true"] {
+  border-color: var(--pet-accent);
+  background: rgba(119, 219, 198, 0.1);
+}
+
+.pet-option-preview {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 3px solid rgba(255, 255, 255, 0.6);
+  border-radius: 50%;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.preview-default {
+  background: linear-gradient(145deg, #85e0d0, #286275);
+}
+
+.preview-classic {
+  background: linear-gradient(145deg, #d9a66f, #67412f);
+}
+
+.settings-grid {
+  display: grid;
+  gap: 3px;
+}
+
+.settings-grid-compact {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.setting-toggle,
+.setting-field {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 28px;
+  padding: 4px 2px;
+  border-radius: 6px;
+  color: var(--pet-text);
+  font-size: 11px;
+}
+
+.setting-toggle {
+  cursor: pointer;
+}
+
+.setting-toggle input {
+  accent-color: var(--pet-accent);
+}
+
+.setting-toggle-warning {
+  color: #f3d6a6;
+}
+
+.setting-field {
+  justify-content: space-between;
+}
+
+.setting-select {
+  width: 112px;
+}
+
 .project-list {
+  display: flex;
   flex: 1;
+  flex-direction: column;
+  gap: 11px;
   min-height: 0;
   overflow: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+  scrollbar-color: rgba(255, 255, 255, 0.16) transparent;
 }
 
 .project-group {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 5px;
 }
 
 .project-name {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--pet-muted);
   padding: 0 4px;
+  overflow: hidden;
+  color: var(--pet-muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .activity-row {
+  position: relative;
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 8px;
-  align-items: center;
+  align-items: start;
   width: 100%;
-  text-align: left;
+  padding: 9px;
   border: 1px solid transparent;
-  border-radius: 10px;
-  padding: 8px;
-  background: rgba(255, 255, 255, 0.03);
+  border-radius: 12px;
+  background: var(--surface-raised);
   color: inherit;
+  text-align: left;
   cursor: pointer;
+}
+
+.activity-row:hover {
+  background: var(--surface-hover);
 }
 
 .activity-row[aria-selected="true"] {
   border-color: var(--focus);
-  background: rgba(137, 180, 250, 0.12);
+  background: rgba(139, 184, 255, 0.12);
 }
 
-.activity-row.is-unread {
-  box-shadow: inset 3px 0 0 var(--pet-accent);
+.activity-row.is-unread::before {
+  position: absolute;
+  top: 9px;
+  bottom: 9px;
+  left: 0;
+  width: 3px;
+  border-radius: 0 99px 99px 0;
+  background: var(--pet-accent);
+  content: "";
 }
 
 .row-glyph {
-  width: 22px;
-  text-align: center;
-  font-weight: 700;
+  display: grid;
+  place-items: center;
+  width: 25px;
+  height: 25px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.07);
+  font-weight: 800;
 }
 
 .row-main {
   min-width: 0;
 }
 
-.row-title {
-  font-size: 13px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.row-heading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
 }
 
-.row-meta {
-  font-size: 11px;
+.row-title {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.row-source {
+  flex: 0 0 auto;
+  padding: 1px 5px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
   color: var(--pet-muted);
+  font-size: 9px;
+}
+
+.row-meta,
+.row-progress,
+.row-children,
+.row-elapsed {
+  color: var(--pet-muted);
+  font-size: 10px;
+}
+
+.row-meta,
+.row-progress {
+  margin-top: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.row-progress-track {
+  height: 3px;
+  margin-top: 5px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.row-progress-bar {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--pet-accent);
+}
+
+.row-children {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 5px;
+}
+
+.row-child {
+  max-width: 100%;
+  padding: 2px 5px;
+  overflow: hidden;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.055);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .row-elapsed {
-  font-size: 11px;
-  color: var(--pet-muted);
+  padding-top: 4px;
   white-space: nowrap;
 }
 
 .tray-footer {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
 }
 
 .stale-flag {
-  font-size: 11px;
   color: var(--pet-warn);
+  font-size: 10px;
 }
 
 .empty-tray {
+  padding: 18px 8px;
   color: var(--pet-muted);
-  font-size: 13px;
-  padding: 12px 4px;
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: center;
 }

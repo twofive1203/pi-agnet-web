@@ -111,6 +111,8 @@ export type DesktopActivityView = {
   selectedPetId: string;
   alwaysOnTop: boolean;
   clickThrough: boolean;
+  launchAtLogin: boolean;
+  notification: DesktopPetSettings["notification"];
   reducedMotion: boolean;
   revision: number | null;
   instanceId: string | null;
@@ -380,6 +382,8 @@ export function buildActivityView(input: ActivityStoreSnapshotInput): DesktopAct
     selectedPetId: input.settings.selectedPetId,
     alwaysOnTop: input.settings.alwaysOnTop,
     clickThrough: input.settings.clickThrough,
+    launchAtLogin: input.settings.launchAtLogin,
+    notification: { ...input.settings.notification },
     reducedMotion: input.reducedMotion === true,
     revision: input.snapshot?.revision ?? null,
     instanceId: input.snapshot?.instanceId ?? input.connection.instanceId,

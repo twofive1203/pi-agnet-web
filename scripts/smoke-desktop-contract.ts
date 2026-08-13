@@ -73,9 +73,11 @@ import {
 } from "../desktop/main/window-manager";
 import {
   connectionBannerText,
+  formatActivityProgress,
   formatElapsed,
   getBuiltinPetManifest,
   moveActivitySelection,
+  petSourceLabel,
   resolvePetFrame,
 } from "../desktop/renderer/pet-state";
 import { DESKTOP_PACKAGE_CONTRACT } from "../forge.config";
@@ -590,10 +592,19 @@ async function main() {
   const staticFrame = resolvePetFrame(manifest, "running", true);
   assert.equal(staticFrame.animated, false);
   assert.equal(staticFrame.frame, "running-static");
+  assert.equal(resolvePetFrame(manifest, "idle", false).animated, true);
+  assert.equal(resolvePetFrame(manifest, "idle", true).animated, false);
   assert.ok(staticFrame.label);
   assert.ok(staticFrame.glyph);
   assert.equal(getBuiltinPetManifest("missing").id, "snail-default");
   assert.equal(formatElapsed(65000), "1m 5s");
+  assert.equal(petSourceLabel("quick_command"), "快捷命令");
+  assert.equal(formatActivityProgress({ kind: "ratio", current: 3, total: 4 }), "3/4 · 75%");
+  assert.equal(
+    formatActivityProgress({ kind: "counters", currentToolName: "bash", toolCount: 2 }, 1),
+    "bash · 2 工具 · 1 Subagent",
+  );
+  assert.equal(formatActivityProgress({ kind: "indeterminate" }), null);
   assert.equal(moveActivitySelection(["a", "b", "c"], "a", "next"), "b");
   assert.equal(moveActivitySelection(["a", "b", "c"], "a", "prev"), "c");
 
@@ -702,6 +713,10 @@ async function main() {
   assert.ok(html.includes("pet-drag-bar"));
   assert.ok(html.includes('id="btn-hide"'));
   assert.ok(html.includes("隐藏到托盘"));
+  assert.ok(html.includes('id="pet-caption"'));
+  assert.ok(html.includes('id="settings-panel"'));
+  assert.ok(html.includes('data-pet-id="snail-classic"'));
+  assert.ok(html.includes("收起活动列表"));
 
   const css = readFileSync(path.join(process.cwd(), "desktop", "renderer", "pet.css"), "utf8");
   assert.ok(css.includes("-webkit-app-region: drag"));
@@ -712,6 +727,9 @@ async function main() {
   assert.ok(css.includes("display: none !important"));
   assert.ok(css.includes('data-tray-anchor="bottom-right"'));
   assert.ok(css.includes("column-reverse"));
+  assert.ok(css.includes('.pet-root[data-pet="snail-classic"]'));
+  assert.ok(css.includes("background: transparent"));
+  assert.ok(css.includes("prefers-reduced-motion: reduce"));
   assert.ok(html.includes("pet-stack"));
   assert.ok(html.includes("data-tray-anchor"));
 
@@ -731,6 +749,9 @@ async function main() {
   assert.ok(petAppJs.includes("DRAG_THRESHOLD_PX"));
   assert.ok(petAppJs.includes("moveBy"));
   assert.ok(petAppJs.includes("is-collapsed"));
+  assert.ok(petAppJs.includes("formatActivityProgress"));
+  assert.ok(petAppJs.includes("selectedPetId"));
+  assert.ok(petAppJs.includes("settingsOpen"));
 
   // Collapsed avatar labels stay short Chinese strings (fit 112px surface).
   assert.equal(resolvePetFrame(getBuiltinPetManifest("snail-default"), "idle", false).label, "空闲");
