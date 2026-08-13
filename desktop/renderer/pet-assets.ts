@@ -36,12 +36,17 @@ export const PET_ASSET_LIMITS = {
 export type PetRenderMode = "css" | "spritesheet";
 
 export type PetManifestFrameV2 = {
+  /** CSS fallback frame key. It remains required for spritesheet load failures. */
   frame: string;
+  /** Reduced-motion CSS fallback frame key. */
   staticFrame: string;
   label: string;
   glyph: string;
+  /** Zero-based cell offset in row-major spritesheet order. */
+  firstFrame?: number;
   frameCount?: number;
   durationMs?: number;
+  /** Zero-based offset inside this state's frame range. */
   staticFrameIndex?: number;
 };
 
@@ -72,6 +77,7 @@ const ALLOWED_FRAME_KEYS = new Set([
   "staticFrame",
   "label",
   "glyph",
+  "firstFrame",
   "frameCount",
   "durationMs",
   "staticFrameIndex",
@@ -134,6 +140,13 @@ function readPositiveInt(value: unknown, label: string, max: number): number | s
   return value;
 }
 
+function readNonNegativeInt(value: unknown, label: string, max: number): number | string {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0 || value > max) {
+    return `${label}_invalid`;
+  }
+  return value;
+}
+
 function validateFrame(state: string, raw: unknown): PetManifestFrameV2 | string {
   if (!isPlainObject(raw)) return `${state}_frame_missing`;
   for (const key of Object.keys(raw)) {
@@ -155,6 +168,15 @@ function validateFrame(state: string, raw: unknown): PetManifestFrameV2 | string
     label: raw.label,
     glyph: raw.glyph,
   };
+  if (raw.firstFrame !== undefined) {
+    const firstFrame = readNonNegativeInt(
+      raw.firstFrame,
+      `${state}_firstFrame`,
+      PET_ASSET_LIMITS.maxFrames * PET_ASSET_LIMITS.maxFrames - 1,
+    );
+    if (typeof firstFrame === "string") return firstFrame;
+    frame.firstFrame = firstFrame;
+  }
   if (raw.frameCount !== undefined) {
     const count = readPositiveInt(raw.frameCount, `${state}_frameCount`, PET_ASSET_LIMITS.maxFrames);
     if (typeof count === "string") return count;
@@ -163,7 +185,7 @@ function validateFrame(state: string, raw: unknown): PetManifestFrameV2 | string
   if (raw.durationMs !== undefined) {
     if (
       typeof raw.durationMs !== "number" ||
-      !Number.isFinite(raw.durationMs) ||
+      !Number.isInteger(raw.durationMs) ||
       raw.durationMs < PET_ASSET_LIMITS.minDurationMs ||
       raw.durationMs > PET_ASSET_LIMITS.maxDurationMs
     ) {
@@ -215,12 +237,27 @@ export function validatePetManifestDocument(raw: unknown): PetManifestValidation
   let sheet: PetManifestSheetV2 | undefined;
   if (raw.renderMode === "css") {
     if (raw.sheet !== undefined) return { ok: false, reason: "css_sheet_not_allowed" };
+    for (const state of PET_REQUIRED_STATES) {
+      const frame = states[state];
+      if (
+        frame.firstFrame !== undefined ||
+        frame.frameCount !== undefined ||
+        frame.durationMs !== undefined ||
+        frame.staticFrameIndex !== undefined
+      ) {
+        return { ok: false, reason: `${state}_sprite_fields_not_allowed` };
+      }
+    }
   } else {
     if (!isPlainObject(raw.sheet)) return { ok: false, reason: "sheet_missing" };
     for (const key of Object.keys(raw.sheet)) {
       if (!ALLOWED_SHEET_KEYS.has(key)) return { ok: false, reason: `sheet_unknown_field:${key}` };
     }
-    if (typeof raw.sheet.src !== "string" || !isSafePetAssetPath(raw.sheet.src)) {
+    if (
+      typeof raw.sheet.src !== "string" ||
+      !isSafePetAssetPath(raw.sheet.src) ||
+      !/\.(?:png|webp)$/i.test(raw.sheet.src)
+    ) {
       return { ok: false, reason: "sheet_src" };
     }
     const frameWidth = readPositiveInt(raw.sheet.frameWidth, "sheet_frameWidth", PET_ASSET_LIMITS.maxSheetWidth);
@@ -233,6 +270,21 @@ export function validatePetManifestDocument(raw: unknown): PetManifestValidation
     if (typeof rows === "string") return { ok: false, reason: rows };
     if (frameWidth * columns > PET_ASSET_LIMITS.maxSheetWidth) return { ok: false, reason: "sheet_width" };
     if (frameHeight * rows > PET_ASSET_LIMITS.maxSheetHeight) return { ok: false, reason: "sheet_height" };
+    const sheetCapacity = columns * rows;
+    for (const state of PET_REQUIRED_STATES) {
+      const frame = states[state];
+      if (
+        frame.firstFrame === undefined ||
+        frame.frameCount === undefined ||
+        frame.durationMs === undefined ||
+        frame.staticFrameIndex === undefined
+      ) {
+        return { ok: false, reason: `${state}_sprite_timing_missing` };
+      }
+      if (frame.firstFrame + frame.frameCount > sheetCapacity) {
+        return { ok: false, reason: `${state}_frame_range` };
+      }
+    }
     sheet = {
       src: raw.sheet.src,
       frameWidth,

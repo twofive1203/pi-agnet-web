@@ -4,10 +4,12 @@
  * Usage: node scripts/build-desktop-pet.mjs
  *        npm run desktop:build
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import * as esbuild from "esbuild";
+
+import { loadDesktopPetAssetValidator } from "./desktop-pet-asset-validator.mjs";
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const outMain = path.join(ROOT, "desktop", "main", "main.js");
@@ -17,6 +19,17 @@ const outRenderer = path.join(ROOT, "desktop", "renderer", "pet-app.js");
 async function build() {
   mkdirSync(path.dirname(outMain), { recursive: true });
   mkdirSync(path.dirname(outPreload), { recursive: true });
+
+  const { validatePackagedPetAssets } = await loadDesktopPetAssetValidator(ROOT);
+  const petAssets = validatePackagedPetAssets(
+    path.join(ROOT, "desktop", "assets", "pets"),
+    {
+      readFile: (filePath) => readFileSync(filePath, "utf8"),
+      exists: existsSync,
+      size: (filePath) => statSync(filePath).size,
+      join: path.join,
+    },
+  );
 
   await esbuild.build({
     absWorkingDir: ROOT,
@@ -72,34 +85,6 @@ async function build() {
     logLevel: "info",
   });
 
-  for (const petId of ["snail-default", "snail-classic"]) {
-    const manifestPath = path.join(ROOT, "desktop", "assets", "pets", petId, "manifest.json");
-    if (!existsSync(manifestPath)) {
-      throw new Error(`missing pet manifest: ${petId}`);
-    }
-    const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
-    if (manifest.id !== petId || manifest.version !== 2 || manifest.renderMode !== "css") {
-      throw new Error(`invalid pet manifest contract: ${petId}`);
-    }
-    for (const state of [
-      "idle",
-      "running",
-      "retrying",
-      "needs_input",
-      "ready",
-      "blocked",
-      "disconnected",
-      "service_not_running",
-    ]) {
-      if (!manifest.states?.[state]) {
-        throw new Error(`pet manifest ${petId} missing state ${state}`);
-      }
-    }
-    if (manifest.sheet || /\.\.\/|file:|https?:/i.test(JSON.stringify(manifest))) {
-      throw new Error(`pet manifest ${petId} must stay CSS-only until approved art lands`);
-    }
-  }
-
   // Small stamp for smoke/debug.
   writeFileSync(
     path.join(ROOT, "desktop", ".build-stamp.json"),
@@ -109,6 +94,7 @@ async function build() {
         main: "desktop/main/main.js",
         preload: "desktop/preload/pet-preload.js",
         renderer: "desktop/renderer/pet-app.js",
+        pets: petAssets,
       },
       null,
       2,
@@ -120,6 +106,7 @@ async function build() {
   console.log(`  main:     ${path.relative(ROOT, outMain)}`);
   console.log(`  preload:  ${path.relative(ROOT, outPreload)}`);
   console.log(`  renderer: ${path.relative(ROOT, outRenderer)}`);
+  console.log(`  pets:     ${petAssets.map((asset) => `${asset.id}:${asset.renderMode}`).join(", ")}`);
 }
 
 build().catch((error) => {

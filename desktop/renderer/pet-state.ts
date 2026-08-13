@@ -9,6 +9,9 @@ import type {
   TaskObserverProgress,
   TaskObserverSource,
 } from "../../lib/task-observer-types";
+import type { DesktopActivityRow, DesktopProjectGroup } from "../main/activity-store";
+import snailClassicManifestDocument from "../assets/pets/snail-classic/manifest.json";
+import snailDefaultManifestDocument from "../assets/pets/snail-default/manifest.json";
 import { TASK_OBSERVER_PRESENTATION_PRIORITY } from "../../lib/task-observer-types";
 import {
   type BuiltinPetId,
@@ -96,20 +99,38 @@ const DEFAULT_FRAMES: Record<PetVisualState, PetManifestStateFrame> = {
 export function buildDefaultPetManifest(
   id: BuiltinPetId,
   name: string,
-  version = 2,
 ): PetManifest {
   return {
     id,
     name,
-    version,
+    version: 2,
     renderMode: "css",
     states: { ...DEFAULT_FRAMES },
   };
 }
 
-export const BUILTIN_PET_MANIFESTS: readonly PetManifest[] = [
+const CSS_FALLBACK_MANIFESTS: readonly PetManifest[] = [
   buildDefaultPetManifest("snail-default", "Snail"),
   buildDefaultPetManifest("snail-classic", "Classic Snail"),
+];
+
+function resolvePetManifestDocument(fallback: PetManifest, raw: unknown): PetManifest {
+  const validated = validatePetManifestDocument(raw);
+  if (!validated.ok || validated.manifest.id !== fallback.id) return fallback;
+  return {
+    id: validated.manifest.id,
+    name: validated.manifest.name,
+    version: validated.manifest.version,
+    renderMode: validated.manifest.renderMode,
+    states: validated.manifest.states,
+    sheet: validated.manifest.sheet,
+  };
+}
+
+/** Built-in documents are bundled, validated, and replaced by CSS fallbacks on failure. */
+export const BUILTIN_PET_MANIFESTS: readonly PetManifest[] = [
+  resolvePetManifestDocument(CSS_FALLBACK_MANIFESTS[0], snailDefaultManifestDocument),
+  resolvePetManifestDocument(CSS_FALLBACK_MANIFESTS[1], snailClassicManifestDocument),
 ];
 
 export function getBuiltinPetManifest(petId: string): PetManifest {
@@ -123,19 +144,10 @@ export function getBuiltinPetManifest(petId: string): PetManifest {
  * Unknown ids, illegal versions, capability fields, or path traversal never throw.
  */
 export function resolveBuiltinPetManifest(petId: string, raw?: unknown): PetManifest {
-  const fallback = getBuiltinPetManifest(petId);
-  if (raw === undefined) return fallback;
-  const validated = validatePetManifestDocument(raw);
-  if (!validated.ok) return fallback;
-  if (validated.manifest.id !== fallback.id) return fallback;
-  return {
-    id: validated.manifest.id,
-    name: validated.manifest.name,
-    version: validated.manifest.version,
-    renderMode: validated.manifest.renderMode,
-    states: validated.manifest.states,
-    sheet: validated.manifest.sheet,
-  };
+  const fallback =
+    CSS_FALLBACK_MANIFESTS.find((pet) => pet.id === petId) ?? CSS_FALLBACK_MANIFESTS[0];
+  if (raw === undefined) return getBuiltinPetManifest(fallback.id);
+  return resolvePetManifestDocument(fallback, raw);
 }
 
 export function resolvePetFrame(
@@ -214,10 +226,81 @@ export function formatElapsed(ms: number | null | undefined): string {
   return `${hr}h ${remMin}m`;
 }
 
+export type DesktopActivityFilter = "all" | "attention" | "running" | "completed";
+
+export type DesktopActivityFilterCounts = Record<DesktopActivityFilter, number>;
+
+export function activityMatchesFilter(
+  activity: DesktopActivityRow,
+  filter: DesktopActivityFilter,
+): boolean {
+  switch (filter) {
+    case "all":
+      return true;
+    case "attention":
+      return activity.presentation === "needs_input" || activity.presentation === "blocked";
+    case "running":
+      return (
+        activity.executionState === "queued" ||
+        activity.executionState === "running" ||
+        activity.executionState === "retrying"
+      );
+    case "completed":
+      return activity.executionState === "settled";
+    default: {
+      const _exhaustive: never = filter;
+      return _exhaustive;
+    }
+  }
+}
+
+/** Renderer-local projection only; source view and server task state remain unchanged. */
+export function filterProjectGroups(
+  groups: readonly DesktopProjectGroup[],
+  filter: DesktopActivityFilter,
+): DesktopProjectGroup[] {
+  if (filter === "all") {
+    return groups.map((group) => ({ ...group, activities: [...group.activities] }));
+  }
+  return groups.flatMap((group) => {
+    const activities = group.activities.filter((activity) =>
+      activityMatchesFilter(activity, filter),
+    );
+    return activities.length > 0 ? [{ ...group, activities }] : [];
+  });
+}
+
+export function countActivitiesByFilter(
+  groups: readonly DesktopProjectGroup[],
+): DesktopActivityFilterCounts {
+  const counts: DesktopActivityFilterCounts = {
+    all: 0,
+    attention: 0,
+    running: 0,
+    completed: 0,
+  };
+  for (const group of groups) {
+    for (const activity of group.activities) {
+      counts.all += 1;
+      if (activityMatchesFilter(activity, "attention")) counts.attention += 1;
+      if (activityMatchesFilter(activity, "running")) counts.running += 1;
+      if (activityMatchesFilter(activity, "completed")) counts.completed += 1;
+    }
+  }
+  return counts;
+}
+
 /**
- * Keyboard selection within a flat activity id list (R11 accessibility).
- * Returns the next selected id; wraps at ends.
+ * Reset a filtered-list cursor to the first visible item when its row disappears.
  */
+export function resolveActivitySelection(
+  activityIds: readonly string[],
+  currentId: string | null,
+): string | null {
+  if (activityIds.length === 0) return null;
+  return currentId != null && activityIds.includes(currentId) ? currentId : activityIds[0];
+}
+
 export function moveActivitySelection(
   activityIds: readonly string[],
   currentId: string | null,

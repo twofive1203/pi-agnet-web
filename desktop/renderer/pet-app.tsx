@@ -8,12 +8,18 @@
  * target can also emit pet-app.js next to index.html.
  */
 
-import type { DesktopActivityRow, DesktopActivityView } from "../main/activity-store";
+import type {
+  DesktopActivityRow,
+  DesktopActivityView,
+  DesktopProjectGroup,
+} from "../main/activity-store";
 import { resolvePetLayoutSpec } from "../main/window-manager";
 import type { SnailPetBridge } from "../preload/pet-preload";
 import { acceptStaticPetPreview } from "./pet-assets";
 import {
   connectionBannerText,
+  countActivitiesByFilter,
+  filterProjectGroups,
   formatActivityProgress,
   formatElapsed,
   getBuiltinPetManifest,
@@ -21,7 +27,9 @@ import {
   petSourceLabel,
   petStateGlyph,
   petStateLabel,
+  resolveActivitySelection,
   resolvePetFrame,
+  type DesktopActivityFilter,
   type PetVisualState,
 } from "./pet-state";
 
@@ -66,6 +74,7 @@ export function renderPetApp(root: Document = document): {
   const trayCounts = root.getElementById("tray-counts");
   const banner = root.getElementById("connection-banner");
   const authPanel = root.getElementById("auth-panel");
+  const activityFilters = root.getElementById("activity-filters");
   const accessKeyInput = root.getElementById("access-key-input") as HTMLInputElement | null;
   const btnSaveKey = root.getElementById("btn-save-key");
   const btnClearKey = root.getElementById("btn-clear-key");
@@ -96,6 +105,9 @@ export function renderPetApp(root: Document = document): {
 
   let current: DesktopActivityView | null = null;
   let settingsOpen = false;
+  let activityFilter: DesktopActivityFilter = "all";
+  let selectedVisibleActivityId: string | null = null;
+  const expandedActivityIds = new Set<string>();
   let reducedMotion =
     typeof window.matchMedia === "function" &&
     window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -111,12 +123,38 @@ export function renderPetApp(root: Document = document): {
     mq.addEventListener?.("change", onMotion);
   }
 
-  function activityIds(view: DesktopActivityView): string[] {
+  function activityIds(projects: readonly DesktopProjectGroup[]): string[] {
     const ids: string[] = [];
-    for (const project of view.projects) {
+    for (const project of projects) {
       for (const activity of project.activities) ids.push(activity.activityId);
     }
     return ids;
+  }
+
+  function findVisibleActivity(activityId: string | null): DesktopActivityRow | null {
+    if (!current || !activityId) return null;
+    for (const project of filterProjectGroups(current.projects, activityFilter)) {
+      const activity = project.activities.find((candidate) => candidate.activityId === activityId);
+      if (activity) return activity;
+    }
+    return null;
+  }
+
+  function focusActivityRow(activityId: string | null): void {
+    if (!activityId || !projectList) return;
+    for (const row of projectList.querySelectorAll<HTMLElement>("[data-activity-id]")) {
+      if (row.dataset.activityId === activityId) {
+        row.focus();
+        return;
+      }
+    }
+  }
+
+  function selectVisibleActivity(activityId: string, focus: boolean): void {
+    selectedVisibleActivityId = activityId;
+    bridge?.selectActivity(activityId);
+    if (current) update(current);
+    if (focus) focusActivityRow(activityId);
   }
 
   function update(view: DesktopActivityView): void {
@@ -163,6 +201,7 @@ export function renderPetApp(root: Document = document): {
     if (tray) tray.hidden = !view.trayOpen;
     if (!view.trayOpen) settingsOpen = false;
     if (settingsPanel) settingsPanel.hidden = !settingsOpen;
+    if (activityFilters) activityFilters.hidden = settingsOpen;
     if (projectList) projectList.hidden = settingsOpen;
     if (btnSettings) {
       btnSettings.setAttribute("aria-expanded", settingsOpen ? "true" : "false");
@@ -201,6 +240,16 @@ export function renderPetApp(root: Document = document): {
       const attention = view.attentionCount;
       trayCounts.textContent = `活动 ${active} · 关注 ${attention}`;
     }
+
+    const filterCounts = countActivitiesByFilter(view.projects);
+    activityFilters?.querySelectorAll<HTMLElement>("[data-activity-filter]").forEach((button) => {
+      const filter = button.dataset.activityFilter as DesktopActivityFilter | undefined;
+      if (!filter || !(filter in filterCounts)) return;
+      const selected = filter === activityFilter;
+      button.setAttribute("aria-pressed", selected ? "true" : "false");
+      const count = button.querySelector<HTMLElement>("[data-filter-count]");
+      if (count) count.textContent = String(filterCounts[filter]);
+    });
 
     const bannerText = connectionBannerText({
       connectionStatus: view.connectionStatus,
@@ -249,17 +298,30 @@ export function renderPetApp(root: Document = document): {
     });
 
     if (projectList) {
+      const filteredProjects = filterProjectGroups(view.projects, activityFilter);
+      const visibleIds = activityIds(filteredProjects);
+      selectedVisibleActivityId = resolveActivitySelection(
+        visibleIds,
+        selectedVisibleActivityId ?? view.selectedActivityId,
+      );
+      const liveIds = new Set(activityIds(view.projects));
+      for (const activityId of expandedActivityIds) {
+        if (!liveIds.has(activityId)) expandedActivityIds.delete(activityId);
+      }
+
       projectList.replaceChildren();
-      if (view.projects.length === 0) {
+      if (filteredProjects.length === 0) {
         const empty = root.createElement("div");
         empty.className = "empty-tray";
         empty.textContent =
-          view.connectionStatus === "connected"
-            ? "当前没有可观察的活动"
-            : "连接本地蜗牛派服务后即可观察任务";
+          view.projects.length > 0
+            ? "此筛选下暂无活动"
+            : view.connectionStatus === "connected"
+              ? "当前没有可观察的活动"
+              : "连接本地蜗牛派服务后即可观察任务";
         projectList.appendChild(empty);
       } else {
-        for (const project of view.projects) {
+        for (const project of filteredProjects) {
           const group = root.createElement("div");
           group.className = "project-group";
           group.setAttribute("role", "group");
@@ -268,7 +330,7 @@ export function renderPetApp(root: Document = document): {
           name.textContent = project.displayName;
           group.appendChild(name);
           for (const activity of project.activities) {
-            group.appendChild(renderRow(activity, view.selectedActivityId));
+            group.appendChild(renderRow(activity, selectedVisibleActivityId));
           }
           projectList.appendChild(group);
         }
@@ -276,13 +338,40 @@ export function renderPetApp(root: Document = document): {
     }
   }
 
+  function childStatusText(child: DesktopActivityRow["children"][number]): string {
+    if (child.attention === "needs_input") return "待输入";
+    if (child.attention === "blocked") return "受阻";
+    if (child.executionState === "retrying") return "重试中";
+    if (child.executionState === "queued") return "排队中";
+    if (child.executionState === "running") return "运行中";
+    if (child.outcome === "succeeded") return "已完成";
+    if (child.outcome === "cancelled") return "已取消";
+    if (
+      child.outcome === "failed" ||
+      child.outcome === "interrupted" ||
+      child.outcome === "ambiguous"
+    ) {
+      return "失败";
+    }
+    return "已结束";
+  }
+
+  function childUpdatedText(updatedAt: string | undefined): string | null {
+    if (!updatedAt || !Number.isFinite(Date.parse(updatedAt))) return null;
+    return `更新 ${updatedAt.slice(0, 16).replace("T", " ")}`;
+  }
+
   function renderRow(activity: DesktopActivityRow, selectedId: string | null): HTMLElement {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = `activity-row${activity.unread ? " is-unread" : ""}`;
-    btn.setAttribute("role", "listitem");
-    btn.setAttribute("aria-selected", activity.activityId === selectedId ? "true" : "false");
-    btn.dataset.activityId = activity.activityId;
+    const row = document.createElement("div");
+    row.className = `activity-row${activity.unread ? " is-unread" : ""}`;
+    row.setAttribute("role", "option");
+    row.setAttribute("aria-selected", activity.activityId === selectedId ? "true" : "false");
+    row.setAttribute("aria-label", `${activity.title}，${petStateLabel(activity.presentation)}`);
+    row.tabIndex = activity.activityId === selectedId ? 0 : -1;
+    row.dataset.activityId = activity.activityId;
+
+    const summary = document.createElement("div");
+    summary.className = "activity-row-summary";
 
     const glyph = document.createElement("span");
     glyph.className = "row-glyph";
@@ -328,39 +417,99 @@ export function renderPetApp(root: Document = document): {
       main.appendChild(track);
     }
 
-    if (activity.children.length > 0) {
-      const children = document.createElement("span");
-      children.className = "row-children";
-      for (const child of activity.children.slice(0, 3)) {
-        const chip = document.createElement("span");
-        chip.className = "row-child";
-        chip.textContent = `${child.executionState === "settled" ? "✓" : "↳"} ${child.title}`;
-        children.appendChild(chip);
-      }
-      main.appendChild(children);
-    }
-
     const elapsed = document.createElement("span");
     elapsed.className = "row-elapsed";
     elapsed.textContent = formatElapsed(activity.elapsedMs);
+    summary.append(glyph, main, elapsed);
 
-    btn.append(glyph, main, elapsed);
-    btn.addEventListener("click", () => {
+    const actions = document.createElement("div");
+    actions.className = "row-actions";
+
+    const openButton = document.createElement("button");
+    openButton.type = "button";
+    openButton.className = "row-action row-open-action";
+    openButton.textContent = "打开任务";
+    openButton.addEventListener("click", () => {
+      selectedVisibleActivityId = activity.activityId;
       bridge?.selectActivity(activity.activityId);
       void bridge?.openActivity(activity.activityId);
     });
-    btn.addEventListener("keydown", (event) => {
+    actions.appendChild(openButton);
+
+    const readButton = document.createElement("button");
+    readButton.type = "button";
+    readButton.className = "row-action";
+    readButton.textContent = activity.unread ? "标记已读" : "已读";
+    readButton.disabled = !activity.unread;
+    readButton.addEventListener("click", () => {
+      bridge?.markRead(activity.activityId);
+    });
+    actions.appendChild(readButton);
+
+    if (activity.children.length > 0) {
+      const expanded = expandedActivityIds.has(activity.activityId);
+      const expandButton = document.createElement("button");
+      expandButton.type = "button";
+      expandButton.className = "row-action row-child-toggle";
+      expandButton.textContent = `${expanded ? "收起" : "展开"} Subagent ${activity.children.length}`;
+      expandButton.setAttribute("aria-expanded", expanded ? "true" : "false");
+      expandButton.addEventListener("click", () => {
+        if (expandedActivityIds.has(activity.activityId)) {
+          expandedActivityIds.delete(activity.activityId);
+        } else {
+          expandedActivityIds.add(activity.activityId);
+        }
+        if (current) update(current);
+        focusActivityRow(activity.activityId);
+      });
+      actions.appendChild(expandButton);
+    }
+
+    row.append(summary, actions);
+
+    if (activity.children.length > 0 && expandedActivityIds.has(activity.activityId)) {
+      const children = document.createElement("div");
+      children.className = "row-children";
+      children.setAttribute("role", "list");
+      children.setAttribute("aria-label", "Subagent 安全摘要");
+      for (const child of activity.children) {
+        const childRow = document.createElement("div");
+        childRow.className = "row-child";
+        childRow.setAttribute("role", "listitem");
+        const childTitle = document.createElement("span");
+        childTitle.className = "row-child-title";
+        childTitle.textContent = child.title;
+        const childMeta = document.createElement("span");
+        childMeta.className = "row-child-meta";
+        childMeta.textContent = [
+          childStatusText(child),
+          child.phase,
+          childUpdatedText(child.updatedAt),
+        ].filter(Boolean).join(" · ");
+        childRow.append(childTitle, childMeta);
+        children.appendChild(childRow);
+      }
+      row.appendChild(children);
+    }
+
+    row.addEventListener("click", (event) => {
+      if (event.target instanceof Element && event.target.closest("button")) return;
+      selectVisibleActivity(activity.activityId, false);
+    });
+    row.addEventListener("keydown", (event) => {
+      if (event.target !== row) return;
       if (event.key === "Enter" || event.key === " ") {
         event.preventDefault();
-        bridge?.selectActivity(activity.activityId);
+        event.stopPropagation();
         void bridge?.openActivity(activity.activityId);
       }
       if ((event.key === "m" || event.key === "M") && activity.unread) {
         event.preventDefault();
+        event.stopPropagation();
         bridge?.markRead(activity.activityId);
       }
     });
-    return btn;
+    return row;
   }
 
   // Click opens/closes the tray; drag past threshold moves the frameless window.
@@ -500,6 +649,31 @@ export function renderPetApp(root: Document = document): {
     if (current) update(current);
   });
 
+  activityFilters?.addEventListener("click", (event) => {
+    const target = event.target instanceof Element
+      ? event.target.closest<HTMLElement>("[data-activity-filter]")
+      : null;
+    const nextFilter = target?.dataset.activityFilter;
+    if (
+      nextFilter !== "all" &&
+      nextFilter !== "attention" &&
+      nextFilter !== "running" &&
+      nextFilter !== "completed"
+    ) {
+      return;
+    }
+    activityFilter = nextFilter;
+    if (current) {
+      const visibleIds = activityIds(filterProjectGroups(current.projects, activityFilter));
+      selectedVisibleActivityId = resolveActivitySelection(
+        visibleIds,
+        selectedVisibleActivityId ?? current.selectedActivityId,
+      );
+      if (selectedVisibleActivityId) bridge?.selectActivity(selectedVisibleActivityId);
+      update(current);
+    }
+  });
+
   petPicker?.addEventListener("click", (event) => {
     const target = event.target instanceof Element
       ? event.target.closest<HTMLElement>("[data-pet-id]")
@@ -546,23 +720,57 @@ export function renderPetApp(root: Document = document): {
 
   const onKeyDown = (event: KeyboardEvent) => {
     if (!current?.trayOpen) return;
-    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    const target = event.target instanceof Element ? event.target : null;
+    const inFormControl = target?.matches("input, select, option") === true;
+    const inFilterBar = target?.closest("#activity-filters") != null;
+
+    if (
+      !inFormControl &&
+      !inFilterBar &&
+      (event.key === "ArrowDown" || event.key === "ArrowUp")
+    ) {
       event.preventDefault();
-      const ids = activityIds(current);
+      const ids = activityIds(filterProjectGroups(current.projects, activityFilter));
       const next = moveActivitySelection(
         ids,
-        current.selectedActivityId,
+        selectedVisibleActivityId,
         event.key === "ArrowDown" ? "next" : "prev",
       );
-      if (next) bridge?.selectActivity(next);
+      if (next) selectVisibleActivity(next, true);
+      return;
     }
-    if (event.key === "Enter" && current.selectedActivityId) {
+
+    if (
+      !inFormControl &&
+      target?.closest("button") == null &&
+      event.key === "Enter" &&
+      selectedVisibleActivityId
+    ) {
       event.preventDefault();
-      void bridge?.openActivity(current.selectedActivityId);
+      void bridge?.openActivity(selectedVisibleActivityId);
+      return;
     }
+
+    if (
+      !inFormControl &&
+      target?.closest("button") == null &&
+      (event.key === "m" || event.key === "M")
+    ) {
+      const selected = findVisibleActivity(selectedVisibleActivityId);
+      if (selected?.unread) {
+        event.preventDefault();
+        bridge?.markRead(selected.activityId);
+      }
+      return;
+    }
+
     if (event.key === "Escape") {
       event.preventDefault();
-      if (settingsOpen) {
+      if (selectedVisibleActivityId && expandedActivityIds.has(selectedVisibleActivityId)) {
+        expandedActivityIds.delete(selectedVisibleActivityId);
+        update(current);
+        focusActivityRow(selectedVisibleActivityId);
+      } else if (settingsOpen) {
         settingsOpen = false;
         update(current);
       } else if (current.trayOpen) {

@@ -251,7 +251,7 @@ flowchart LR
 
 - [x] U4. **建立版本化内置角色资源契约**
 
-**Completed:** 2026-08-13 — 资源契约完成：manifest v2 + allowlist/path/size/state validator，失败回退 CSS 蜗牛。正式 spritesheet 待美术，当前两只内置角色保持 `renderMode: css`。
+**Completed:** 2026-08-13 — 资源契约完成：manifest v2 + allowlist/path/size/state validator，失败回退 CSS 蜗牛。补审已确认内置文档实际进入 renderer bundle，并补齐 spritesheet 起始帧/帧数/时序/静态帧/容量约束、共享构建校验和展开产物资源检查。正式 spritesheet 待美术，当前两只内置角色保持 `renderMode: css`。
 
 **Goal:** 让内置角色可从安全、版本化的包内资源描述动画，同时在资源失败时可靠回退当前 CSS 蜗牛。
 
@@ -288,7 +288,9 @@ flowchart LR
 
 ---
 
-- [ ] U5. **深化 Activity tray 多任务定位与已读交互**
+- [x] U5. **深化 Activity tray 多任务定位与已读交互**
+
+**Completed:** 2026-08-13 — 增加 renderer 本地全部/需关注/运行中/已完成筛选与计数、筛选后安全选择重置、可展开的 Subagent 安全摘要，以及分离的“打开任务”/“标记已读”动作；保留方向键、Enter、Escape、M 和空结果语义。observer 协议与服务端任务状态未修改；真实 Electron 键盘/视觉人工检查未执行。
 
 **Goal:** 在不扩展 observer 协议的情况下，让多项目用户更快定位需关注、运行中和已完成任务。
 

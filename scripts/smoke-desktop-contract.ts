@@ -89,11 +89,14 @@ import {
 } from "../desktop/renderer/pet-assets";
 import {
   connectionBannerText,
+  countActivitiesByFilter,
+  filterProjectGroups,
   formatActivityProgress,
   formatElapsed,
   getBuiltinPetManifest,
   moveActivitySelection,
   petSourceLabel,
+  resolveActivitySelection,
   resolveBuiltinPetManifest,
   resolvePetFrame,
 } from "../desktop/renderer/pet-state";
@@ -122,6 +125,7 @@ function activityInput(input: {
   promptEpoch?: number;
   stateVersion?: number;
   updatedAt?: string;
+  children?: TaskObserverActivityInput["children"];
 }): TaskObserverActivityInput {
   const instanceId = "inst-u7";
   const promptEpoch = input.promptEpoch ?? 1;
@@ -142,6 +146,7 @@ function activityInput(input: {
     stateVersion,
     updatedAt: input.updatedAt ?? "2026-08-12T12:00:00.000Z",
     startedAt: "2026-08-12T11:00:00.000Z",
+    children: input.children,
   };
 }
 
@@ -270,6 +275,17 @@ async function main() {
       title: "Running agent",
       executionState: "running",
       updatedAt: "2026-08-12T12:01:00.000Z",
+      children: [
+        {
+          childId: "child-safe-1",
+          title: "Review tests",
+          executionState: "running",
+          outcome: null,
+          attention: "none",
+          phase: "review",
+          updatedAt: "2026-08-12T12:00:30.000Z",
+        },
+      ],
     }),
     activityInput({
       sessionId: "s-ready",
@@ -370,6 +386,49 @@ async function main() {
   assert.equal(sortedRows[3].presentation, "running");
 
   assertRendererViewSafe(view);
+  assert.deepEqual(sortedRows.find((row) => row.activityId.includes("s-run"))?.children, [
+    {
+      childId: "child-safe-1",
+      title: "Review tests",
+      executionState: "running",
+      outcome: null,
+      attention: "none",
+      phase: "review",
+      updatedAt: "2026-08-12T12:00:30.000Z",
+    },
+  ]);
+
+  // --- Renderer-local filters + safe selection reset ---
+  assert.deepEqual(countActivitiesByFilter(view.projects), {
+    all: 4,
+    attention: 2,
+    running: 2,
+    completed: 2,
+  });
+  assert.deepEqual(
+    flattenActivities(filterProjectGroups(view.projects, "attention")).map(
+      (row) => row.presentation,
+    ),
+    ["needs_input", "blocked"],
+  );
+  assert.deepEqual(
+    flattenActivities(filterProjectGroups(view.projects, "running")).map(
+      (row) => row.activityId,
+    ),
+    [sortedRows[0].activityId, sortedRows[3].activityId],
+  );
+  assert.deepEqual(
+    flattenActivities(filterProjectGroups(view.projects, "completed")).map(
+      (row) => row.presentation,
+    ),
+    ["blocked", "ready"],
+  );
+  const runningIds = flattenActivities(filterProjectGroups(view.projects, "running")).map(
+    (row) => row.activityId,
+  );
+  assert.equal(resolveActivitySelection(runningIds, sortedRows[2].activityId), runningIds[0]);
+  assert.equal(resolveActivitySelection([], runningIds[0]), null);
+  assert.equal(resolveActivitySelection(runningIds, runningIds[1]), runningIds[1]);
 
   // --- Mark-read changes local priority only ---
   const needs = findActivityById(view.projects, sortedRows[0].activityId);
@@ -384,6 +443,18 @@ async function main() {
   const readyAfter = flattenActivities(view.projects).find((r) => r.activityId === ready.activityId)!;
   assert.equal(readyAfter.unread, false);
   assert.equal(readyAfter.presentation, "idle");
+  assert.ok(
+    flattenActivities(filterProjectGroups(view.projects, "completed")).some(
+      (row) => row.activityId === ready.activityId,
+    ),
+    "read terminal activities must remain discoverable in the completed filter",
+  );
+  assert.deepEqual(
+    flattenActivities(filterProjectGroups(view.projects, "attention")).map(
+      (row) => row.presentation,
+    ),
+    ["needs_input"],
+  );
 
   settings = markAllTerminalRead(settings, view);
   view = buildActivityView({ snapshot, connection, settings, now: Date.parse("2026-08-12T12:05:00.000Z") });
@@ -848,6 +919,12 @@ async function main() {
     assert.equal(accepted.manifest.sheet, undefined);
   }
   assert.equal(validatePetManifestDocument({ ...defaultManifest, version: 1 }).ok, false);
+  const statesWithoutIdle = { ...defaultManifest.states };
+  delete statesWithoutIdle.idle;
+  assert.equal(
+    validatePetManifestDocument({ ...defaultManifest, states: statesWithoutIdle }).ok,
+    false,
+  );
   assert.equal(
     validatePetManifestDocument({
       ...defaultManifest,
@@ -871,6 +948,57 @@ async function main() {
     }).ok,
     false,
   );
+  const spriteStates = Object.fromEntries(
+    Object.entries(
+      defaultManifest.states as Record<string, Record<string, unknown>>,
+    ).map(([state, frame], index) => [
+      state,
+      {
+        ...frame,
+        firstFrame: index * 2,
+        frameCount: 2,
+        durationMs: 240,
+        staticFrameIndex: 0,
+      },
+    ]),
+  );
+  const validSpriteManifest = {
+    ...defaultManifest,
+    renderMode: "spritesheet",
+    states: spriteStates,
+    sheet: { src: "snail.png", frameWidth: 32, frameHeight: 32, columns: 4, rows: 4 },
+  };
+  assert.equal(validatePetManifestDocument(validSpriteManifest).ok, true);
+  assert.equal(
+    validatePetManifestDocument({
+      ...validSpriteManifest,
+      states: {
+        ...spriteStates,
+        idle: { ...spriteStates.idle, frameCount: 17 },
+      },
+    }).ok,
+    false,
+  );
+  assert.equal(
+    validatePetManifestDocument({
+      ...validSpriteManifest,
+      states: {
+        ...spriteStates,
+        idle: { ...spriteStates.idle, frameCount: undefined },
+      },
+    }).ok,
+    false,
+  );
+  assert.equal(
+    validatePetManifestDocument({
+      ...validSpriteManifest,
+      states: {
+        ...spriteStates,
+        idle: { ...spriteStates.idle, firstFrame: 15, frameCount: 2 },
+      },
+    }).ok,
+    false,
+  );
   assert.equal(
     validatePetManifestDocument({
       ...defaultManifest,
@@ -880,6 +1008,7 @@ async function main() {
   );
   assert.equal(isSafePetAssetPath("../x.png"), false);
   assert.equal(isSafePetAssetPath("file://x.png"), false);
+  assert.equal(isSafePetAssetPath(`${"a".repeat(81)}.png`), false);
   assert.equal(resolveBuiltinPetManifest("missing", { id: "evil" }).id, "snail-default");
   assert.equal(
     resolveBuiltinPetManifest("snail-classic", {
@@ -896,6 +1025,39 @@ async function main() {
     size: (filePath) => statSync(filePath).size,
     join: path.join,
   });
+  const packagedFiles = new Map<string, string>([
+    ["/pets/snail-default/manifest.json", JSON.stringify(validSpriteManifest)],
+    ["/pets/snail-default/snail.png", "sprite"],
+    [
+      "/pets/snail-classic/manifest.json",
+      JSON.stringify({ ...defaultManifest, id: "snail-classic", name: "Classic Snail" }),
+    ],
+  ]);
+  const packagedIo = {
+    readFile: (filePath: string) => packagedFiles.get(filePath) ?? "",
+    exists: (filePath: string) => packagedFiles.has(filePath),
+    size: (filePath: string) => packagedFiles.get(filePath)?.length ?? 0,
+    join: path.posix.join,
+  };
+  assert.deepEqual(validatePackagedPetAssets("/pets", packagedIo), [
+    { id: "snail-default", renderMode: "spritesheet" },
+    { id: "snail-classic", renderMode: "css" },
+  ]);
+  packagedFiles.delete("/pets/snail-default/snail.png");
+  assert.throws(
+    () => validatePackagedPetAssets("/pets", packagedIo),
+    /missing pet sheet/,
+  );
+  packagedFiles.set("/pets/snail-default/snail.png", "sprite");
+  assert.throws(
+    () =>
+      validatePackagedPetAssets("/pets", {
+        ...packagedIo,
+        size: (filePath: string) =>
+          filePath.endsWith("snail.png") ? 256 * 1024 + 1 : packagedIo.size(filePath),
+      }),
+    /pet sheet size/,
+  );
   assert.equal(
     acceptStaticPetPreview({
       presentation: "idle",
@@ -1158,6 +1320,10 @@ async function main() {
   assert.ok(html.includes('data-pet-scale="large"'));
   assert.ok(html.includes("恢复默认位置"));
   assert.ok(html.includes("收起活动列表"));
+  assert.ok(html.includes('id="activity-filters"'));
+  for (const filter of ["all", "attention", "running", "completed"]) {
+    assert.ok(html.includes(`data-activity-filter="${filter}"`));
+  }
 
   const css = readFileSync(path.join(process.cwd(), "desktop", "renderer", "pet.css"), "utf8");
   assert.ok(css.includes("-webkit-app-region: drag"));
@@ -1173,6 +1339,9 @@ async function main() {
   assert.ok(css.includes("--pet-scale"));
   assert.ok(css.includes("background: transparent"));
   assert.ok(css.includes("prefers-reduced-motion: reduce"));
+  assert.ok(css.includes(".activity-filter"));
+  assert.ok(css.includes(".row-child-meta"));
+  assert.ok(css.includes(".row-actions"));
   assert.ok(html.includes("pet-stack"));
   assert.ok(html.includes("data-tray-anchor"));
 
@@ -1188,6 +1357,33 @@ async function main() {
   assert.ok(preloadBridge.includes("moveBy"));
   assert.ok(preloadBridge.includes("restoreDefaultPosition"));
 
+  const petAppSource = readFileSync(
+    path.join(process.cwd(), "desktop", "renderer", "pet-app.tsx"),
+    "utf8",
+  );
+  assert.ok(petAppSource.includes("打开任务"));
+  assert.ok(petAppSource.includes("标记已读"));
+  assert.ok(petAppSource.includes("Subagent 安全摘要"));
+  const markReadHandler = petAppSource.match(
+    /readButton\.addEventListener\("click",[\s\S]{0,160}?\n\s*}\);/,
+  );
+  assert.ok(markReadHandler);
+  assert.ok(markReadHandler![0].includes("markRead"));
+  assert.equal(markReadHandler![0].includes("openActivity"), false);
+  const openHandler = petAppSource.match(
+    /openButton\.addEventListener\("click",[\s\S]{0,220}?\n\s*}\);/,
+  );
+  assert.ok(openHandler);
+  assert.ok(openHandler![0].includes("openActivity"));
+  assert.ok(openHandler![0].includes("selectActivity"));
+
+  const openActivityHandler = mainSrc.match(
+    /ipcMain\.handle\(PET_IPC_CHANNELS\.openActivity,[\s\S]{0,520}?\n\s*}\);/,
+  );
+  assert.ok(openActivityHandler);
+  assert.ok(openActivityHandler![0].includes("markActivityRead"));
+  assert.ok(openActivityHandler![0].includes("openActivityDeepLink"));
+
   const petAppJs = readFileSync(
     path.join(process.cwd(), "desktop", "renderer", "pet-app.js"),
     "utf8",
@@ -1200,6 +1396,10 @@ async function main() {
   assert.ok(petAppJs.includes("petScale"));
   assert.ok(petAppJs.includes("restoreDefaultPosition"));
   assert.ok(petAppJs.includes("settingsOpen"));
+  assert.ok(petAppJs.includes("filterProjectGroups"));
+  assert.ok(petAppJs.includes("resolveActivitySelection"));
+  assert.ok(petAppJs.includes("row-child-toggle"));
+  assert.ok(petAppJs.includes("markRead"));
 
   // Collapsed avatar labels stay short Chinese strings (fit 112px surface).
   assert.equal(resolvePetFrame(getBuiltinPetManifest("snail-default"), "idle", false).label, "空闲");

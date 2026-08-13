@@ -27,7 +27,7 @@ npm run dev                 # or: spi --no-open
 npm run desktop:dev
 ```
 
-Generated main/preload bundles (`main.js`, `pet-preload.js`, maps, `.build-stamp.json`) are gitignored. `desktop:build` also regenerates the checked-in browser runtime `renderer/pet-app.js` from `pet-app.tsx`; always build before packaging and commit that renderer output when its source changes.
+Generated main/preload bundles (`main.js`, `pet-preload.js`, maps, `.build-stamp.json`) are gitignored. `desktop:build` also regenerates the checked-in browser runtime `renderer/pet-app.js` from `pet-app.tsx` and validates both built-in manifest v2 documents plus any declared spritesheet file; always build before packaging and commit that renderer output when its source changes.
 
 ## UI cheatsheet
 

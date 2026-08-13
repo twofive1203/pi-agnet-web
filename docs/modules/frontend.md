@@ -150,9 +150,9 @@ Separate from the Next.js WebUI. Lives under `desktop/` and is packaged independ
 | --- | --- |
 | `desktop/renderer/index.html` | Transparent pet shell + Activity tray markup; strict CSP (`default-src 'none'`). |
 | `desktop/renderer/pet.css` | Transparent CSS/vector snail personalities, state posture/animation, tray/settings layout, small/medium/large scale tokens, reduced-motion gate, and non-color cues. |
-| `desktop/renderer/pet-state.ts` | Pure presentation helpers (manifest frames, glyphs/labels, localized source labels, verifiable progress formatting, keyboard selection, elapsed). Invalid packaged manifests fall back to CSS snails. |
-| `desktop/renderer/pet-assets.ts` | Manifest v2 allowlist/path/size/state contract used by renderer fallback, build, and package smokes. |
-| `desktop/renderer/pet-app.tsx` (+ generated `pet-app.js`) | Pet click toggles tray; compact safe status caption; task rows show source/phase/real progress/Subagents and open validated deep links; inline local pet/size/always-on-top/click-through/autostart/notification settings plus restore-default-position; mark-one/all-read; service-not-running copy/retry. No token/Node. |
+| `desktop/renderer/pet-state.ts` | Pure presentation helpers (bundled manifest frames, glyphs/labels, localized source labels, verifiable progress formatting, local activity filters/counts, filtered-list selection/reset, elapsed). The two packaged v2 documents are validated before use; invalid documents fall back to CSS snails. |
+| `desktop/renderer/pet-assets.ts` | Manifest v2 allowlist/path/size/state contract used by renderer fallback, build, and package smokes. Spritesheet descriptors require bounded start/count/timing/static-frame ranges inside declared sheet capacity; source builds and expanded package artifacts verify required files and byte limits. |
+| `desktop/renderer/pet-app.tsx` (+ generated `pet-app.js`) | Pet click toggles tray; compact safe status caption; renderer-local All/Attention/Running/Completed filters; task rows show source/phase/real progress, expandable safe Subagent summaries, and separate Open task / Mark read actions; inline local pet/size/always-on-top/click-through/autostart/notification settings plus restore-default-position; service-not-running copy/retry. No token/Node. |
 | `desktop/preload/pet-preload.ts` | Narrow `window.snailPet` bridge. |
 | `desktop/assets/pets/*` | Builtin versioned pet manifests (`snail-default`, `snail-classic`); current render mode is CSS until approved spritesheets exist. |
 

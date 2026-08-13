@@ -115,6 +115,20 @@
             <button type="button" id="btn-clear-key" class="tray-btn" hidden>清除密钥</button>
           </div>
         </div>
+        <div id="activity-filters" class="activity-filters" role="group" aria-label="筛选活动">
+          <button type="button" class="activity-filter" data-activity-filter="all" aria-pressed="true">
+            全部 <span data-filter-count>0</span>
+          </button>
+          <button type="button" class="activity-filter" data-activity-filter="attention" aria-pressed="false">
+            需关注 <span data-filter-count>0</span>
+          </button>
+          <button type="button" class="activity-filter" data-activity-filter="running" aria-pressed="false">
+            运行中 <span data-filter-count>0</span>
+          </button>
+          <button type="button" class="activity-filter" data-activity-filter="completed" aria-pressed="false">
+            已完成 <span data-filter-count>0</span>
+          </button>
+        </div>
         <section id="settings-panel" class="settings-panel" hidden aria-label="桌宠设置">
           <div class="settings-heading">角色</div>
           <div id="pet-picker" class="pet-picker" role="radiogroup" aria-label="选择桌宠">
@@ -170,7 +184,7 @@
             </label>
           </div>
         </section>
-        <div id="project-list" class="project-list" role="list"></div>
+        <div id="project-list" class="project-list" role="listbox" aria-label="任务活动"></div>
         <footer class="tray-footer">
           <button type="button" id="btn-copy-cmd" class="tray-btn" hidden>
             复制启动命令

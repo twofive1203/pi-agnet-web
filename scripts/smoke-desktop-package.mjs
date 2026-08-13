@@ -12,6 +12,8 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+import { loadDesktopPetAssetValidator } from "./desktop-pet-asset-validator.mjs";
+
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 function walkFiles(dir, out = []) {
@@ -56,6 +58,7 @@ function assertNoServiceControl(source, fileLabel) {
 
 async function main() {
   console.log("smoke-desktop-package: start");
+  const { validatePackagedPetAssets } = await loadDesktopPetAssetValidator(ROOT);
 
   // --- Load forge contract ---
   const forgeUrl = pathToFileURL(path.join(ROOT, "forge.config.ts")).href;
@@ -76,6 +79,10 @@ async function main() {
     assert.ok(forgeSrc.includes("com.twofive.snail-pi-pet"), "forge.config must set AppUserModelID / bundle id");
     assert.ok(forgeSrc.includes("snail-pi-pet"), "forge.config must set executableName");
     assert.ok(forgeSrc.includes("WINDOWS_CERTIFICATE_FILE"), "forge.config must document signing placeholders");
+    assert.ok(
+      /extraResource\s*:\s*\[[^\]]*["']desktop\/assets["']/.test(forgeSrc),
+      "forge.config must package builtin pet assets",
+    );
     contract = {
       productName: "SnailPiPet",
       executableName: "snail-pi-pet",
@@ -117,6 +124,10 @@ async function main() {
     assert.equal(forgeDefault.packagerConfig?.asar, true);
     assert.equal(forgeDefault.packagerConfig?.name, contract.productName);
     assert.ok(Array.isArray(forgeDefault.packagerConfig?.ignore));
+    assert.ok(
+      forgeDefault.packagerConfig?.extraResource?.includes("desktop/assets"),
+      "packager extraResource must include builtin pet assets",
+    );
     assert.ok(forgeDefault.makers?.some((m) => String(m.name).includes("squirrel")));
     const ignoreSrc = forgeDefault.packagerConfig.ignore.map(String).join("\n");
     assert.ok(/\.next|next/.test(ignoreSrc), "packager ignore must cover .next/next");
@@ -212,28 +223,19 @@ async function main() {
     "preview output must stay gitignored",
   );
 
-  for (const petId of ["snail-default", "snail-classic"]) {
-    const manifest = JSON.parse(
-      readText(path.join(ROOT, "desktop", "assets", "pets", petId, "manifest.json")),
-    );
-    assert.equal(manifest.id, petId);
-    assert.equal(manifest.version, 2);
-    assert.equal(manifest.renderMode, "css");
-    assert.equal(manifest.sheet, undefined);
-    assert.equal(/\.\.\/|file:|https?:/i.test(JSON.stringify(manifest)), false);
-    for (const state of [
-      "idle",
-      "running",
-      "retrying",
-      "needs_input",
-      "ready",
-      "blocked",
-      "disconnected",
-      "service_not_running",
-    ]) {
-      assert.ok(manifest.states?.[state], `${petId} missing state ${state}`);
-    }
-  }
+  const sourcePetAssets = validatePackagedPetAssets(
+    path.join(ROOT, "desktop", "assets", "pets"),
+    {
+      readFile: readText,
+      exists: existsSync,
+      size: (filePath) => statSync(filePath).size,
+      join: path.join,
+    },
+  );
+  assert.deepEqual(sourcePetAssets, [
+    { id: "snail-default", renderMode: "css" },
+    { id: "snail-classic", renderMode: "css" },
+  ]);
 
   // Window security contract source
   const winSrc = readText(path.join(ROOT, "desktop", "main", "window-manager.ts"));
@@ -290,6 +292,28 @@ async function main() {
         return r.includes(`/${needle}`) || r.includes(needle + "/") || r.endsWith(needle);
       });
       assert.equal(hit, false, `artifact under ${rel(outDir)} must not contain forbidden path: ${forbidden}`);
+    }
+    const resourceFiles = filesInOut.filter((file) =>
+      rel(file).toLowerCase().replace(/\\/g, "/").includes("/resources/"),
+    );
+    if (resourceFiles.length > 0) {
+      const defaultManifestPath = resourceFiles.find((file) =>
+        rel(file)
+          .toLowerCase()
+          .replace(/\\/g, "/")
+          .endsWith("/assets/pets/snail-default/manifest.json"),
+      );
+      assert.ok(defaultManifestPath, `artifact under ${rel(outDir)} must contain builtin pet manifests`);
+      const petsRoot = path.dirname(path.dirname(defaultManifestPath));
+      const packagedPets = validatePackagedPetAssets(petsRoot, {
+        readFile: readText,
+        exists: existsSync,
+        size: (filePath) => statSync(filePath).size,
+        join: path.join,
+      });
+      assert.equal(packagedPets.length, 2, "artifact must contain both builtin pets");
+    } else {
+      console.log(`ARTIFACT_RESOURCE_SCAN_SKIPPED dir=${rel(outDir)} no expanded resources tree`);
     }
     // Executable name presence is soft — Squirrel layout varies.
     void joined;

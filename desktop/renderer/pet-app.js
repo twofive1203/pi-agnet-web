@@ -76,6 +76,18 @@
   }
 
   // desktop/renderer/pet-assets.ts
+  var BUILTIN_PET_IDS = ["snail-default", "snail-classic"];
+  var PET_MANIFEST_VERSION = 2;
+  var PET_REQUIRED_STATES = [
+    "idle",
+    "running",
+    "retrying",
+    "needs_input",
+    "ready",
+    "blocked",
+    "disconnected",
+    "service_not_running"
+  ];
   var PET_ASSET_LIMITS = {
     maxManifestBytes: 16 * 1024,
     maxPathLength: 80,
@@ -86,9 +98,208 @@
     maxSheetWidth: 2048,
     maxSheetHeight: 2048
   };
+  var ALLOWED_TOP_LEVEL = /* @__PURE__ */ new Set(["id", "name", "version", "renderMode", "states", "sheet"]);
+  var ALLOWED_FRAME_KEYS = /* @__PURE__ */ new Set([
+    "frame",
+    "staticFrame",
+    "label",
+    "glyph",
+    "firstFrame",
+    "frameCount",
+    "durationMs",
+    "staticFrameIndex"
+  ]);
+  var ALLOWED_SHEET_KEYS = /* @__PURE__ */ new Set(["src", "frameWidth", "frameHeight", "columns", "rows"]);
+  var FORBIDDEN_CAPABILITY_KEYS = /* @__PURE__ */ new Set([
+    "command",
+    "commands",
+    "url",
+    "href",
+    "skill",
+    "skills",
+    "tools",
+    "execute",
+    "prompt",
+    "cwd",
+    "token",
+    "observerToken",
+    "accessKey"
+  ]);
   var PREVIEW_FORBIDDEN_KEY = /"(token|observerToken|accessKey|password|pid|servicePid|cwd|firstMessage|prompt|command|output|child_process)"\s*:/;
+  function isBuiltinPetId(value) {
+    return BUILTIN_PET_IDS.includes(value);
+  }
+  function isSafePetAssetPath(value) {
+    if (typeof value !== "string" || value.length === 0 || value.length > PET_ASSET_LIMITS.maxPathLength) {
+      return false;
+    }
+    if (value.includes("\\") || value.includes("..")) return false;
+    if (value.startsWith("/") || value.startsWith("~")) return false;
+    if (/^[a-z][a-z0-9+.-]*:/i.test(value)) return false;
+    return /^[A-Za-z0-9._/-]+$/.test(value);
+  }
+  function collectForbiddenPetCapabilityKeys(raw, found = /* @__PURE__ */ new Set()) {
+    if (!raw || typeof raw !== "object") return [...found];
+    if (Array.isArray(raw)) {
+      for (const item of raw) collectForbiddenPetCapabilityKeys(item, found);
+      return [...found];
+    }
+    for (const [key, value] of Object.entries(raw)) {
+      if (FORBIDDEN_CAPABILITY_KEYS.has(key)) found.add(key);
+      collectForbiddenPetCapabilityKeys(value, found);
+    }
+    return [...found];
+  }
   function isPlainObject(value) {
     return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+  }
+  function readPositiveInt(value, label, max) {
+    if (typeof value !== "number" || !Number.isInteger(value) || value <= 0 || value > max) {
+      return `${label}_invalid`;
+    }
+    return value;
+  }
+  function readNonNegativeInt(value, label, max) {
+    if (typeof value !== "number" || !Number.isInteger(value) || value < 0 || value > max) {
+      return `${label}_invalid`;
+    }
+    return value;
+  }
+  function validateFrame(state, raw) {
+    if (!isPlainObject(raw)) return `${state}_frame_missing`;
+    for (const key of Object.keys(raw)) {
+      if (!ALLOWED_FRAME_KEYS.has(key)) return `${state}_unknown_field`;
+    }
+    if (typeof raw.frame !== "string" || !isSafePetAssetPath(raw.frame)) return `${state}_frame_path`;
+    if (typeof raw.staticFrame !== "string" || !isSafePetAssetPath(raw.staticFrame)) {
+      return `${state}_static_frame_path`;
+    }
+    if (typeof raw.label !== "string" || raw.label.length === 0 || raw.label.length > 16) {
+      return `${state}_label`;
+    }
+    if (typeof raw.glyph !== "string" || raw.glyph.length === 0 || raw.glyph.length > 4) {
+      return `${state}_glyph`;
+    }
+    const frame = {
+      frame: raw.frame,
+      staticFrame: raw.staticFrame,
+      label: raw.label,
+      glyph: raw.glyph
+    };
+    if (raw.firstFrame !== void 0) {
+      const firstFrame = readNonNegativeInt(
+        raw.firstFrame,
+        `${state}_firstFrame`,
+        PET_ASSET_LIMITS.maxFrames * PET_ASSET_LIMITS.maxFrames - 1
+      );
+      if (typeof firstFrame === "string") return firstFrame;
+      frame.firstFrame = firstFrame;
+    }
+    if (raw.frameCount !== void 0) {
+      const count = readPositiveInt(raw.frameCount, `${state}_frameCount`, PET_ASSET_LIMITS.maxFrames);
+      if (typeof count === "string") return count;
+      frame.frameCount = count;
+    }
+    if (raw.durationMs !== void 0) {
+      if (typeof raw.durationMs !== "number" || !Number.isInteger(raw.durationMs) || raw.durationMs < PET_ASSET_LIMITS.minDurationMs || raw.durationMs > PET_ASSET_LIMITS.maxDurationMs) {
+        return `${state}_duration`;
+      }
+      frame.durationMs = raw.durationMs;
+    }
+    if (raw.staticFrameIndex !== void 0) {
+      if (typeof raw.staticFrameIndex !== "number" || !Number.isInteger(raw.staticFrameIndex) || raw.staticFrameIndex < 0) {
+        return `${state}_static_index`;
+      }
+      const count = frame.frameCount ?? 1;
+      if (raw.staticFrameIndex >= count) return `${state}_static_index`;
+      frame.staticFrameIndex = raw.staticFrameIndex;
+    }
+    return frame;
+  }
+  function validatePetManifestDocument(raw) {
+    if (!isPlainObject(raw)) return { ok: false, reason: "not_object" };
+    for (const key of Object.keys(raw)) {
+      if (!ALLOWED_TOP_LEVEL.has(key)) return { ok: false, reason: `unknown_field:${key}` };
+    }
+    const forbidden = collectForbiddenPetCapabilityKeys(raw);
+    if (forbidden.length > 0) return { ok: false, reason: `capability:${forbidden[0]}` };
+    if (typeof raw.id !== "string" || !isBuiltinPetId(raw.id)) return { ok: false, reason: "id" };
+    if (typeof raw.name !== "string" || raw.name.length === 0 || raw.name.length > 32) {
+      return { ok: false, reason: "name" };
+    }
+    if (raw.version !== PET_MANIFEST_VERSION) return { ok: false, reason: "version" };
+    if (raw.renderMode !== "css" && raw.renderMode !== "spritesheet") {
+      return { ok: false, reason: "renderMode" };
+    }
+    if (!isPlainObject(raw.states)) return { ok: false, reason: "states" };
+    const states = {};
+    for (const state of PET_REQUIRED_STATES) {
+      if (!(state in raw.states)) return { ok: false, reason: `missing_state:${state}` };
+      const frame = validateFrame(state, raw.states[state]);
+      if (typeof frame === "string") return { ok: false, reason: frame };
+      states[state] = frame;
+    }
+    for (const state of Object.keys(raw.states)) {
+      if (!PET_REQUIRED_STATES.includes(state)) {
+        return { ok: false, reason: `unknown_state:${state}` };
+      }
+    }
+    let sheet;
+    if (raw.renderMode === "css") {
+      if (raw.sheet !== void 0) return { ok: false, reason: "css_sheet_not_allowed" };
+      for (const state of PET_REQUIRED_STATES) {
+        const frame = states[state];
+        if (frame.firstFrame !== void 0 || frame.frameCount !== void 0 || frame.durationMs !== void 0 || frame.staticFrameIndex !== void 0) {
+          return { ok: false, reason: `${state}_sprite_fields_not_allowed` };
+        }
+      }
+    } else {
+      if (!isPlainObject(raw.sheet)) return { ok: false, reason: "sheet_missing" };
+      for (const key of Object.keys(raw.sheet)) {
+        if (!ALLOWED_SHEET_KEYS.has(key)) return { ok: false, reason: `sheet_unknown_field:${key}` };
+      }
+      if (typeof raw.sheet.src !== "string" || !isSafePetAssetPath(raw.sheet.src) || !/\.(?:png|webp)$/i.test(raw.sheet.src)) {
+        return { ok: false, reason: "sheet_src" };
+      }
+      const frameWidth = readPositiveInt(raw.sheet.frameWidth, "sheet_frameWidth", PET_ASSET_LIMITS.maxSheetWidth);
+      const frameHeight = readPositiveInt(raw.sheet.frameHeight, "sheet_frameHeight", PET_ASSET_LIMITS.maxSheetHeight);
+      const columns = readPositiveInt(raw.sheet.columns, "sheet_columns", PET_ASSET_LIMITS.maxFrames);
+      const rows = readPositiveInt(raw.sheet.rows, "sheet_rows", PET_ASSET_LIMITS.maxFrames);
+      if (typeof frameWidth === "string") return { ok: false, reason: frameWidth };
+      if (typeof frameHeight === "string") return { ok: false, reason: frameHeight };
+      if (typeof columns === "string") return { ok: false, reason: columns };
+      if (typeof rows === "string") return { ok: false, reason: rows };
+      if (frameWidth * columns > PET_ASSET_LIMITS.maxSheetWidth) return { ok: false, reason: "sheet_width" };
+      if (frameHeight * rows > PET_ASSET_LIMITS.maxSheetHeight) return { ok: false, reason: "sheet_height" };
+      const sheetCapacity = columns * rows;
+      for (const state of PET_REQUIRED_STATES) {
+        const frame = states[state];
+        if (frame.firstFrame === void 0 || frame.frameCount === void 0 || frame.durationMs === void 0 || frame.staticFrameIndex === void 0) {
+          return { ok: false, reason: `${state}_sprite_timing_missing` };
+        }
+        if (frame.firstFrame + frame.frameCount > sheetCapacity) {
+          return { ok: false, reason: `${state}_frame_range` };
+        }
+      }
+      sheet = {
+        src: raw.sheet.src,
+        frameWidth,
+        frameHeight,
+        columns,
+        rows
+      };
+    }
+    return {
+      ok: true,
+      manifest: {
+        id: raw.id,
+        name: raw.name,
+        version: PET_MANIFEST_VERSION,
+        renderMode: raw.renderMode,
+        states,
+        ...sheet ? { sheet } : {}
+      }
+    };
   }
   function acceptStaticPetPreview(raw) {
     if (!isPlainObject(raw)) return null;
@@ -108,6 +319,92 @@
     if (Object.hasOwn(raw, "__proto__") || Object.hasOwn(raw, "constructor")) return null;
     return raw;
   }
+
+  // desktop/assets/pets/snail-classic/manifest.json
+  var manifest_default = {
+    id: "snail-classic",
+    name: "Classic Snail",
+    version: 2,
+    renderMode: "css",
+    states: {
+      idle: { frame: "idle", staticFrame: "idle", label: "\u7A7A\u95F2", glyph: "\xB7" },
+      running: {
+        frame: "running",
+        staticFrame: "running-static",
+        label: "\u8FD0\u884C\u4E2D",
+        glyph: "\u203A"
+      },
+      retrying: {
+        frame: "retrying",
+        staticFrame: "retrying-static",
+        label: "\u91CD\u8BD5\u4E2D",
+        glyph: "\u21BB"
+      },
+      needs_input: {
+        frame: "needs-input",
+        staticFrame: "needs-input",
+        label: "\u5F85\u8F93\u5165",
+        glyph: "?"
+      },
+      ready: { frame: "ready", staticFrame: "ready", label: "\u5DF2\u5B8C\u6210", glyph: "\u2713" },
+      blocked: { frame: "blocked", staticFrame: "blocked", label: "\u53D7\u963B", glyph: "!" },
+      disconnected: {
+        frame: "disconnected",
+        staticFrame: "disconnected",
+        label: "\u672A\u8FDE\u63A5",
+        glyph: "\u26A0"
+      },
+      service_not_running: {
+        frame: "service-not-running",
+        staticFrame: "service-not-running",
+        label: "\u672A\u542F\u52A8",
+        glyph: "\u23FB"
+      }
+    }
+  };
+
+  // desktop/assets/pets/snail-default/manifest.json
+  var manifest_default2 = {
+    id: "snail-default",
+    name: "Snail",
+    version: 2,
+    renderMode: "css",
+    states: {
+      idle: { frame: "idle", staticFrame: "idle", label: "\u7A7A\u95F2", glyph: "\xB7" },
+      running: {
+        frame: "running",
+        staticFrame: "running-static",
+        label: "\u8FD0\u884C\u4E2D",
+        glyph: "\u203A"
+      },
+      retrying: {
+        frame: "retrying",
+        staticFrame: "retrying-static",
+        label: "\u91CD\u8BD5\u4E2D",
+        glyph: "\u21BB"
+      },
+      needs_input: {
+        frame: "needs-input",
+        staticFrame: "needs-input",
+        label: "\u5F85\u8F93\u5165",
+        glyph: "?"
+      },
+      ready: { frame: "ready", staticFrame: "ready", label: "\u5DF2\u5B8C\u6210", glyph: "\u2713" },
+      blocked: { frame: "blocked", staticFrame: "blocked", label: "\u53D7\u963B", glyph: "!" },
+      disconnected: {
+        frame: "disconnected",
+        staticFrame: "disconnected",
+        label: "\u672A\u8FDE\u63A5",
+        glyph: "\u26A0"
+      },
+      service_not_running: {
+        frame: "service-not-running",
+        staticFrame: "service-not-running",
+        label: "\u672A\u542F\u52A8",
+        glyph: "\u23FB"
+      }
+    }
+  };
 
   // lib/task-observer-types.ts
   var TASK_OBSERVER_BUDGETS = {
@@ -182,18 +479,34 @@
       glyph: "\xB7"
     }
   };
-  function buildDefaultPetManifest(id, name, version = 2) {
+  function buildDefaultPetManifest(id, name) {
     return {
       id,
       name,
-      version,
+      version: 2,
       renderMode: "css",
       states: { ...DEFAULT_FRAMES }
     };
   }
-  var BUILTIN_PET_MANIFESTS = [
+  var CSS_FALLBACK_MANIFESTS = [
     buildDefaultPetManifest("snail-default", "Snail"),
     buildDefaultPetManifest("snail-classic", "Classic Snail")
+  ];
+  function resolvePetManifestDocument(fallback, raw) {
+    const validated = validatePetManifestDocument(raw);
+    if (!validated.ok || validated.manifest.id !== fallback.id) return fallback;
+    return {
+      id: validated.manifest.id,
+      name: validated.manifest.name,
+      version: validated.manifest.version,
+      renderMode: validated.manifest.renderMode,
+      states: validated.manifest.states,
+      sheet: validated.manifest.sheet
+    };
+  }
+  var BUILTIN_PET_MANIFESTS = [
+    resolvePetManifestDocument(CSS_FALLBACK_MANIFESTS[0], manifest_default2),
+    resolvePetManifestDocument(CSS_FALLBACK_MANIFESTS[1], manifest_default)
   ];
   function getBuiltinPetManifest(petId) {
     return BUILTIN_PET_MANIFESTS.find((pet) => pet.id === petId) ?? BUILTIN_PET_MANIFESTS[0];
@@ -256,6 +569,54 @@
     const remMin = min % 60;
     return `${hr}h ${remMin}m`;
   }
+  function activityMatchesFilter(activity, filter) {
+    switch (filter) {
+      case "all":
+        return true;
+      case "attention":
+        return activity.presentation === "needs_input" || activity.presentation === "blocked";
+      case "running":
+        return activity.executionState === "queued" || activity.executionState === "running" || activity.executionState === "retrying";
+      case "completed":
+        return activity.executionState === "settled";
+      default: {
+        const _exhaustive = filter;
+        return _exhaustive;
+      }
+    }
+  }
+  function filterProjectGroups(groups, filter) {
+    if (filter === "all") {
+      return groups.map((group) => ({ ...group, activities: [...group.activities] }));
+    }
+    return groups.flatMap((group) => {
+      const activities = group.activities.filter(
+        (activity) => activityMatchesFilter(activity, filter)
+      );
+      return activities.length > 0 ? [{ ...group, activities }] : [];
+    });
+  }
+  function countActivitiesByFilter(groups) {
+    const counts = {
+      all: 0,
+      attention: 0,
+      running: 0,
+      completed: 0
+    };
+    for (const group of groups) {
+      for (const activity of group.activities) {
+        counts.all += 1;
+        if (activityMatchesFilter(activity, "attention")) counts.attention += 1;
+        if (activityMatchesFilter(activity, "running")) counts.running += 1;
+        if (activityMatchesFilter(activity, "completed")) counts.completed += 1;
+      }
+    }
+    return counts;
+  }
+  function resolveActivitySelection(activityIds, currentId) {
+    if (activityIds.length === 0) return null;
+    return currentId != null && activityIds.includes(currentId) ? currentId : activityIds[0];
+  }
   function moveActivitySelection(activityIds, currentId, direction) {
     if (activityIds.length === 0) return null;
     if (currentId == null) {
@@ -309,6 +670,7 @@
     const trayCounts = root.getElementById("tray-counts");
     const banner = root.getElementById("connection-banner");
     const authPanel = root.getElementById("auth-panel");
+    const activityFilters = root.getElementById("activity-filters");
     const accessKeyInput = root.getElementById("access-key-input");
     const btnSaveKey = root.getElementById("btn-save-key");
     const btnClearKey = root.getElementById("btn-clear-key");
@@ -335,6 +697,9 @@
     const DRAG_THRESHOLD_PX = 5;
     let current = null;
     let settingsOpen = false;
+    let activityFilter = "all";
+    let selectedVisibleActivityId = null;
+    const expandedActivityIds = /* @__PURE__ */ new Set();
     let reducedMotion = typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     bridge?.setReducedMotion(reducedMotion);
     if (typeof window.matchMedia === "function") {
@@ -346,12 +711,35 @@
       };
       mq.addEventListener?.("change", onMotion);
     }
-    function activityIds(view) {
+    function activityIds(projects) {
       const ids = [];
-      for (const project of view.projects) {
+      for (const project of projects) {
         for (const activity of project.activities) ids.push(activity.activityId);
       }
       return ids;
+    }
+    function findVisibleActivity(activityId) {
+      if (!current || !activityId) return null;
+      for (const project of filterProjectGroups(current.projects, activityFilter)) {
+        const activity = project.activities.find((candidate) => candidate.activityId === activityId);
+        if (activity) return activity;
+      }
+      return null;
+    }
+    function focusActivityRow(activityId) {
+      if (!activityId || !projectList) return;
+      for (const row of projectList.querySelectorAll("[data-activity-id]")) {
+        if (row.dataset.activityId === activityId) {
+          row.focus();
+          return;
+        }
+      }
+    }
+    function selectVisibleActivity(activityId, focus) {
+      selectedVisibleActivityId = activityId;
+      bridge?.selectActivity(activityId);
+      if (current) update(current);
+      if (focus) focusActivityRow(activityId);
     }
     function update(view) {
       current = view;
@@ -393,6 +781,7 @@
       if (tray) tray.hidden = !view.trayOpen;
       if (!view.trayOpen) settingsOpen = false;
       if (settingsPanel) settingsPanel.hidden = !settingsOpen;
+      if (activityFilters) activityFilters.hidden = settingsOpen;
       if (projectList) projectList.hidden = settingsOpen;
       if (btnSettings) {
         btnSettings.setAttribute("aria-expanded", settingsOpen ? "true" : "false");
@@ -424,6 +813,15 @@
         const attention = view.attentionCount;
         trayCounts.textContent = `\u6D3B\u52A8 ${active} \xB7 \u5173\u6CE8 ${attention}`;
       }
+      const filterCounts = countActivitiesByFilter(view.projects);
+      activityFilters?.querySelectorAll("[data-activity-filter]").forEach((button) => {
+        const filter = button.dataset.activityFilter;
+        if (!filter || !(filter in filterCounts)) return;
+        const selected = filter === activityFilter;
+        button.setAttribute("aria-pressed", selected ? "true" : "false");
+        const count = button.querySelector("[data-filter-count]");
+        if (count) count.textContent = String(filterCounts[filter]);
+      });
       const bannerText = connectionBannerText({
         connectionStatus: view.connectionStatus,
         canCopyStartCommand: view.canCopyStartCommand,
@@ -467,14 +865,24 @@
         option.setAttribute("aria-checked", selected ? "true" : "false");
       });
       if (projectList) {
+        const filteredProjects = filterProjectGroups(view.projects, activityFilter);
+        const visibleIds = activityIds(filteredProjects);
+        selectedVisibleActivityId = resolveActivitySelection(
+          visibleIds,
+          selectedVisibleActivityId ?? view.selectedActivityId
+        );
+        const liveIds = new Set(activityIds(view.projects));
+        for (const activityId of expandedActivityIds) {
+          if (!liveIds.has(activityId)) expandedActivityIds.delete(activityId);
+        }
         projectList.replaceChildren();
-        if (view.projects.length === 0) {
+        if (filteredProjects.length === 0) {
           const empty = root.createElement("div");
           empty.className = "empty-tray";
-          empty.textContent = view.connectionStatus === "connected" ? "\u5F53\u524D\u6CA1\u6709\u53EF\u89C2\u5BDF\u7684\u6D3B\u52A8" : "\u8FDE\u63A5\u672C\u5730\u8717\u725B\u6D3E\u670D\u52A1\u540E\u5373\u53EF\u89C2\u5BDF\u4EFB\u52A1";
+          empty.textContent = view.projects.length > 0 ? "\u6B64\u7B5B\u9009\u4E0B\u6682\u65E0\u6D3B\u52A8" : view.connectionStatus === "connected" ? "\u5F53\u524D\u6CA1\u6709\u53EF\u89C2\u5BDF\u7684\u6D3B\u52A8" : "\u8FDE\u63A5\u672C\u5730\u8717\u725B\u6D3E\u670D\u52A1\u540E\u5373\u53EF\u89C2\u5BDF\u4EFB\u52A1";
           projectList.appendChild(empty);
         } else {
-          for (const project of view.projects) {
+          for (const project of filteredProjects) {
             const group = root.createElement("div");
             group.className = "project-group";
             group.setAttribute("role", "group");
@@ -483,20 +891,40 @@
             name.textContent = project.displayName;
             group.appendChild(name);
             for (const activity of project.activities) {
-              group.appendChild(renderRow(activity, view.selectedActivityId));
+              group.appendChild(renderRow(activity, selectedVisibleActivityId));
             }
             projectList.appendChild(group);
           }
         }
       }
     }
+    function childStatusText(child) {
+      if (child.attention === "needs_input") return "\u5F85\u8F93\u5165";
+      if (child.attention === "blocked") return "\u53D7\u963B";
+      if (child.executionState === "retrying") return "\u91CD\u8BD5\u4E2D";
+      if (child.executionState === "queued") return "\u6392\u961F\u4E2D";
+      if (child.executionState === "running") return "\u8FD0\u884C\u4E2D";
+      if (child.outcome === "succeeded") return "\u5DF2\u5B8C\u6210";
+      if (child.outcome === "cancelled") return "\u5DF2\u53D6\u6D88";
+      if (child.outcome === "failed" || child.outcome === "interrupted" || child.outcome === "ambiguous") {
+        return "\u5931\u8D25";
+      }
+      return "\u5DF2\u7ED3\u675F";
+    }
+    function childUpdatedText(updatedAt) {
+      if (!updatedAt || !Number.isFinite(Date.parse(updatedAt))) return null;
+      return `\u66F4\u65B0 ${updatedAt.slice(0, 16).replace("T", " ")}`;
+    }
     function renderRow(activity, selectedId) {
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = `activity-row${activity.unread ? " is-unread" : ""}`;
-      btn.setAttribute("role", "listitem");
-      btn.setAttribute("aria-selected", activity.activityId === selectedId ? "true" : "false");
-      btn.dataset.activityId = activity.activityId;
+      const row = document.createElement("div");
+      row.className = `activity-row${activity.unread ? " is-unread" : ""}`;
+      row.setAttribute("role", "option");
+      row.setAttribute("aria-selected", activity.activityId === selectedId ? "true" : "false");
+      row.setAttribute("aria-label", `${activity.title}\uFF0C${petStateLabel(activity.presentation)}`);
+      row.tabIndex = activity.activityId === selectedId ? 0 : -1;
+      row.dataset.activityId = activity.activityId;
+      const summary = document.createElement("div");
+      summary.className = "activity-row-summary";
       const glyph = document.createElement("span");
       glyph.className = "row-glyph";
       glyph.textContent = petStateGlyph(activity.presentation);
@@ -533,37 +961,92 @@
         track.appendChild(bar);
         main.appendChild(track);
       }
-      if (activity.children.length > 0) {
-        const children = document.createElement("span");
-        children.className = "row-children";
-        for (const child of activity.children.slice(0, 3)) {
-          const chip = document.createElement("span");
-          chip.className = "row-child";
-          chip.textContent = `${child.executionState === "settled" ? "\u2713" : "\u21B3"} ${child.title}`;
-          children.appendChild(chip);
-        }
-        main.appendChild(children);
-      }
       const elapsed = document.createElement("span");
       elapsed.className = "row-elapsed";
       elapsed.textContent = formatElapsed(activity.elapsedMs);
-      btn.append(glyph, main, elapsed);
-      btn.addEventListener("click", () => {
+      summary.append(glyph, main, elapsed);
+      const actions = document.createElement("div");
+      actions.className = "row-actions";
+      const openButton = document.createElement("button");
+      openButton.type = "button";
+      openButton.className = "row-action row-open-action";
+      openButton.textContent = "\u6253\u5F00\u4EFB\u52A1";
+      openButton.addEventListener("click", () => {
+        selectedVisibleActivityId = activity.activityId;
         bridge?.selectActivity(activity.activityId);
         void bridge?.openActivity(activity.activityId);
       });
-      btn.addEventListener("keydown", (event) => {
+      actions.appendChild(openButton);
+      const readButton = document.createElement("button");
+      readButton.type = "button";
+      readButton.className = "row-action";
+      readButton.textContent = activity.unread ? "\u6807\u8BB0\u5DF2\u8BFB" : "\u5DF2\u8BFB";
+      readButton.disabled = !activity.unread;
+      readButton.addEventListener("click", () => {
+        bridge?.markRead(activity.activityId);
+      });
+      actions.appendChild(readButton);
+      if (activity.children.length > 0) {
+        const expanded = expandedActivityIds.has(activity.activityId);
+        const expandButton = document.createElement("button");
+        expandButton.type = "button";
+        expandButton.className = "row-action row-child-toggle";
+        expandButton.textContent = `${expanded ? "\u6536\u8D77" : "\u5C55\u5F00"} Subagent ${activity.children.length}`;
+        expandButton.setAttribute("aria-expanded", expanded ? "true" : "false");
+        expandButton.addEventListener("click", () => {
+          if (expandedActivityIds.has(activity.activityId)) {
+            expandedActivityIds.delete(activity.activityId);
+          } else {
+            expandedActivityIds.add(activity.activityId);
+          }
+          if (current) update(current);
+          focusActivityRow(activity.activityId);
+        });
+        actions.appendChild(expandButton);
+      }
+      row.append(summary, actions);
+      if (activity.children.length > 0 && expandedActivityIds.has(activity.activityId)) {
+        const children = document.createElement("div");
+        children.className = "row-children";
+        children.setAttribute("role", "list");
+        children.setAttribute("aria-label", "Subagent \u5B89\u5168\u6458\u8981");
+        for (const child of activity.children) {
+          const childRow = document.createElement("div");
+          childRow.className = "row-child";
+          childRow.setAttribute("role", "listitem");
+          const childTitle = document.createElement("span");
+          childTitle.className = "row-child-title";
+          childTitle.textContent = child.title;
+          const childMeta = document.createElement("span");
+          childMeta.className = "row-child-meta";
+          childMeta.textContent = [
+            childStatusText(child),
+            child.phase,
+            childUpdatedText(child.updatedAt)
+          ].filter(Boolean).join(" \xB7 ");
+          childRow.append(childTitle, childMeta);
+          children.appendChild(childRow);
+        }
+        row.appendChild(children);
+      }
+      row.addEventListener("click", (event) => {
+        if (event.target instanceof Element && event.target.closest("button")) return;
+        selectVisibleActivity(activity.activityId, false);
+      });
+      row.addEventListener("keydown", (event) => {
+        if (event.target !== row) return;
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
-          bridge?.selectActivity(activity.activityId);
+          event.stopPropagation();
           void bridge?.openActivity(activity.activityId);
         }
         if ((event.key === "m" || event.key === "M") && activity.unread) {
           event.preventDefault();
+          event.stopPropagation();
           bridge?.markRead(activity.activityId);
         }
       });
-      return btn;
+      return row;
     }
     let petPointerId = null;
     let petDragOriginX = 0;
@@ -676,6 +1159,23 @@
       settingsOpen = !settingsOpen;
       if (current) update(current);
     });
+    activityFilters?.addEventListener("click", (event) => {
+      const target = event.target instanceof Element ? event.target.closest("[data-activity-filter]") : null;
+      const nextFilter = target?.dataset.activityFilter;
+      if (nextFilter !== "all" && nextFilter !== "attention" && nextFilter !== "running" && nextFilter !== "completed") {
+        return;
+      }
+      activityFilter = nextFilter;
+      if (current) {
+        const visibleIds = activityIds(filterProjectGroups(current.projects, activityFilter));
+        selectedVisibleActivityId = resolveActivitySelection(
+          visibleIds,
+          selectedVisibleActivityId ?? current.selectedActivityId
+        );
+        if (selectedVisibleActivityId) bridge?.selectActivity(selectedVisibleActivityId);
+        update(current);
+      }
+    });
     petPicker?.addEventListener("click", (event) => {
       const target = event.target instanceof Element ? event.target.closest("[data-pet-id]") : null;
       const selectedPetId = target?.dataset.petId;
@@ -714,23 +1214,40 @@
     });
     const onKeyDown = (event) => {
       if (!current?.trayOpen) return;
-      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      const target = event.target instanceof Element ? event.target : null;
+      const inFormControl = target?.matches("input, select, option") === true;
+      const inFilterBar = target?.closest("#activity-filters") != null;
+      if (!inFormControl && !inFilterBar && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
         event.preventDefault();
-        const ids = activityIds(current);
+        const ids = activityIds(filterProjectGroups(current.projects, activityFilter));
         const next = moveActivitySelection(
           ids,
-          current.selectedActivityId,
+          selectedVisibleActivityId,
           event.key === "ArrowDown" ? "next" : "prev"
         );
-        if (next) bridge?.selectActivity(next);
+        if (next) selectVisibleActivity(next, true);
+        return;
       }
-      if (event.key === "Enter" && current.selectedActivityId) {
+      if (!inFormControl && target?.closest("button") == null && event.key === "Enter" && selectedVisibleActivityId) {
         event.preventDefault();
-        void bridge?.openActivity(current.selectedActivityId);
+        void bridge?.openActivity(selectedVisibleActivityId);
+        return;
+      }
+      if (!inFormControl && target?.closest("button") == null && (event.key === "m" || event.key === "M")) {
+        const selected = findVisibleActivity(selectedVisibleActivityId);
+        if (selected?.unread) {
+          event.preventDefault();
+          bridge?.markRead(selected.activityId);
+        }
+        return;
       }
       if (event.key === "Escape") {
         event.preventDefault();
-        if (settingsOpen) {
+        if (selectedVisibleActivityId && expandedActivityIds.has(selectedVisibleActivityId)) {
+          expandedActivityIds.delete(selectedVisibleActivityId);
+          update(current);
+          focusActivityRow(selectedVisibleActivityId);
+        } else if (settingsOpen) {
           settingsOpen = false;
           update(current);
         } else if (current.trayOpen) {
