@@ -364,7 +364,9 @@ flowchart LR
 
 ---
 
-- [ ] U7. **打通真实 pet-only Forge 产物与通知激活**
+- [x] U7. **打通真实 pet-only Forge 产物与通知激活**
+
+**Completed:** 2026-08-13 — 新增稳定 `desktop:package` / `desktop:make` 入口，构建前自动生成 main/preload/renderer；Forge 从独立 `desktop/package.json` 打出 pet-only ASAR 与 Squirrel Setup，正式应用/安装器/托盘图标和 AppUserModelID 已接入，真实 ASAR/NUPKG/展开资源树扫描通过。产物未签名，仅限工程 QA；Windows 安装、通知点击、升级/卸载与 SmartScreen 实机门禁留给 U8。
 
 **Goal:** 从“静态 contract 正确”推进到“可安装产物正确”，并验证通知点击、图标和 AppUserModelID。
 

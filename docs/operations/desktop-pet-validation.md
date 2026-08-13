@@ -46,7 +46,7 @@ npm run test:quick-commands
 | `test:desktop-package` | Pet-only forge/npm separation + source contracts (U8) |
 | `desktop:preview` | Dev-only visual state matrix under `desktop/.preview/` (U3); not packaged |
 
-**Optional artifact scan:** after `electron-forge make`, set `DESKTOP_PACKAGE_OUT` to the output directory and re-run `npm run test:desktop-package` so forbidden runtime paths are scanned inside the package tree.
+**Artifact scan:** `npm run desktop:make` writes `desktop/out`; set `DESKTOP_PACKAGE_OUT=desktop/out` and re-run `npm run test:desktop-package`. The smoke scans expanded resources, `app.asar` entries, and Squirrel `.nupkg` paths rather than only top-level filenames.
 
 ## Independent startup (either order)
 
@@ -124,17 +124,19 @@ Run on clean Windows 10 and Windows 11 profiles when a signed or unsigned instal
 
 ## Packaging commands (when Electron Forge is installed)
 
-> Electron/Forge are **not** required for ordinary WebUI/`spi` development and are **not** part of the npm publish `files` list.
+> Electron/Forge are **not** required for ordinary WebUI/`spi` development and are **not** part of the npm publish `files` list. Use the stable scripts below; bare `npx electron-forge` may download obsolete Forge 5 instead of the pinned scoped CLI.
 
-```bash
-# From a packaging workstation with electron + electron-forge devDependencies installed:
-npx electron-forge package
-npx electron-forge make
+```powershell
+# Windows packaging workstation; each command runs desktop:build first.
+npm run desktop:package
+npm run desktop:make
 
-# Then scan artifacts:
-set DESKTOP_PACKAGE_OUT=out
+# Scan the real package + Squirrel output:
+$env:DESKTOP_PACKAGE_OUT = "desktop/out"
 npm run test:desktop-package
 ```
+
+**2026-08-13 U7 engineering result:** `desktop:package`, `desktop:make`, and the real artifact scan passed on Windows x64. Outputs included `desktop/out/SnailPiPet-win32-x64/snail-pi-pet.exe`, `desktop/out/make/squirrel.windows/x64/SnailPiPetSetup.exe`, and the full NUPKG. They are unsigned engineering-QA artifacts; install/notification/update/uninstall evidence remains **未执行** under the manual matrix.
 
 Signing (broad distribution):
 
@@ -159,9 +161,9 @@ Unsigned local builds are fine for engineering QA; SmartScreen may warn until si
 
 ## Residual risks
 
-1. Full installer make/sign CI is not wired in this repository slice; packaging depends on optional Electron Forge install.
-2. Live AE multi-monitor/DPI/SmartScreen matrix is manual.
-3. Preload/main TypeScript still needs a packaging compile step to `.js` before production `loadFile`/`require` paths are bulletproof in packaged form.
+1. Forge package/make is wired locally, but signed installer CI is not; signing still depends on environment-provided certificate secrets.
+2. Live AE multi-monitor/DPI/notification/SmartScreen matrix is manual.
+3. Install, notification-click activation, update-over-install, and uninstall data isolation still require U8 clean-profile evidence.
 4. Auto-update is out of v1 scope.
 
 ## Sign-off

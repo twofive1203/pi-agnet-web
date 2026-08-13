@@ -15,6 +15,7 @@
 /** Paths that must never appear inside a pet package / asar. */
 export const DESKTOP_FORBIDDEN_BUNDLE_PATHS = [
   ".next",
+  ".preview",
   "app/api",
   "bin/pi-web.js",
   "node_modules/next",
@@ -43,7 +44,11 @@ export const DESKTOP_PACKAGER_IGNORE: Array<RegExp | string> = [
   /^\/extensions(\/|$)/,
   /^\/docs(\/|$)/,
   /^\/scripts(\/|$)/,
+  /^\/assets(\/|$)/, // copied once via extraResource into resources/assets
+  /^\/\.preview(\/|$)/,
   /^\/desktop\/\.preview(\/|$)/,
+  /^\/\.build-stamp\.json$/,
+  /^\/README\.md$/,
   /^\/tests(\/|$)/,
   /^\/\.pi(\/|$)/,
   /^\/\.trellis(\/|$)/,
@@ -72,6 +77,7 @@ export const DESKTOP_PACKAGER_IGNORE: Array<RegExp | string> = [
   /^\/\.git(\/|$)/,
   /^\/out(\/|$)/,
   /^\/coverage(\/|$)/,
+  /\.(?:ts|tsx)$/,
   /\.map$/,
 ];
 
@@ -103,6 +109,11 @@ export const DESKTOP_PACKAGE_CONTRACT = {
   agentDataDirNote: "~/.pi/agent is owned by spi; pet uninstall must leave it untouched",
 } as const;
 
+const WINDOWS_ICON = "assets/icons/icon";
+const WINDOWS_ICON_ICO = "desktop/assets/icons/icon.ico";
+const signingCertificateFile = process.env.WINDOWS_CERTIFICATE_FILE;
+const signingCertificatePassword = process.env.WINDOWS_CERTIFICATE_PASSWORD;
+
 const config = {
   packagerConfig: {
     name: DESKTOP_PACKAGE_CONTRACT.productName,
@@ -110,8 +121,7 @@ const config = {
     appBundleId: DESKTOP_PACKAGE_CONTRACT.appBundleId,
     asar: true,
     prune: true,
-    // Icon path is optional until art is finalized; missing icon must not block contract smoke.
-    // icon: "desktop/assets/icons/icon",
+    icon: WINDOWS_ICON,
     ignore: DESKTOP_PACKAGER_IGNORE,
     extraResource: ["desktop/assets"],
     appCopyright: "Snail Pi contributors",
@@ -137,11 +147,20 @@ const config = {
         exe: `${DESKTOP_PACKAGE_CONTRACT.executableName}.exe`,
         authors: "Snail Pi",
         description: "Snail Pi desktop pet task observer (attach-only). Does not include the spi service.",
-        // Signing placeholders — set certificateFile/certificatePassword via env in CI when available.
-        // certificateFile: process.env.WINDOWS_CERTIFICATE_FILE,
-        // certificatePassword: process.env.WINDOWS_CERTIFICATE_PASSWORD,
+        iconUrl: "https://raw.githubusercontent.com/twofive1203/pi-agnet-web/main/desktop/assets/icons/icon.ico",
+        setupIcon: WINDOWS_ICON_ICO,
+        // electron-winstaller's legacy Update.exe cannot always accept modern ICOs;
+        // Setup.exe and the packaged app still receive the branded icon.
+        skipUpdateIcon: true,
+        loadingGif: undefined,
         setupExe: `${DESKTOP_PACKAGE_CONTRACT.productName}Setup.exe`,
         noMsi: true,
+        ...(signingCertificateFile && signingCertificatePassword
+          ? {
+              certificateFile: signingCertificateFile,
+              certificatePassword: signingCertificatePassword,
+            }
+          : {}),
       },
     },
   ],

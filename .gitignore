@@ -28,6 +28,7 @@
 /desktop/preload/pet-preload.js.map
 /desktop/.build-stamp.json
 /desktop/.preview/
+/desktop/out/
 
 # misc
 .DS_Store

@@ -51,6 +51,10 @@
 - **Closed the window and pet “disappeared”:** close/× hides to tray; use tray → 显示桌宠. Only tray 退出桌宠 ends the pet process.
 - **Quit pet while Agent is running:** expected that tasks keep running; there is no “will interrupt tasks” warning because the pet cannot stop them.
 - **`desktop:dev` fails missing electron/esbuild:** run `npm install` at repo root (they are devDependencies). They are not part of the published npm `spi` package.
+- **Bare `npx electron-forge` asks for `electron-prebuilt-compile`:** `npx` selected obsolete unscoped Forge 5. Use `npm run desktop:package` or `npm run desktop:make`; both invoke the pinned `@electron-forge/cli` and build desktop bundles first.
+- **Forge says `packageJSON.main` is invalid / app has no devDependencies:** Forge was run from the repository root instead of the private desktop app root. Use the stable scripts rather than calling Forge directly.
+- **Squirrel make reports `Unable to set icon`:** confirm `desktop/assets/icons/icon.ico` exists and use the checked-in Forge config. The setup/app receive the branded icon; legacy Update.exe icon patching is intentionally skipped for compatibility.
+- **Unsigned Setup triggers SmartScreen:** expected for engineering-QA artifacts. Broad distribution requires Authenticode credentials supplied only through the packaging environment; never commit a certificate or password.
 - **Uninstalled pet, sessions gone?** should not happen — agent data is under `~/.pi/agent` owned by `spi`. If data is missing, check `PI_CODING_AGENT_DIR` / accidental deletion, not pet uninstall.
 - **npm `spi` install pulled Electron?** it must not; pet packaging is separate. Report if `npm pack` contents include `desktop/`.
 - **Validation / packaging contracts:** `npm run test:desktop-observer`, `npm run test:desktop-package`, and `docs/operations/desktop-pet-validation.md`.

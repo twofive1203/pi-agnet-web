@@ -265,11 +265,20 @@ spi --no-open                 # local service, default http://127.0.0.1:62666
 
 ### Packaging contract
 
+```bash
+npm run desktop:package   # build bundles, then create desktop/out/SnailPiPet-win32-x64
+npm run desktop:make      # build bundles, package, then create Squirrel Setup/NUPKG
+# Windows PowerShell:
+$env:DESKTOP_PACKAGE_OUT = "desktop/out"; npm run test:desktop-package
+```
+
+The scripts call the repository-pinned `@electron-forge/cli` directly (never the obsolete unscoped `electron-forge`) and run `desktop:build` first. Forge uses the private `desktop/package.json` as the application root; the root package remains the separate npm `spi` publish surface.
+
 - Config: root `forge.config.ts` + `DESKTOP_PACKAGE_CONTRACT` (pet-only ignore list, Squirrel maker, AppUserModelID `com.twofive.snail-pi-pet`).
 - Source app: `desktop/` (`desktop/package.json` is `private: true`, name `snail-pi-pet`).
-- Contract smoke: `npm run test:desktop-package` (and full `npm run test:desktop-observer`).
-- After a local `electron-forge make`, set `DESKTOP_PACKAGE_OUT` to the output directory and re-run the package smoke to scan artifacts for forbidden server runtime paths (`.next`, `next`, `node-pty`, pi SDK, `bin/pi-web.js`, …).
-- Signing placeholders: `WINDOWS_CERTIFICATE_FILE`, `WINDOWS_CERTIFICATE_PASSWORD`, `CSC_LINK`, `CSC_KEY_PASSWORD`. Unsigned builds are for engineering QA; SmartScreen may warn until signed.
+- Branded assets: `desktop/assets/icons/icon.ico`, `icon.png`, and `desktop/assets/tray/tray-icon.png`.
+- Contract smoke: `npm run test:desktop-package` (and full `npm run test:desktop-observer`). With `DESKTOP_PACKAGE_OUT=desktop/out`, it scans expanded resources, ASAR entries, and Squirrel NUPKG paths for forbidden server runtime (`.next`, Next/pi SDK, node-pty, Automation workers, `bin/pi-web.js`, …) and required pet bundles/assets.
+- Signing: set both `WINDOWS_CERTIFICATE_FILE` and `WINDOWS_CERTIFICATE_PASSWORD` in the packaging environment. `CSC_LINK` / `CSC_KEY_PASSWORD` remain reserved alternate CI placeholders. Never commit certificate material. Unsigned builds are for engineering QA; SmartScreen may warn until signed.
 - Full AE matrix and manual Windows gates: [`docs/operations/desktop-pet-validation.md`](../operations/desktop-pet-validation.md).
 
 > Do not publish the pet inside the npm `spi` tarball. Do not bundle Next/pi/Automation workers/node-pty into the pet installer.

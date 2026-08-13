@@ -8,8 +8,10 @@
  *      npm run test:desktop-package
  */
 import assert from "node:assert/strict";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
+import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { loadDesktopPetAssetValidator } from "./desktop-pet-asset-validator.mjs";
@@ -39,6 +41,63 @@ function rel(p) {
 
 function readText(p) {
   return readFileSync(p, "utf8");
+}
+
+function normalizedRelative(base, file) {
+  return path.relative(base, file).split(path.sep).join("/");
+}
+
+function artifactEntries(outDir) {
+  const files = walkFiles(outDir);
+  const entries = files.map((file) => normalizedRelative(outDir, file));
+  const asars = files.filter((file) => path.basename(file).toLowerCase() === "app.asar");
+  for (const asarPath of asars) {
+    const asar = awaitImportAsar();
+    for (const entry of asar.listPackage(asarPath)) {
+      entries.push(`asar:${normalizedRelative(outDir, asarPath)}:${String(entry).replace(/^[/\\]+/, "")}`);
+    }
+  }
+  for (const nupkgPath of files.filter((file) => file.toLowerCase().endsWith(".nupkg"))) {
+    for (const entry of listZipEntries(nupkgPath)) {
+      entries.push(`nupkg:${normalizedRelative(outDir, nupkgPath)}:${entry}`);
+    }
+  }
+  return { files, entries, asars };
+}
+
+function listZipEntries(zipPath) {
+  // NUPKG is ZIP; names live in its central directory and are enough for the path contract.
+  const fromBuffer = readFileSync(zipPath);
+  const names = [];
+  let cursor = fromBuffer.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
+  assert.ok(cursor >= 0, `invalid nupkg zip: ${zipPath}`);
+  const entries = fromBuffer.readUInt16LE(cursor + 10);
+  cursor = fromBuffer.readUInt32LE(cursor + 16);
+  for (let index = 0; index < entries; index++) {
+    assert.equal(fromBuffer.readUInt32LE(cursor), 0x02014b50, `invalid nupkg directory: ${zipPath}`);
+    const nameLength = fromBuffer.readUInt16LE(cursor + 28);
+    const extraLength = fromBuffer.readUInt16LE(cursor + 30);
+    const commentLength = fromBuffer.readUInt16LE(cursor + 32);
+    names.push(fromBuffer.subarray(cursor + 46, cursor + 46 + nameLength).toString("utf8"));
+    cursor += 46 + nameLength + extraLength + commentLength;
+  }
+  return names;
+}
+
+const require = createRequire(import.meta.url);
+let asarModule;
+function awaitImportAsar() {
+  if (!asarModule) {
+    // @electron/asar is installed transitively with Forge and exposes a CommonJS API.
+    asarModule = require("@electron/asar");
+  }
+  return asarModule;
+}
+
+function extractAsarForAssetCheck(asarPath) {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "snail-pet-asar-"));
+  awaitImportAsar().extractAll(asarPath, dir);
+  return dir;
 }
 
 function assertNoServiceControl(source, fileLabel) {
@@ -83,6 +142,8 @@ async function main() {
       /extraResource\s*:\s*\[[^\]]*["']desktop\/assets["']/.test(forgeSrc),
       "forge.config must package builtin pet assets",
     );
+    assert.ok(/icon\s*:\s*WINDOWS_ICON/.test(forgeSrc), "forge config must set the application icon");
+    assert.ok(/setupIcon\s*:\s*WINDOWS_ICON_ICO/.test(forgeSrc), "Squirrel must set the setup icon");
     contract = {
       productName: "SnailPiPet",
       executableName: "snail-pi-pet",
@@ -93,6 +154,7 @@ async function main() {
       serviceLaunchCommand: "spi --no-open",
       forbiddenBundlePaths: [
         ".next",
+        ".preview",
         "bin/pi-web.js",
         "node_modules/next",
         "node_modules/@lydell/node-pty",
@@ -117,6 +179,7 @@ async function main() {
   assert.equal(contract.serviceLaunchCommand, "spi --no-open");
   assert.ok(Array.isArray(contract.forbiddenBundlePaths));
   assert.ok(contract.forbiddenBundlePaths.includes(".next"));
+  assert.ok(contract.forbiddenBundlePaths.includes(".preview"));
   assert.ok(contract.forbiddenBundlePaths.includes("bin/pi-web.js"));
   assert.ok(contract.forbiddenBundlePaths.some((p) => p.includes("node-pty") || p.includes("pi-coding-agent")));
 
@@ -124,6 +187,7 @@ async function main() {
     assert.equal(forgeDefault.packagerConfig?.asar, true);
     assert.equal(forgeDefault.packagerConfig?.name, contract.productName);
     assert.ok(Array.isArray(forgeDefault.packagerConfig?.ignore));
+    assert.equal(forgeDefault.packagerConfig?.icon, "assets/icons/icon");
     assert.ok(
       forgeDefault.packagerConfig?.extraResource?.includes("desktop/assets"),
       "packager extraResource must include builtin pet assets",
@@ -155,6 +219,8 @@ async function main() {
   assert.ok(rootPkg.scripts?.["test:desktop-package"], "test:desktop-package script required");
   assert.ok(rootPkg.scripts?.["test:desktop-observer"], "test:desktop-observer script required");
   assert.ok(rootPkg.scripts?.["desktop:preview"], "desktop:preview script required");
+  assert.ok(rootPkg.scripts?.["desktop:package"], "desktop:package script required");
+  assert.ok(rootPkg.scripts?.["desktop:make"], "desktop:make script required");
 
   // desktop/package.json is private and not the npm package
   const desktopPkgPath = path.join(ROOT, "desktop", "package.json");
@@ -163,6 +229,10 @@ async function main() {
   assert.equal(desktopPkg.private, true);
   assert.equal(desktopPkg.name, "snail-pi-pet");
   assert.notEqual(desktopPkg.name, rootPkg.name);
+  assert.equal(desktopPkg.engines?.node, rootPkg.engines?.node);
+  assert.ok(desktopPkg.devDependencies?.electron, "desktop package must declare its Forge Electron runtime");
+  assert.ok(desktopPkg.scripts?.package?.includes("run-desktop-forge.mjs"));
+  assert.ok(desktopPkg.scripts?.make?.includes("run-desktop-forge.mjs"));
 
   // --- Required pet source surface ---
   const required = [
@@ -184,6 +254,10 @@ async function main() {
     "desktop/renderer/pet.css",
     "desktop/assets/pets/snail-default/manifest.json",
     "desktop/assets/pets/snail-classic/manifest.json",
+    "desktop/assets/icons/icon.ico",
+    "desktop/assets/icons/icon.png",
+    "desktop/assets/tray/tray-icon.png",
+    "scripts/run-desktop-forge.mjs",
     "scripts/preview-desktop-pet-states.mjs",
     "docs/operations/desktop-pet-visual-review.md",
     "forge.config.ts",
@@ -236,6 +310,14 @@ async function main() {
     { id: "snail-default", renderMode: "css" },
     { id: "snail-classic", renderMode: "css" },
   ]);
+  const ico = readFileSync(path.join(ROOT, "desktop", "assets", "icons", "icon.ico"));
+  assert.equal(ico.readUInt16LE(0), 0, "icon.ico reserved header");
+  assert.equal(ico.readUInt16LE(2), 1, "icon.ico type");
+  assert.ok(ico.readUInt16LE(4) >= 4, "icon.ico must carry multiple Windows sizes");
+  for (const pngPath of ["desktop/assets/icons/icon.png", "desktop/assets/tray/tray-icon.png"]) {
+    const png = readFileSync(path.join(ROOT, pngPath));
+    assert.equal(png.subarray(0, 8).toString("hex"), "89504e470d0a1a0a", `${pngPath} must be PNG`);
+  }
 
   // Window security contract source
   const winSrc = readText(path.join(ROOT, "desktop", "main", "window-manager.ts"));
@@ -276,26 +358,41 @@ async function main() {
     path.join(ROOT, "out"),
     path.join(ROOT, "desktop", "out"),
     path.join(ROOT, "dist"),
-  ].filter(Boolean);
+  ].filter(Boolean).filter((candidate, index, candidates) => candidates.indexOf(candidate) === index);
 
   let scannedArtifact = false;
   for (const outDir of outCandidates) {
     if (!existsSync(outDir)) continue;
     scannedArtifact = true;
-    const filesInOut = walkFiles(outDir);
-    const joined = filesInOut.map((f) => rel(f).toLowerCase()).join("\n");
+    const { files: filesInOut, entries, asars } = artifactEntries(outDir);
+    const normalizedEntries = entries.map((entry) => entry.toLowerCase().replace(/\\/g, "/"));
     for (const forbidden of contract.forbiddenBundlePaths) {
       const needle = String(forbidden).toLowerCase().replace(/\\/g, "/");
-      // Allow mentions only inside our smoke logs; block real nested paths.
-      const hit = filesInOut.some((f) => {
-        const r = rel(f).toLowerCase().replace(/\\/g, "/");
-        return r.includes(`/${needle}`) || r.includes(needle + "/") || r.endsWith(needle);
-      });
+      const hit = normalizedEntries.some(
+        (entry) => entry.includes(`/${needle}`) || entry.includes(needle + "/") || entry.endsWith(needle),
+      );
       assert.equal(hit, false, `artifact under ${rel(outDir)} must not contain forbidden path: ${forbidden}`);
     }
-    const resourceFiles = filesInOut.filter((file) =>
-      rel(file).toLowerCase().replace(/\\/g, "/").includes("/resources/"),
-    );
+    for (const requiredEntry of ["main/main.js", "preload/pet-preload.js", "renderer/index.html", "renderer/pet-app.js"]) {
+      assert.ok(
+        normalizedEntries.some((entry) => entry.endsWith(requiredEntry)),
+        `artifact under ${rel(outDir)} must contain ${requiredEntry}`,
+      );
+    }
+    if (normalizedRelative(ROOT, outDir).replace(/\\/g, "/").endsWith("/out")) {
+      for (const requiredArtifact of ["snail-pi-pet.exe", "snailpipetsetup.exe", ".nupkg"]) {
+        assert.ok(
+          normalizedEntries.some((entry) =>
+            requiredArtifact.startsWith(".") ? entry.endsWith(requiredArtifact) : entry.endsWith(`/${requiredArtifact}`),
+          ),
+          `Forge output must contain ${requiredArtifact}`,
+        );
+      }
+    }
+    const resourceFiles = filesInOut.filter((file) => {
+      const artifactPath = normalizedRelative(outDir, file).toLowerCase();
+      return artifactPath.includes("/resources/") || artifactPath.startsWith("resources/");
+    });
     if (resourceFiles.length > 0) {
       const defaultManifestPath = resourceFiles.find((file) =>
         rel(file)
@@ -312,12 +409,17 @@ async function main() {
         join: path.join,
       });
       assert.equal(packagedPets.length, 2, "artifact must contain both builtin pets");
+    } else if (asars.length > 0) {
+      const extracted = extractAsarForAssetCheck(asars[0]);
+      try {
+        assert.ok(existsSync(path.join(extracted, "main", "main.js")), "asar must contain main bundle");
+      } finally {
+        rmSync(extracted, { recursive: true, force: true });
+      }
     } else {
-      console.log(`ARTIFACT_RESOURCE_SCAN_SKIPPED dir=${rel(outDir)} no expanded resources tree`);
+      assert.fail(`artifact under ${rel(outDir)} has neither expanded resources nor app.asar`);
     }
-    // Executable name presence is soft — Squirrel layout varies.
-    void joined;
-    console.log(`ARTIFACT_SCAN_OK dir=${rel(outDir)} files=${filesInOut.length}`);
+    console.log(`ARTIFACT_SCAN_OK dir=${rel(outDir)} files=${filesInOut.length} asars=${asars.length}`);
   }
   if (!scannedArtifact) {
     console.log("ARTIFACT_SCAN_SKIPPED no out/ dist/ package directory (expected until forge make)");
