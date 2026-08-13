@@ -24,8 +24,21 @@ export type PetWindowHost = {
   }): PetWindowHandle;
 };
 
+export type PetWindowRevealReason =
+  | "startup"
+  | "passive-snapshot"
+  | "passive-connection"
+  | "passive-notification"
+  | "user-show"
+  | "second-instance"
+  | "user-disable-click-through";
+
+export type PetWindowReveal = "keep" | "show-inactive" | "activate";
+
 export type PetWindowHandle = {
   show(): void;
+  /** Show without activating the current app or switching virtual desktops. */
+  showInactive(): void;
   hide(): void;
   close(): void;
   destroy(): void;
@@ -275,7 +288,6 @@ export function handleToggleTray(
       trayExpanded,
       trayAnchor: trayExpanded ? "top-left" : "top-left",
       bounds: { x: 0, y: 0, width, height },
-      visible: true,
     };
   }
 
@@ -287,7 +299,7 @@ export function handleToggleTray(
     const anchor = pickTrayLayoutAnchor(stack, { width, height }, workArea);
     let bounds = windowBoundsForPetStack({ stack, anchor, width, height });
     if (workArea) bounds = clampWindowBounds(bounds, workArea);
-    return { ...state, trayExpanded: true, trayAnchor: anchor, bounds, visible: true };
+    return { ...state, trayExpanded: true, trayAnchor: anchor, bounds };
   }
 
   // Collapse always uses top-left content layout; reposition window so the stack stays put.
@@ -303,7 +315,6 @@ export function handleToggleTray(
     trayExpanded: false,
     trayAnchor: "top-left",
     bounds,
-    visible: true,
   };
 }
 
@@ -333,7 +344,7 @@ export function handleMoveBy(
     };
     bounds = clampWindowBounds(bounds, soft);
   }
-  return { ...state, bounds, visible: true };
+  return { ...state, bounds };
 }
 
 export function handleSetClickThrough(
@@ -357,13 +368,49 @@ export function handleBoundsChanged(
   return { ...state, bounds };
 }
 
+const USER_ACTIVATE_REASONS = new Set<PetWindowRevealReason>([
+  "user-show",
+  "second-instance",
+  "user-disable-click-through",
+]);
+
+/**
+ * Map a visibility + trigger into a host reveal.
+ * Passive updates never show or focus; startup may show without activating.
+ */
+export function resolvePetWindowReveal(input: {
+  visible: boolean;
+  reason: PetWindowRevealReason;
+}): PetWindowReveal {
+  if (USER_ACTIVATE_REASONS.has(input.reason)) return "activate";
+  if (input.reason === "startup" && input.visible) return "show-inactive";
+  return "keep";
+}
+
+/** Push renderer state without throwing if the window is gone. */
+export function sendPetWindowChannel(
+  handle: PetWindowHandle | null | undefined,
+  channel: string,
+  payload: unknown,
+): boolean {
+  try {
+    if (!handle || handle.isDestroyed()) return false;
+    handle.send(channel, payload);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Apply window-manager state to a live handle.
  * Click-through uses forward so tray recovery still receives events where supported.
+ * Reveal is explicit: passive callers must pass keep / show-inactive, never rely on show().
  */
 export function applyWindowManagerState(
   handle: PetWindowHandle,
   state: WindowManagerState,
+  options?: { reveal?: PetWindowReveal },
 ): void {
   if (handle.isDestroyed()) return;
   handle.setAlwaysOnTop(state.alwaysOnTop);
@@ -371,10 +418,18 @@ export function applyWindowManagerState(
   if (state.bounds) {
     handle.setBounds(state.bounds);
   }
-  if (state.visible) {
-    handle.show();
-  } else {
+  if (!state.visible) {
     handle.hide();
+    return;
+  }
+  const reveal = options?.reveal ?? "keep";
+  if (reveal === "activate") {
+    handle.show();
+    handle.focus();
+    return;
+  }
+  if (reveal === "show-inactive") {
+    handle.showInactive();
   }
 }
 

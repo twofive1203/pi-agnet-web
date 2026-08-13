@@ -56,6 +56,7 @@ import {
   trayItemToAction,
 } from "../desktop/main/tray-controller";
 import {
+  applyWindowManagerState,
   clampWindowBounds,
   createInitialWindowManagerState,
   handleDisableClickThrough,
@@ -68,8 +69,11 @@ import {
   petStackScreenRect,
   petWindowWebPreferences,
   pickTrayLayoutAnchor,
+  resolvePetWindowReveal,
+  sendPetWindowChannel,
   PET_LAYOUT,
   PET_WINDOW_DEFAULTS,
+  type PetWindowHandle,
 } from "../desktop/main/window-manager";
 import {
   connectionBannerText,
@@ -143,6 +147,91 @@ function collectDesktopSources(root: string): string[] {
   };
   walk(root);
   return out;
+}
+
+function workAreaPreview(): { x: number; y: number; width: number; height: number } {
+  return { x: 0, y: 0, width: 1920, height: 1080 };
+}
+
+type RecordedPetCall =
+  | "show"
+  | "showInactive"
+  | "hide"
+  | "focus"
+  | "destroy"
+  | `send:${string}`;
+
+function isRevealCall(call: RecordedPetCall): call is "show" | "showInactive" | "hide" | "focus" {
+  return call === "show" || call === "showInactive" || call === "hide" || call === "focus";
+}
+
+function createRecordingPetWindow(input?: {
+  visible?: boolean;
+  destroyed?: boolean;
+}): { handle: PetWindowHandle; calls: RecordedPetCall[] } {
+  const calls: RecordedPetCall[] = [];
+  let visible = input?.visible === true;
+  let destroyed = input?.destroyed === true;
+  const handle: PetWindowHandle = {
+    show() {
+      calls.push("show");
+      visible = true;
+    },
+    showInactive() {
+      calls.push("showInactive");
+      visible = true;
+    },
+    hide() {
+      calls.push("hide");
+      visible = false;
+    },
+    close() {
+      visible = false;
+    },
+    destroy() {
+      calls.push("destroy");
+      destroyed = true;
+      visible = false;
+    },
+    isDestroyed() {
+      return destroyed;
+    },
+    isVisible() {
+      return !destroyed && visible;
+    },
+    focus() {
+      calls.push("focus");
+    },
+    setAlwaysOnTop() {
+      return;
+    },
+    setIgnoreMouseEvents() {
+      return;
+    },
+    getBounds() {
+      return { x: 40, y: 40, width: 140, height: 160 };
+    },
+    setBounds() {
+      return;
+    },
+    send(channel) {
+      if (destroyed) return;
+      calls.push(`send:${channel}`);
+    },
+    onClose() {
+      return;
+    },
+    onMoved() {
+      return;
+    },
+    onBlur() {
+      return;
+    },
+    onFocus() {
+      return;
+    },
+  };
+  return { handle, calls };
 }
 
 function assertNoServiceControl(source: string, file: string): void {
@@ -429,6 +518,134 @@ async function main() {
   assert.equal(win.clickThrough, false);
   assert.equal(win.visible, true);
 
+  // Hidden layout changes must not resurrect a tray-hidden pet.
+  const hiddenLayout = handleToggleTray(
+    handlePetWindowCloseRequest(createInitialWindowManagerState({ trayOpen: false })),
+    workAreaPreview(),
+  );
+  assert.equal(hiddenLayout.visible, false);
+  assert.equal(hiddenLayout.trayExpanded, true);
+
+  // --- Window reveal intents: passive vs user activation ---
+  assert.equal(
+    resolvePetWindowReveal({ visible: false, reason: "passive-snapshot" }),
+    "keep",
+  );
+  assert.equal(
+    resolvePetWindowReveal({ visible: false, reason: "passive-connection" }),
+    "keep",
+  );
+  assert.equal(
+    resolvePetWindowReveal({ visible: false, reason: "passive-notification" }),
+    "keep",
+  );
+  assert.equal(
+    resolvePetWindowReveal({ visible: true, reason: "passive-snapshot" }),
+    "keep",
+  );
+  assert.equal(
+    resolvePetWindowReveal({ visible: true, reason: "startup" }),
+    "show-inactive",
+  );
+  assert.equal(
+    resolvePetWindowReveal({ visible: true, reason: "user-show" }),
+    "activate",
+  );
+  assert.equal(
+    resolvePetWindowReveal({ visible: false, reason: "user-show" }),
+    "activate",
+  );
+  assert.equal(
+    resolvePetWindowReveal({ visible: false, reason: "second-instance" }),
+    "activate",
+  );
+  assert.equal(
+    resolvePetWindowReveal({ visible: true, reason: "user-disable-click-through" }),
+    "activate",
+  );
+
+  const hiddenState = handlePetWindowCloseRequest(
+    createInitialWindowManagerState({ clickThrough: true, trayOpen: false }),
+  );
+  assert.equal(hiddenState.visible, false);
+
+  {
+    const rec = createRecordingPetWindow();
+    applyWindowManagerState(rec.handle, hiddenState, {
+      reveal: resolvePetWindowReveal({ visible: hiddenState.visible, reason: "passive-snapshot" }),
+    });
+    assert.deepEqual(rec.calls.filter(isRevealCall), ["hide"]);
+    rec.handle.send("pet:state-changed", { presentation: "ready" });
+    assert.ok(rec.calls.includes("send:pet:state-changed"));
+    assert.equal(rec.calls.includes("show"), false);
+    assert.equal(rec.calls.includes("showInactive"), false);
+    assert.equal(rec.calls.includes("focus"), false);
+  }
+
+  {
+    const rec = createRecordingPetWindow();
+    applyWindowManagerState(rec.handle, hiddenState, {
+      reveal: resolvePetWindowReveal({ visible: hiddenState.visible, reason: "passive-connection" }),
+    });
+    rec.handle.send("pet:state-changed", { connectionStatus: "connected" });
+    assert.equal(rec.calls.includes("show"), false);
+    assert.equal(rec.calls.includes("focus"), false);
+    assert.equal(rec.handle.isVisible(), false);
+  }
+
+  {
+    const rec = createRecordingPetWindow({ visible: true });
+    applyWindowManagerState(rec.handle, { ...hiddenState, visible: true }, {
+      reveal: resolvePetWindowReveal({ visible: true, reason: "startup" }),
+    });
+    assert.deepEqual(rec.calls.filter(isRevealCall), ["showInactive"]);
+    assert.equal(rec.calls.includes("focus"), false);
+  }
+
+  {
+    const rec = createRecordingPetWindow({ visible: true });
+    applyWindowManagerState(rec.handle, { ...hiddenState, visible: true }, {
+      reveal: resolvePetWindowReveal({ visible: true, reason: "passive-snapshot" }),
+    });
+    rec.handle.send("pet:state-changed", { presentation: "running" });
+    assert.equal(rec.calls.includes("show"), false);
+    assert.equal(rec.calls.includes("showInactive"), false);
+    assert.equal(rec.calls.includes("focus"), false);
+    assert.ok(rec.calls.includes("send:pet:state-changed"));
+  }
+
+  {
+    const rec = createRecordingPetWindow();
+    const shown = handleShowPet(hiddenState);
+    applyWindowManagerState(rec.handle, shown, {
+      reveal: resolvePetWindowReveal({ visible: shown.visible, reason: "user-show" }),
+    });
+    assert.equal(shown.visible, true);
+    assert.equal(shown.clickThrough, false);
+    assert.ok(rec.calls.includes("show"));
+    assert.ok(rec.calls.includes("focus"));
+    assert.equal(rec.calls.includes("showInactive"), false);
+  }
+
+  {
+    const rec = createRecordingPetWindow({ destroyed: true });
+    assert.equal(
+      sendPetWindowChannel(rec.handle, "pet:state-changed", { presentation: "ready" }),
+      false,
+    );
+    assert.doesNotThrow(() => {
+      applyWindowManagerState(rec.handle, { ...hiddenState, visible: true }, { reveal: "activate" });
+    });
+    assert.deepEqual(rec.calls.filter(isRevealCall), []);
+  }
+
+  {
+    const rec = createRecordingPetWindow();
+    rec.handle.destroy();
+    assert.equal(sendPetWindowChannel(rec.handle, "pet:state-changed", { ok: true }), false);
+    assert.doesNotThrow(() => rec.handle.send("pet:state-changed", { ok: true }));
+  }
+
   // Pet icon stays fixed on screen; tray grows outward (prefer down/right).
   const workArea = { x: 0, y: 0, width: 1920, height: 1080 };
   const centerPos = { x: 800, y: 300 };
@@ -672,6 +889,21 @@ async function main() {
   // copyStartCommand must not execute
   assert.ok(mainSrc.includes("Copy only"));
   assert.equal(/\bexec\(|\bspawn\(|shell\.openPath\(\s*["']spi/.test(mainSrc), false);
+
+  // Passive snapshot/reconnect/notification paths must not activate the pet window.
+  assert.ok(mainSrc.includes("showInactive"));
+  assert.ok(mainSrc.includes("show: false"));
+  assert.ok(mainSrc.includes("sendPetWindowChannel"));
+  assert.ok(mainSrc.includes("passive-connection"));
+  assert.ok(mainSrc.includes('"user-show"'));
+  assert.ok(mainSrc.includes('"second-instance"'));
+  assert.ok(mainSrc.includes("user-disable-click-through"));
+  assert.equal(/petWindow\?\.focus\(/.test(mainSrc), false);
+  assert.ok(mainSrc.includes("Never show/focus a hidden pet"));
+  const notifyClick = mainSrc.match(/n\.on\(\s*["']click["'][\s\S]{0,180}/);
+  assert.ok(notifyClick);
+  assert.ok(notifyClick![0].includes("openActivityDeepLink"));
+  assert.equal(/handleShowPet|focus\(/.test(notifyClick![0]), false);
 
   // Package contract
   assert.equal(DESKTOP_PACKAGE_CONTRACT.petOnly, true);

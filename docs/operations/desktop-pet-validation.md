@@ -112,6 +112,8 @@ Run on clean Windows 10 and Windows 11 profiles when a signed or unsigned instal
 | Notification permission denied | Deny Windows notifications | Activity tray still works | **未执行** |
 | Launch at login | Enable option, reboot | Pet starts; does **not** auto-start `spi` | **未执行** |
 | DPI / multi-monitor | 100%/150%/200%, move across displays | Pet position sane; not off-screen permanently | **未执行** |
+| Virtual desktop / focus | Hide pet; keep another app focused on another virtual desktop; let a task go Running → Ready, then drop/reconnect SSE | Current app keeps focus; virtual desktop does not switch; hidden pet stays hidden; OS toast (if allowed) does not raise the pet window | **未执行** — U1 自动契约已覆盖 show/focus 调用序列；Windows 虚拟桌面实机未执行 |
+| User activation | Tray “显示桌宠”, tray icon click, or second-instance while hidden | Pet becomes visible, click-through is cleared, and the pet window focuses | **未执行** — U1 自动契约已覆盖 user-show / second-instance host 序列 |
 | Taskbar positions | Bottom/left/top | Tray menu usable | **未执行** |
 | Themes | Light/dark Windows | Glyph/label state still readable | **未执行** |
 | Update-over-install | Install newer pet over older | Settings LRU retained when compatible | **未执行** |

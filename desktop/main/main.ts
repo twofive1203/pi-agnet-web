@@ -64,8 +64,11 @@ import {
   handleShowPet,
   handleToggleTray,
   petWindowWebPreferences,
+  resolvePetWindowReveal,
+  sendPetWindowChannel,
   PET_WINDOW_DEFAULTS,
   type PetWindowHandle,
+  type PetWindowRevealReason,
   type WindowManagerState,
   type WorkAreaRect,
 } from "./window-manager";
@@ -277,9 +280,7 @@ export async function startDesktopPetMain(deps: DesktopMainDeps): Promise<{
 
   const pushState = () => {
     const view = buildView();
-    if (petWindow && !petWindow.isDestroyed()) {
-      petWindow.send(PET_IPC_CHANNELS.stateChanged, view);
-    }
+    sendPetWindowChannel(petWindow, PET_IPC_CHANNELS.stateChanged, view);
     refreshTray(view);
   };
 
@@ -287,13 +288,17 @@ export async function startDesktopPetMain(deps: DesktopMainDeps): Promise<{
     if (state.status !== "connected") {
       stale = snapshot != null;
     }
-    // Surface the access-key form when server auth blocks attach.
+    // Expand an already-visible tray so the access-key form is reachable.
+    // Never show/focus a hidden pet from reconnect or auth diagnostics.
     if (
       state.reasonCode === "auth_required" ||
       state.reasonCode === "auth_invalid"
     ) {
-      if (!windowState.trayExpanded) {
-        applyWindowState(handleToggleTray(windowState, resolveWorkArea()));
+      if (windowState.visible && !windowState.trayExpanded) {
+        applyWindowState(
+          handleToggleTray(windowState, resolveWorkArea()),
+          "passive-connection",
+        );
         return;
       }
     }
@@ -367,10 +372,15 @@ export async function startDesktopPetMain(deps: DesktopMainDeps): Promise<{
     }
   }
 
-  function applyWindowState(next: WindowManagerState): void {
+  function applyWindowState(
+    next: WindowManagerState,
+    reason: PetWindowRevealReason = "passive-snapshot",
+  ): void {
     windowState = next;
     if (petWindow && !petWindow.isDestroyed()) {
-      applyWindowManagerState(petWindow, windowState);
+      applyWindowManagerState(petWindow, windowState, {
+        reveal: resolvePetWindowReveal({ visible: windowState.visible, reason }),
+      });
     }
     const pos = windowState.bounds
       ? { x: windowState.bounds.x, y: windowState.bounds.y }
@@ -429,11 +439,10 @@ export async function startDesktopPetMain(deps: DesktopMainDeps): Promise<{
     if (!action) return;
     switch (action) {
       case "show-pet":
-        applyWindowState(handleShowPet(windowState));
-        petWindow?.focus();
+        applyWindowState(handleShowPet(windowState), "user-show");
         break;
       case "disable-click-through":
-        applyWindowState(handleDisableClickThrough(windowState));
+        applyWindowState(handleDisableClickThrough(windowState), "user-disable-click-through");
         break;
       case "retry":
         client.retry();
@@ -468,7 +477,7 @@ export async function startDesktopPetMain(deps: DesktopMainDeps): Promise<{
       y: bounds.y,
       width: bounds.width,
       height: bounds.height,
-      show: true,
+      show: false,
       frame: false,
       transparent: true,
       resizable: false,
@@ -497,6 +506,7 @@ export async function startDesktopPetMain(deps: DesktopMainDeps): Promise<{
 
     const handle: PetWindowHandle = {
       show: () => win.show(),
+      showInactive: () => win.showInactive(),
       hide: () => win.hide(),
       close: () => win.close(),
       destroy: () => {
@@ -544,7 +554,9 @@ export async function startDesktopPetMain(deps: DesktopMainDeps): Promise<{
       notifications.setAppInBackground(false);
     });
 
-    applyWindowManagerState(handle, windowState);
+    applyWindowManagerState(handle, windowState, {
+      reveal: resolvePetWindowReveal({ visible: windowState.visible, reason: "startup" }),
+    });
     return handle;
   }
 
@@ -566,8 +578,7 @@ export async function startDesktopPetMain(deps: DesktopMainDeps): Promise<{
     }
     const t = new Tray(image);
     t.on("click", () => {
-      applyWindowState(handleShowPet(windowState));
-      petWindow?.focus();
+      applyWindowState(handleShowPet(windowState), "user-show");
     });
     return t;
   }
@@ -747,8 +758,7 @@ export async function startDesktopPetMain(deps: DesktopMainDeps): Promise<{
   }
 
   app.on("second-instance", () => {
-    applyWindowState(handleShowPet(windowState));
-    petWindow?.focus();
+    applyWindowState(handleShowPet(windowState), "second-instance");
   });
 
   registerIpc();
