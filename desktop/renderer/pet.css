@@ -122,32 +122,8 @@ select {
 
 .pet-stack:hover .pet-chrome,
 .pet-stack:focus-within .pet-chrome,
-.pet-surface.is-dragging + .pet-chrome {
+.pet-chrome.is-dragging {
   opacity: 1;
-}
-
-.pet-drag-bar {
-  display: flex;
-  flex: 1;
-  align-items: center;
-  justify-content: center;
-  height: 100%;
-  border-radius: 999px;
-  cursor: grab;
-  -webkit-app-region: drag;
-}
-
-.pet-drag-dots {
-  width: 26px;
-  height: 3px;
-  border-radius: 999px;
-  background: repeating-linear-gradient(
-    90deg,
-    rgba(255, 255, 255, 0.48) 0 3px,
-    transparent 3px 6px
-  );
-  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.65));
-  pointer-events: none;
 }
 
 .pet-chrome-btn,
@@ -558,8 +534,31 @@ select {
   left: 11px;
 }
 
+/* Idle keeps the pet alive: breathing, swaying antennae, shell shimmer, irregular blinks.
+   --blink-interval is jittered from JS so the rhythm never feels mechanical. */
+.pet-avatar.is-animated.frame-idle {
+  --blink-interval: 4.8s;
+  animation: idle-breathe 3.6s ease-in-out infinite;
+}
+
 .pet-avatar.is-animated.frame-idle .pet-eye {
-  animation: pet-blink 4.8s ease-in-out infinite;
+  animation: pet-blink var(--blink-interval) ease-in-out infinite;
+}
+
+.pet-avatar.is-animated.frame-idle .pet-head {
+  animation: idle-head-bob 3.6s ease-in-out infinite;
+}
+
+.pet-avatar.is-animated.frame-idle .pet-antenna-left {
+  animation: idle-antenna-sway-left 4.4s ease-in-out infinite;
+}
+
+.pet-avatar.is-animated.frame-idle .pet-antenna-right {
+  animation: idle-antenna-sway-right 4.4s ease-in-out 1.1s infinite;
+}
+
+.pet-avatar.is-animated.frame-idle .pet-shell-spiral {
+  animation: idle-shell-shimmer 4.2s ease-in-out infinite;
 }
 
 .pet-avatar.is-animated.frame-running {
@@ -594,6 +593,31 @@ select {
 @keyframes pet-blink {
   0%, 44%, 48%, 100% { transform: scaleY(1); }
   46% { transform: scaleY(0.12); }
+}
+
+@keyframes idle-breathe {
+  0%, 100% { transform: scaleY(1) translateY(0); }
+  50% { transform: scaleY(1.024) translateY(-0.5px); }
+}
+
+@keyframes idle-head-bob {
+  0%, 100% { transform: translateY(0) rotate(0); }
+  50% { transform: translateY(-1.5px) rotate(1.5deg); }
+}
+
+@keyframes idle-antenna-sway-left {
+  0%, 100% { transform: rotate(-16deg); }
+  50% { transform: rotate(-25deg); }
+}
+
+@keyframes idle-antenna-sway-right {
+  0%, 100% { transform: rotate(16deg); }
+  50% { transform: rotate(24deg); }
+}
+
+@keyframes idle-shell-shimmer {
+  0%, 100% { filter: brightness(1); }
+  50% { filter: brightness(1.14); }
 }
 
 @keyframes pet-scoot {
@@ -641,18 +665,33 @@ select {
 
 /* Activity tray */
 .activity-tray {
+  position: relative;
   display: flex;
   flex: 1;
   flex-direction: column;
   gap: 9px;
   min-height: 0;
   padding: 12px;
-  border: 1px solid var(--pet-border);
+  overflow: hidden;
+  border: 1px solid rgba(119, 219, 198, 0.16);
   border-radius: 18px;
   background: var(--tray-bg);
   box-shadow: 0 18px 44px rgba(0, 0, 0, 0.34);
   backdrop-filter: blur(18px);
   -webkit-app-region: no-drag;
+}
+
+/* A whisper of the snail's accent color ties the panel to the pet itself. */
+.activity-tray::before {
+  position: absolute;
+  top: -70px;
+  right: -40px;
+  left: 30%;
+  height: 140px;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(119, 219, 198, 0.13), transparent 78%);
+  content: "";
+  pointer-events: none;
 }
 
 .tray-header {
@@ -684,6 +723,37 @@ select {
 .tray-actions {
   display: flex;
   gap: 5px;
+}
+
+/* Low-frequency actions live behind an overflow menu instead of the header. */
+.tray-overflow {
+  position: relative;
+}
+
+.tray-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 96px;
+  padding: 5px;
+  border: 1px solid var(--pet-border);
+  border-radius: 10px;
+  background: rgba(22, 27, 36, 0.98);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.42);
+  -webkit-app-region: no-drag;
+}
+
+.tray-menu[hidden] {
+  display: none !important;
+}
+
+.tray-menu .tray-btn {
+  width: 100%;
+  text-align: left;
 }
 
 .tray-btn {
@@ -869,19 +939,28 @@ select {
   width: 112px;
 }
 
+/* Segmented control: one continuous track with an active segment and status dots. */
 .activity-filters {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 5px;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--pet-border);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.22);
 }
 
 .activity-filter {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
   min-width: 0;
-  min-height: 28px;
+  min-height: 26px;
   padding: 4px 5px;
-  border: 1px solid var(--pet-border);
+  border: 1px solid transparent;
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.035);
+  background: transparent;
   color: var(--pet-muted);
   font-size: 10px;
   white-space: nowrap;
@@ -893,13 +972,34 @@ select {
   font-variant-numeric: tabular-nums;
 }
 
+.activity-filter::before {
+  flex: 0 0 auto;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: transparent;
+  content: "";
+}
+
+.activity-filter[data-activity-filter="attention"]::before {
+  background: var(--pet-warn);
+}
+
+.activity-filter[data-activity-filter="running"]::before {
+  background: var(--pet-accent);
+}
+
+.activity-filter[data-activity-filter="completed"]::before {
+  background: var(--pet-ok);
+}
+
 .activity-filter:hover {
   background: var(--surface-hover);
   color: var(--pet-text);
 }
 
 .activity-filter[aria-pressed="true"] {
-  border-color: rgba(119, 219, 198, 0.55);
+  border-color: rgba(119, 219, 198, 0.3);
   background: rgba(119, 219, 198, 0.12);
   color: var(--pet-accent);
 }
@@ -962,15 +1062,39 @@ select {
   background: rgba(139, 184, 255, 0.12);
 }
 
-.activity-row.is-unread::before {
+/* Left status strip reads the activity state before any text does. */
+.activity-row::before {
   position: absolute;
   top: 9px;
   bottom: 9px;
   left: 0;
   width: 3px;
   border-radius: 0 99px 99px 0;
-  background: var(--pet-accent);
+  background: rgba(255, 255, 255, 0.14);
   content: "";
+}
+
+.activity-row[data-presentation="running"]::before,
+.activity-row[data-presentation="retrying"]::before {
+  background: var(--pet-accent);
+}
+
+.activity-row[data-presentation="needs_input"]::before {
+  background: var(--pet-warn);
+}
+
+.activity-row[data-presentation="ready"]::before {
+  background: var(--pet-ok);
+}
+
+.activity-row[data-presentation="blocked"]::before,
+.activity-row[data-presentation="disconnected"]::before,
+.activity-row[data-presentation="service_not_running"]::before {
+  background: var(--pet-danger);
+}
+
+.activity-row.is-unread {
+  background: rgba(119, 219, 198, 0.05);
 }
 
 .activity-row-summary {

@@ -20,10 +20,7 @@
       <!-- pet-stack stays fixed on screen; tray grows around it via data-tray-anchor. -->
       <div class="pet-stack">
         <div class="pet-chrome">
-          <!-- Native drag strip (backup). Pet body also supports click-vs-drag. -->
-          <div class="pet-drag-bar" title="拖动桌宠" aria-hidden="true">
-            <span class="pet-drag-dots"></span>
-          </div>
+          <!-- Dragging happens on the pet body via click-vs-drag; no separate grip strip. -->
           <button
             type="button"
             id="btn-hide"
@@ -76,8 +73,23 @@
             <span id="tray-counts" class="tray-counts"></span>
           </div>
           <div class="tray-actions">
-            <button type="button" id="btn-mark-all" class="tray-btn">全部已读</button>
-            <button type="button" id="btn-retry" class="tray-btn">重试</button>
+            <div class="tray-overflow">
+              <button
+                type="button"
+                id="btn-tray-more"
+                class="tray-btn tray-btn-icon"
+                title="更多操作"
+                aria-label="更多操作"
+                aria-expanded="false"
+                aria-haspopup="menu"
+              >
+                ⋯
+              </button>
+              <div id="tray-more-menu" class="tray-menu" role="menu" hidden>
+                <button type="button" id="btn-mark-all" class="tray-btn" role="menuitem">全部已读</button>
+                <button type="button" id="btn-retry" class="tray-btn" role="menuitem">重试</button>
+              </div>
+            </div>
             <button
               type="button"
               id="btn-settings"

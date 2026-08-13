@@ -753,6 +753,8 @@
     const btnClearKey = root.getElementById("btn-clear-key");
     const btnMarkAll = root.getElementById("btn-mark-all");
     const btnRetry = root.getElementById("btn-retry");
+    const btnTrayMore = root.getElementById("btn-tray-more");
+    const trayMoreMenu = root.getElementById("tray-more-menu");
     const btnCopy = root.getElementById("btn-copy-cmd");
     const btnHide = root.getElementById("btn-hide");
     const btnHideTray = root.getElementById("btn-hide-tray");
@@ -774,6 +776,8 @@
     const DRAG_THRESHOLD_PX = 5;
     let current = null;
     let settingsOpen = false;
+    let trayMoreOpen = false;
+    let idleBlinkTimer = null;
     let activityFilter = "all";
     let selectedVisibleActivityId = null;
     const expandedActivityIds = /* @__PURE__ */ new Set();
@@ -888,6 +892,28 @@
       if (current) update(current);
       if (focus) focusActivityRow(activityId);
     }
+    function scheduleIdleBlink(avatar) {
+      if (idleBlinkTimer) {
+        clearTimeout(idleBlinkTimer);
+        idleBlinkTimer = null;
+      }
+      if (!avatar || !avatar.classList.contains("frame-idle") || !avatar.classList.contains("is-animated")) {
+        return;
+      }
+      idleBlinkTimer = setTimeout(() => {
+        idleBlinkTimer = null;
+        if (!avatar.isConnected || !avatar.classList.contains("frame-idle")) return;
+        avatar.style.animation = "none";
+        void avatar.offsetWidth;
+        avatar.style.animation = "";
+        scheduleIdleBlink(avatar);
+      }, 2600 + Math.random() * 4600);
+    }
+    function setTrayMoreOpen(open) {
+      trayMoreOpen = open;
+      if (trayMoreMenu) trayMoreMenu.hidden = !open;
+      btnTrayMore?.setAttribute("aria-expanded", open ? "true" : "false");
+    }
     function update(view) {
       const previousView = current;
       current = view;
@@ -901,6 +927,7 @@
       if (petAvatar) {
         petAvatar.className = `pet-avatar frame-${frame.frame}${frame.animated ? " is-animated" : ""}`;
         petAvatar.setAttribute("data-state", state);
+        scheduleIdleBlink(petAvatar);
       }
       if (petRoot) petRoot.setAttribute("data-pet", manifest.id);
       if (petGlyph) petGlyph.textContent = frame.glyph || petStateGlyph(state);
@@ -945,7 +972,10 @@
         }
       }
       if (tray) tray.hidden = !view.trayOpen;
-      if (!view.trayOpen) settingsOpen = false;
+      if (!view.trayOpen) {
+        settingsOpen = false;
+        setTrayMoreOpen(false);
+      }
       if (settingsPanel) settingsPanel.hidden = !settingsOpen;
       if (activityFilters) activityFilters.hidden = settingsOpen;
       if (projectList) projectList.hidden = settingsOpen;
@@ -1090,6 +1120,7 @@
       row.setAttribute("aria-label", `${activity.title}\uFF0C${petStateLabel(activity.presentation)}`);
       row.tabIndex = activity.activityId === selectedId ? 0 : -1;
       row.dataset.activityId = activity.activityId;
+      row.dataset.presentation = activity.presentation;
       const summary = document.createElement("div");
       summary.className = "activity-row-summary";
       const glyph = document.createElement("span");
@@ -1293,7 +1324,19 @@
       event.preventDefault();
       event.stopPropagation();
     });
+    btnTrayMore?.addEventListener("click", (event) => {
+      event.stopPropagation();
+      setTrayMoreOpen(!trayMoreOpen);
+    });
+    trayMoreMenu?.addEventListener("click", (event) => {
+      event.stopPropagation();
+    });
+    const onRootClick = () => {
+      if (trayMoreOpen) setTrayMoreOpen(false);
+    };
+    root.addEventListener("click", onRootClick);
     btnMarkAll?.addEventListener("click", () => {
+      setTrayMoreOpen(false);
       const primary = current ? primaryActivity(current) : null;
       if (primary?.presentation === "ready" || primary?.presentation === "blocked") {
         dismissActivityBubble(primary);
@@ -1301,6 +1344,7 @@
       bridge?.markAllRead();
     });
     btnRetry?.addEventListener("click", () => {
+      setTrayMoreOpen(false);
       bridge?.retry();
     });
     const submitAccessKey = () => {
@@ -1336,6 +1380,7 @@
       bridge?.toggleTray();
     });
     btnSettings?.addEventListener("click", () => {
+      setTrayMoreOpen(false);
       settingsOpen = !settingsOpen;
       if (current) update(current);
     });
@@ -1393,6 +1438,11 @@
       bridge?.setPrefs({ notification: { blocked: prefBlocked.checked } });
     });
     const onKeyDown = (event) => {
+      if (event.key === "Escape" && trayMoreOpen) {
+        setTrayMoreOpen(false);
+        btnTrayMore?.focus();
+        return;
+      }
       if (!current?.trayOpen) return;
       const target = event.target instanceof Element ? event.target : null;
       const inFormControl = target?.matches("input, select, option") === true;
@@ -1452,7 +1502,12 @@
       destroy: () => {
         clearBubbleTimer();
         clearElapsedTimer();
+        if (idleBlinkTimer) {
+          clearTimeout(idleBlinkTimer);
+          idleBlinkTimer = null;
+        }
         root.removeEventListener("keydown", onKeyDown);
+        root.removeEventListener("click", onRootClick);
         unsubscribe?.();
       }
     };

@@ -1475,7 +1475,8 @@ async function main() {
   assert.ok(html.includes("Content-Security-Policy"));
   assert.ok(html.includes("default-src 'none'"));
   assert.equal(html.includes("nodeIntegration"), false);
-  assert.ok(html.includes("pet-drag-bar"));
+  // Pet body owns click-vs-drag; no separate drag strip markup.
+  assert.equal(html.includes("pet-drag-bar"), false);
   assert.ok(html.includes('id="btn-hide"'));
   assert.ok(html.includes("隐藏到托盘"));
   assert.ok(html.includes('id="pet-caption"'));

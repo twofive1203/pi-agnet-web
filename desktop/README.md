@@ -33,7 +33,7 @@ Generated main/preload bundles (`main.js`, `pet-preload.js`, maps, `.build-stamp
 
 | Action | Result |
 | --- | --- |
-| Drag pet body (or top grey grip) | Move frameless window (body uses click-vs-drag threshold) |
+| Drag pet body | Move frameless window (body uses click-vs-drag threshold) |
 | Click pet body | Toggle Activity tray (pet icon stays put; tray grows down/right, or up/left near edges) |
 | Activity tray → **⚙** | Manage the server access key, choose the built-in snail or size, restore default position and medium size, and adjust always-on-top, click-through, login launch, and notifications |
 | Activity tray → **⌄** | Collapse only the Activity tray; the pet stays visible |
