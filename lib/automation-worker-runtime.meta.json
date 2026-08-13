@@ -1,6 +1,6 @@
 {
   "entry": "lib/automation-worker-host.ts",
   "outfile": "lib/automation-worker-runtime.cjs",
-  "size": 86278,
-  "sha256": "381135bb443fa01a3d0aea1ea58e78c644e857e6f1142ae831e38edab649fa9c"
+  "size": 86735,
+  "sha256": "d17a9970404e84cab71f0234476966a979546ba92b8987720a6c27d25c706b29"
 }
