@@ -569,6 +569,77 @@
     const remMin = min % 60;
     return `${hr}h ${remMin}m`;
   }
+  var PET_BUBBLE_TRANSIENT_MS = 4500;
+  function createInitialPetBubbleState() {
+    return {
+      signalKey: null,
+      transitionId: null,
+      dismissedSignalKey: null,
+      visible: false,
+      mode: null,
+      expiresAt: null
+    };
+  }
+  function petBubbleSignalKey(signal) {
+    const transitionId = signal.transitionId?.trim();
+    if (transitionId) return `${signal.presentation}:transition:${transitionId}`;
+    if (signal.presentation === "service_not_running" || signal.presentation === "disconnected") {
+      return `${signal.presentation}:connection:${signal.instanceId ?? "none"}`;
+    }
+    return `${signal.presentation}:revision:${signal.instanceId ?? "none"}:${signal.revision ?? "none"}`;
+  }
+  function petBubbleMode(signal) {
+    if (signal.presentation === "needs_input" || signal.presentation === "blocked" || signal.presentation === "service_not_running" || signal.presentation === "disconnected") {
+      return "persistent";
+    }
+    if (signal.presentation === "ready") {
+      return signal.unread ? "persistent" : null;
+    }
+    if (signal.presentation === "running" || signal.presentation === "retrying") {
+      return "transient";
+    }
+    return null;
+  }
+  function reducePetBubbleState(state, event) {
+    if (event.type === "viewed") {
+      if (!event.transitionId || event.transitionId !== state.transitionId) return state;
+      return {
+        ...state,
+        dismissedSignalKey: state.signalKey,
+        visible: false,
+        expiresAt: null
+      };
+    }
+    if (event.type === "tick") {
+      if (state.mode !== "transient" || state.expiresAt == null || event.now < state.expiresAt || !state.visible) {
+        return state;
+      }
+      return { ...state, visible: false, expiresAt: null };
+    }
+    const signalKey = petBubbleSignalKey(event.signal);
+    const mode = petBubbleMode(event.signal);
+    if (signalKey === state.signalKey) {
+      if (mode == null) {
+        return { ...state, visible: false, mode: null, expiresAt: null };
+      }
+      if (state.dismissedSignalKey === signalKey) {
+        return { ...state, visible: false, mode, expiresAt: null };
+      }
+      if (mode === "transient" && state.expiresAt != null && event.now >= state.expiresAt) {
+        return { ...state, visible: false, expiresAt: null };
+      }
+      return { ...state, mode };
+    }
+    const visible = mode === "persistent" || mode === "transient" && !event.signal.reset;
+    return {
+      signalKey,
+      transitionId: event.signal.transitionId,
+      dismissedSignalKey: null,
+      visible,
+      mode,
+      expiresAt: visible && mode === "transient" ? event.now + PET_BUBBLE_TRANSIENT_MS : null
+    };
+  }
   function activityMatchesFilter(activity, filter) {
     switch (filter) {
       case "all":
@@ -700,6 +771,8 @@
     let activityFilter = "all";
     let selectedVisibleActivityId = null;
     const expandedActivityIds = /* @__PURE__ */ new Set();
+    let bubbleState = createInitialPetBubbleState();
+    let bubbleTimer = null;
     let reducedMotion = typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     bridge?.setReducedMotion(reducedMotion);
     if (typeof window.matchMedia === "function") {
@@ -717,6 +790,35 @@
         for (const activity of project.activities) ids.push(activity.activityId);
       }
       return ids;
+    }
+    function primaryActivity(view) {
+      return view.projects[0]?.activities[0] ?? null;
+    }
+    function clearBubbleTimer() {
+      if (bubbleTimer != null) {
+        clearTimeout(bubbleTimer);
+        bubbleTimer = null;
+      }
+    }
+    function scheduleBubbleExpiry(now) {
+      clearBubbleTimer();
+      if (!bubbleState.visible || bubbleState.mode !== "transient" || bubbleState.expiresAt == null) {
+        return;
+      }
+      bubbleTimer = setTimeout(() => {
+        bubbleState = reducePetBubbleState(bubbleState, { type: "tick", now: Date.now() });
+        if (!bubbleState.visible && petCaption) petCaption.hidden = true;
+        bubbleTimer = null;
+      }, Math.max(0, bubbleState.expiresAt - now));
+    }
+    function dismissActivityBubble(activity) {
+      if (!activity) return;
+      bubbleState = reducePetBubbleState(bubbleState, {
+        type: "viewed",
+        transitionId: activity.lastTransitionId
+      });
+      if (!bubbleState.visible && petCaption) petCaption.hidden = true;
+      clearBubbleTimer();
     }
     function findVisibleActivity(activityId) {
       if (!current || !activityId) return null;
@@ -742,6 +844,7 @@
       if (focus) focusActivityRow(activityId);
     }
     function update(view) {
+      const previousView = current;
       current = view;
       const previewSettingsOpen = view.settingsOpen;
       if (!bridge && typeof previewSettingsOpen === "boolean") {
@@ -757,18 +860,36 @@
       if (petRoot) petRoot.setAttribute("data-pet", manifest.id);
       if (petGlyph) petGlyph.textContent = frame.glyph || petStateGlyph(state);
       if (petLabel) petLabel.textContent = frame.label || petStateLabel(state);
-      const primaryActivity = view.projects[0]?.activities[0] ?? null;
-      const showCaption = primaryActivity != null || state !== "idle";
-      if (petCaption) petCaption.hidden = !showCaption;
+      const primary = primaryActivity(view);
+      const activityDrivesState = primary?.presentation === state;
+      const signal = {
+        presentation: state,
+        transitionId: activityDrivesState ? primary.lastTransitionId : null,
+        revision: view.revision,
+        instanceId: view.instanceId,
+        unread: activityDrivesState ? primary.unread : false,
+        reset: view.reset || bridge != null && previousView == null || previousView?.instanceId != null && previousView.instanceId !== view.instanceId
+      };
+      const bubbleNow = Date.now();
+      bubbleState = reducePetBubbleState(bubbleState, {
+        type: "snapshot",
+        signal,
+        now: bubbleNow
+      });
+      if (petCaption) {
+        petCaption.hidden = !bubbleState.visible;
+        petCaption.dataset.bubbleMode = bubbleState.mode ?? "hidden";
+      }
       if (petCaptionState) petCaptionState.textContent = frame.label || petStateLabel(state);
       if (petCaptionTitle) {
-        petCaptionTitle.textContent = primaryActivity?.title ?? connectionBannerText({
+        petCaptionTitle.textContent = primary?.title ?? connectionBannerText({
           connectionStatus: view.connectionStatus,
           canCopyStartCommand: view.canCopyStartCommand,
           startCommand: view.startCommand,
           reasonCode: view.connectionReasonCode
         }) ?? "";
       }
+      scheduleBubbleExpiry(bubbleNow);
       if (petBadge) {
         const count = view.attentionCount + (view.aggregate?.ready ?? 0);
         if (count > 0) {
@@ -972,6 +1093,7 @@
       openButton.className = "row-action row-open-action";
       openButton.textContent = "\u6253\u5F00\u4EFB\u52A1";
       openButton.addEventListener("click", () => {
+        dismissActivityBubble(activity);
         selectedVisibleActivityId = activity.activityId;
         bridge?.selectActivity(activity.activityId);
         void bridge?.openActivity(activity.activityId);
@@ -983,6 +1105,7 @@
       readButton.textContent = activity.unread ? "\u6807\u8BB0\u5DF2\u8BFB" : "\u5DF2\u8BFB";
       readButton.disabled = !activity.unread;
       readButton.addEventListener("click", () => {
+        dismissActivityBubble(activity);
         bridge?.markRead(activity.activityId);
       });
       actions.appendChild(readButton);
@@ -1038,11 +1161,13 @@
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
           event.stopPropagation();
+          dismissActivityBubble(activity);
           void bridge?.openActivity(activity.activityId);
         }
         if ((event.key === "m" || event.key === "M") && activity.unread) {
           event.preventDefault();
           event.stopPropagation();
+          dismissActivityBubble(activity);
           bridge?.markRead(activity.activityId);
         }
       });
@@ -1067,6 +1192,10 @@
       petPointerId = null;
       petDragging = false;
       if (!wasDragging) {
+        const primary = current ? primaryActivity(current) : null;
+        if (current && !current.trayOpen && (primary?.presentation === "needs_input" || primary?.presentation === "blocked")) {
+          dismissActivityBubble(primary);
+        }
         bridge?.toggleTray();
       }
     };
@@ -1118,6 +1247,10 @@
       event.stopPropagation();
     });
     btnMarkAll?.addEventListener("click", () => {
+      const primary = current ? primaryActivity(current) : null;
+      if (primary?.presentation === "ready" || primary?.presentation === "blocked") {
+        dismissActivityBubble(primary);
+      }
       bridge?.markAllRead();
     });
     btnRetry?.addEventListener("click", () => {
@@ -1230,6 +1363,7 @@
       }
       if (!inFormControl && target?.closest("button") == null && event.key === "Enter" && selectedVisibleActivityId) {
         event.preventDefault();
+        dismissActivityBubble(findVisibleActivity(selectedVisibleActivityId));
         void bridge?.openActivity(selectedVisibleActivityId);
         return;
       }
@@ -1237,6 +1371,7 @@
         const selected = findVisibleActivity(selectedVisibleActivityId);
         if (selected?.unread) {
           event.preventDefault();
+          dismissActivityBubble(selected);
           bridge?.markRead(selected.activityId);
         }
         return;
@@ -1268,6 +1403,7 @@
     return {
       update,
       destroy: () => {
+        clearBubbleTimer();
         root.removeEventListener("keydown", onKeyDown);
         unsubscribe?.();
       }

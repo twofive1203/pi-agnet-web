@@ -19,6 +19,7 @@ import { acceptStaticPetPreview } from "./pet-assets";
 import {
   connectionBannerText,
   countActivitiesByFilter,
+  createInitialPetBubbleState,
   filterProjectGroups,
   formatActivityProgress,
   formatElapsed,
@@ -27,9 +28,11 @@ import {
   petSourceLabel,
   petStateGlyph,
   petStateLabel,
+  reducePetBubbleState,
   resolveActivitySelection,
   resolvePetFrame,
   type DesktopActivityFilter,
+  type PetBubbleSignal,
   type PetVisualState,
 } from "./pet-state";
 
@@ -108,6 +111,8 @@ export function renderPetApp(root: Document = document): {
   let activityFilter: DesktopActivityFilter = "all";
   let selectedVisibleActivityId: string | null = null;
   const expandedActivityIds = new Set<string>();
+  let bubbleState = createInitialPetBubbleState();
+  let bubbleTimer: ReturnType<typeof setTimeout> | null = null;
   let reducedMotion =
     typeof window.matchMedia === "function" &&
     window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -129,6 +134,43 @@ export function renderPetApp(root: Document = document): {
       for (const activity of project.activities) ids.push(activity.activityId);
     }
     return ids;
+  }
+
+  function primaryActivity(view: DesktopActivityView): DesktopActivityRow | null {
+    return view.projects[0]?.activities[0] ?? null;
+  }
+
+  function clearBubbleTimer(): void {
+    if (bubbleTimer != null) {
+      clearTimeout(bubbleTimer);
+      bubbleTimer = null;
+    }
+  }
+
+  function scheduleBubbleExpiry(now: number): void {
+    clearBubbleTimer();
+    if (
+      !bubbleState.visible ||
+      bubbleState.mode !== "transient" ||
+      bubbleState.expiresAt == null
+    ) {
+      return;
+    }
+    bubbleTimer = setTimeout(() => {
+      bubbleState = reducePetBubbleState(bubbleState, { type: "tick", now: Date.now() });
+      if (!bubbleState.visible && petCaption) petCaption.hidden = true;
+      bubbleTimer = null;
+    }, Math.max(0, bubbleState.expiresAt - now));
+  }
+
+  function dismissActivityBubble(activity: DesktopActivityRow | null): void {
+    if (!activity) return;
+    bubbleState = reducePetBubbleState(bubbleState, {
+      type: "viewed",
+      transitionId: activity.lastTransitionId,
+    });
+    if (!bubbleState.visible && petCaption) petCaption.hidden = true;
+    clearBubbleTimer();
   }
 
   function findVisibleActivity(activityId: string | null): DesktopActivityRow | null {
@@ -158,6 +200,7 @@ export function renderPetApp(root: Document = document): {
   }
 
   function update(view: DesktopActivityView): void {
+    const previousView = current;
     current = view;
     const previewSettingsOpen = (view as unknown as { settingsOpen?: unknown }).settingsOpen;
     if (!bridge && typeof previewSettingsOpen === "boolean") {
@@ -175,18 +218,39 @@ export function renderPetApp(root: Document = document): {
     if (petGlyph) petGlyph.textContent = frame.glyph || petStateGlyph(state);
     if (petLabel) petLabel.textContent = frame.label || petStateLabel(state);
 
-    const primaryActivity = view.projects[0]?.activities[0] ?? null;
-    const showCaption = primaryActivity != null || state !== "idle";
-    if (petCaption) petCaption.hidden = !showCaption;
+    const primary = primaryActivity(view);
+    const activityDrivesState = primary?.presentation === state;
+    const signal: PetBubbleSignal = {
+      presentation: state,
+      transitionId: activityDrivesState ? primary.lastTransitionId : null,
+      revision: view.revision,
+      instanceId: view.instanceId,
+      unread: activityDrivesState ? primary.unread : false,
+      reset:
+        view.reset ||
+        (bridge != null && previousView == null) ||
+        (previousView?.instanceId != null && previousView.instanceId !== view.instanceId),
+    };
+    const bubbleNow = Date.now();
+    bubbleState = reducePetBubbleState(bubbleState, {
+      type: "snapshot",
+      signal,
+      now: bubbleNow,
+    });
+    if (petCaption) {
+      petCaption.hidden = !bubbleState.visible;
+      petCaption.dataset.bubbleMode = bubbleState.mode ?? "hidden";
+    }
     if (petCaptionState) petCaptionState.textContent = frame.label || petStateLabel(state);
     if (petCaptionTitle) {
-      petCaptionTitle.textContent = primaryActivity?.title ?? connectionBannerText({
+      petCaptionTitle.textContent = primary?.title ?? connectionBannerText({
         connectionStatus: view.connectionStatus,
         canCopyStartCommand: view.canCopyStartCommand,
         startCommand: view.startCommand,
         reasonCode: view.connectionReasonCode,
       }) ?? "";
     }
+    scheduleBubbleExpiry(bubbleNow);
 
     if (petBadge) {
       const count = view.attentionCount + (view.aggregate?.ready ?? 0);
@@ -430,6 +494,7 @@ export function renderPetApp(root: Document = document): {
     openButton.className = "row-action row-open-action";
     openButton.textContent = "打开任务";
     openButton.addEventListener("click", () => {
+      dismissActivityBubble(activity);
       selectedVisibleActivityId = activity.activityId;
       bridge?.selectActivity(activity.activityId);
       void bridge?.openActivity(activity.activityId);
@@ -442,6 +507,7 @@ export function renderPetApp(root: Document = document): {
     readButton.textContent = activity.unread ? "标记已读" : "已读";
     readButton.disabled = !activity.unread;
     readButton.addEventListener("click", () => {
+      dismissActivityBubble(activity);
       bridge?.markRead(activity.activityId);
     });
     actions.appendChild(readButton);
@@ -501,11 +567,13 @@ export function renderPetApp(root: Document = document): {
       if (event.key === "Enter" || event.key === " ") {
         event.preventDefault();
         event.stopPropagation();
+        dismissActivityBubble(activity);
         void bridge?.openActivity(activity.activityId);
       }
       if ((event.key === "m" || event.key === "M") && activity.unread) {
         event.preventDefault();
         event.stopPropagation();
+        dismissActivityBubble(activity);
         bridge?.markRead(activity.activityId);
       }
     });
@@ -535,6 +603,14 @@ export function renderPetApp(root: Document = document): {
     petPointerId = null;
     petDragging = false;
     if (!wasDragging) {
+      const primary = current ? primaryActivity(current) : null;
+      if (
+        current &&
+        !current.trayOpen &&
+        (primary?.presentation === "needs_input" || primary?.presentation === "blocked")
+      ) {
+        dismissActivityBubble(primary);
+      }
       bridge?.toggleTray();
     }
   };
@@ -598,6 +674,10 @@ export function renderPetApp(root: Document = document): {
   });
 
   btnMarkAll?.addEventListener("click", () => {
+    const primary = current ? primaryActivity(current) : null;
+    if (primary?.presentation === "ready" || primary?.presentation === "blocked") {
+      dismissActivityBubble(primary);
+    }
     bridge?.markAllRead();
   });
 
@@ -747,6 +827,7 @@ export function renderPetApp(root: Document = document): {
       selectedVisibleActivityId
     ) {
       event.preventDefault();
+      dismissActivityBubble(findVisibleActivity(selectedVisibleActivityId));
       void bridge?.openActivity(selectedVisibleActivityId);
       return;
     }
@@ -759,6 +840,7 @@ export function renderPetApp(root: Document = document): {
       const selected = findVisibleActivity(selectedVisibleActivityId);
       if (selected?.unread) {
         event.preventDefault();
+        dismissActivityBubble(selected);
         bridge?.markRead(selected.activityId);
       }
       return;
@@ -793,6 +875,7 @@ export function renderPetApp(root: Document = document): {
   return {
     update,
     destroy: () => {
+      clearBubbleTimer();
       root.removeEventListener("keydown", onKeyDown);
       unsubscribe?.();
     },

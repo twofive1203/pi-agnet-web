@@ -64,11 +64,11 @@ export function isNotifiablePresentation(
 export function notificationBodyFor(presentation: NotifiablePresentation): string {
   switch (presentation) {
     case "needs_input":
-      return "Needs input";
+      return "任务需要输入";
     case "blocked":
-      return "Blocked";
+      return "任务受阻";
     case "ready":
-      return "Ready";
+      return "任务已完成";
     default: {
       const _exhaustive: never = presentation;
       return _exhaustive;

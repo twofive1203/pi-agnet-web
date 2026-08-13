@@ -21,7 +21,7 @@ export const PET_IPC_CHANNELS = {
   retry: "pet:retry",
   copyStartCommand: "pet:copy-start-command",
   setPrefs: "pet:set-prefs",
-  /** User recovery: move the pet back to the nearest work-area default. */
+  /** User recovery: restore medium size and the nearest work-area default dock. */
   restoreDefaultPosition: "pet:restore-default-position",
   setReducedMotion: "pet:set-reduced-motion",
   /** Main-only: set/clear server access key (never echoed back). */

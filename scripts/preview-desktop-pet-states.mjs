@@ -68,6 +68,7 @@ function baseView(overrides = {}) {
     launchAtLogin: false,
     notification: { needsInput: true, blocked: true, completion: "background-only" },
     reducedMotion: false,
+    reset: false,
     revision: 1,
     instanceId: "preview",
     generatedAt: "2026-08-13T00:00:00.000Z",

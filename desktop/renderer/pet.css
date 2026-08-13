@@ -241,6 +241,11 @@ select {
   background: rgba(18, 23, 31, 0.91);
   box-shadow: 0 5px 16px rgba(0, 0, 0, 0.25);
   pointer-events: none;
+  animation: pet-caption-in 140ms ease-out both;
+}
+
+.pet-caption[data-bubble-mode="transient"] {
+  background: rgba(18, 23, 31, 0.86);
 }
 
 .pet-caption::after {
@@ -579,6 +584,11 @@ select {
 
 .pet-avatar.is-animated.frame-blocked .pet-antenna {
   animation: antenna-droop 1.8s ease-in-out infinite;
+}
+
+@keyframes pet-caption-in {
+  from { opacity: 0; transform: translateY(3px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 @keyframes pet-blink {

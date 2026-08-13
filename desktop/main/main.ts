@@ -193,6 +193,7 @@ export async function startDesktopPetMain(deps: DesktopMainDeps): Promise<{
   applyLaunchAtLogin(app, settings.launchAtLogin);
 
   let snapshot: import("../../lib/task-observer-types").TaskObserverSnapshot | null = null;
+  let snapshotReset = false;
   let stale = false;
   let reducedMotion = false;
   let selectedActivityId: string | null = null;
@@ -309,6 +310,7 @@ export async function startDesktopPetMain(deps: DesktopMainDeps): Promise<{
       stale,
       hasAccessKey: Boolean(accessKey),
       trayAnchor: windowState.trayExpanded ? windowState.trayAnchor : "top-left",
+      reset: snapshotReset,
     });
     assertRendererViewSafe(view);
     return view;
@@ -345,6 +347,7 @@ export async function startDesktopPetMain(deps: DesktopMainDeps): Promise<{
     const next = parseSnapshotJson(json);
     if (!next) return;
     snapshot = next;
+    snapshotReset = meta.reset || next.reset === true;
     stale = false;
     const result = notifications.handleSnapshot({
       settings,
@@ -356,6 +359,7 @@ export async function startDesktopPetMain(deps: DesktopMainDeps): Promise<{
       persistSettings();
     }
     pushState();
+    snapshotReset = false;
   };
 
   const client =
@@ -768,7 +772,11 @@ export async function startDesktopPetMain(deps: DesktopMainDeps): Promise<{
           width: 1280,
           height: 720,
         };
-      applyWindowState(handleRestoreDefaultPosition(windowState, workArea), "user-show");
+      const defaultScaleState = handleSetPetScale(windowState, "medium", workArea);
+      applyWindowState(
+        handleRestoreDefaultPosition(defaultScaleState, workArea),
+        "user-show",
+      );
     });
 
     ipcMain.on(PET_IPC_CHANNELS.setReducedMotion, (_event, value: unknown) => {

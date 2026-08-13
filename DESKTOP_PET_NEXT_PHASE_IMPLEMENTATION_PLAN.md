@@ -325,7 +325,9 @@ flowchart LR
 
 ---
 
-- [ ] U6. **优化气泡生命周期、通知文案与恢复设置**
+- [x] U6. **优化气泡生命周期、通知文案与恢复设置**
+
+**Completed:** 2026-08-13 — 增加 transition/revision 驱动的纯气泡 reducer：Needs input/Blocked 持续至状态变化或查看，Ready 持续至已读，Running/Retrying 仅在新转换后短暂显示，Idle 与 reset/replay 不重复提示；系统通知改为本地化安全文案，恢复操作同时重置中等尺寸与当前显示器默认位置。自动契约、构建与 preview 通过；Windows 通知权限/点击和真实桌宠气泡视觉未实机执行。
 
 **Goal:** 让状态提示既可见又不过度常驻，并提供尺寸/位置/动画问题的自助恢复入口。
 

@@ -37,6 +37,7 @@ import {
 } from "../desktop/main/ipc-contract";
 import {
   DesktopNotificationController,
+  notificationBodyFor,
   selectNotifications,
 } from "../desktop/main/notification-controller";
 import {
@@ -90,12 +91,14 @@ import {
 import {
   connectionBannerText,
   countActivitiesByFilter,
+  createInitialPetBubbleState,
   filterProjectGroups,
   formatActivityProgress,
   formatElapsed,
   getBuiltinPetManifest,
   moveActivitySelection,
   petSourceLabel,
+  reducePetBubbleState,
   resolveActivitySelection,
   resolveBuiltinPetManifest,
   resolvePetFrame,
@@ -462,6 +465,104 @@ async function main() {
   const needAfter = flattenActivities(view.projects).find((r) => r.presentation === "needs_input");
   assert.ok(needAfter);
 
+  // --- Transition/revision-driven pet bubble lifecycle ---
+  let bubble = createInitialPetBubbleState();
+  const runningSignal = {
+    presentation: "running" as const,
+    transitionId: "bubble-running-1",
+    revision: 10,
+    instanceId: "inst-u7",
+    unread: false,
+    reset: false,
+  };
+  bubble = reducePetBubbleState(bubble, { type: "snapshot", signal: runningSignal, now: 100 });
+  assert.equal(bubble.visible, true);
+  assert.equal(bubble.mode, "transient");
+  const runningExpiresAt = bubble.expiresAt;
+  assert.ok(runningExpiresAt != null && runningExpiresAt > 100);
+  bubble = reducePetBubbleState(bubble, { type: "tick", now: runningExpiresAt! });
+  assert.equal(bubble.visible, false);
+  // Same transition replay and elapsed-only revision change must not re-trigger.
+  bubble = reducePetBubbleState(bubble, {
+    type: "snapshot",
+    signal: { ...runningSignal, revision: 11 },
+    now: runningExpiresAt! + 1,
+  });
+  assert.equal(bubble.visible, false);
+
+  bubble = reducePetBubbleState(bubble, {
+    type: "snapshot",
+    signal: {
+      ...runningSignal,
+      presentation: "retrying",
+      transitionId: "bubble-retrying-1",
+      revision: 12,
+    },
+    now: 5000,
+  });
+  assert.equal(bubble.visible, true);
+  assert.equal(bubble.mode, "transient");
+
+  const needsSignal = {
+    ...runningSignal,
+    presentation: "needs_input" as const,
+    transitionId: "bubble-needs-1",
+    revision: 13,
+    unread: true,
+  };
+  bubble = reducePetBubbleState(bubble, { type: "snapshot", signal: needsSignal, now: 6000 });
+  assert.equal(bubble.visible, true);
+  assert.equal(bubble.mode, "persistent");
+  bubble = reducePetBubbleState(bubble, { type: "tick", now: 999999 });
+  assert.equal(bubble.visible, true);
+  bubble = reducePetBubbleState(bubble, {
+    type: "viewed",
+    transitionId: needsSignal.transitionId,
+  });
+  assert.equal(bubble.visible, false);
+  bubble = reducePetBubbleState(bubble, { type: "snapshot", signal: needsSignal, now: 1000000 });
+  assert.equal(bubble.visible, false, "viewed attention replay stays dismissed");
+
+  const readySignal = {
+    ...runningSignal,
+    presentation: "ready" as const,
+    transitionId: "bubble-ready-1",
+    revision: 14,
+    unread: true,
+  };
+  bubble = reducePetBubbleState(bubble, { type: "snapshot", signal: readySignal, now: 1000001 });
+  assert.equal(bubble.visible, true);
+  assert.equal(bubble.mode, "persistent");
+  bubble = reducePetBubbleState(bubble, {
+    type: "snapshot",
+    signal: { ...readySignal, unread: false },
+    now: 1000002,
+  });
+  assert.equal(bubble.visible, false, "ready bubble clears after local read");
+
+  bubble = reducePetBubbleState(bubble, {
+    type: "snapshot",
+    signal: {
+      ...runningSignal,
+      transitionId: "bubble-reset-running",
+      revision: 15,
+      reset: true,
+    },
+    now: 1000003,
+  });
+  assert.equal(bubble.visible, false, "reset baseline does not replay running bubble");
+  bubble = reducePetBubbleState(bubble, {
+    type: "snapshot",
+    signal: {
+      ...runningSignal,
+      presentation: "idle",
+      transitionId: null,
+      revision: 16,
+    },
+    now: 1000004,
+  });
+  assert.equal(bubble.visible, false);
+
   // --- Notifications: baseline none; later once; replay none ---
   const baseSettings = createDefaultDesktopSettings();
   const baseline = selectNotifications({
@@ -518,6 +619,9 @@ async function main() {
   assert.equal(first.toNotify.length, 1);
   assert.equal(first.toNotify[0].transitionId, newTransitionId);
   assert.equal(first.toNotify[0].presentation, "ready");
+  assert.equal(first.toNotify[0].body, "任务已完成");
+  assert.equal(notificationBodyFor("needs_input"), "任务需要输入");
+  assert.equal(notificationBodyFor("blocked"), "任务受阻");
   notifSettings = updateDesktopSettings(notifSettings, {
     notifiedTransitionIds: first.notifiedTransitionIds,
   });
@@ -1188,6 +1292,16 @@ async function main() {
     width: largeSpec.collapsedWidth,
     height: largeSpec.collapsedHeight,
   });
+  const restoredDefaults = handleRestoreDefaultPosition(
+    handleSetPetScale(restored, "medium", scaleWorkArea),
+    scaleWorkArea,
+  );
+  assert.equal(restoredDefaults.petScale, "medium");
+  assert.deepEqual(restoredDefaults.bounds, {
+    ...defaultPetWindowPosition(scaleWorkArea, "medium"),
+    width: mediumSpec.collapsedWidth,
+    height: mediumSpec.collapsedHeight,
+  });
 
   // --- Settings persistence without tokens ---
   const memory = new Map<string, string>();
@@ -1269,6 +1383,10 @@ async function main() {
   assert.ok(mainSrc.includes("display-metrics-changed"));
   assert.ok(mainSrc.includes("recoverWindowToNearestWorkArea"));
   assert.ok(mainSrc.includes("handleRestoreDefaultPosition"));
+  assert.match(
+    mainSrc,
+    /restoreDefaultPosition[\s\S]{0,420}handleSetPetScale\(windowState, "medium"/,
+  );
   const notifyClick = mainSrc.match(/n\.on\(\s*["']click["'][\s\S]{0,180}/);
   assert.ok(notifyClick);
   assert.ok(notifyClick![0].includes("openActivityDeepLink"));
@@ -1318,7 +1436,7 @@ async function main() {
   assert.ok(html.includes('id="settings-panel"'));
   assert.ok(html.includes('data-pet-id="snail-classic"'));
   assert.ok(html.includes('data-pet-scale="large"'));
-  assert.ok(html.includes("恢复默认位置"));
+  assert.ok(html.includes("恢复默认位置与尺寸"));
   assert.ok(html.includes("收起活动列表"));
   assert.ok(html.includes('id="activity-filters"'));
   for (const filter of ["all", "attention", "running", "completed"]) {

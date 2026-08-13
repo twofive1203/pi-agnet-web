@@ -35,7 +35,7 @@ Generated main/preload bundles (`main.js`, `pet-preload.js`, maps, `.build-stamp
 | --- | --- |
 | Drag pet body (or top grey grip) | Move frameless window (body uses click-vs-drag threshold) |
 | Click pet body | Toggle Activity tray (pet icon stays put; tray grows down/right, or up/left near edges) |
-| Activity tray → **⚙** | Choose the built-in snail, small/medium/large size, restore default position, and adjust always-on-top, click-through, login launch, and notifications |
+| Activity tray → **⚙** | Choose the built-in snail or size, restore default position and medium size, and adjust always-on-top, click-through, login launch, and notifications |
 | Activity tray → **⌄** | Collapse only the Activity tray; the pet stays visible |
 | Pet chrome → **×** | Hide to system tray (process keeps observing) |
 | Tray → 显示桌宠 | Show window again |

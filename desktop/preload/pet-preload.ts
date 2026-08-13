@@ -32,7 +32,7 @@ export type SnailPetBridge = {
   retry: () => void;
   copyStartCommand: () => Promise<unknown>;
   setPrefs: (patch: PetPrefsPatch) => void;
-  /** Move the pet back to the current display's default dock. */
+  /** Restore medium size and move the pet to the current display's default dock. */
   restoreDefaultPosition: () => void;
   setReducedMotion: (value: boolean) => void;
   /** Submit server access key (main never echoes it back). */

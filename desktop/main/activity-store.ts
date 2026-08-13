@@ -115,6 +115,8 @@ export type DesktopActivityView = {
   launchAtLogin: boolean;
   notification: DesktopPetSettings["notification"];
   reducedMotion: boolean;
+  /** Reset/baseline snapshot marker for renderer-local transient presentation. */
+  reset: boolean;
   revision: number | null;
   instanceId: string | null;
   generatedAt: string | null;
@@ -141,6 +143,8 @@ export type ActivityStoreSnapshotInput = {
   hasAccessKey?: boolean;
   /** Layout anchor while tray is open (from window-manager). */
   trayAnchor?: "top-left" | "top-right" | "bottom-left" | "bottom-right";
+  /** Explicit observer baseline/reset marker from the connection envelope. */
+  reset?: boolean;
 };
 
 const PRESENTATION_RANK = new Map(
@@ -387,6 +391,7 @@ export function buildActivityView(input: ActivityStoreSnapshotInput): DesktopAct
     launchAtLogin: input.settings.launchAtLogin,
     notification: { ...input.settings.notification },
     reducedMotion: input.reducedMotion === true,
+    reset: input.reset === true || input.snapshot?.reset === true,
     revision: input.snapshot?.revision ?? null,
     instanceId: input.snapshot?.instanceId ?? input.connection.instanceId,
     generatedAt: input.snapshot?.generatedAt ?? null,

@@ -226,6 +226,126 @@ export function formatElapsed(ms: number | null | undefined): string {
   return `${hr}h ${remMin}m`;
 }
 
+export const PET_BUBBLE_TRANSIENT_MS = 4500;
+
+export type PetBubbleMode = "persistent" | "transient" | null;
+
+export type PetBubbleSignal = {
+  presentation: PetVisualState;
+  transitionId: string | null;
+  revision: number | null;
+  instanceId: string | null;
+  unread: boolean;
+  /** Initial/reset snapshots establish a baseline instead of replaying transient bubbles. */
+  reset: boolean;
+};
+
+export type PetBubbleState = {
+  signalKey: string | null;
+  transitionId: string | null;
+  dismissedSignalKey: string | null;
+  visible: boolean;
+  mode: PetBubbleMode;
+  expiresAt: number | null;
+};
+
+export type PetBubbleEvent =
+  | { type: "snapshot"; signal: PetBubbleSignal; now: number }
+  | { type: "viewed"; transitionId: string | null }
+  | { type: "tick"; now: number };
+
+export function createInitialPetBubbleState(): PetBubbleState {
+  return {
+    signalKey: null,
+    transitionId: null,
+    dismissedSignalKey: null,
+    visible: false,
+    mode: null,
+    expiresAt: null,
+  };
+}
+
+function petBubbleSignalKey(signal: PetBubbleSignal): string {
+  const transitionId = signal.transitionId?.trim();
+  if (transitionId) return `${signal.presentation}:transition:${transitionId}`;
+  if (signal.presentation === "service_not_running" || signal.presentation === "disconnected") {
+    return `${signal.presentation}:connection:${signal.instanceId ?? "none"}`;
+  }
+  return `${signal.presentation}:revision:${signal.instanceId ?? "none"}:${signal.revision ?? "none"}`;
+}
+
+function petBubbleMode(signal: PetBubbleSignal): PetBubbleMode {
+  if (
+    signal.presentation === "needs_input" ||
+    signal.presentation === "blocked" ||
+    signal.presentation === "service_not_running" ||
+    signal.presentation === "disconnected"
+  ) {
+    return "persistent";
+  }
+  if (signal.presentation === "ready") {
+    return signal.unread ? "persistent" : null;
+  }
+  if (signal.presentation === "running" || signal.presentation === "retrying") {
+    return "transient";
+  }
+  return null;
+}
+
+/** Pure transition/revision reducer; callers inject time and own the single local timer. */
+export function reducePetBubbleState(
+  state: PetBubbleState,
+  event: PetBubbleEvent,
+): PetBubbleState {
+  if (event.type === "viewed") {
+    if (!event.transitionId || event.transitionId !== state.transitionId) return state;
+    return {
+      ...state,
+      dismissedSignalKey: state.signalKey,
+      visible: false,
+      expiresAt: null,
+    };
+  }
+
+  if (event.type === "tick") {
+    if (
+      state.mode !== "transient" ||
+      state.expiresAt == null ||
+      event.now < state.expiresAt ||
+      !state.visible
+    ) {
+      return state;
+    }
+    return { ...state, visible: false, expiresAt: null };
+  }
+
+  const signalKey = petBubbleSignalKey(event.signal);
+  const mode = petBubbleMode(event.signal);
+  if (signalKey === state.signalKey) {
+    if (mode == null) {
+      return { ...state, visible: false, mode: null, expiresAt: null };
+    }
+    if (state.dismissedSignalKey === signalKey) {
+      return { ...state, visible: false, mode, expiresAt: null };
+    }
+    if (mode === "transient" && state.expiresAt != null && event.now >= state.expiresAt) {
+      return { ...state, visible: false, expiresAt: null };
+    }
+    return { ...state, mode };
+  }
+
+  const visible = mode === "persistent" || (mode === "transient" && !event.signal.reset);
+  return {
+    signalKey,
+    transitionId: event.signal.transitionId,
+    dismissedSignalKey: null,
+    visible,
+    mode,
+    expiresAt:
+      visible && mode === "transient" ? event.now + PET_BUBBLE_TRANSIENT_MS : null,
+  };
+}
+
 export type DesktopActivityFilter = "all" | "attention" | "running" | "completed";
 
 export type DesktopActivityFilterCounts = Record<DesktopActivityFilter, number>;
