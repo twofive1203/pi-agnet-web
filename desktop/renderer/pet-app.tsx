@@ -113,6 +113,9 @@ export function renderPetApp(root: Document = document): {
   let settingsOpen = false;
   let trayMoreOpen = false;
   let idleBlinkTimer: ReturnType<typeof setTimeout> | null = null;
+  let idleActTimer: ReturnType<typeof setTimeout> | null = null;
+  let idleActRemoveTimer: ReturnType<typeof setTimeout> | null = null;
+  let idleLifeKey: string | null = null;
   let activityFilter: DesktopActivityFilter = "all";
   let selectedVisibleActivityId: string | null = null;
   const expandedActivityIds = new Set<string>();
@@ -250,14 +253,54 @@ export function renderPetApp(root: Document = document): {
     if (focus) focusActivityRow(activityId);
   }
 
-  // Idle blinks feel alive only when the cadence is irregular: restart the CSS
-  // animation at random offsets. All idle keyframes start/end in the rest pose,
-  // so restarting the shared animations is visually seamless.
+  // Blinks feel alive only when the cadence is irregular: restart the eye CSS
+  // animation at random offsets. The blink keyframes sit on the eye spans, so the
+  // restart must target them directly — resetting the avatar's own animation
+  // would leave the blink cycle untouched. All blink-adjacent keyframes start
+  // and end in the rest pose, so mid-cycle restarts are visually seamless.
   function scheduleIdleBlink(avatar: HTMLElement | null): void {
     if (idleBlinkTimer) {
       clearTimeout(idleBlinkTimer);
       idleBlinkTimer = null;
     }
+    if (!avatar || !avatar.classList.contains("is-animated")) return;
+    idleBlinkTimer = setTimeout(() => {
+      idleBlinkTimer = null;
+      if (!avatar.isConnected || !avatar.classList.contains("is-animated")) return;
+      const eyes = avatar.querySelectorAll(".pet-eye");
+      eyes.forEach((eye) => {
+        if (eye instanceof HTMLElement) eye.style.animation = "none";
+      });
+      void avatar.offsetWidth;
+      eyes.forEach((eye) => {
+        if (eye instanceof HTMLElement) eye.style.animation = "";
+      });
+      scheduleIdleBlink(avatar);
+    }, 2600 + Math.random() * 4600);
+  }
+
+  // Random idle mini-acts (look around / doze off / stretch) keep the pet from
+  // feeling like a static sprite. Durations match the CSS keyframes in pet.css.
+  const IDLE_ACTS = [
+    { className: "idle-act-look", durationMs: 2400 },
+    { className: "idle-act-sleepy", durationMs: 3400 },
+    { className: "idle-act-stretch", durationMs: 1800 },
+  ] as const;
+
+  function clearIdleAct(avatar: HTMLElement | null): void {
+    if (idleActTimer) {
+      clearTimeout(idleActTimer);
+      idleActTimer = null;
+    }
+    if (idleActRemoveTimer) {
+      clearTimeout(idleActRemoveTimer);
+      idleActRemoveTimer = null;
+    }
+    avatar?.classList.remove("idle-act-look", "idle-act-sleepy", "idle-act-stretch");
+  }
+
+  function scheduleIdleActs(avatar: HTMLElement | null): void {
+    clearIdleAct(avatar);
     if (
       !avatar ||
       !avatar.classList.contains("frame-idle") ||
@@ -265,14 +308,53 @@ export function renderPetApp(root: Document = document): {
     ) {
       return;
     }
-    idleBlinkTimer = setTimeout(() => {
-      idleBlinkTimer = null;
-      if (!avatar.isConnected || !avatar.classList.contains("frame-idle")) return;
-      avatar.style.animation = "none";
-      void avatar.offsetWidth;
-      avatar.style.animation = "";
-      scheduleIdleBlink(avatar);
-    }, 2600 + Math.random() * 4600);
+    const queueNext = () => {
+      idleActTimer = setTimeout(() => {
+        idleActTimer = null;
+        if (
+          !avatar.isConnected ||
+          !avatar.classList.contains("frame-idle") ||
+          !avatar.classList.contains("is-animated")
+        ) {
+          return;
+        }
+        if (!avatar.classList.contains("is-pressed")) {
+          const act = IDLE_ACTS[Math.floor(Math.random() * IDLE_ACTS.length)];
+          avatar.classList.add(act.className);
+          idleActRemoveTimer = setTimeout(() => {
+            idleActRemoveTimer = null;
+            avatar.classList.remove(act.className);
+          }, act.durationMs + 80);
+        }
+        queueNext();
+      }, 6500 + Math.random() * 7500);
+    };
+    queueNext();
+  }
+
+  // One burst of confetti when the aggregate state reaches "ready". Particles
+  // are plain spans driven by CSS custom properties; the burst self-removes.
+  function launchConfetti(): void {
+    const host =
+      petButton instanceof HTMLElement ? petButton.querySelector(".pet-stage") : null;
+    if (!(host instanceof HTMLElement)) return;
+    const colors = ["#77dbc6", "#f3b95f", "#9bd875", "#8bb8ff", "#f47c83"];
+    const burst = root.createElement("div");
+    burst.className = "confetti-burst";
+    burst.setAttribute("aria-hidden", "true");
+    for (let index = 0; index < 14; index += 1) {
+      const piece = root.createElement("i");
+      const angle = Math.random() * Math.PI * 2;
+      const distance = 26 + Math.random() * 32;
+      piece.style.setProperty("--cx", `${(Math.cos(angle) * distance).toFixed(1)}px`);
+      piece.style.setProperty("--cy", `${(Math.sin(angle) * distance - 16).toFixed(1)}px`);
+      piece.style.setProperty("--cr", `${Math.round(Math.random() * 260 - 130)}deg`);
+      piece.style.setProperty("--cc", colors[index % colors.length]);
+      piece.style.animationDelay = `${Math.round(Math.random() * 90)}ms`;
+      burst.appendChild(piece);
+    }
+    host.appendChild(burst);
+    setTimeout(() => burst.remove(), 1500);
   }
 
   function setTrayMoreOpen(open: boolean): void {
@@ -295,7 +377,21 @@ export function renderPetApp(root: Document = document): {
     if (petAvatar) {
       petAvatar.className = `pet-avatar frame-${frame.frame}${frame.animated ? " is-animated" : ""}`;
       petAvatar.setAttribute("data-state", state);
-      scheduleIdleBlink(petAvatar);
+      // Re-arm idle life only when the visual frame actually changes, so frequent
+      // view updates never starve the blink/act timers.
+      const lifeKey = `${frame.frame}:${frame.animated ? "1" : "0"}`;
+      if (lifeKey !== idleLifeKey) {
+        idleLifeKey = lifeKey;
+        scheduleIdleBlink(petAvatar);
+        scheduleIdleActs(petAvatar);
+      }
+    }
+    if (
+      view.presentation === "ready" &&
+      previousView?.presentation !== "ready" &&
+      !(view.reducedMotion || reducedMotion)
+    ) {
+      launchConfetti();
     }
     if (petRoot) petRoot.setAttribute("data-pet", manifest.id);
     if (petGlyph) petGlyph.textContent = frame.glyph || petStateGlyph(state);
@@ -463,12 +559,37 @@ export function renderPetApp(root: Document = document): {
       if (filteredProjects.length === 0) {
         const empty = root.createElement("div");
         empty.className = "empty-tray";
-        empty.textContent =
+        // A miniature resting snail keeps the empty panel on-brand. It reuses the
+        // pet anatomy classes so palette variants (classic shell) apply for free.
+        const emptyPet = root.createElement("div");
+        emptyPet.className = "empty-pet";
+        emptyPet.setAttribute("aria-hidden", "true");
+        const emptyAvatar = root.createElement("span");
+        emptyAvatar.className = "pet-avatar frame-idle is-animated empty-pet-avatar";
+        emptyAvatar.innerHTML =
+          '<span class="pet-shadow"></span><span class="pet-tail"></span><span class="pet-body"></span>' +
+          '<span class="pet-head"><span class="pet-antenna pet-antenna-left"></span>' +
+          '<span class="pet-antenna pet-antenna-right"></span><span class="pet-eye pet-eye-left"></span>' +
+          '<span class="pet-eye pet-eye-right"></span><span class="pet-mouth"></span></span>' +
+          '<span class="pet-shell"><span class="pet-shell-spiral"></span></span>';
+        emptyPet.appendChild(emptyAvatar);
+        const emptyTitle = root.createElement("div");
+        emptyTitle.className = "empty-tray-title";
+        emptyTitle.textContent =
           view.projects.length > 0
             ? "此筛选下暂无活动"
             : view.connectionStatus === "connected"
-              ? "当前没有可观察的活动"
+              ? "目前没有任务活动"
+              : "尚未连接";
+        const emptyHint = root.createElement("div");
+        emptyHint.className = "empty-tray-hint";
+        emptyHint.textContent =
+          view.projects.length > 0
+            ? "换个筛选看看其他状态的任务"
+            : view.connectionStatus === "connected"
+              ? "任务开始运行后会出现在这里"
               : "连接本地蜗牛派服务后即可观察任务";
+        empty.append(emptyPet, emptyTitle, emptyHint);
         projectList.appendChild(empty);
       } else {
         for (const project of filteredProjects) {
@@ -678,6 +799,33 @@ export function renderPetApp(root: Document = document): {
   let petLastScreenY = 0;
   let petDragging = false;
 
+  // Hover play: pupils track the cursor and the head tilts toward it. Both use
+  // the independent `translate`/`rotate` CSS properties so they never fight the
+  // keyframe animations driven through `transform`.
+  const resetEyeFollow = () => {
+    if (!(petAvatar instanceof HTMLElement)) return;
+    petAvatar.style.removeProperty("--eye-shift-x");
+    petAvatar.style.removeProperty("--eye-shift-y");
+    petAvatar.style.removeProperty("--head-tilt");
+  };
+
+  const applyEyeFollow = (event: PointerEvent) => {
+    if (!(petAvatar instanceof HTMLElement) || !(petButton instanceof HTMLElement)) return;
+    if (!petAvatar.classList.contains("is-animated")) return;
+    const stage = petButton.querySelector(".pet-stage");
+    const rect = stage?.getBoundingClientRect();
+    if (!rect || rect.width === 0) return;
+    // The head sits right-of-center inside the 112x112 stage.
+    const headX = rect.left + rect.width * 0.78;
+    const headY = rect.top + rect.height * 0.68;
+    const dx = event.clientX - headX;
+    const dy = event.clientY - headY;
+    const clamp = (value: number, max: number) => Math.max(-max, Math.min(max, value));
+    petAvatar.style.setProperty("--eye-shift-x", `${clamp(dx / 24, 1.7).toFixed(2)}px`);
+    petAvatar.style.setProperty("--eye-shift-y", `${clamp(dy / 24, 1.3).toFixed(2)}px`);
+    petAvatar.style.setProperty("--head-tilt", `${clamp(dx / 40, 4).toFixed(2)}deg`);
+  };
+
   const endPetPointer = (target: HTMLElement, pointerId: number) => {
     if (petPointerId !== pointerId) return;
     try {
@@ -688,6 +836,7 @@ export function renderPetApp(root: Document = document): {
       // ignore release errors when the element is gone
     }
     target.classList.remove("is-dragging");
+    petAvatar?.classList.remove("is-pressed");
     const wasDragging = petDragging;
     petPointerId = null;
     petDragging = false;
@@ -713,6 +862,10 @@ export function renderPetApp(root: Document = document): {
     petLastScreenX = event.screenX;
     petLastScreenY = event.screenY;
     petDragging = false;
+    resetEyeFollow();
+    // Drop any running mini-act so the duck pose wins over its keyframes.
+    petAvatar?.classList.remove("idle-act-look", "idle-act-sleepy", "idle-act-stretch");
+    petAvatar?.classList.add("is-pressed");
     try {
       petButton.setPointerCapture(event.pointerId);
     } catch {
@@ -722,6 +875,10 @@ export function renderPetApp(root: Document = document): {
 
   petButton?.addEventListener("pointermove", (event) => {
     if (!(petButton instanceof HTMLElement)) return;
+    if (petPointerId === null) {
+      applyEyeFollow(event);
+      return;
+    }
     if (petPointerId !== event.pointerId) return;
     const totalDx = event.screenX - petDragOriginX;
     const totalDy = event.screenY - petDragOriginY;
@@ -731,6 +888,7 @@ export function renderPetApp(root: Document = document): {
     ) {
       petDragging = true;
       petButton.classList.add("is-dragging");
+      petAvatar?.classList.remove("is-pressed");
     }
     if (!petDragging) return;
     const dx = event.screenX - petLastScreenX;
@@ -754,6 +912,10 @@ export function renderPetApp(root: Document = document): {
       petDragging = true;
       endPetPointer(petButton, event.pointerId);
     }
+  });
+
+  petButton?.addEventListener("pointerleave", () => {
+    if (petPointerId === null) resetEyeFollow();
   });
 
   // Suppress the synthetic click after pointerup so we do not double-toggle.
@@ -992,6 +1154,7 @@ export function renderPetApp(root: Document = document): {
         clearTimeout(idleBlinkTimer);
         idleBlinkTimer = null;
       }
+      clearIdleAct(petAvatar instanceof HTMLElement ? petAvatar : null);
       root.removeEventListener("keydown", onKeyDown);
       root.removeEventListener("click", onRootClick);
       unsubscribe?.();

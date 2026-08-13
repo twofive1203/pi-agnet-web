@@ -1510,6 +1510,26 @@ async function main() {
   assert.ok(css.includes("background: transparent"));
   assert.ok(css.includes("prefers-reduced-motion: reduce"));
   assert.ok(css.includes(".activity-filter"));
+  // Pet life + tray polish markers (idle acts, press duck, eye follow, confetti, pop).
+  for (const marker of [
+    "idle-act-look",
+    "idle-act-sleepy",
+    "idle-act-stretch",
+    "is-pressed",
+    "--eye-shift-x",
+    "confetti-fly",
+    "tray-pop",
+    "empty-pet",
+  ]) {
+    assert.ok(css.includes(marker), `pet.css missing ${marker}`);
+  }
+  const rendererSource = readFileSync(
+    path.join(process.cwd(), "desktop", "renderer", "pet-app.tsx"),
+    "utf8",
+  );
+  assert.ok(rendererSource.includes("scheduleIdleActs"));
+  assert.ok(rendererSource.includes("launchConfetti"));
+  assert.ok(rendererSource.includes("dataset.presentation"));
   assert.ok(css.includes(".row-child-meta"));
   assert.ok(css.includes(".row-actions"));
   assert.ok(html.includes("pet-stack"));

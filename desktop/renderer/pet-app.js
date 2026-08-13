@@ -778,6 +778,9 @@
     let settingsOpen = false;
     let trayMoreOpen = false;
     let idleBlinkTimer = null;
+    let idleActTimer = null;
+    let idleActRemoveTimer = null;
+    let idleLifeKey = null;
     let activityFilter = "all";
     let selectedVisibleActivityId = null;
     const expandedActivityIds = /* @__PURE__ */ new Set();
@@ -897,17 +900,81 @@
         clearTimeout(idleBlinkTimer);
         idleBlinkTimer = null;
       }
+      if (!avatar || !avatar.classList.contains("is-animated")) return;
+      idleBlinkTimer = setTimeout(() => {
+        idleBlinkTimer = null;
+        if (!avatar.isConnected || !avatar.classList.contains("is-animated")) return;
+        const eyes = avatar.querySelectorAll(".pet-eye");
+        eyes.forEach((eye) => {
+          if (eye instanceof HTMLElement) eye.style.animation = "none";
+        });
+        void avatar.offsetWidth;
+        eyes.forEach((eye) => {
+          if (eye instanceof HTMLElement) eye.style.animation = "";
+        });
+        scheduleIdleBlink(avatar);
+      }, 2600 + Math.random() * 4600);
+    }
+    const IDLE_ACTS = [
+      { className: "idle-act-look", durationMs: 2400 },
+      { className: "idle-act-sleepy", durationMs: 3400 },
+      { className: "idle-act-stretch", durationMs: 1800 }
+    ];
+    function clearIdleAct(avatar) {
+      if (idleActTimer) {
+        clearTimeout(idleActTimer);
+        idleActTimer = null;
+      }
+      if (idleActRemoveTimer) {
+        clearTimeout(idleActRemoveTimer);
+        idleActRemoveTimer = null;
+      }
+      avatar?.classList.remove("idle-act-look", "idle-act-sleepy", "idle-act-stretch");
+    }
+    function scheduleIdleActs(avatar) {
+      clearIdleAct(avatar);
       if (!avatar || !avatar.classList.contains("frame-idle") || !avatar.classList.contains("is-animated")) {
         return;
       }
-      idleBlinkTimer = setTimeout(() => {
-        idleBlinkTimer = null;
-        if (!avatar.isConnected || !avatar.classList.contains("frame-idle")) return;
-        avatar.style.animation = "none";
-        void avatar.offsetWidth;
-        avatar.style.animation = "";
-        scheduleIdleBlink(avatar);
-      }, 2600 + Math.random() * 4600);
+      const queueNext = () => {
+        idleActTimer = setTimeout(() => {
+          idleActTimer = null;
+          if (!avatar.isConnected || !avatar.classList.contains("frame-idle") || !avatar.classList.contains("is-animated")) {
+            return;
+          }
+          if (!avatar.classList.contains("is-pressed")) {
+            const act = IDLE_ACTS[Math.floor(Math.random() * IDLE_ACTS.length)];
+            avatar.classList.add(act.className);
+            idleActRemoveTimer = setTimeout(() => {
+              idleActRemoveTimer = null;
+              avatar.classList.remove(act.className);
+            }, act.durationMs + 80);
+          }
+          queueNext();
+        }, 6500 + Math.random() * 7500);
+      };
+      queueNext();
+    }
+    function launchConfetti() {
+      const host = petButton instanceof HTMLElement ? petButton.querySelector(".pet-stage") : null;
+      if (!(host instanceof HTMLElement)) return;
+      const colors = ["#77dbc6", "#f3b95f", "#9bd875", "#8bb8ff", "#f47c83"];
+      const burst = root.createElement("div");
+      burst.className = "confetti-burst";
+      burst.setAttribute("aria-hidden", "true");
+      for (let index = 0; index < 14; index += 1) {
+        const piece = root.createElement("i");
+        const angle = Math.random() * Math.PI * 2;
+        const distance = 26 + Math.random() * 32;
+        piece.style.setProperty("--cx", `${(Math.cos(angle) * distance).toFixed(1)}px`);
+        piece.style.setProperty("--cy", `${(Math.sin(angle) * distance - 16).toFixed(1)}px`);
+        piece.style.setProperty("--cr", `${Math.round(Math.random() * 260 - 130)}deg`);
+        piece.style.setProperty("--cc", colors[index % colors.length]);
+        piece.style.animationDelay = `${Math.round(Math.random() * 90)}ms`;
+        burst.appendChild(piece);
+      }
+      host.appendChild(burst);
+      setTimeout(() => burst.remove(), 1500);
     }
     function setTrayMoreOpen(open) {
       trayMoreOpen = open;
@@ -927,7 +994,15 @@
       if (petAvatar) {
         petAvatar.className = `pet-avatar frame-${frame.frame}${frame.animated ? " is-animated" : ""}`;
         petAvatar.setAttribute("data-state", state);
-        scheduleIdleBlink(petAvatar);
+        const lifeKey = `${frame.frame}:${frame.animated ? "1" : "0"}`;
+        if (lifeKey !== idleLifeKey) {
+          idleLifeKey = lifeKey;
+          scheduleIdleBlink(petAvatar);
+          scheduleIdleActs(petAvatar);
+        }
+      }
+      if (view.presentation === "ready" && previousView?.presentation !== "ready" && !(view.reducedMotion || reducedMotion)) {
+        launchConfetti();
       }
       if (petRoot) petRoot.setAttribute("data-pet", manifest.id);
       if (petGlyph) petGlyph.textContent = frame.glyph || petStateGlyph(state);
@@ -1075,7 +1150,20 @@
         if (filteredProjects.length === 0) {
           const empty = root.createElement("div");
           empty.className = "empty-tray";
-          empty.textContent = view.projects.length > 0 ? "\u6B64\u7B5B\u9009\u4E0B\u6682\u65E0\u6D3B\u52A8" : view.connectionStatus === "connected" ? "\u5F53\u524D\u6CA1\u6709\u53EF\u89C2\u5BDF\u7684\u6D3B\u52A8" : "\u8FDE\u63A5\u672C\u5730\u8717\u725B\u6D3E\u670D\u52A1\u540E\u5373\u53EF\u89C2\u5BDF\u4EFB\u52A1";
+          const emptyPet = root.createElement("div");
+          emptyPet.className = "empty-pet";
+          emptyPet.setAttribute("aria-hidden", "true");
+          const emptyAvatar = root.createElement("span");
+          emptyAvatar.className = "pet-avatar frame-idle is-animated empty-pet-avatar";
+          emptyAvatar.innerHTML = '<span class="pet-shadow"></span><span class="pet-tail"></span><span class="pet-body"></span><span class="pet-head"><span class="pet-antenna pet-antenna-left"></span><span class="pet-antenna pet-antenna-right"></span><span class="pet-eye pet-eye-left"></span><span class="pet-eye pet-eye-right"></span><span class="pet-mouth"></span></span><span class="pet-shell"><span class="pet-shell-spiral"></span></span>';
+          emptyPet.appendChild(emptyAvatar);
+          const emptyTitle = root.createElement("div");
+          emptyTitle.className = "empty-tray-title";
+          emptyTitle.textContent = view.projects.length > 0 ? "\u6B64\u7B5B\u9009\u4E0B\u6682\u65E0\u6D3B\u52A8" : view.connectionStatus === "connected" ? "\u76EE\u524D\u6CA1\u6709\u4EFB\u52A1\u6D3B\u52A8" : "\u5C1A\u672A\u8FDE\u63A5";
+          const emptyHint = root.createElement("div");
+          emptyHint.className = "empty-tray-hint";
+          emptyHint.textContent = view.projects.length > 0 ? "\u6362\u4E2A\u7B5B\u9009\u770B\u770B\u5176\u4ED6\u72B6\u6001\u7684\u4EFB\u52A1" : view.connectionStatus === "connected" ? "\u4EFB\u52A1\u5F00\u59CB\u8FD0\u884C\u540E\u4F1A\u51FA\u73B0\u5728\u8FD9\u91CC" : "\u8FDE\u63A5\u672C\u5730\u8717\u725B\u6D3E\u670D\u52A1\u540E\u5373\u53EF\u89C2\u5BDF\u4EFB\u52A1";
+          empty.append(emptyPet, emptyTitle, emptyHint);
           projectList.appendChild(empty);
         } else {
           for (const project of filteredProjects) {
@@ -1257,6 +1345,27 @@
     let petLastScreenX = 0;
     let petLastScreenY = 0;
     let petDragging = false;
+    const resetEyeFollow = () => {
+      if (!(petAvatar instanceof HTMLElement)) return;
+      petAvatar.style.removeProperty("--eye-shift-x");
+      petAvatar.style.removeProperty("--eye-shift-y");
+      petAvatar.style.removeProperty("--head-tilt");
+    };
+    const applyEyeFollow = (event) => {
+      if (!(petAvatar instanceof HTMLElement) || !(petButton instanceof HTMLElement)) return;
+      if (!petAvatar.classList.contains("is-animated")) return;
+      const stage = petButton.querySelector(".pet-stage");
+      const rect = stage?.getBoundingClientRect();
+      if (!rect || rect.width === 0) return;
+      const headX = rect.left + rect.width * 0.78;
+      const headY = rect.top + rect.height * 0.68;
+      const dx = event.clientX - headX;
+      const dy = event.clientY - headY;
+      const clamp = (value, max) => Math.max(-max, Math.min(max, value));
+      petAvatar.style.setProperty("--eye-shift-x", `${clamp(dx / 24, 1.7).toFixed(2)}px`);
+      petAvatar.style.setProperty("--eye-shift-y", `${clamp(dy / 24, 1.3).toFixed(2)}px`);
+      petAvatar.style.setProperty("--head-tilt", `${clamp(dx / 40, 4).toFixed(2)}deg`);
+    };
     const endPetPointer = (target, pointerId) => {
       if (petPointerId !== pointerId) return;
       try {
@@ -1266,6 +1375,7 @@
       } catch {
       }
       target.classList.remove("is-dragging");
+      petAvatar?.classList.remove("is-pressed");
       const wasDragging = petDragging;
       petPointerId = null;
       petDragging = false;
@@ -1286,6 +1396,9 @@
       petLastScreenX = event.screenX;
       petLastScreenY = event.screenY;
       petDragging = false;
+      resetEyeFollow();
+      petAvatar?.classList.remove("idle-act-look", "idle-act-sleepy", "idle-act-stretch");
+      petAvatar?.classList.add("is-pressed");
       try {
         petButton.setPointerCapture(event.pointerId);
       } catch {
@@ -1293,12 +1406,17 @@
     });
     petButton?.addEventListener("pointermove", (event) => {
       if (!(petButton instanceof HTMLElement)) return;
+      if (petPointerId === null) {
+        applyEyeFollow(event);
+        return;
+      }
       if (petPointerId !== event.pointerId) return;
       const totalDx = event.screenX - petDragOriginX;
       const totalDy = event.screenY - petDragOriginY;
       if (!petDragging && (Math.abs(totalDx) >= DRAG_THRESHOLD_PX || Math.abs(totalDy) >= DRAG_THRESHOLD_PX)) {
         petDragging = true;
         petButton.classList.add("is-dragging");
+        petAvatar?.classList.remove("is-pressed");
       }
       if (!petDragging) return;
       const dx = event.screenX - petLastScreenX;
@@ -1319,6 +1437,9 @@
         petDragging = true;
         endPetPointer(petButton, event.pointerId);
       }
+    });
+    petButton?.addEventListener("pointerleave", () => {
+      if (petPointerId === null) resetEyeFollow();
     });
     petButton?.addEventListener("click", (event) => {
       event.preventDefault();
@@ -1506,6 +1627,7 @@
           clearTimeout(idleBlinkTimer);
           idleBlinkTimer = null;
         }
+        clearIdleAct(petAvatar instanceof HTMLElement ? petAvatar : null);
         root.removeEventListener("keydown", onKeyDown);
         root.removeEventListener("click", onRootClick);
         unsubscribe?.();
