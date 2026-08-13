@@ -3,7 +3,13 @@
  *
  * Security defaults: no nodeIntegration, contextIsolation, sandbox.
  * Close hides to tray rather than quitting (R13).
+ * Geometry comes from one layout spec so scale / DPI / display recovery stay aligned.
  */
+
+import {
+  DESKTOP_PET_SCALE_FACTORS,
+  type DesktopPetScale,
+} from "./settings-store";
 
 export type PetWindowBounds = {
   x: number;
@@ -56,14 +62,29 @@ export type PetWindowHandle = {
   onFocus(handler: () => void): void;
 };
 
-export const PET_WINDOW_DEFAULTS = {
-  width: 360,
-  height: 480,
-  /** Collapsed chrome (18) + avatar (112) + root padding/gap — must fit without clipping. */
-  petOnlyWidth: 140,
-  petOnlyHeight: 160,
+/** Medium-size DIP metrics. Small/large multiply these through resolvePetLayoutSpec. */
+export const PET_LAYOUT_BASE = {
+  rootPad: 6,
+  chromeHeight: 18,
+  stackGap: 6,
+  surfaceSize: 112,
+  /** chrome 18 + gap 6 + surface 112 */
+  stackWidth: 112,
+  stackHeight: 136,
+  /** Collapsed chrome + avatar + root padding/gap — must fit without clipping. */
+  collapsedWidth: 140,
+  collapsedHeight: 160,
   trayWidth: 360,
   trayHeight: 480,
+} as const;
+
+export const PET_WINDOW_DEFAULTS = {
+  width: PET_LAYOUT_BASE.trayWidth,
+  height: PET_LAYOUT_BASE.trayHeight,
+  petOnlyWidth: PET_LAYOUT_BASE.collapsedWidth,
+  petOnlyHeight: PET_LAYOUT_BASE.collapsedHeight,
+  trayWidth: PET_LAYOUT_BASE.trayWidth,
+  trayHeight: PET_LAYOUT_BASE.trayHeight,
 } as const;
 
 /**
@@ -74,11 +95,77 @@ export type TrayLayoutAnchor = "top-left" | "top-right" | "bottom-left" | "botto
 
 /** Pixel metrics shared with desktop/renderer/pet.css (padding / chrome / avatar). */
 export const PET_LAYOUT = {
-  rootPad: 6,
-  stackWidth: 112,
-  /** chrome 18 + gap 6 + surface 112 */
-  stackHeight: 136,
+  rootPad: PET_LAYOUT_BASE.rootPad,
+  stackWidth: PET_LAYOUT_BASE.stackWidth,
+  stackHeight: PET_LAYOUT_BASE.stackHeight,
 } as const;
+
+export type PetLayoutSpec = {
+  scale: DesktopPetScale;
+  factor: number;
+  rootPad: number;
+  chromeHeight: number;
+  surfaceSize: number;
+  stackWidth: number;
+  stackHeight: number;
+  clickTargetWidth: number;
+  clickTargetHeight: number;
+  collapsedWidth: number;
+  collapsedHeight: number;
+  trayWidth: number;
+  trayHeight: number;
+};
+
+function scaleLayoutPx(value: number, factor: number): number {
+  return Math.max(1, Math.round(value * factor));
+}
+
+/** Single source for collapsed/tray/pet stack/click target sizes at a scale token. */
+export function resolvePetLayoutSpec(scale: DesktopPetScale = "medium"): PetLayoutSpec {
+  const factor = DESKTOP_PET_SCALE_FACTORS[scale] ?? DESKTOP_PET_SCALE_FACTORS.medium;
+  const rootPad = scaleLayoutPx(PET_LAYOUT_BASE.rootPad, factor);
+  const chromeHeight = scaleLayoutPx(PET_LAYOUT_BASE.chromeHeight, factor);
+  const stackGap = scaleLayoutPx(PET_LAYOUT_BASE.stackGap, factor);
+  const surfaceSize = scaleLayoutPx(PET_LAYOUT_BASE.surfaceSize, factor);
+  const stackWidth = surfaceSize;
+  const stackHeight = chromeHeight + stackGap + surfaceSize;
+  return {
+    scale,
+    factor,
+    rootPad,
+    chromeHeight,
+    surfaceSize,
+    stackWidth,
+    stackHeight,
+    clickTargetWidth: surfaceSize,
+    clickTargetHeight: surfaceSize,
+    collapsedWidth: Math.max(
+      scaleLayoutPx(PET_LAYOUT_BASE.collapsedWidth, factor),
+      rootPad * 2 + stackWidth,
+    ),
+    collapsedHeight: Math.max(
+      scaleLayoutPx(PET_LAYOUT_BASE.collapsedHeight, factor),
+      rootPad * 2 + stackHeight,
+    ),
+    trayWidth: Math.max(
+      scaleLayoutPx(PET_LAYOUT_BASE.trayWidth, factor),
+      rootPad * 2 + stackWidth,
+    ),
+    trayHeight: Math.max(
+      scaleLayoutPx(PET_LAYOUT_BASE.trayHeight, factor),
+      rootPad * 2 + stackHeight,
+    ),
+  };
+}
+
+export function windowSizeForLayout(
+  spec: PetLayoutSpec,
+  trayExpanded: boolean,
+): { width: number; height: number } {
+  return trayExpanded
+    ? { width: spec.trayWidth, height: spec.trayHeight }
+    : { width: spec.collapsedWidth, height: spec.collapsedHeight };
+}
 
 export type WindowManagerState = {
   visible: boolean;
@@ -87,6 +174,7 @@ export type WindowManagerState = {
   trayExpanded: boolean;
   /** Active only while trayExpanded; collapsed layout is always top-left. */
   trayAnchor: TrayLayoutAnchor;
+  petScale: DesktopPetScale;
   bounds: PetWindowBounds | null;
 };
 
@@ -95,12 +183,14 @@ export function createInitialWindowManagerState(input?: {
   alwaysOnTop?: boolean;
   clickThrough?: boolean;
   trayOpen?: boolean;
+  petScale?: DesktopPetScale;
   /** Used only when no saved position (typically primary work-area bottom-right). */
   defaultPosition?: { x: number; y: number } | null;
 }): WindowManagerState {
   const trayExpanded = input?.trayOpen === true;
-  const width = trayExpanded ? PET_WINDOW_DEFAULTS.trayWidth : PET_WINDOW_DEFAULTS.petOnlyWidth;
-  const height = trayExpanded ? PET_WINDOW_DEFAULTS.trayHeight : PET_WINDOW_DEFAULTS.petOnlyHeight;
+  const petScale = input?.petScale ?? "medium";
+  const spec = resolvePetLayoutSpec(petScale);
+  const size = windowSizeForLayout(spec, trayExpanded);
   const position = input?.position ?? input?.defaultPosition ?? null;
   return {
     visible: true,
@@ -109,23 +199,28 @@ export function createInitialWindowManagerState(input?: {
     trayExpanded,
     // Restored expanded sessions default to top-left; first toggle re-picks from work area.
     trayAnchor: "top-left",
+    petScale,
     bounds: position
-      ? { x: position.x, y: position.y, width, height }
-      : { x: 40, y: 40, width, height },
+      ? { x: position.x, y: position.y, width: size.width, height: size.height }
+      : { x: 40, y: 40, width: size.width, height: size.height },
   };
 }
 
 /** Place the collapsed pet near the bottom-right of a work area (with padding). */
-export function defaultPetWindowPosition(workArea: {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}): { x: number; y: number } {
+export function defaultPetWindowPosition(
+  workArea: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  },
+  scale: DesktopPetScale = "medium",
+): { x: number; y: number } {
+  const spec = resolvePetLayoutSpec(scale);
   const pad = 24;
   return {
-    x: Math.round(workArea.x + workArea.width - PET_WINDOW_DEFAULTS.petOnlyWidth - pad),
-    y: Math.round(workArea.y + workArea.height - PET_WINDOW_DEFAULTS.petOnlyHeight - pad),
+    x: Math.round(workArea.x + workArea.width - spec.collapsedWidth - pad),
+    y: Math.round(workArea.y + workArea.height - spec.collapsedHeight - pad),
   };
 }
 
@@ -182,12 +277,17 @@ function boundsFitWorkArea(bounds: PetWindowBounds, workArea: WorkAreaRect): boo
   );
 }
 
+export function layoutSpecFromState(state: Pick<WindowManagerState, "petScale">): PetLayoutSpec {
+  return resolvePetLayoutSpec(state.petScale ?? "medium");
+}
+
 /** Screen rect of the pet stack (chrome + avatar) for the current layout anchor. */
 export function petStackScreenRect(
   bounds: PetWindowBounds,
   anchor: TrayLayoutAnchor,
+  spec: PetLayoutSpec = resolvePetLayoutSpec("medium"),
 ): { x: number; y: number; width: number; height: number } {
-  const { rootPad, stackWidth, stackHeight } = PET_LAYOUT;
+  const { rootPad, stackWidth, stackHeight } = spec;
   const alignRight = anchor === "top-right" || anchor === "bottom-right";
   const alignBottom = anchor === "bottom-left" || anchor === "bottom-right";
   return {
@@ -204,8 +304,9 @@ export function windowBoundsForPetStack(input: {
   anchor: TrayLayoutAnchor;
   width: number;
   height: number;
+  spec?: PetLayoutSpec;
 }): PetWindowBounds {
-  const { rootPad } = PET_LAYOUT;
+  const rootPad = (input.spec ?? resolvePetLayoutSpec("medium")).rootPad;
   const alignRight = input.anchor === "top-right" || input.anchor === "bottom-right";
   const alignBottom = input.anchor === "bottom-left" || input.anchor === "bottom-right";
   const x = alignRight
@@ -234,6 +335,7 @@ export function pickTrayLayoutAnchor(
   stack: { x: number; y: number; width: number; height: number },
   size: { width: number; height: number },
   workArea?: WorkAreaRect | null,
+  spec: PetLayoutSpec = resolvePetLayoutSpec("medium"),
 ): TrayLayoutAnchor {
   if (!workArea) return "top-left";
   for (const anchor of TRAY_ANCHOR_PREFERENCE) {
@@ -242,6 +344,7 @@ export function pickTrayLayoutAnchor(
       anchor,
       width: size.width,
       height: size.height,
+      spec,
     });
     if (boundsFitWorkArea(bounds, workArea)) return anchor;
   }
@@ -254,9 +357,10 @@ export function pickTrayLayoutAnchor(
       anchor,
       width: size.width,
       height: size.height,
+      spec,
     });
     const clamped = clampWindowBounds(raw, workArea);
-    const placed = petStackScreenRect(clamped, anchor);
+    const placed = petStackScreenRect(clamped, anchor, spec);
     const dx = placed.x - stack.x;
     const dy = placed.y - stack.y;
     const score = dx * dx + dy * dy;
@@ -278,26 +382,32 @@ export function handleToggleTray(
   state: WindowManagerState,
   workArea?: WorkAreaRect | null,
 ): WindowManagerState {
+  const spec = layoutSpecFromState(state);
   const trayExpanded = !state.trayExpanded;
-  const width = trayExpanded ? PET_WINDOW_DEFAULTS.trayWidth : PET_WINDOW_DEFAULTS.petOnlyWidth;
-  const height = trayExpanded ? PET_WINDOW_DEFAULTS.trayHeight : PET_WINDOW_DEFAULTS.petOnlyHeight;
+  const size = windowSizeForLayout(spec, trayExpanded);
 
   if (!state.bounds) {
     return {
       ...state,
       trayExpanded,
-      trayAnchor: trayExpanded ? "top-left" : "top-left",
-      bounds: { x: 0, y: 0, width, height },
+      trayAnchor: "top-left",
+      bounds: { x: 0, y: 0, width: size.width, height: size.height },
     };
   }
 
   // Pet stack screen position is the stable anchor across expand/collapse.
   const currentAnchor: TrayLayoutAnchor = state.trayExpanded ? state.trayAnchor : "top-left";
-  const stack = petStackScreenRect(state.bounds, currentAnchor);
+  const stack = petStackScreenRect(state.bounds, currentAnchor, spec);
 
   if (trayExpanded) {
-    const anchor = pickTrayLayoutAnchor(stack, { width, height }, workArea);
-    let bounds = windowBoundsForPetStack({ stack, anchor, width, height });
+    const anchor = pickTrayLayoutAnchor(stack, size, workArea, spec);
+    let bounds = windowBoundsForPetStack({
+      stack,
+      anchor,
+      width: size.width,
+      height: size.height,
+      spec,
+    });
     if (workArea) bounds = clampWindowBounds(bounds, workArea);
     return { ...state, trayExpanded: true, trayAnchor: anchor, bounds };
   }
@@ -306,8 +416,9 @@ export function handleToggleTray(
   let bounds = windowBoundsForPetStack({
     stack,
     anchor: "top-left",
-    width,
-    height,
+    width: size.width,
+    height: size.height,
+    spec,
   });
   if (workArea) bounds = clampWindowBounds(bounds, workArea);
   return {
@@ -366,6 +477,131 @@ export function handleBoundsChanged(
   bounds: PetWindowBounds,
 ): WindowManagerState {
   return { ...state, bounds };
+}
+
+function windowFullyVisible(bounds: PetWindowBounds, workArea: WorkAreaRect): boolean {
+  return boundsFitWorkArea(bounds, workArea);
+}
+
+function nearestWorkArea(
+  point: { x: number; y: number },
+  workAreas: readonly WorkAreaRect[],
+): WorkAreaRect | null {
+  if (workAreas.length === 0) return null;
+  let best = workAreas[0]!;
+  let bestScore = Number.POSITIVE_INFINITY;
+  for (const area of workAreas) {
+    const cx = area.x + area.width / 2;
+    const cy = area.y + area.height / 2;
+    const dx = point.x - cx;
+    const dy = point.y - cy;
+    const score = dx * dx + dy * dy;
+    if (score < bestScore) {
+      bestScore = score;
+      best = area;
+    }
+  }
+  return best;
+}
+
+/** Keep the pet stack fixed while applying a new size token. */
+export function handleSetPetScale(
+  state: WindowManagerState,
+  petScale: DesktopPetScale,
+  workArea?: WorkAreaRect | null,
+): WindowManagerState {
+  if (state.petScale === petScale && state.bounds) {
+    const spec = resolvePetLayoutSpec(petScale);
+    const size = windowSizeForLayout(spec, state.trayExpanded);
+    if (state.bounds.width === size.width && state.bounds.height === size.height) {
+      return state;
+    }
+  }
+  const nextSpec = resolvePetLayoutSpec(petScale);
+  const size = windowSizeForLayout(nextSpec, state.trayExpanded);
+  if (!state.bounds) {
+    return {
+      ...state,
+      petScale,
+      trayAnchor: state.trayExpanded ? state.trayAnchor : "top-left",
+      bounds: { x: 0, y: 0, width: size.width, height: size.height },
+    };
+  }
+  const currentSpec = layoutSpecFromState(state);
+  const currentAnchor: TrayLayoutAnchor = state.trayExpanded ? state.trayAnchor : "top-left";
+  const stack = petStackScreenRect(state.bounds, currentAnchor, currentSpec);
+  const nextAnchor = state.trayExpanded
+    ? pickTrayLayoutAnchor(stack, size, workArea, nextSpec)
+    : "top-left";
+  let bounds = windowBoundsForPetStack({
+    stack,
+    anchor: nextAnchor,
+    width: size.width,
+    height: size.height,
+    spec: nextSpec,
+  });
+  if (workArea) bounds = clampWindowBounds(bounds, workArea);
+  return {
+    ...state,
+    petScale,
+    trayAnchor: nextAnchor,
+    bounds,
+  };
+}
+
+/** Move the collapsed pet to the work-area default (typically primary bottom-right). */
+export function handleRestoreDefaultPosition(
+  state: WindowManagerState,
+  workArea: WorkAreaRect,
+): WindowManagerState {
+  const spec = layoutSpecFromState(state);
+  const size = windowSizeForLayout(spec, false);
+  const position = defaultPetWindowPosition(workArea, state.petScale);
+  return {
+    ...state,
+    trayExpanded: false,
+    trayAnchor: "top-left",
+    bounds: clampWindowBounds(
+      { x: position.x, y: position.y, width: size.width, height: size.height },
+      workArea,
+    ),
+  };
+}
+
+/**
+ * After display add/remove/metrics change, keep the window inside the nearest
+ * remaining work area. Hidden windows stay hidden.
+ */
+export function recoverWindowToNearestWorkArea(
+  state: WindowManagerState,
+  workAreas: readonly WorkAreaRect[],
+): WindowManagerState {
+  if (workAreas.length === 0) return state;
+  const spec = layoutSpecFromState(state);
+  const size = windowSizeForLayout(spec, state.trayExpanded);
+  const current = state.bounds ?? {
+    x: 40,
+    y: 40,
+    width: size.width,
+    height: size.height,
+  };
+  const sized: PetWindowBounds = {
+    ...current,
+    width: size.width,
+    height: size.height,
+  };
+  const containing = workAreas.find((area) => windowFullyVisible(sized, area));
+  const target =
+    containing ??
+    nearestWorkArea({ x: sized.x + sized.width / 2, y: sized.y + sized.height / 2 }, workAreas);
+  if (!target) return { ...state, bounds: sized };
+  if (containing && sized.width === current.width && sized.height === current.height) {
+    return state.bounds ? state : { ...state, bounds: sized };
+  }
+  return {
+    ...state,
+    bounds: clampWindowBounds(sized, target),
+  };
 }
 
 const USER_ACTIVATE_REASONS = new Set<PetWindowRevealReason>([

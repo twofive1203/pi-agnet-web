@@ -59,11 +59,14 @@ import {
   handleDisableClickThrough,
   handleMoveBy,
   handlePetWindowCloseRequest,
+  handleRestoreDefaultPosition,
   handleSetAlwaysOnTop,
   handleSetClickThrough,
+  handleSetPetScale,
   handleShowPet,
   handleToggleTray,
   petWindowWebPreferences,
+  recoverWindowToNearestWorkArea,
   resolvePetWindowReveal,
   sendPetWindowChannel,
   PET_WINDOW_DEFAULTS,
@@ -193,11 +196,24 @@ export async function startDesktopPetMain(deps: DesktopMainDeps): Promise<{
   let stale = false;
   let reducedMotion = false;
   let selectedActivityId: string | null = null;
+  const collectWorkAreas = (): WorkAreaRect[] => {
+    try {
+      const screenApi = deps.screen;
+      if (!screenApi) return [];
+      return screenApi.getAllDisplays().map((display) => display.workArea);
+    } catch {
+      return [];
+    }
+  };
+
   const defaultPosition = (() => {
     try {
       const screenApi = deps.screen;
       if (!screenApi) return { x: 80, y: 80 };
-      return defaultPetWindowPosition(screenApi.getPrimaryDisplay().workArea);
+      return defaultPetWindowPosition(
+        screenApi.getPrimaryDisplay().workArea,
+        settings.petScale,
+      );
     } catch {
       return { x: 80, y: 80 };
     }
@@ -210,13 +226,17 @@ export async function startDesktopPetMain(deps: DesktopMainDeps): Promise<{
       ? settings.windowPosition
       : null;
 
-  let windowState = createInitialWindowManagerState({
-    position: savedPosition,
-    defaultPosition,
-    alwaysOnTop: settings.alwaysOnTop,
-    clickThrough: settings.clickThrough,
-    trayOpen: settings.activityTrayOpen,
-  });
+  let windowState = recoverWindowToNearestWorkArea(
+    createInitialWindowManagerState({
+      position: savedPosition,
+      defaultPosition,
+      alwaysOnTop: settings.alwaysOnTop,
+      clickThrough: settings.clickThrough,
+      trayOpen: settings.activityTrayOpen,
+      petScale: settings.petScale,
+    }),
+    collectWorkAreas(),
+  );
 
   const notifications = new DesktopNotificationController();
   notifications.setHost({
@@ -246,6 +266,22 @@ export async function startDesktopPetMain(deps: DesktopMainDeps): Promise<{
       // ignore disk errors; in-memory state remains authoritative for the session
     }
   };
+
+  if (windowState.bounds) {
+    const recoveredPosition = { x: windowState.bounds.x, y: windowState.bounds.y };
+    const needsPersist =
+      settings.petScale !== windowState.petScale ||
+      !savedPosition ||
+      savedPosition.x !== recoveredPosition.x ||
+      savedPosition.y !== recoveredPosition.y;
+    if (needsPersist) {
+      settings = updateDesktopSettings(settings, {
+        windowPosition: recoveredPosition,
+        petScale: windowState.petScale,
+      });
+      persistSettings();
+    }
+  }
 
   let clientRef: DesktopObserverClient | null = null;
   let petWindow: PetWindowHandle | null = null;
@@ -389,6 +425,7 @@ export async function startDesktopPetMain(deps: DesktopMainDeps): Promise<{
       activityTrayOpen: windowState.trayExpanded,
       clickThrough: windowState.clickThrough,
       alwaysOnTop: windowState.alwaysOnTop,
+      petScale: windowState.petScale,
       windowPosition: pos,
     });
     persistSettings();
@@ -682,8 +719,10 @@ export async function startDesktopPetMain(deps: DesktopMainDeps): Promise<{
     ipcMain.on(PET_IPC_CHANNELS.setPrefs, (_event, patch: unknown) => {
       if (!patch || typeof patch !== "object") return;
       const p = patch as PetPrefsPatch;
+      const previousScale = settings.petScale;
       settings = updateDesktopSettings(settings, {
         selectedPetId: p.selectedPetId,
+        petScale: p.petScale,
         alwaysOnTop: p.alwaysOnTop,
         clickThrough: p.clickThrough,
         launchAtLogin: p.launchAtLogin,
@@ -694,21 +733,42 @@ export async function startDesktopPetMain(deps: DesktopMainDeps): Promise<{
       if (typeof p.launchAtLogin === "boolean") {
         applyLaunchAtLogin(app, p.launchAtLogin);
       }
+      let nextWindow = windowState;
+      let windowTouched = false;
       if (typeof p.alwaysOnTop === "boolean" || typeof p.clickThrough === "boolean") {
-        applyWindowState(
-          handleSetClickThrough(
-            handleSetAlwaysOnTop(windowState, settings.alwaysOnTop),
-            settings.clickThrough,
-          ),
+        nextWindow = handleSetClickThrough(
+          handleSetAlwaysOnTop(nextWindow, settings.alwaysOnTop),
+          settings.clickThrough,
         );
+        windowTouched = true;
+      }
+      if (settings.petScale !== previousScale || typeof p.petScale === "string") {
+        nextWindow = handleSetPetScale(nextWindow, settings.petScale, resolveWorkArea());
+        windowTouched = true;
       }
       if (typeof p.port === "number" && p.port !== client.getState().port) {
         client.quit();
         // Recreate client on port change would need full restart; retry with new settings port.
         // For v1, persist and ask user to restart pet — still call retry on same client after update.
       }
+      if (windowTouched) {
+        applyWindowState(nextWindow);
+        return;
+      }
       persistSettings();
       pushState();
+    });
+
+    ipcMain.on(PET_IPC_CHANNELS.restoreDefaultPosition, () => {
+      const workArea =
+        resolveWorkArea() ??
+        collectWorkAreas()[0] ?? {
+          x: 0,
+          y: 0,
+          width: 1280,
+          height: 720,
+        };
+      applyWindowState(handleRestoreDefaultPosition(windowState, workArea), "user-show");
     });
 
     ipcMain.on(PET_IPC_CHANNELS.setReducedMotion, (_event, value: unknown) => {
@@ -760,6 +820,21 @@ export async function startDesktopPetMain(deps: DesktopMainDeps): Promise<{
   app.on("second-instance", () => {
     applyWindowState(handleShowPet(windowState), "second-instance");
   });
+
+  function recoverToVisibleDisplays(): void {
+    const recovered = recoverWindowToNearestWorkArea(windowState, collectWorkAreas());
+    if (recovered === windowState) return;
+    applyWindowState(recovered);
+  }
+
+  try {
+    const screenApi = deps.screen;
+    screenApi?.on("display-added", recoverToVisibleDisplays);
+    screenApi?.on("display-removed", recoverToVisibleDisplays);
+    screenApi?.on("display-metrics-changed", recoverToVisibleDisplays);
+  } catch {
+    // older / test hosts may omit display events
+  }
 
   registerIpc();
   petWindow = createPetWindow();

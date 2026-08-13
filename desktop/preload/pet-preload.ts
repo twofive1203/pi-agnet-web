@@ -32,6 +32,8 @@ export type SnailPetBridge = {
   retry: () => void;
   copyStartCommand: () => Promise<unknown>;
   setPrefs: (patch: PetPrefsPatch) => void;
+  /** Move the pet back to the current display's default dock. */
+  restoreDefaultPosition: () => void;
   setReducedMotion: (value: boolean) => void;
   /** Submit server access key (main never echoes it back). */
   setAccessKey: (accessKey: string) => Promise<unknown>;
@@ -74,6 +76,7 @@ const bridge: SnailPetBridge = {
   retry: () => send(PET_IPC_CHANNELS.retry),
   copyStartCommand: () => invoke(PET_IPC_CHANNELS.copyStartCommand),
   setPrefs: (patch) => send(PET_IPC_CHANNELS.setPrefs, patch),
+  restoreDefaultPosition: () => send(PET_IPC_CHANNELS.restoreDefaultPosition),
   setReducedMotion: (value) => send(PET_IPC_CHANNELS.setReducedMotion, value),
   setAccessKey: (accessKey) => invoke(PET_IPC_CHANNELS.setAccessKey, accessKey),
   clearAccessKey: () => invoke(PET_IPC_CHANNELS.clearAccessKey),

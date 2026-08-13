@@ -9,6 +9,7 @@
  */
 
 import type { DesktopActivityRow, DesktopActivityView } from "../main/activity-store";
+import { resolvePetLayoutSpec } from "../main/window-manager";
 import type { SnailPetBridge } from "../preload/pet-preload";
 import {
   connectionBannerText,
@@ -73,6 +74,8 @@ export function renderPetApp(root: Document = document): {
   const btnSettings = root.getElementById("btn-settings");
   const settingsPanel = root.getElementById("settings-panel");
   const petPicker = root.getElementById("pet-picker");
+  const petScalePicker = root.getElementById("pet-scale-picker");
+  const btnRestorePosition = root.getElementById("btn-restore-position");
   const prefAlwaysOnTop = root.getElementById("pref-always-on-top") as HTMLInputElement | null;
   const prefClickThrough = root.getElementById("pref-click-through") as HTMLInputElement | null;
   const prefLaunchAtLogin = root.getElementById("pref-launch-at-login") as HTMLInputElement | null;
@@ -167,6 +170,16 @@ export function renderPetApp(root: Document = document): {
           ? view.trayAnchor
           : "top-left";
       petRoot.setAttribute("data-tray-anchor", view.trayOpen ? anchor : "top-left");
+      const scale =
+        view.petScale === "small" || view.petScale === "large" ? view.petScale : "medium";
+      const spec = resolvePetLayoutSpec(scale);
+      petRoot.setAttribute("data-pet-scale", scale);
+      petRoot.style.setProperty("--pet-scale", String(spec.factor));
+      petRoot.style.setProperty("--pet-root-pad", `${spec.rootPad}px`);
+      petRoot.style.setProperty("--pet-stack-gap", `${Math.max(1, spec.stackHeight - spec.chromeHeight - spec.surfaceSize)}px`);
+      petRoot.style.setProperty("--pet-stack-width", `${spec.stackWidth}px`);
+      petRoot.style.setProperty("--pet-chrome-height", `${spec.chromeHeight}px`);
+      petRoot.style.setProperty("--pet-surface-size", `${spec.surfaceSize}px`);
     }
     if (petButton) {
       petButton.setAttribute("aria-expanded", view.trayOpen ? "true" : "false");
@@ -221,6 +234,10 @@ export function renderPetApp(root: Document = document): {
     if (prefBlocked) prefBlocked.checked = view.notification.blocked;
     petPicker?.querySelectorAll<HTMLElement>("[data-pet-id]").forEach((option) => {
       const selected = option.dataset.petId === view.selectedPetId;
+      option.setAttribute("aria-checked", selected ? "true" : "false");
+    });
+    petScalePicker?.querySelectorAll<HTMLElement>("[data-pet-scale]").forEach((option) => {
+      const selected = option.dataset.petScale === view.petScale;
       option.setAttribute("aria-checked", selected ? "true" : "false");
     });
 
@@ -483,6 +500,19 @@ export function renderPetApp(root: Document = document): {
     const selectedPetId = target?.dataset.petId;
     if (!selectedPetId) return;
     bridge?.setPrefs({ selectedPetId });
+  });
+
+  petScalePicker?.addEventListener("click", (event) => {
+    const target = event.target instanceof Element
+      ? event.target.closest<HTMLElement>("[data-pet-scale]")
+      : null;
+    const petScale = target?.dataset.petScale;
+    if (petScale !== "small" && petScale !== "medium" && petScale !== "large") return;
+    bridge?.setPrefs({ petScale });
+  });
+
+  btnRestorePosition?.addEventListener("click", () => {
+    bridge?.restoreDefaultPosition();
   });
 
   prefAlwaysOnTop?.addEventListener("change", () => {

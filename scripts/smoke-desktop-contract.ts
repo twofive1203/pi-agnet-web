@@ -47,6 +47,8 @@ import {
 } from "../desktop/main/settings-persistence";
 import {
   createDefaultDesktopSettings,
+  normalizeDesktopSettings,
+  parseDesktopSettingsJson,
   updateDesktopSettings,
 } from "../desktop/main/settings-store";
 import {
@@ -63,12 +65,16 @@ import {
   defaultPetWindowPosition,
   handleMoveBy,
   handlePetWindowCloseRequest,
+  handleRestoreDefaultPosition,
   handleSetClickThrough,
+  handleSetPetScale,
   handleShowPet,
   handleToggleTray,
   petStackScreenRect,
   petWindowWebPreferences,
   pickTrayLayoutAnchor,
+  recoverWindowToNearestWorkArea,
+  resolvePetLayoutSpec,
   resolvePetWindowReveal,
   sendPetWindowChannel,
   PET_LAYOUT,
@@ -737,6 +743,7 @@ async function main() {
     settings: createDefaultDesktopSettings(),
   });
   assert.equal(offlineView.presentation, "service_not_running");
+  assert.equal(offlineView.petScale, "medium");
   assert.equal(offlineView.canCopyStartCommand, true);
   assert.equal(offlineView.startCommand, DESKTOP_START_COMMAND);
   const banner = connectionBannerText({
@@ -825,6 +832,98 @@ async function main() {
   assert.equal(moveActivitySelection(["a", "b", "c"], "a", "next"), "b");
   assert.equal(moveActivitySelection(["a", "b", "c"], "a", "prev"), "c");
 
+  // --- Settings migration + layout geometry ---
+  const migrated = parseDesktopSettingsJson(
+    JSON.stringify({
+      version: 1,
+      port: 62666,
+      selectedPetId: "snail-classic",
+      alwaysOnTop: true,
+      windowPosition: { x: 120, y: 80 },
+    }),
+  );
+  assert.equal(migrated.petScale, "medium");
+  assert.equal(migrated.selectedPetId, "snail-classic");
+  assert.deepEqual(migrated.windowPosition, { x: 120, y: 80 });
+  assert.equal(normalizeDesktopSettings({ petScale: "huge" }).petScale, "medium");
+  assert.equal(normalizeDesktopSettings({ petScale: 0.85 }).petScale, "small");
+  assert.equal(normalizeDesktopSettings({ petScale: 1.2 }).petScale, "large");
+  assert.equal(normalizeDesktopSettings({ windowPosition: { x: Number.NaN, y: 10 } }).windowPosition, null);
+  assert.equal(
+    normalizeDesktopSettings({ windowPosition: { x: "12", y: 8 } }).windowPosition,
+    null,
+  );
+
+  const mediumSpec = resolvePetLayoutSpec("medium");
+  const smallSpec = resolvePetLayoutSpec("small");
+  const largeSpec = resolvePetLayoutSpec("large");
+  assert.equal(mediumSpec.collapsedWidth, PET_WINDOW_DEFAULTS.petOnlyWidth);
+  assert.equal(mediumSpec.collapsedHeight, PET_WINDOW_DEFAULTS.petOnlyHeight);
+  assert.equal(mediumSpec.trayWidth, PET_WINDOW_DEFAULTS.trayWidth);
+  assert.equal(mediumSpec.stackHeight, PET_LAYOUT.stackHeight);
+  assert.ok(smallSpec.collapsedWidth < mediumSpec.collapsedWidth);
+  assert.ok(largeSpec.collapsedWidth > mediumSpec.collapsedWidth);
+  assert.ok(smallSpec.collapsedWidth >= smallSpec.rootPad * 2 + smallSpec.stackWidth);
+  assert.ok(smallSpec.collapsedHeight >= smallSpec.rootPad * 2 + smallSpec.stackHeight);
+  assert.ok(largeSpec.collapsedWidth >= largeSpec.rootPad * 2 + largeSpec.stackWidth);
+  assert.ok(largeSpec.collapsedHeight >= largeSpec.rootPad * 2 + largeSpec.stackHeight);
+  assert.equal(smallSpec.clickTargetWidth, smallSpec.surfaceSize);
+  assert.equal(largeSpec.clickTargetWidth, largeSpec.surfaceSize);
+  assert.equal(
+    updateDesktopSettings(
+      updateDesktopSettings(createDefaultDesktopSettings(), { petScale: "large" }),
+      { alwaysOnTop: false },
+    ).petScale,
+    "large",
+  );
+
+  const scaleWorkArea = { x: 0, y: 0, width: 1920, height: 1080 };
+  let scaled = createInitialWindowManagerState({
+    position: { x: 800, y: 300 },
+    petScale: "medium",
+    trayOpen: false,
+  });
+  const mediumStack = petStackScreenRect(scaled.bounds!, "top-left", mediumSpec);
+  scaled = handleSetPetScale(scaled, "large", scaleWorkArea);
+  assert.equal(scaled.petScale, "large");
+  assert.equal(scaled.bounds?.width, largeSpec.collapsedWidth);
+  assert.equal(scaled.bounds?.height, largeSpec.collapsedHeight);
+  assert.deepEqual(petStackScreenRect(scaled.bounds!, "top-left", largeSpec), {
+    ...mediumStack,
+    width: largeSpec.stackWidth,
+    height: largeSpec.stackHeight,
+  });
+  const largeStack = petStackScreenRect(scaled.bounds!, "top-left", largeSpec);
+  scaled = handleToggleTray(scaled, scaleWorkArea);
+  assert.equal(scaled.bounds?.width, largeSpec.trayWidth);
+  assert.equal(scaled.bounds?.height, largeSpec.trayHeight);
+  assert.deepEqual(petStackScreenRect(scaled.bounds!, scaled.trayAnchor, largeSpec), largeStack);
+
+  const recovered = recoverWindowToNearestWorkArea(
+    createInitialWindowManagerState({
+      position: { x: 4000, y: 200 },
+      petScale: "small",
+      trayOpen: false,
+    }),
+    [scaleWorkArea],
+  );
+  assert.ok((recovered.bounds?.x ?? 0) + (recovered.bounds?.width ?? 0) <= scaleWorkArea.width);
+  assert.equal(recovered.bounds?.width, smallSpec.collapsedWidth);
+  const restored = handleRestoreDefaultPosition(
+    createInitialWindowManagerState({
+      position: { x: 12, y: 12 },
+      petScale: "large",
+      trayOpen: true,
+    }),
+    scaleWorkArea,
+  );
+  assert.equal(restored.trayExpanded, false);
+  assert.deepEqual(restored.bounds, {
+    ...defaultPetWindowPosition(scaleWorkArea, "large"),
+    width: largeSpec.collapsedWidth,
+    height: largeSpec.collapsedHeight,
+  });
+
   // --- Settings persistence without tokens ---
   const memory = new Map<string, string>();
   const fsMock: SettingsFs = {
@@ -900,6 +999,11 @@ async function main() {
   assert.ok(mainSrc.includes("user-disable-click-through"));
   assert.equal(/petWindow\?\.focus\(/.test(mainSrc), false);
   assert.ok(mainSrc.includes("Never show/focus a hidden pet"));
+  assert.ok(mainSrc.includes("display-added"));
+  assert.ok(mainSrc.includes("display-removed"));
+  assert.ok(mainSrc.includes("display-metrics-changed"));
+  assert.ok(mainSrc.includes("recoverWindowToNearestWorkArea"));
+  assert.ok(mainSrc.includes("handleRestoreDefaultPosition"));
   const notifyClick = mainSrc.match(/n\.on\(\s*["']click["'][\s\S]{0,180}/);
   assert.ok(notifyClick);
   assert.ok(notifyClick![0].includes("openActivityDeepLink"));
@@ -948,6 +1052,8 @@ async function main() {
   assert.ok(html.includes('id="pet-caption"'));
   assert.ok(html.includes('id="settings-panel"'));
   assert.ok(html.includes('data-pet-id="snail-classic"'));
+  assert.ok(html.includes('data-pet-scale="large"'));
+  assert.ok(html.includes("恢复默认位置"));
   assert.ok(html.includes("收起活动列表"));
 
   const css = readFileSync(path.join(process.cwd(), "desktop", "renderer", "pet.css"), "utf8");
@@ -960,6 +1066,8 @@ async function main() {
   assert.ok(css.includes('data-tray-anchor="bottom-right"'));
   assert.ok(css.includes("column-reverse"));
   assert.ok(css.includes('.pet-root[data-pet="snail-classic"]'));
+  assert.ok(css.includes('data-pet-scale="large"'));
+  assert.ok(css.includes("--pet-scale"));
   assert.ok(css.includes("background: transparent"));
   assert.ok(css.includes("prefers-reduced-motion: reduce"));
   assert.ok(html.includes("pet-stack"));
@@ -967,12 +1075,15 @@ async function main() {
 
   assert.equal(isRendererIpcChannel(PET_IPC_CHANNELS.hideToTray), true);
   assert.equal(isRendererIpcChannel(PET_IPC_CHANNELS.moveBy), true);
+  assert.equal(isRendererIpcChannel(PET_IPC_CHANNELS.restoreDefaultPosition), true);
+  assert.ok(PET_RENDERER_ALLOWED_CHANNELS.includes(PET_IPC_CHANNELS.restoreDefaultPosition));
 
   const preloadBridge = readFileSync(
     path.join(process.cwd(), "desktop", "preload", "pet-preload.ts"),
     "utf8",
   );
   assert.ok(preloadBridge.includes("moveBy"));
+  assert.ok(preloadBridge.includes("restoreDefaultPosition"));
 
   const petAppJs = readFileSync(
     path.join(process.cwd(), "desktop", "renderer", "pet-app.js"),
@@ -983,6 +1094,8 @@ async function main() {
   assert.ok(petAppJs.includes("is-collapsed"));
   assert.ok(petAppJs.includes("formatActivityProgress"));
   assert.ok(petAppJs.includes("selectedPetId"));
+  assert.ok(petAppJs.includes("petScale"));
+  assert.ok(petAppJs.includes("restoreDefaultPosition"));
   assert.ok(petAppJs.includes("settingsOpen"));
 
   // Collapsed avatar labels stay short Chinese strings (fit 112px surface).

@@ -557,17 +557,20 @@ async function main() {
   const defaults = createDefaultDesktopSettings();
   assert.equal(defaults.port, 62666);
   assert.equal(defaults.version, 1);
+  assert.equal(defaults.petScale, "medium");
   assertDesktopSettingsSafe(defaults);
 
   const dirty = normalizeDesktopSettings({
     port: 99999,
     selectedPetId: "../evil",
+    petScale: "xl",
     token: "leak",
     notification: { completion: "nope" },
     acknowledgedTransitionIds: ["a", "a", "b"],
   });
   assert.equal(dirty.port, DESKTOP_DEFAULT_PORT);
   assert.equal(dirty.selectedPetId, "snail-default");
+  assert.equal(dirty.petScale, "medium");
   assert.equal(dirty.notification.completion, "background-only");
   assert.deepEqual(dirty.acknowledgedTransitionIds, ["a", "b"]);
   // Forbidden keys stripped by normalization (not present on public shape)

@@ -12,6 +12,16 @@ import {
 
 export const DESKTOP_SETTINGS_VERSION = 1 as const;
 
+export const DESKTOP_PET_SCALES = ["small", "medium", "large"] as const;
+export type DesktopPetScale = (typeof DESKTOP_PET_SCALES)[number];
+
+/** Discrete size factors shared with the window layout spec. */
+export const DESKTOP_PET_SCALE_FACTORS: Record<DesktopPetScale, number> = {
+  small: 0.85,
+  medium: 1,
+  large: 1.2,
+};
+
 export type DesktopNotificationCompletionPolicy = "never" | "background-only" | "always";
 
 export type DesktopPetSettings = {
@@ -19,6 +29,8 @@ export type DesktopPetSettings = {
   /** IPv4 loopback port only; origin is always http://127.0.0.1:<port>. */
   port: number;
   selectedPetId: string;
+  /** Collapsed/tray layout size token; missing v1 files migrate to medium. */
+  petScale: DesktopPetScale;
   alwaysOnTop: boolean;
   clickThrough: boolean;
   launchAtLogin: boolean;
@@ -39,6 +51,7 @@ export const DESKTOP_SETTINGS_DEFAULTS: DesktopPetSettings = {
   version: DESKTOP_SETTINGS_VERSION,
   port: DESKTOP_DEFAULT_PORT,
   selectedPetId: "snail-default",
+  petScale: "medium",
   alwaysOnTop: true,
   clickThrough: false,
   launchAtLogin: false,
@@ -78,11 +91,13 @@ export function normalizeDesktopSettings(input: unknown): DesktopPetSettings {
   const completion = normalizeCompletion(notificationRaw.completion);
 
   const windowPosition = normalizeWindowPosition(raw.windowPosition);
+  const petScale = normalizePetScale(raw.petScale);
 
   return {
     version: DESKTOP_SETTINGS_VERSION,
     port,
     selectedPetId,
+    petScale,
     alwaysOnTop: raw.alwaysOnTop !== false,
     clickThrough: raw.clickThrough === true,
     launchAtLogin: raw.launchAtLogin === true,
@@ -117,6 +132,7 @@ export function updateDesktopSettings(
   patch: Partial<{
     port: number;
     selectedPetId: string;
+    petScale: DesktopPetScale;
     alwaysOnTop: boolean;
     clickThrough: boolean;
     launchAtLogin: boolean;
@@ -127,9 +143,12 @@ export function updateDesktopSettings(
     notifiedTransitionIds: string[];
   }>,
 ): DesktopPetSettings {
+  const next: Record<string, unknown> = { ...current };
+  for (const [key, value] of Object.entries(patch)) {
+    if (value !== undefined) next[key] = value;
+  }
   return normalizeDesktopSettings({
-    ...current,
-    ...patch,
+    ...next,
     notification: {
       ...current.notification,
       ...(patch.notification ?? {}),
@@ -192,6 +211,23 @@ function clampPort(value: unknown): number {
 function normalizeCompletion(value: unknown): DesktopNotificationCompletionPolicy {
   if (value === "never" || value === "background-only" || value === "always") return value;
   return DESKTOP_SETTINGS_DEFAULTS.notification.completion;
+}
+
+/** Accept size tokens or the documented 0.85/1/1.2 factors from older drafts. */
+export function normalizePetScale(value: unknown): DesktopPetScale {
+  if (value === "small" || value === "medium" || value === "large") return value;
+  const numeric =
+    typeof value === "number"
+      ? value
+      : typeof value === "string" && value.trim() !== ""
+        ? Number(value)
+        : NaN;
+  if (Number.isFinite(numeric)) {
+    if (numeric === DESKTOP_PET_SCALE_FACTORS.small) return "small";
+    if (numeric === DESKTOP_PET_SCALE_FACTORS.medium) return "medium";
+    if (numeric === DESKTOP_PET_SCALE_FACTORS.large) return "large";
+  }
+  return DESKTOP_SETTINGS_DEFAULTS.petScale;
 }
 
 function normalizeWindowPosition(value: unknown): { x: number; y: number } | null {

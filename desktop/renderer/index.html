@@ -42,28 +42,30 @@
           aria-label="桌宠，点击展开活动列表，拖动可移动"
           aria-expanded="false"
         >
-          <div id="pet-caption" class="pet-caption" hidden>
-            <span id="pet-caption-state" class="pet-caption-state">空闲</span>
-            <span id="pet-caption-title" class="pet-caption-title"></span>
+          <div class="pet-stage">
+            <div id="pet-caption" class="pet-caption" hidden>
+              <span id="pet-caption-state" class="pet-caption-state">空闲</span>
+              <span id="pet-caption-title" class="pet-caption-title"></span>
+            </div>
+            <div id="pet-avatar" class="pet-avatar frame-idle" data-state="idle">
+              <span class="pet-shadow" aria-hidden="true"></span>
+              <span class="pet-tail" aria-hidden="true"></span>
+              <span class="pet-body" aria-hidden="true"></span>
+              <span class="pet-head" aria-hidden="true">
+                <span class="pet-antenna pet-antenna-left"></span>
+                <span class="pet-antenna pet-antenna-right"></span>
+                <span class="pet-eye pet-eye-left"></span>
+                <span class="pet-eye pet-eye-right"></span>
+                <span class="pet-mouth"></span>
+              </span>
+              <span class="pet-shell" aria-hidden="true">
+                <span class="pet-shell-spiral"></span>
+              </span>
+              <span id="pet-glyph" class="pet-glyph" aria-hidden="true">·</span>
+            </div>
+            <div id="pet-badge" class="pet-badge" hidden>0</div>
+            <div id="pet-label" class="pet-label">空闲</div>
           </div>
-          <div id="pet-avatar" class="pet-avatar frame-idle" data-state="idle">
-            <span class="pet-shadow" aria-hidden="true"></span>
-            <span class="pet-tail" aria-hidden="true"></span>
-            <span class="pet-body" aria-hidden="true"></span>
-            <span class="pet-head" aria-hidden="true">
-              <span class="pet-antenna pet-antenna-left"></span>
-              <span class="pet-antenna pet-antenna-right"></span>
-              <span class="pet-eye pet-eye-left"></span>
-              <span class="pet-eye pet-eye-right"></span>
-              <span class="pet-mouth"></span>
-            </span>
-            <span class="pet-shell" aria-hidden="true">
-              <span class="pet-shell-spiral"></span>
-            </span>
-            <span id="pet-glyph" class="pet-glyph" aria-hidden="true">·</span>
-          </div>
-          <div id="pet-badge" class="pet-badge" hidden>0</div>
-          <div id="pet-label" class="pet-label">空闲</div>
         </button>
       </div>
 
@@ -125,6 +127,15 @@
               <span>经典蜗牛</span>
             </button>
           </div>
+          <div class="settings-heading">尺寸</div>
+          <div id="pet-scale-picker" class="pet-scale-picker" role="radiogroup" aria-label="桌宠尺寸">
+            <button type="button" class="pet-scale-option" data-pet-scale="small" role="radio">小</button>
+            <button type="button" class="pet-scale-option" data-pet-scale="medium" role="radio">中</button>
+            <button type="button" class="pet-scale-option" data-pet-scale="large" role="radio">大</button>
+          </div>
+          <button type="button" id="btn-restore-position" class="tray-btn settings-restore-btn">
+            恢复默认位置
+          </button>
           <div class="settings-grid">
             <label class="setting-toggle">
               <input id="pref-always-on-top" type="checkbox" />

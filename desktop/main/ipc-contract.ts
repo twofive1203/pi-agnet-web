@@ -21,6 +21,8 @@ export const PET_IPC_CHANNELS = {
   retry: "pet:retry",
   copyStartCommand: "pet:copy-start-command",
   setPrefs: "pet:set-prefs",
+  /** User recovery: move the pet back to the nearest work-area default. */
+  restoreDefaultPosition: "pet:restore-default-position",
   setReducedMotion: "pet:set-reduced-motion",
   /** Main-only: set/clear server access key (never echoed back). */
   setAccessKey: "pet:set-access-key",
@@ -43,6 +45,7 @@ export const PET_RENDERER_ALLOWED_CHANNELS: readonly string[] = [
   PET_IPC_CHANNELS.retry,
   PET_IPC_CHANNELS.copyStartCommand,
   PET_IPC_CHANNELS.setPrefs,
+  PET_IPC_CHANNELS.restoreDefaultPosition,
   PET_IPC_CHANNELS.setReducedMotion,
   PET_IPC_CHANNELS.setAccessKey,
   PET_IPC_CHANNELS.clearAccessKey,
@@ -53,6 +56,7 @@ export const PET_MAIN_PUSH_CHANNELS: readonly string[] = [PET_IPC_CHANNELS.state
 
 export type PetPrefsPatch = Partial<{
   selectedPetId: string;
+  petScale: "small" | "medium" | "large";
   alwaysOnTop: boolean;
   clickThrough: boolean;
   launchAtLogin: boolean;

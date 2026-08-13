@@ -1,5 +1,80 @@
 "use strict";
 (() => {
+  // desktop/main/settings-store.ts
+  var DESKTOP_PET_SCALE_FACTORS = {
+    small: 0.85,
+    medium: 1,
+    large: 1.2
+  };
+
+  // desktop/main/window-manager.ts
+  var PET_LAYOUT_BASE = {
+    rootPad: 6,
+    chromeHeight: 18,
+    stackGap: 6,
+    surfaceSize: 112,
+    /** chrome 18 + gap 6 + surface 112 */
+    stackWidth: 112,
+    stackHeight: 136,
+    /** Collapsed chrome + avatar + root padding/gap — must fit without clipping. */
+    collapsedWidth: 140,
+    collapsedHeight: 160,
+    trayWidth: 360,
+    trayHeight: 480
+  };
+  var PET_WINDOW_DEFAULTS = {
+    width: PET_LAYOUT_BASE.trayWidth,
+    height: PET_LAYOUT_BASE.trayHeight,
+    petOnlyWidth: PET_LAYOUT_BASE.collapsedWidth,
+    petOnlyHeight: PET_LAYOUT_BASE.collapsedHeight,
+    trayWidth: PET_LAYOUT_BASE.trayWidth,
+    trayHeight: PET_LAYOUT_BASE.trayHeight
+  };
+  var PET_LAYOUT = {
+    rootPad: PET_LAYOUT_BASE.rootPad,
+    stackWidth: PET_LAYOUT_BASE.stackWidth,
+    stackHeight: PET_LAYOUT_BASE.stackHeight
+  };
+  function scaleLayoutPx(value, factor) {
+    return Math.max(1, Math.round(value * factor));
+  }
+  function resolvePetLayoutSpec(scale = "medium") {
+    const factor = DESKTOP_PET_SCALE_FACTORS[scale] ?? DESKTOP_PET_SCALE_FACTORS.medium;
+    const rootPad = scaleLayoutPx(PET_LAYOUT_BASE.rootPad, factor);
+    const chromeHeight = scaleLayoutPx(PET_LAYOUT_BASE.chromeHeight, factor);
+    const stackGap = scaleLayoutPx(PET_LAYOUT_BASE.stackGap, factor);
+    const surfaceSize = scaleLayoutPx(PET_LAYOUT_BASE.surfaceSize, factor);
+    const stackWidth = surfaceSize;
+    const stackHeight = chromeHeight + stackGap + surfaceSize;
+    return {
+      scale,
+      factor,
+      rootPad,
+      chromeHeight,
+      surfaceSize,
+      stackWidth,
+      stackHeight,
+      clickTargetWidth: surfaceSize,
+      clickTargetHeight: surfaceSize,
+      collapsedWidth: Math.max(
+        scaleLayoutPx(PET_LAYOUT_BASE.collapsedWidth, factor),
+        rootPad * 2 + stackWidth
+      ),
+      collapsedHeight: Math.max(
+        scaleLayoutPx(PET_LAYOUT_BASE.collapsedHeight, factor),
+        rootPad * 2 + stackHeight
+      ),
+      trayWidth: Math.max(
+        scaleLayoutPx(PET_LAYOUT_BASE.trayWidth, factor),
+        rootPad * 2 + stackWidth
+      ),
+      trayHeight: Math.max(
+        scaleLayoutPx(PET_LAYOUT_BASE.trayHeight, factor),
+        rootPad * 2 + stackHeight
+      )
+    };
+  }
+
   // lib/task-observer-types.ts
   var TASK_OBSERVER_BUDGETS = {
     maxProjects: 50,
@@ -210,6 +285,8 @@
     const btnSettings = root.getElementById("btn-settings");
     const settingsPanel = root.getElementById("settings-panel");
     const petPicker = root.getElementById("pet-picker");
+    const petScalePicker = root.getElementById("pet-scale-picker");
+    const btnRestorePosition = root.getElementById("btn-restore-position");
     const prefAlwaysOnTop = root.getElementById("pref-always-on-top");
     const prefClickThrough = root.getElementById("pref-click-through");
     const prefLaunchAtLogin = root.getElementById("pref-launch-at-login");
@@ -286,6 +363,15 @@
         petRoot.classList.toggle("is-expanded", view.trayOpen);
         const anchor = view.trayAnchor === "top-right" || view.trayAnchor === "bottom-left" || view.trayAnchor === "bottom-right" ? view.trayAnchor : "top-left";
         petRoot.setAttribute("data-tray-anchor", view.trayOpen ? anchor : "top-left");
+        const scale = view.petScale === "small" || view.petScale === "large" ? view.petScale : "medium";
+        const spec = resolvePetLayoutSpec(scale);
+        petRoot.setAttribute("data-pet-scale", scale);
+        petRoot.style.setProperty("--pet-scale", String(spec.factor));
+        petRoot.style.setProperty("--pet-root-pad", `${spec.rootPad}px`);
+        petRoot.style.setProperty("--pet-stack-gap", `${Math.max(1, spec.stackHeight - spec.chromeHeight - spec.surfaceSize)}px`);
+        petRoot.style.setProperty("--pet-stack-width", `${spec.stackWidth}px`);
+        petRoot.style.setProperty("--pet-chrome-height", `${spec.chromeHeight}px`);
+        petRoot.style.setProperty("--pet-surface-size", `${spec.surfaceSize}px`);
       }
       if (petButton) {
         petButton.setAttribute("aria-expanded", view.trayOpen ? "true" : "false");
@@ -335,6 +421,10 @@
       if (prefBlocked) prefBlocked.checked = view.notification.blocked;
       petPicker?.querySelectorAll("[data-pet-id]").forEach((option) => {
         const selected = option.dataset.petId === view.selectedPetId;
+        option.setAttribute("aria-checked", selected ? "true" : "false");
+      });
+      petScalePicker?.querySelectorAll("[data-pet-scale]").forEach((option) => {
+        const selected = option.dataset.petScale === view.petScale;
         option.setAttribute("aria-checked", selected ? "true" : "false");
       });
       if (projectList) {
@@ -552,6 +642,15 @@
       const selectedPetId = target?.dataset.petId;
       if (!selectedPetId) return;
       bridge?.setPrefs({ selectedPetId });
+    });
+    petScalePicker?.addEventListener("click", (event) => {
+      const target = event.target instanceof Element ? event.target.closest("[data-pet-scale]") : null;
+      const petScale = target?.dataset.petScale;
+      if (petScale !== "small" && petScale !== "medium" && petScale !== "large") return;
+      bridge?.setPrefs({ petScale });
+    });
+    btnRestorePosition?.addEventListener("click", () => {
+      bridge?.restoreDefaultPosition();
     });
     prefAlwaysOnTop?.addEventListener("change", () => {
       bridge?.setPrefs({ alwaysOnTop: prefAlwaysOnTop.checked });

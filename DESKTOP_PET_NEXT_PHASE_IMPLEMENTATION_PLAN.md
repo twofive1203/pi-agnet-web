@@ -170,7 +170,9 @@ flowchart LR
 
 ---
 
-- [ ] U2. **收口多屏、DPI、尺寸与位置恢复**
+- [x] U2. **收口多屏、DPI、尺寸与位置恢复**
+
+**Completed:** 2026-08-13 — `petScale` 小/中/大兼容迁移，统一布局规格驱动 collapsed/tray/pet stack/click/anchor；恢复默认位置；display added/removed/metrics changed 将离屏窗口拉回最近 workArea。Windows 100/150/200% 与主副屏实机仍未执行。
 
 **Goal:** 让桌宠在显示器增加/移除、缩放变化、任务栏工作区变化和尺寸切换后始终可恢复、不卡出屏幕。
 
