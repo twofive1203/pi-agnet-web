@@ -1083,16 +1083,6 @@ export function AppShell() {
           <div className="top-primary-tools" aria-label={t("app.primaryTools")}>
             <ThemePicker />
             <QuickCommandBar api={quickCommands} />
-            <Tooltip content={t("app.languageSwitch")} position="bottom">
-              <button
-                className="icon-round context-action language-switch"
-                type="button"
-                onClick={() => setLocale(locale === "zh" ? "en" : "zh")}
-                aria-label={t("app.languageSwitch")}
-              >
-                {locale === "zh" ? "EN" : "中"}
-              </button>
-            </Tooltip>
             {terminalEnabled && terminalCwd && (
               <Tooltip content={terminalOpen && terminalDockCwd && terminalDockCwd !== terminalCwd ? t("app.openTerminalForWorkspace") : t("app.openTerminal")} position="bottom">
               <button
@@ -1286,6 +1276,23 @@ export function AppShell() {
                     </>
                   )}
                   <div className="top-more-menu-label">{t("app.applicationActions")}</div>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="top-more-menu-item"
+                    onClick={() => {
+                      setActiveTopPanel(null);
+                      setLocale(locale === "zh" ? "en" : "zh");
+                    }}
+                  >
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <circle cx="12" cy="12" r="10" />
+                      <line x1="2" y1="12" x2="22" y2="12" />
+                      <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+                    </svg>
+                    <span>{t("app.languageSwitch")}</span>
+                    <span className="top-more-menu-value">{locale === "zh" ? "EN" : "中文"}</span>
+                  </button>
                   <button
                     type="button"
                     role="menuitem"

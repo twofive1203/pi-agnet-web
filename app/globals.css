@@ -5905,11 +5905,6 @@ html:is([data-wallpaper="on"], [data-wallpaper="image"], [data-wallpaper="gradie
 .top-primary-tools .app-top-icon-button[aria-expanded="true"] {
   border-color: var(--border-default);
 }
-.language-switch {
-  color: var(--text-secondary);
-  font-size: 10px;
-  font-weight: 800;
-}
 .context-action-svg {
   flex-shrink: 0;
 }
@@ -6286,6 +6281,12 @@ html:is([data-wallpaper="on"], [data-wallpaper="image"], [data-wallpaper="gradie
   margin-left: auto;
   border-radius: 50%;
   background: var(--accent-primary);
+}
+.top-more-menu-value {
+  margin-left: auto;
+  color: var(--text-tertiary);
+  font-size: 10px;
+  font-weight: 700;
 }
 .top-more-menu-badge {
   min-width: 18px;
@@ -11112,10 +11113,6 @@ button.inspector-list-row { cursor: pointer; }
   color: var(--text) !important;
   background: var(--surface-hover) !important;
   border-color: var(--border-default) !important;
-}
-.quick-command-top-icon {
-  font-size: 15px;
-  line-height: 1;
 }
 .quick-command-top-badge {
   position: absolute;
