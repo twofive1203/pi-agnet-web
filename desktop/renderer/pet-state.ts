@@ -5,6 +5,7 @@
  */
 
 import type {
+  TaskObserverOutcome,
   TaskObserverPresentationState,
   TaskObserverProgress,
   TaskObserverSource,
@@ -174,6 +175,29 @@ export function petStateLabel(state: PetVisualState): string {
 
 export function petStateGlyph(state: PetVisualState): string {
   return DEFAULT_FRAMES[state]?.glyph ?? "·";
+}
+
+/**
+ * Terminal-result copy, independent of local unread presentation.
+ * A read (idle-presented) failed task must still read "失败", never "空闲".
+ */
+export function petTerminalOutcome(
+  outcome: TaskObserverOutcome,
+): { label: string; glyph: string } | null {
+  switch (outcome) {
+    case "succeeded":
+      return { label: "已完成", glyph: "✓" };
+    case "cancelled":
+      return { label: "已取消", glyph: "×" };
+    case "failed":
+      return { label: "失败", glyph: "!" };
+    case "interrupted":
+      return { label: "已中断", glyph: "!" };
+    case "ambiguous":
+      return { label: "失败", glyph: "!" };
+    default:
+      return null;
+  }
 }
 
 const SOURCE_LABELS: Record<TaskObserverSource, string> = {
@@ -355,6 +379,45 @@ export function reducePetBubbleState(
     expiresAt:
       visible && mode === "transient" ? event.now + PET_BUBBLE_TRANSIENT_MS : null,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Completion celebration dedup (pure)
+// ---------------------------------------------------------------------------
+
+export type PetCelebrateState = {
+  /** Transition id of the last ready transition that already produced a burst. */
+  lastTransitionId: string | null;
+};
+
+export type PetCelebrateSignal = {
+  presentation: PetVisualState;
+  transitionId: string | null;
+  reducedMotion: boolean;
+  /** Initial/reset snapshot establishes a baseline instead of replaying a burst. */
+  reset: boolean;
+};
+
+export function createInitialPetCelebrateState(): PetCelebrateState {
+  return { lastTransitionId: null };
+}
+
+/**
+ * Decide whether a ready transition should fire one confetti burst.
+ * Same transition replay, reset/baseline, reduced-motion and non-ready states
+ * never celebrate; a fresh ready transition celebrates exactly once.
+ */
+export function shouldCelebrateCompletion(
+  state: PetCelebrateState,
+  signal: PetCelebrateSignal,
+): { celebrate: boolean; state: PetCelebrateState } {
+  if (signal.reducedMotion) return { celebrate: false, state };
+  if (signal.presentation !== "ready") return { celebrate: false, state };
+  if (signal.reset) return { celebrate: false, state };
+  const transitionId = signal.transitionId?.trim() || null;
+  if (!transitionId) return { celebrate: false, state };
+  if (transitionId === state.lastTransitionId) return { celebrate: false, state };
+  return { celebrate: true, state: { lastTransitionId: transitionId } };
 }
 
 export type DesktopActivityFilter = "all" | "attention" | "running" | "completed";

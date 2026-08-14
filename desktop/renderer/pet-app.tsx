@@ -20,6 +20,7 @@ import {
   connectionBannerText,
   countActivitiesByFilter,
   createInitialPetBubbleState,
+  createInitialPetCelebrateState,
   filterProjectGroups,
   formatActivityProgress,
   formatElapsed,
@@ -28,10 +29,12 @@ import {
   petSourceLabel,
   petStateGlyph,
   petStateLabel,
+  petTerminalOutcome,
   reducePetBubbleState,
   resolveActivityElapsedMs,
   resolveActivitySelection,
   resolvePetFrame,
+  shouldCelebrateCompletion,
   type DesktopActivityFilter,
   type PetBubbleSignal,
   type PetVisualState,
@@ -115,11 +118,13 @@ export function renderPetApp(root: Document = document): {
   let idleBlinkTimer: ReturnType<typeof setTimeout> | null = null;
   let idleActTimer: ReturnType<typeof setTimeout> | null = null;
   let idleActRemoveTimer: ReturnType<typeof setTimeout> | null = null;
+  let petDropPopTimer: ReturnType<typeof setTimeout> | null = null;
   let idleLifeKey: string | null = null;
   let activityFilter: DesktopActivityFilter = "all";
   let selectedVisibleActivityId: string | null = null;
   const expandedActivityIds = new Set<string>();
   let bubbleState = createInitialPetBubbleState();
+  let celebrateState = createInitialPetCelebrateState();
   let bubbleTimer: ReturnType<typeof setTimeout> | null = null;
   let elapsedTimer: ReturnType<typeof setInterval> | null = null;
   let reducedMotion =
@@ -386,13 +391,6 @@ export function renderPetApp(root: Document = document): {
         scheduleIdleActs(petAvatar);
       }
     }
-    if (
-      view.presentation === "ready" &&
-      previousView?.presentation !== "ready" &&
-      !(view.reducedMotion || reducedMotion)
-    ) {
-      launchConfetti();
-    }
     if (petRoot) petRoot.setAttribute("data-pet", manifest.id);
     if (petGlyph) petGlyph.textContent = frame.glyph || petStateGlyph(state);
     if (petLabel) petLabel.textContent = frame.label || petStateLabel(state);
@@ -416,6 +414,16 @@ export function renderPetApp(root: Document = document): {
       signal,
       now: bubbleNow,
     });
+    const celebrateDecision = shouldCelebrateCompletion(celebrateState, {
+      presentation: state,
+      transitionId: signal.transitionId,
+      reducedMotion: view.reducedMotion || reducedMotion,
+      reset: signal.reset,
+    });
+    celebrateState = celebrateDecision.state;
+    if (celebrateDecision.celebrate) {
+      launchConfetti();
+    }
     if (petCaption) {
       petCaption.hidden = !bubbleState.visible;
       petCaption.dataset.bubbleMode = bubbleState.mode ?? "hidden";
@@ -475,9 +483,14 @@ export function renderPetApp(root: Document = document): {
     }
     if (petButton) {
       petButton.setAttribute("aria-expanded", view.trayOpen ? "true" : "false");
+      const attentionJump = canJumpToPrimary(view);
       petButton.setAttribute(
         "aria-label",
-        view.trayOpen ? "桌宠，点击收起活动列表，拖动可移动" : "桌宠，点击展开活动列表，拖动可移动",
+        view.trayOpen
+          ? "桌宠，点击收起活动列表，拖动可移动"
+          : attentionJump
+            ? "桌宠，点击直达待处理任务，拖动可移动"
+            : "桌宠，点击展开活动列表，拖动可移动",
       );
     }
 
@@ -635,21 +648,28 @@ export function renderPetApp(root: Document = document): {
 
   function renderRow(activity: DesktopActivityRow, selectedId: string | null): HTMLElement {
     const row = document.createElement("div");
+    // Terminal outcome text stays visible even after the activity is read, so a
+    // failed task never collapses into an "idle" label in the tray.
+    const terminalOutcome =
+      activity.executionState === "settled" ? petTerminalOutcome(activity.outcome) : null;
+    const statusLabel = terminalOutcome?.label ?? petStateLabel(activity.presentation);
+    const statusGlyph = terminalOutcome?.glyph ?? petStateGlyph(activity.presentation);
     row.className = `activity-row${activity.unread ? " is-unread" : ""}`;
     row.setAttribute("role", "option");
     row.setAttribute("aria-selected", activity.activityId === selectedId ? "true" : "false");
-    row.setAttribute("aria-label", `${activity.title}，${petStateLabel(activity.presentation)}`);
+    row.setAttribute("aria-label", `${activity.title}，${statusLabel}`);
     row.tabIndex = activity.activityId === selectedId ? 0 : -1;
     row.dataset.activityId = activity.activityId;
     row.dataset.presentation = activity.presentation;
+    if (terminalOutcome) row.dataset.outcome = activity.outcome ?? "";
 
     const summary = document.createElement("div");
     summary.className = "activity-row-summary";
 
     const glyph = document.createElement("span");
     glyph.className = "row-glyph";
-    glyph.textContent = petStateGlyph(activity.presentation);
-    glyph.title = petStateLabel(activity.presentation);
+    glyph.textContent = statusGlyph;
+    glyph.title = statusLabel;
 
     const main = document.createElement("span");
     main.className = "row-main";
@@ -666,7 +686,7 @@ export function renderPetApp(root: Document = document): {
 
     const meta = document.createElement("span");
     meta.className = "row-meta";
-    meta.textContent = [petStateLabel(activity.presentation), activity.phase]
+    meta.textContent = [statusLabel, activity.phase]
       .filter(Boolean)
       .join(" · ");
     main.append(heading, meta);
@@ -826,7 +846,34 @@ export function renderPetApp(root: Document = document): {
     petAvatar.style.setProperty("--head-tilt", `${clamp(dx / 40, 4).toFixed(2)}deg`);
   };
 
-  const endPetPointer = (target: HTMLElement, pointerId: number) => {
+  // Whether a single pet activation should jump straight to the top-priority
+  // attention task instead of toggling the tray (P1 quick path).
+  function canJumpToPrimary(view: DesktopActivityView | null): boolean {
+    if (!view || view.trayOpen) return false;
+    const primary = primaryActivity(view);
+    return (
+      (view.presentation === "needs_input" || view.presentation === "blocked") &&
+      (primary?.presentation === "needs_input" || primary?.presentation === "blocked")
+    );
+  }
+
+  function activatePet(): void {
+    if (!current) {
+      bridge?.toggleTray();
+      return;
+    }
+    const primary = primaryActivity(current);
+    if (canJumpToPrimary(current) && primary) {
+      dismissActivityBubble(primary);
+      selectedVisibleActivityId = primary.activityId;
+      bridge?.selectActivity(primary.activityId);
+      void bridge?.openActivity(primary.activityId);
+      return;
+    }
+    bridge?.toggleTray();
+  }
+
+  const endPetPointer = (target: HTMLElement, pointerId: number, playDrop = true) => {
     if (petPointerId !== pointerId) return;
     try {
       if (target.hasPointerCapture?.(pointerId)) {
@@ -836,20 +883,27 @@ export function renderPetApp(root: Document = document): {
       // ignore release errors when the element is gone
     }
     target.classList.remove("is-dragging");
-    petAvatar?.classList.remove("is-pressed");
+    petAvatar?.classList.remove("is-pressed", "is-dragging");
     const wasDragging = petDragging;
     petPointerId = null;
     petDragging = false;
     if (!wasDragging) {
-      const primary = current ? primaryActivity(current) : null;
-      if (
-        current &&
-        !current.trayOpen &&
-        (primary?.presentation === "needs_input" || primary?.presentation === "blocked")
-      ) {
-        dismissActivityBubble(primary);
-      }
-      bridge?.toggleTray();
+      activatePet();
+      return;
+    }
+    // One-shot probe-out after a completed drag (skipped on cancel/reduced motion).
+    if (
+      playDrop &&
+      petAvatar instanceof HTMLElement &&
+      !reducedMotion &&
+      petAvatar.classList.contains("is-animated")
+    ) {
+      petAvatar.classList.add("pop-out");
+      if (petDropPopTimer) clearTimeout(petDropPopTimer);
+      petDropPopTimer = setTimeout(() => {
+        petAvatar.classList.remove("pop-out");
+        petDropPopTimer = null;
+      }, 460);
     }
   };
 
@@ -889,6 +943,7 @@ export function renderPetApp(root: Document = document): {
       petDragging = true;
       petButton.classList.add("is-dragging");
       petAvatar?.classList.remove("is-pressed");
+      petAvatar?.classList.add("is-dragging");
     }
     if (!petDragging) return;
     const dx = event.screenX - petLastScreenX;
@@ -902,20 +957,29 @@ export function renderPetApp(root: Document = document): {
 
   petButton?.addEventListener("pointerup", (event) => {
     if (!(petButton instanceof HTMLElement)) return;
-    endPetPointer(petButton, event.pointerId);
+    endPetPointer(petButton, event.pointerId, true);
   });
 
   petButton?.addEventListener("pointercancel", (event) => {
     if (!(petButton instanceof HTMLElement)) return;
-    // Cancelled gestures should not toggle the tray.
+    // Cancelled gestures should not toggle the tray or play a drop pop.
     if (petPointerId === event.pointerId) {
       petDragging = true;
-      endPetPointer(petButton, event.pointerId);
+      endPetPointer(petButton, event.pointerId, false);
     }
   });
 
   petButton?.addEventListener("pointerleave", () => {
     if (petPointerId === null) resetEyeFollow();
+  });
+
+  // Keyboard activation mirrors the contextual pointer action (Enter/Space).
+  // The click handler below still swallows the browser-synthesized click.
+  petButton?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    event.stopPropagation();
+    activatePet();
   });
 
   // Suppress the synthetic click after pointerup so we do not double-toggle.
@@ -1153,6 +1217,10 @@ export function renderPetApp(root: Document = document): {
       if (idleBlinkTimer) {
         clearTimeout(idleBlinkTimer);
         idleBlinkTimer = null;
+      }
+      if (petDropPopTimer) {
+        clearTimeout(petDropPopTimer);
+        petDropPopTimer = null;
       }
       clearIdleAct(petAvatar instanceof HTMLElement ? petAvatar : null);
       root.removeEventListener("keydown", onKeyDown);

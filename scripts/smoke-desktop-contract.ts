@@ -98,17 +98,20 @@ import {
   connectionBannerText,
   countActivitiesByFilter,
   createInitialPetBubbleState,
+  createInitialPetCelebrateState,
   filterProjectGroups,
   formatActivityProgress,
   formatElapsed,
   getBuiltinPetManifest,
   moveActivitySelection,
   petSourceLabel,
+  petTerminalOutcome,
   reducePetBubbleState,
   resolveActivityElapsedMs,
   resolveActivitySelection,
   resolveBuiltinPetManifest,
   resolvePetFrame,
+  shouldCelebrateCompletion,
 } from "../desktop/renderer/pet-state";
 import { DESKTOP_PACKAGE_CONTRACT } from "../forge.config";
 import { buildAgentDeepLink } from "../lib/desktop-deep-link";
@@ -569,6 +572,74 @@ async function main() {
     now: 1000004,
   });
   assert.equal(bubble.visible, false);
+
+  // --- Completion celebration dedup (transitionId-based, pure) ---
+  const readyCelebrateSignal = {
+    presentation: "ready" as const,
+    transitionId: "celebrate-ready-1",
+    reducedMotion: false,
+    reset: false,
+  };
+  let celebrate = createInitialPetCelebrateState();
+  const firstCelebrate = shouldCelebrateCompletion(celebrate, readyCelebrateSignal);
+  assert.equal(firstCelebrate.celebrate, true);
+  celebrate = firstCelebrate.state;
+  assert.equal(celebrate.lastTransitionId, "celebrate-ready-1");
+  // Same transition replay (SSE redelivery) must not re-fire.
+  assert.equal(shouldCelebrateCompletion(celebrate, readyCelebrateSignal).celebrate, false);
+  // Reset/baseline must not replay historical celebration.
+  assert.equal(
+    shouldCelebrateCompletion(createInitialPetCelebrateState(), {
+      ...readyCelebrateSignal,
+      transitionId: "celebrate-ready-2",
+      reset: true,
+    }).celebrate,
+    false,
+  );
+  // Reduced motion never celebrates.
+  assert.equal(
+    shouldCelebrateCompletion(createInitialPetCelebrateState(), {
+      ...readyCelebrateSignal,
+      transitionId: "celebrate-ready-3",
+      reducedMotion: true,
+    }).celebrate,
+    false,
+  );
+  // Non-ready and missing transition id never celebrate.
+  assert.equal(
+    shouldCelebrateCompletion(createInitialPetCelebrateState(), {
+      presentation: "running",
+      transitionId: "celebrate-running-1",
+      reducedMotion: false,
+      reset: false,
+    }).celebrate,
+    false,
+  );
+  assert.equal(
+    shouldCelebrateCompletion(createInitialPetCelebrateState(), {
+      presentation: "ready",
+      transitionId: null,
+      reducedMotion: false,
+      reset: false,
+    }).celebrate,
+    false,
+  );
+  // A fresh ready transition celebrates again.
+  assert.equal(
+    shouldCelebrateCompletion(celebrate, {
+      ...readyCelebrateSignal,
+      transitionId: "celebrate-ready-4",
+    }).celebrate,
+    true,
+  );
+
+  // --- Terminal outcome label stays visible after read (decoupled from presentation) ---
+  assert.deepEqual(petTerminalOutcome("succeeded"), { label: "已完成", glyph: "✓" });
+  assert.deepEqual(petTerminalOutcome("failed"), { label: "失败", glyph: "!" });
+  assert.deepEqual(petTerminalOutcome("cancelled"), { label: "已取消", glyph: "×" });
+  assert.deepEqual(petTerminalOutcome("interrupted"), { label: "已中断", glyph: "!" });
+  assert.deepEqual(petTerminalOutcome("ambiguous"), { label: "失败", glyph: "!" });
+  assert.equal(petTerminalOutcome(null), null);
 
   // --- Notifications: baseline none; later once; replay none ---
   const baseSettings = createDefaultDesktopSettings();
@@ -1575,6 +1646,18 @@ async function main() {
   ]) {
     assert.ok(css.includes(marker), `pet.css missing ${marker}`);
   }
+  // Running loop redesign: no whole-body scoot/shell rotation; staggered focus parts + drop pop.
+  assert.equal(css.includes("pet-scoot"), false);
+  assert.equal(css.includes("shell-focus"), false);
+  for (const marker of [
+    "running-focus",
+    "running-head-probe",
+    "running-tail-stretch",
+    "running-shell-gloss",
+    "pop-out",
+  ]) {
+    assert.ok(css.includes(marker), `pet.css missing ${marker}`);
+  }
   const rendererSource = readFileSync(
     path.join(process.cwd(), "desktop", "renderer", "pet-app.tsx"),
     "utf8",
@@ -1582,6 +1665,15 @@ async function main() {
   assert.ok(rendererSource.includes("scheduleIdleActs"));
   assert.ok(rendererSource.includes("launchConfetti"));
   assert.ok(rendererSource.includes("dataset.presentation"));
+  // P1: quick jump + keyboard path, drag pop-out, celebration dedup, timer cleanup, outcome label.
+  assert.ok(rendererSource.includes("canJumpToPrimary"));
+  assert.ok(rendererSource.includes("activatePet"));
+  assert.ok(rendererSource.includes('event.key !== "Enter"'));
+  assert.ok(rendererSource.includes('classList.add("pop-out")'));
+  assert.ok(rendererSource.includes("shouldCelebrateCompletion"));
+  assert.ok(rendererSource.includes("petDropPopTimer"));
+  assert.ok(rendererSource.includes("clearTimeout(petDropPopTimer)"));
+  assert.ok(rendererSource.includes("dataset.outcome"));
   assert.ok(css.includes(".row-child-meta"));
   assert.ok(css.includes(".row-actions"));
   assert.ok(html.includes("pet-stack"));

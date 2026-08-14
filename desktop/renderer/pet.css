@@ -570,12 +570,23 @@ select {
   animation: idle-shell-shimmer 4.2s ease-in-out infinite;
 }
 
+/* Running is a low-amplitude "focused work" loop: the shell stays put while the
+   head probes forward, antennae observe, and the tail stretches on staggered,
+   asymmetric rhythms with small rests. No whole-body front/back scoot. */
 .pet-avatar.is-animated.frame-running {
-  animation: pet-scoot 1s ease-in-out infinite;
+  animation: running-focus 2.6s ease-in-out infinite;
+}
+
+.pet-avatar.is-animated.frame-running .pet-head {
+  animation: running-head-probe 2.6s ease-in-out infinite;
+}
+
+.pet-avatar.is-animated.frame-running .pet-tail {
+  animation: running-tail-stretch 2.6s ease-in-out infinite;
 }
 
 .pet-avatar.is-animated.frame-running .pet-shell {
-  animation: shell-focus 1s ease-in-out infinite;
+  animation: running-shell-gloss 2.6s ease-in-out infinite;
 }
 
 .pet-avatar.is-animated.frame-retrying {
@@ -629,14 +640,30 @@ select {
   50% { filter: brightness(1.14); }
 }
 
-@keyframes pet-scoot {
-  0%, 100% { transform: translateX(-2px) translateY(0); }
-  50% { transform: translateX(3px) translateY(-2px); }
+@keyframes running-focus {
+  0%, 100% { transform: translateX(0) translateY(0); }
+  20% { transform: translateX(0.6px) translateY(-0.4px); }
+  46% { transform: translateX(-0.4px) translateY(0); }
+  70% { transform: translateX(0) translateY(-0.3px); }
 }
 
-@keyframes shell-focus {
-  0%, 100% { transform: rotate(-2deg); }
-  50% { transform: rotate(3deg); }
+@keyframes running-head-probe {
+  0%, 100% { transform: translateX(0) translateY(0) rotate(0); }
+  28% { transform: translateX(1.4px) translateY(-0.7px) rotate(1.8deg); }
+  52% { transform: translateX(0.5px) translateY(0) rotate(0.6deg); }
+  78% { transform: translateX(0) translateY(0) rotate(0); }
+}
+
+@keyframes running-tail-stretch {
+  0%, 100% { transform: rotate(-7deg) scaleX(1); }
+  34% { transform: rotate(-10deg) scaleX(1.07); }
+  62% { transform: rotate(-7deg) scaleX(1); }
+}
+
+@keyframes running-shell-gloss {
+  0%, 100% { filter: brightness(1); }
+  38% { filter: brightness(1.08); }
+  72% { filter: brightness(1); }
 }
 
 @keyframes pet-retry {
@@ -688,31 +715,51 @@ select {
     rotate 180ms ease-out;
 }
 
-/* Press feedback: the snail ducks into its shell until the gesture resolves.
+/* Press + drag feedback: the snail ducks into its shell until the gesture resolves.
    Specificity ties with the idle rules above; source order wins. */
-.pet-avatar.is-animated.is-pressed {
+.pet-avatar.is-animated:is(.is-pressed, .is-dragging) {
   animation: none;
   transform: scaleY(0.94);
 }
 
-.pet-avatar.is-animated.is-pressed .pet-head {
+.pet-avatar.is-animated:is(.is-pressed, .is-dragging) .pet-head {
   animation: none;
   transform: translate(5px, 7px) scale(0.72);
 }
 
-.pet-avatar.is-animated.is-pressed .pet-antenna {
+.pet-avatar.is-animated:is(.is-pressed, .is-dragging) .pet-antenna {
   animation: none;
   transform: scaleY(0.35);
 }
 
-.pet-avatar.is-animated.is-pressed .pet-eye {
+.pet-avatar.is-animated:is(.is-pressed, .is-dragging) .pet-eye {
   animation: none;
   transform: scaleY(0.2);
 }
 
-.pet-avatar.is-animated.is-pressed .pet-shell {
+.pet-avatar.is-animated:is(.is-pressed, .is-dragging) .pet-shell {
   animation: none;
   transform: scale(1.06);
+}
+
+/* One-shot probe-out after a completed drag: the head pops back out and settles. */
+.pet-avatar.is-animated.pop-out .pet-head {
+  animation: pop-out-head 420ms ease-out;
+}
+
+.pet-avatar.is-animated.pop-out .pet-antenna {
+  animation: pop-out-antenna 420ms ease-out;
+}
+
+@keyframes pop-out-head {
+  0% { transform: translate(5px, 7px) scale(0.72); }
+  60% { transform: translate(-1px, 0) scale(1.06); }
+  100% { transform: translate(0, 0) scale(1); }
+}
+
+@keyframes pop-out-antenna {
+  0% { transform: scaleY(0.35); }
+  100% { transform: scaleY(1); }
 }
 
 /* Idle mini-acts, scheduled at random from JS. Every keyframe starts and ends

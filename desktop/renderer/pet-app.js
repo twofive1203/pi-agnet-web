@@ -528,6 +528,22 @@
   function petStateGlyph(state) {
     return DEFAULT_FRAMES[state]?.glyph ?? "\xB7";
   }
+  function petTerminalOutcome(outcome) {
+    switch (outcome) {
+      case "succeeded":
+        return { label: "\u5DF2\u5B8C\u6210", glyph: "\u2713" };
+      case "cancelled":
+        return { label: "\u5DF2\u53D6\u6D88", glyph: "\xD7" };
+      case "failed":
+        return { label: "\u5931\u8D25", glyph: "!" };
+      case "interrupted":
+        return { label: "\u5DF2\u4E2D\u65AD", glyph: "!" };
+      case "ambiguous":
+        return { label: "\u5931\u8D25", glyph: "!" };
+      default:
+        return null;
+    }
+  }
   var SOURCE_LABELS = {
     agent: "Agent",
     snflow: "SnFlow",
@@ -645,6 +661,18 @@
       mode,
       expiresAt: visible && mode === "transient" ? event.now + PET_BUBBLE_TRANSIENT_MS : null
     };
+  }
+  function createInitialPetCelebrateState() {
+    return { lastTransitionId: null };
+  }
+  function shouldCelebrateCompletion(state, signal) {
+    if (signal.reducedMotion) return { celebrate: false, state };
+    if (signal.presentation !== "ready") return { celebrate: false, state };
+    if (signal.reset) return { celebrate: false, state };
+    const transitionId = signal.transitionId?.trim() || null;
+    if (!transitionId) return { celebrate: false, state };
+    if (transitionId === state.lastTransitionId) return { celebrate: false, state };
+    return { celebrate: true, state: { lastTransitionId: transitionId } };
   }
   function activityMatchesFilter(activity, filter) {
     switch (filter) {
@@ -780,11 +808,13 @@
     let idleBlinkTimer = null;
     let idleActTimer = null;
     let idleActRemoveTimer = null;
+    let petDropPopTimer = null;
     let idleLifeKey = null;
     let activityFilter = "all";
     let selectedVisibleActivityId = null;
     const expandedActivityIds = /* @__PURE__ */ new Set();
     let bubbleState = createInitialPetBubbleState();
+    let celebrateState = createInitialPetCelebrateState();
     let bubbleTimer = null;
     let elapsedTimer = null;
     let reducedMotion = typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -1001,9 +1031,6 @@
           scheduleIdleActs(petAvatar);
         }
       }
-      if (view.presentation === "ready" && previousView?.presentation !== "ready" && !(view.reducedMotion || reducedMotion)) {
-        launchConfetti();
-      }
       if (petRoot) petRoot.setAttribute("data-pet", manifest.id);
       if (petGlyph) petGlyph.textContent = frame.glyph || petStateGlyph(state);
       if (petLabel) petLabel.textContent = frame.label || petStateLabel(state);
@@ -1023,6 +1050,16 @@
         signal,
         now: bubbleNow
       });
+      const celebrateDecision = shouldCelebrateCompletion(celebrateState, {
+        presentation: state,
+        transitionId: signal.transitionId,
+        reducedMotion: view.reducedMotion || reducedMotion,
+        reset: signal.reset
+      });
+      celebrateState = celebrateDecision.state;
+      if (celebrateDecision.celebrate) {
+        launchConfetti();
+      }
       if (petCaption) {
         petCaption.hidden = !bubbleState.visible;
         petCaption.dataset.bubbleMode = bubbleState.mode ?? "hidden";
@@ -1074,9 +1111,10 @@
       }
       if (petButton) {
         petButton.setAttribute("aria-expanded", view.trayOpen ? "true" : "false");
+        const attentionJump = canJumpToPrimary(view);
         petButton.setAttribute(
           "aria-label",
-          view.trayOpen ? "\u684C\u5BA0\uFF0C\u70B9\u51FB\u6536\u8D77\u6D3B\u52A8\u5217\u8868\uFF0C\u62D6\u52A8\u53EF\u79FB\u52A8" : "\u684C\u5BA0\uFF0C\u70B9\u51FB\u5C55\u5F00\u6D3B\u52A8\u5217\u8868\uFF0C\u62D6\u52A8\u53EF\u79FB\u52A8"
+          view.trayOpen ? "\u684C\u5BA0\uFF0C\u70B9\u51FB\u6536\u8D77\u6D3B\u52A8\u5217\u8868\uFF0C\u62D6\u52A8\u53EF\u79FB\u52A8" : attentionJump ? "\u684C\u5BA0\uFF0C\u70B9\u51FB\u76F4\u8FBE\u5F85\u5904\u7406\u4EFB\u52A1\uFF0C\u62D6\u52A8\u53EF\u79FB\u52A8" : "\u684C\u5BA0\uFF0C\u70B9\u51FB\u5C55\u5F00\u6D3B\u52A8\u5217\u8868\uFF0C\u62D6\u52A8\u53EF\u79FB\u52A8"
         );
       }
       if (trayCounts) {
@@ -1202,19 +1240,23 @@
     }
     function renderRow(activity, selectedId) {
       const row = document.createElement("div");
+      const terminalOutcome = activity.executionState === "settled" ? petTerminalOutcome(activity.outcome) : null;
+      const statusLabel = terminalOutcome?.label ?? petStateLabel(activity.presentation);
+      const statusGlyph = terminalOutcome?.glyph ?? petStateGlyph(activity.presentation);
       row.className = `activity-row${activity.unread ? " is-unread" : ""}`;
       row.setAttribute("role", "option");
       row.setAttribute("aria-selected", activity.activityId === selectedId ? "true" : "false");
-      row.setAttribute("aria-label", `${activity.title}\uFF0C${petStateLabel(activity.presentation)}`);
+      row.setAttribute("aria-label", `${activity.title}\uFF0C${statusLabel}`);
       row.tabIndex = activity.activityId === selectedId ? 0 : -1;
       row.dataset.activityId = activity.activityId;
       row.dataset.presentation = activity.presentation;
+      if (terminalOutcome) row.dataset.outcome = activity.outcome ?? "";
       const summary = document.createElement("div");
       summary.className = "activity-row-summary";
       const glyph = document.createElement("span");
       glyph.className = "row-glyph";
-      glyph.textContent = petStateGlyph(activity.presentation);
-      glyph.title = petStateLabel(activity.presentation);
+      glyph.textContent = statusGlyph;
+      glyph.title = statusLabel;
       const main = document.createElement("span");
       main.className = "row-main";
       const heading = document.createElement("span");
@@ -1228,7 +1270,7 @@
       heading.append(title, source);
       const meta = document.createElement("span");
       meta.className = "row-meta";
-      meta.textContent = [petStateLabel(activity.presentation), activity.phase].filter(Boolean).join(" \xB7 ");
+      meta.textContent = [statusLabel, activity.phase].filter(Boolean).join(" \xB7 ");
       main.append(heading, meta);
       const progressLabel = formatActivityProgress(activity.progress, activity.children.length);
       if (progressLabel) {
@@ -1366,7 +1408,27 @@
       petAvatar.style.setProperty("--eye-shift-y", `${clamp(dy / 24, 1.3).toFixed(2)}px`);
       petAvatar.style.setProperty("--head-tilt", `${clamp(dx / 40, 4).toFixed(2)}deg`);
     };
-    const endPetPointer = (target, pointerId) => {
+    function canJumpToPrimary(view) {
+      if (!view || view.trayOpen) return false;
+      const primary = primaryActivity(view);
+      return (view.presentation === "needs_input" || view.presentation === "blocked") && (primary?.presentation === "needs_input" || primary?.presentation === "blocked");
+    }
+    function activatePet() {
+      if (!current) {
+        bridge?.toggleTray();
+        return;
+      }
+      const primary = primaryActivity(current);
+      if (canJumpToPrimary(current) && primary) {
+        dismissActivityBubble(primary);
+        selectedVisibleActivityId = primary.activityId;
+        bridge?.selectActivity(primary.activityId);
+        void bridge?.openActivity(primary.activityId);
+        return;
+      }
+      bridge?.toggleTray();
+    }
+    const endPetPointer = (target, pointerId, playDrop = true) => {
       if (petPointerId !== pointerId) return;
       try {
         if (target.hasPointerCapture?.(pointerId)) {
@@ -1375,16 +1437,21 @@
       } catch {
       }
       target.classList.remove("is-dragging");
-      petAvatar?.classList.remove("is-pressed");
+      petAvatar?.classList.remove("is-pressed", "is-dragging");
       const wasDragging = petDragging;
       petPointerId = null;
       petDragging = false;
       if (!wasDragging) {
-        const primary = current ? primaryActivity(current) : null;
-        if (current && !current.trayOpen && (primary?.presentation === "needs_input" || primary?.presentation === "blocked")) {
-          dismissActivityBubble(primary);
-        }
-        bridge?.toggleTray();
+        activatePet();
+        return;
+      }
+      if (playDrop && petAvatar instanceof HTMLElement && !reducedMotion && petAvatar.classList.contains("is-animated")) {
+        petAvatar.classList.add("pop-out");
+        if (petDropPopTimer) clearTimeout(petDropPopTimer);
+        petDropPopTimer = setTimeout(() => {
+          petAvatar.classList.remove("pop-out");
+          petDropPopTimer = null;
+        }, 460);
       }
     };
     petButton?.addEventListener("pointerdown", (event) => {
@@ -1417,6 +1484,7 @@
         petDragging = true;
         petButton.classList.add("is-dragging");
         petAvatar?.classList.remove("is-pressed");
+        petAvatar?.classList.add("is-dragging");
       }
       if (!petDragging) return;
       const dx = event.screenX - petLastScreenX;
@@ -1429,17 +1497,23 @@
     });
     petButton?.addEventListener("pointerup", (event) => {
       if (!(petButton instanceof HTMLElement)) return;
-      endPetPointer(petButton, event.pointerId);
+      endPetPointer(petButton, event.pointerId, true);
     });
     petButton?.addEventListener("pointercancel", (event) => {
       if (!(petButton instanceof HTMLElement)) return;
       if (petPointerId === event.pointerId) {
         petDragging = true;
-        endPetPointer(petButton, event.pointerId);
+        endPetPointer(petButton, event.pointerId, false);
       }
     });
     petButton?.addEventListener("pointerleave", () => {
       if (petPointerId === null) resetEyeFollow();
+    });
+    petButton?.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      event.stopPropagation();
+      activatePet();
     });
     petButton?.addEventListener("click", (event) => {
       event.preventDefault();
@@ -1626,6 +1700,10 @@
         if (idleBlinkTimer) {
           clearTimeout(idleBlinkTimer);
           idleBlinkTimer = null;
+        }
+        if (petDropPopTimer) {
+          clearTimeout(petDropPopTimer);
+          petDropPopTimer = null;
         }
         clearIdleAct(petAvatar instanceof HTMLElement ? petAvatar : null);
         root.removeEventListener("keydown", onKeyDown);

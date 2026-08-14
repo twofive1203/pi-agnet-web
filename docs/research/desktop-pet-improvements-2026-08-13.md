@@ -187,13 +187,15 @@ P0 已于 2026-08-14 由产品所有者明确关闭：修复后的 0.1.1 安装�
 
 P0 已于 2026-08-14 完成：Agent 自动门禁、preview、0.1.1 安装产物、哈希、启动修复和本机更新安装验证均已完成；产品所有者确认安装版可见并明确接受尚未执行的完整视觉矩阵及 Windows 环境矩阵风险。关闭记录见 `docs/operations/desktop-pet-p0-validation-2026-08-13.md`。
 
-### P1：语义与核心交互
+### P1：语义与核心交互（已完成）
 
-2. 重新设计 Running 常驻动作，消除持续前后顶动和“一拱一拱”的不自然观感。
-3. 解耦终态 outcome 文案与未读 presentation，确保失败任务已读后仍明确显示失败。
-4. 完成实际拖动缩壳与放下反馈。
-5. 评估 Needs input / Blocked 的安全快速跳转，并同步键盘路径。
-6. 为庆祝去重、气泡和 timer 生命周期增加行为测试。
+P1 已于 2026-08-14 完成：Running 常驻动作重做为低幅度、非对称的“专注工作”循环（头前探、触角观察、尾轻伸、壳仅弱光泽，主循环约 2.6s，不再整角色前后顶动）；终态 outcome 文案与未读 presentation 解耦（已读失败任务在 Activity tray 仍明确显示“失败/已取消/已中断”，不再回落为“空闲”）；拖动全程保持缩壳姿态并在放下时播放一次性探头动作（reduced-motion 与 cancel 不播放）；Needs input / Blocked 单击直达最高优先级任务并同步键盘 Enter/Space 路径（仍走 `openActivity` + main deep-link allowlist，不展示隐私字段）；新增庆祝去重（transitionId 基线/重放/reduced-motion 门控）与 timer 清理的契约/行为测试。实现见 `desktop/renderer/pet.css`、`desktop/renderer/pet-state.ts`、`desktop/renderer/pet-app.tsx` 与 `scripts/smoke-desktop-contract.ts`。
+
+2. ~~重新设计 Running 常驻动作，消除持续前后顶动和“一拱一拱”的不自然观感。~~ 完成。
+3. ~~解耦终态 outcome 文案与未读 presentation，确保失败任务已读后仍明确显示失败。~~ 完成。
+4. ~~完成实际拖动缩壳与放下反馈。~~ 完成。
+5. ~~评估 Needs input / Blocked 的安全快速跳转，并同步键盘路径。~~ 完成。
+6. ~~为庆祝去重、气泡和 timer 生命周期增加行为测试。~~ 完成。
 
 ### P2：表现力与小型工程优化
 
