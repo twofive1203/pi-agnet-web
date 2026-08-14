@@ -404,6 +404,15 @@ The renderer is a dedicated small bundle. The desktop package contains the pet o
 - DND does not switch the pet to idle/sleeping and is independent of reduced motion.
 - U4a sounds pass the same gate with the `sound` surface before playback: transitions during DND are silently consumed into the sounded LRU and are never replayed after DND is disabled.
 
+### Progressive idle sleep (U3)
+
+- A renderer-local decorative stage grades how long the pet has been presented in `idle`: `awake` → `sleepy` (`PET_SLEEPY_AFTER_MS = 45_000`) → `sleeping` (`PET_SLEEPING_AFTER_MS = 120_000`). It is not system idle/away detection and never uses `powerMonitor` or global input hooks.
+- The stage lives only in the renderer (`pet-state.ts` pure functions `resolveIdleSleepStage` / `nextIdleSleepBoundaryMs` / `shouldRunProgressiveSleep` / `reduceIdleSleepState` + `pet-app.tsx` single local timer). It never writes the observer snapshot, Activity tray, settings or the server, and it is never persisted — a restart always begins `awake`.
+- The idle origin is captured once on first idle and is not reset by same-state snapshots, resource refreshes or revision bumps. Leaving `idle` (needs_input / blocked / ready / retrying / running / disconnected / service_not_running), hiding the window, reduced-motion, or a press/drag gesture resets to `awake` and cancels the timer immediately.
+- User interaction wakes and restarts the idle origin: pet `pointerdown`, pointer hover over the pet (only while sleepy/sleeping, throttled by `PET_IDLE_POINTER_WAKE_THROTTLE_MS`), keyboard activation, opening the tray or settings, and starting a drag. Waking performs no open-task / mark-read / business operation and dragging is never mistaken for a click.
+- Visuals stay low-amplitude: sleepy uses half-closed eyes and a slight head sink; sleeping uses closed eyes, slow breathing and drooped antennae. A `z`/`Z` glyph overlay (CSS `::after`) is the non-color cue and also the spritesheet fallback, which otherwise keeps reusing its idle frame — no manifest v2 sub-states are added. The overlay never covers the status caption, unread badge, Running cue or context meter (Running preempts sleep anyway).
+- Hidden windows clear the sleep timer; re-showing restarts the idle origin from `awake` so background time never accumulates into an instant deep sleep. Reduced-motion runs no sleep timer or loop animation and keeps the static idle. DND neither triggers sleeping nor changes the thresholds, and sleeping never suppresses needs_input/ready. No sound is played on sleep or wake.
+
 ## Configuration and Persistence
 
 Electron `userData` stores:

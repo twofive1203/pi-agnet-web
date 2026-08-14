@@ -110,8 +110,10 @@ import {
 import {
   connectionBannerText,
   countActivitiesByFilter,
+  createInitialIdleSleepState,
   createInitialPetBubbleState,
   createInitialPetCelebrateState,
+  createInitialRunningCueState,
   filterProjectGroups,
   formatActiveModel,
   formatActivityProgress,
@@ -121,13 +123,16 @@ import {
   moveActivitySelection,
   nextActDelayMs,
   nextBlinkDelayMs,
+  nextIdleSleepBoundaryMs,
   petSourceLabel,
   petTerminalOutcome,
+  reduceIdleSleepState,
   reducePetBubbleState,
   reduceRunningCueState,
   resolveActivityElapsedMs,
   resolveActivitySelection,
   resolveBuiltinPetManifest,
+  resolveIdleSleepStage,
   resolvePetFrame,
   resolvePrimaryContextMeter,
   resolvePetTransitionAction,
@@ -137,7 +142,10 @@ import {
   selectPrimaryActivity,
   shouldCelebrateCompletion,
   shouldRunIdleLife,
-  createInitialRunningCueState,
+  shouldRunProgressiveSleep,
+  PET_IDLE_POINTER_WAKE_THROTTLE_MS,
+  PET_SLEEPING_AFTER_MS,
+  PET_SLEEPY_AFTER_MS,
   RUNNING_CUE_DEBOUNCE_MS,
   RUNNING_CUE_MIN_DWELL_MS,
 } from "../desktop/renderer/pet-state";
@@ -1090,6 +1098,103 @@ async function main() {
   assert.equal(nextActDelayMs(() => 0), 6500);
   assert.equal(nextBlinkDelayMs(() => 1), 7200);
   assert.equal(nextActDelayMs(() => 1), 14000);
+
+  // --- Progressive idle sleep stages (U3, pure) ---
+  assert.equal(PET_SLEEPY_AFTER_MS, 45_000);
+  assert.equal(PET_SLEEPING_AFTER_MS, 120_000);
+  assert.ok(PET_IDLE_POINTER_WAKE_THROTTLE_MS > 0);
+  assert.equal(resolveIdleSleepStage(0), "awake");
+  assert.equal(resolveIdleSleepStage(PET_SLEEPY_AFTER_MS - 1), "awake");
+  assert.equal(resolveIdleSleepStage(PET_SLEEPY_AFTER_MS), "sleepy");
+  assert.equal(resolveIdleSleepStage(PET_SLEEPING_AFTER_MS - 1), "sleepy");
+  assert.equal(resolveIdleSleepStage(PET_SLEEPING_AFTER_MS), "sleeping");
+  assert.equal(resolveIdleSleepStage(Number.NaN), "awake");
+  assert.equal(resolveIdleSleepStage(Number.POSITIVE_INFINITY), "awake");
+  assert.equal(resolveIdleSleepStage(-1), "awake");
+
+  assert.equal(nextIdleSleepBoundaryMs("awake", 0), PET_SLEEPY_AFTER_MS);
+  assert.equal(nextIdleSleepBoundaryMs("awake", 10_000), PET_SLEEPY_AFTER_MS - 10_000);
+  assert.equal(nextIdleSleepBoundaryMs("awake", Number.NaN), PET_SLEEPY_AFTER_MS);
+  assert.equal(
+    nextIdleSleepBoundaryMs("sleepy", PET_SLEEPY_AFTER_MS),
+    PET_SLEEPING_AFTER_MS - PET_SLEEPY_AFTER_MS,
+  );
+  assert.equal(nextIdleSleepBoundaryMs("sleepy", PET_SLEEPING_AFTER_MS - 1), 1);
+  assert.equal(nextIdleSleepBoundaryMs("sleeping", PET_SLEEPING_AFTER_MS), null);
+
+  const sleepOn = {
+    idle: true,
+    hidden: false,
+    reducedMotion: false,
+    pressed: false,
+    dragging: false,
+  };
+  assert.equal(shouldRunProgressiveSleep(sleepOn), true);
+  assert.equal(shouldRunProgressiveSleep({ ...sleepOn, idle: false }), false);
+  assert.equal(shouldRunProgressiveSleep({ ...sleepOn, hidden: true }), false);
+  assert.equal(shouldRunProgressiveSleep({ ...sleepOn, reducedMotion: true }), false);
+  assert.equal(shouldRunProgressiveSleep({ ...sleepOn, pressed: true }), false);
+  assert.equal(shouldRunProgressiveSleep({ ...sleepOn, dragging: true }), false);
+
+  // Reducer: idle origin is captured once and never advanced by same-state snapshots.
+  const idleSignal = {
+    presentation: "idle" as const,
+    hidden: false,
+    reducedMotion: false,
+    pressed: false,
+    dragging: false,
+  };
+  let sleepState = createInitialIdleSleepState();
+  sleepState = reduceIdleSleepState(sleepState, idleSignal, 1_000);
+  assert.equal(sleepState.stage, "awake");
+  assert.equal(sleepState.idleSince, 1_000);
+  assert.equal(sleepState.nextBoundaryAt, 1_000 + PET_SLEEPY_AFTER_MS);
+  const sameStateLater = reduceIdleSleepState(sleepState, idleSignal, 2_000);
+  assert.equal(sameStateLater.idleSince, 1_000, "same-state snapshot must not reset the idle origin");
+  assert.equal(
+    sameStateLater.nextBoundaryAt,
+    1_000 + PET_SLEEPY_AFTER_MS,
+    "same-state snapshot must not move the boundary",
+  );
+  sleepState = reduceIdleSleepState(sleepState, idleSignal, 1_000 + PET_SLEEPY_AFTER_MS);
+  assert.equal(sleepState.stage, "sleepy");
+  assert.equal(sleepState.nextBoundaryAt, 1_000 + PET_SLEEPING_AFTER_MS);
+  sleepState = reduceIdleSleepState(sleepState, idleSignal, 1_000 + PET_SLEEPING_AFTER_MS);
+  assert.equal(sleepState.stage, "sleeping");
+  assert.equal(sleepState.nextBoundaryAt, null, "sleeping is terminal");
+
+  // Attention/terminal/connection states preempt immediately.
+  for (const presentation of [
+    "needs_input",
+    "blocked",
+    "ready",
+    "retrying",
+    "running",
+    "disconnected",
+    "service_not_running",
+  ] as const) {
+    const preempted = reduceIdleSleepState(
+      sleepState,
+      { ...idleSignal, presentation },
+      50_000,
+    );
+    assert.equal(preempted.stage, "awake", `${presentation} must preempt sleep`);
+    assert.equal(preempted.idleSince, null);
+    assert.equal(preempted.nextBoundaryAt, null);
+  }
+
+  // Hidden / reduced-motion / pressed / dragging reset with no pending timer.
+  for (const override of [
+    { hidden: true },
+    { reducedMotion: true },
+    { pressed: true },
+    { dragging: true },
+  ] as const) {
+    const reset = reduceIdleSleepState(sleepState, { ...idleSignal, ...override }, 50_000);
+    assert.equal(reset.stage, "awake");
+    assert.equal(reset.idleSince, null);
+    assert.equal(reset.nextBoundaryAt, null);
+  }
 
   // --- Terminal outcome label stays visible after read (decoupled from presentation) ---
   assert.deepEqual(petTerminalOutcome("succeeded"), { label: "已完成", glyph: "✓" });
@@ -2976,6 +3081,11 @@ async function main() {
     "confetti-fly",
     "tray-pop",
     "empty-pet",
+    "pet-sleepy",
+    "pet-sleeping",
+    "idle-sleepy-z",
+    "idle-sleep-z",
+    "idle-sleep-breathe",
   ]) {
     assert.ok(css.includes(marker), `pet.css missing ${marker}`);
   }
@@ -3029,6 +3139,15 @@ async function main() {
   assert.ok(rendererSource.includes('removeEventListener("visibilitychange"'));
   assert.ok(rendererSource.includes("nextBlinkDelayMs"));
   assert.ok(rendererSource.includes("nextActDelayMs"));
+  // U3: progressive idle sleep is renderer-local and leaves observer state untouched.
+  assert.ok(rendererSource.includes("syncIdleSleep"));
+  assert.ok(rendererSource.includes("wakeIdleSleep"));
+  assert.ok(rendererSource.includes("maybeWakeOnHover"));
+  assert.ok(rendererSource.includes("reduceIdleSleepState"));
+  assert.ok(rendererSource.includes("clearIdleSleepTimer"));
+  assert.ok(rendererSource.includes('data-idle-sleep'));
+  assert.ok(rendererSource.includes("PET_IDLE_POINTER_WAKE_THROTTLE_MS"));
+  assert.equal(rendererSource.includes("powerMonitor"), false, "U3 must not use powerMonitor");
   assert.ok(css.includes(".row-child-meta"));
   assert.ok(css.includes(".row-actions"));
   assert.ok(html.includes("pet-stack"));
@@ -3131,6 +3250,9 @@ async function main() {
   assert.ok(petAppJs.includes("scheduleRunningCueUpdate"));
   assert.ok(petAppJs.includes("PetSoundPlayer"));
   assert.ok(petAppJs.includes("onSoundCue"));
+  assert.ok(petAppJs.includes("syncIdleSleep"));
+  assert.ok(petAppJs.includes("data-idle-sleep"));
+  assert.ok(petAppJs.includes("PET_IDLE_POINTER_WAKE_THROTTLE_MS"));
 
   const petSoundSrc = readFileSync(
     path.join(process.cwd(), "desktop", "renderer", "pet-sound.ts"),

@@ -966,6 +966,121 @@ select {
   40%, 65% { transform: rotate(-14deg) translateY(-2px); }
 }
 
+/* Progressive idle sleep (U3): drowsy then asleep. Decorative only — the
+   observer stays idle. Sleep posture is low-amplitude; the "z"/"Z" glyph is the
+   non-color cue and also serves spritesheet pets, whose anatomy is hidden. */
+
+.pet-avatar.pet-sleepy::after,
+.pet-avatar.pet-sleeping::after {
+  position: absolute;
+  top: 6px;
+  left: 46px;
+  z-index: 7;
+  color: rgba(223, 249, 239, 0.9);
+  font-style: italic;
+  font-weight: 700;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+}
+
+.pet-avatar.pet-sleepy::after {
+  content: "z";
+  font-size: 12px;
+  animation: idle-sleepy-z 2.6s ease-in-out infinite;
+}
+
+.pet-avatar.pet-sleeping::after {
+  content: "Z";
+  font-size: 15px;
+  animation: idle-sleep-z 3.4s ease-in-out infinite;
+}
+
+.pet-avatar.is-animated.frame-idle.pet-sleepy {
+  animation: idle-sleepy-breathe 4.4s ease-in-out infinite;
+}
+
+.pet-avatar.is-animated.frame-idle.pet-sleepy .pet-head {
+  animation: idle-sleepy-head 4.4s ease-in-out infinite;
+}
+
+.pet-avatar.is-animated.frame-idle.pet-sleepy .pet-eye {
+  animation: idle-sleepy-eyes 4.4s ease-in-out infinite;
+}
+
+.pet-avatar.is-animated.frame-idle.pet-sleeping {
+  animation: idle-sleep-breathe 5.6s ease-in-out infinite;
+}
+
+.pet-avatar.is-animated.frame-idle.pet-sleeping .pet-head {
+  animation: idle-sleep-head 5.6s ease-in-out infinite;
+}
+
+.pet-avatar.is-animated.frame-idle.pet-sleeping .pet-eye {
+  animation: idle-sleep-eyes 5.6s ease-in-out infinite;
+}
+
+.pet-avatar.is-animated.frame-idle.pet-sleeping .pet-antenna-left {
+  animation: idle-sleep-antenna-left 5.6s ease-in-out infinite;
+}
+
+.pet-avatar.is-animated.frame-idle.pet-sleeping .pet-antenna-right {
+  animation: idle-sleep-antenna-right 5.6s ease-in-out 0.5s infinite;
+}
+
+@keyframes idle-sleepy-breathe {
+  0%, 100% { transform: scaleY(1) translateY(0); }
+  50% { transform: scaleY(1.014) translateY(0.5px); }
+}
+
+@keyframes idle-sleepy-head {
+  0%, 100% { transform: translateY(0) rotate(0); }
+  35%, 65% { transform: translateY(1.5px) rotate(1.5deg); }
+}
+
+@keyframes idle-sleepy-eyes {
+  0%, 100% { transform: scaleY(0.32); }
+  50% { transform: scaleY(0.55); }
+}
+
+@keyframes idle-sleepy-z {
+  0% { opacity: 0; transform: translateY(2px) scale(0.75); }
+  25% { opacity: 0.9; }
+  75% { opacity: 0.8; }
+  100% { opacity: 0; transform: translateY(-9px) scale(1.05); }
+}
+
+@keyframes idle-sleep-breathe {
+  0%, 100% { transform: scaleY(1) translateY(0); }
+  50% { transform: scaleY(1.01) translateY(0.5px); }
+}
+
+@keyframes idle-sleep-head {
+  0%, 100% { transform: translateY(0.5px) rotate(1deg); }
+  50% { transform: translateY(1px) rotate(1.5deg); }
+}
+
+@keyframes idle-sleep-eyes {
+  0%, 100% { transform: scaleY(0.08); }
+  50% { transform: scaleY(0.06); }
+}
+
+@keyframes idle-sleep-antenna-left {
+  0%, 100% { transform: rotate(-26deg) scaleY(0.88); }
+  50% { transform: rotate(-22deg) scaleY(0.88); }
+}
+
+@keyframes idle-sleep-antenna-right {
+  0%, 100% { transform: rotate(26deg) scaleY(0.88); }
+  50% { transform: rotate(22deg) scaleY(0.88); }
+}
+
+@keyframes idle-sleep-z {
+  0% { opacity: 0; transform: translateY(4px) scale(0.8); }
+  30% { opacity: 0.9; }
+  70% { opacity: 0.85; }
+  100% { opacity: 0; transform: translateY(-14px) scale(1.15); }
+}
+
 /* One-shot celebration confetti when a run reaches the ready state. */
 .confetti-burst {
   position: absolute;

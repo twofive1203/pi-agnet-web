@@ -795,6 +795,127 @@ export function shouldRunIdleLife(input: {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Progressive idle sleep stages (renderer-local decorative, U3)
+//
+// The observer stays `idle` the whole time; this only grades how long the pet
+// has been presented in idle so the renderer can add a drowsy/asleep posture.
+// It never writes observer snapshots, the Activity tray, settings or the server.
+// ---------------------------------------------------------------------------
+
+export const PET_SLEEPY_AFTER_MS = 45_000;
+export const PET_SLEEPING_AFTER_MS = 120_000;
+/** Hover/pointermove wake throttle: one pointer pass never rebuilds the timer per move. */
+export const PET_IDLE_POINTER_WAKE_THROTTLE_MS = 800;
+
+export type IdleSleepStage = "awake" | "sleepy" | "sleeping";
+
+/**
+ * Map local idle duration to a decorative sleep stage. Invalid and negative
+ * durations collapse to awake; the sleepy/sleeping boundaries are inclusive.
+ */
+export function resolveIdleSleepStage(elapsedIdleMs: number): IdleSleepStage {
+  if (!Number.isFinite(elapsedIdleMs) || elapsedIdleMs < 0) return "awake";
+  if (elapsedIdleMs < PET_SLEEPY_AFTER_MS) return "awake";
+  if (elapsedIdleMs < PET_SLEEPING_AFTER_MS) return "sleepy";
+  return "sleeping";
+}
+
+/**
+ * Remaining milliseconds until the next stage boundary, or null when the
+ * stage is terminal (sleeping has no further transition).
+ */
+export function nextIdleSleepBoundaryMs(
+  stage: IdleSleepStage,
+  elapsedIdleMs: number,
+): number | null {
+  const invalid = !Number.isFinite(elapsedIdleMs) || elapsedIdleMs < 0;
+  if (stage === "awake") {
+    if (invalid) return PET_SLEEPY_AFTER_MS;
+    return Math.max(0, PET_SLEEPY_AFTER_MS - elapsedIdleMs);
+  }
+  if (stage === "sleepy") {
+    if (invalid) return PET_SLEEPING_AFTER_MS - PET_SLEEPY_AFTER_MS;
+    return Math.max(0, PET_SLEEPING_AFTER_MS - elapsedIdleMs);
+  }
+  return null;
+}
+
+/**
+ * Decorative idle sleep only runs while the pet is genuinely presented idle,
+ * visible, motion-allowed, and free of a press/drag gesture. Any real state
+ * (attention, terminal, running, connection) or interaction turns this off.
+ */
+export function shouldRunProgressiveSleep(input: {
+  idle: boolean;
+  hidden: boolean;
+  reducedMotion: boolean;
+  pressed: boolean;
+  dragging: boolean;
+}): boolean {
+  return (
+    input.idle &&
+    !input.hidden &&
+    !input.reducedMotion &&
+    !input.pressed &&
+    !input.dragging
+  );
+}
+
+export type IdleSleepSignal = {
+  presentation: PetVisualState;
+  hidden: boolean;
+  reducedMotion: boolean;
+  pressed: boolean;
+  dragging: boolean;
+};
+
+export type IdleSleepState = {
+  stage: IdleSleepStage;
+  /** Wall clock the idle presentation first began; never advanced by same-state snapshots. */
+  idleSince: number | null;
+  /** Absolute timestamp for the next boundary timer; null when no timer is needed. */
+  nextBoundaryAt: number | null;
+};
+
+export function createInitialIdleSleepState(): IdleSleepState {
+  return { stage: "awake", idleSince: null, nextBoundaryAt: null };
+}
+
+/**
+ * Pure reducer for the renderer's single local sleep timer. Same-state
+ * snapshots (revision/resource refresh) keep `idleSince` and `nextBoundaryAt`
+ * stable; leaving idle, hiding, reduced-motion or a press/drag gesture resets
+ * to awake with no pending timer.
+ */
+export function reduceIdleSleepState(
+  state: IdleSleepState,
+  signal: IdleSleepSignal,
+  now: number,
+): IdleSleepState {
+  const idle = signal.presentation === "idle";
+  if (
+    !shouldRunProgressiveSleep({
+      idle,
+      hidden: signal.hidden,
+      reducedMotion: signal.reducedMotion,
+      pressed: signal.pressed,
+      dragging: signal.dragging,
+    })
+  ) {
+    return createInitialIdleSleepState();
+  }
+  const idleSince = state.idleSince ?? now;
+  const elapsed = Math.max(0, now - idleSince);
+  const stage = resolveIdleSleepStage(elapsed);
+  const boundaryDelay = nextIdleSleepBoundaryMs(stage, elapsed);
+  return {
+    stage,
+    idleSince,
+    nextBoundaryAt: boundaryDelay == null ? null : now + boundaryDelay,
+  };
+}
+
 export type DesktopActivityFilter = "all" | "attention" | "running" | "completed";
 
 export type DesktopActivityFilterCounts = Record<DesktopActivityFilter, number>;

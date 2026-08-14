@@ -143,6 +143,8 @@ revised: 2026-08-14
 
 **验收要点**：阈值边界、timer 取消、隐藏/恢复、状态抢占、交互唤醒、spritesheet 回退、reduced-motion。
 
+**Completed:** 2026-08-14 — 新增 renderer-local 装饰睡眠阶段：`pet-state.ts` 纯函数 `resolveIdleSleepStage` / `nextIdleSleepBoundaryMs` / `shouldRunProgressiveSleep` / `reduceIdleSleepState`（阈值 `PET_SLEEPY_AFTER_MS=45_000`、`PET_SLEEPING_AFTER_MS=120_000` 与 `PET_IDLE_POINTER_WAKE_THROTTLE_MS` 集中定义）；`pet-app.tsx` 以单一本地 timer 推进 awake→sleepy→sleeping，同态 snapshot/资源刷新/revision 不重置 idle 起点，离开 idle、hidden、reduced-motion、press/drag 立即回 awake 并取消 timer；pointerdown/hover（sleepy/sleeping 才主动唤醒、节流）/键盘/开 tray/开设置/开始拖动唤醒且不触发打开任务、mark read；`pet.css` 提供低幅度半闭眼/闭眼 + 缓慢呼吸 + z/Z glyph overlay（spritesheet 复用 idle 帧、不加 manifest v2 子状态）；未引入 powerMonitor/系统级监听、不持久化、睡眠阶段不写 observer/tray/settings/服务端。
+
 ### U4 — 声音提示与趣味交互（P2，拆分交付）
 
 **用户价值**：声音用于功能提醒，趣味动作增强情感反馈；二者应分别控制，避免为了趣味功能引入打扰。

@@ -1001,6 +1001,54 @@
   function shouldRunIdleLife(input) {
     return input.animated && input.idle && !input.hidden && !input.reducedMotion && !input.pressed && !input.dragging;
   }
+  var PET_SLEEPY_AFTER_MS = 45e3;
+  var PET_SLEEPING_AFTER_MS = 12e4;
+  var PET_IDLE_POINTER_WAKE_THROTTLE_MS = 800;
+  function resolveIdleSleepStage(elapsedIdleMs) {
+    if (!Number.isFinite(elapsedIdleMs) || elapsedIdleMs < 0) return "awake";
+    if (elapsedIdleMs < PET_SLEEPY_AFTER_MS) return "awake";
+    if (elapsedIdleMs < PET_SLEEPING_AFTER_MS) return "sleepy";
+    return "sleeping";
+  }
+  function nextIdleSleepBoundaryMs(stage, elapsedIdleMs) {
+    const invalid = !Number.isFinite(elapsedIdleMs) || elapsedIdleMs < 0;
+    if (stage === "awake") {
+      if (invalid) return PET_SLEEPY_AFTER_MS;
+      return Math.max(0, PET_SLEEPY_AFTER_MS - elapsedIdleMs);
+    }
+    if (stage === "sleepy") {
+      if (invalid) return PET_SLEEPING_AFTER_MS - PET_SLEEPY_AFTER_MS;
+      return Math.max(0, PET_SLEEPING_AFTER_MS - elapsedIdleMs);
+    }
+    return null;
+  }
+  function shouldRunProgressiveSleep(input) {
+    return input.idle && !input.hidden && !input.reducedMotion && !input.pressed && !input.dragging;
+  }
+  function createInitialIdleSleepState() {
+    return { stage: "awake", idleSince: null, nextBoundaryAt: null };
+  }
+  function reduceIdleSleepState(state, signal, now) {
+    const idle = signal.presentation === "idle";
+    if (!shouldRunProgressiveSleep({
+      idle,
+      hidden: signal.hidden,
+      reducedMotion: signal.reducedMotion,
+      pressed: signal.pressed,
+      dragging: signal.dragging
+    })) {
+      return createInitialIdleSleepState();
+    }
+    const idleSince = state.idleSince ?? now;
+    const elapsed = Math.max(0, now - idleSince);
+    const stage = resolveIdleSleepStage(elapsed);
+    const boundaryDelay = nextIdleSleepBoundaryMs(stage, elapsed);
+    return {
+      stage,
+      idleSince,
+      nextBoundaryAt: boundaryDelay == null ? null : now + boundaryDelay
+    };
+  }
   function activityMatchesFilter(activity, filter) {
     switch (filter) {
       case "all":
@@ -1368,8 +1416,13 @@
     let bubbleState = createInitialPetBubbleState();
     let celebrateState = createInitialPetCelebrateState();
     let runningCueState = createInitialRunningCueState();
+    let idleSleepState = createInitialIdleSleepState();
     let bubbleTimer = null;
     let runningCueTimer = null;
+    let idleSleepTimer = null;
+    let idleSleepTimerTargetMs = null;
+    let lastIdlePointerWakeAt = 0;
+    let sleepPresentation = "idle";
     let elapsedTimer = null;
     let reducedMotion = typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const spriteStyleSheets = /* @__PURE__ */ new Map();
@@ -1463,6 +1516,74 @@
         if (current) update(current);
       }, Math.max(0, updateAt - now));
     }
+    function clearIdleSleepTimer() {
+      if (idleSleepTimer != null) {
+        clearTimeout(idleSleepTimer);
+        idleSleepTimer = null;
+      }
+      idleSleepTimerTargetMs = null;
+    }
+    function applySleepClassToAvatar(stage, stageChanged) {
+      const avatar = petAvatar instanceof HTMLElement ? petAvatar : null;
+      if (avatar) {
+        avatar.classList.remove("pet-sleepy", "pet-sleeping");
+        if (stage === "sleepy") avatar.classList.add("pet-sleepy");
+        else if (stage === "sleeping") avatar.classList.add("pet-sleeping");
+        if (stage === "awake") avatar.removeAttribute("data-idle-sleep");
+        else avatar.setAttribute("data-idle-sleep", stage);
+      }
+      if (!stageChanged) return;
+      if (stage === "awake") {
+        scheduleIdleBlink(avatar);
+        scheduleIdleActs(avatar);
+      } else {
+        if (idleBlinkTimer) {
+          clearTimeout(idleBlinkTimer);
+          idleBlinkTimer = null;
+        }
+        clearIdleAct(avatar);
+      }
+    }
+    function syncIdleSleep(now) {
+      const avatar = petAvatar instanceof HTMLElement ? petAvatar : null;
+      const prevStage = idleSleepState.stage;
+      const next = reduceIdleSleepState(
+        idleSleepState,
+        {
+          presentation: sleepPresentation,
+          hidden: documentHidden,
+          reducedMotion,
+          pressed: avatar?.classList.contains("is-pressed") ?? false,
+          dragging: avatar?.classList.contains("is-dragging") ?? false
+        },
+        now
+      );
+      idleSleepState = next;
+      applySleepClassToAvatar(next.stage, next.stage !== prevStage);
+      if (next.nextBoundaryAt == null) {
+        clearIdleSleepTimer();
+        return;
+      }
+      if (idleSleepTimer != null && idleSleepTimerTargetMs === next.nextBoundaryAt) return;
+      clearIdleSleepTimer();
+      idleSleepTimerTargetMs = next.nextBoundaryAt;
+      idleSleepTimer = setTimeout(() => {
+        idleSleepTimer = null;
+        idleSleepTimerTargetMs = null;
+        if (current) syncIdleSleep(Date.now());
+      }, Math.max(0, next.nextBoundaryAt - now));
+    }
+    function wakeIdleSleep() {
+      idleSleepState = { ...idleSleepState, idleSince: null, nextBoundaryAt: null };
+      syncIdleSleep(Date.now());
+    }
+    function maybeWakeOnHover() {
+      if (idleSleepState.stage === "awake") return;
+      const now = Date.now();
+      if (now - lastIdlePointerWakeAt < PET_IDLE_POINTER_WAKE_THROTTLE_MS) return;
+      lastIdlePointerWakeAt = now;
+      wakeIdleSleep();
+    }
     function dismissActivityBubble(activity) {
       if (!activity) return;
       bubbleState = reducePetBubbleState(bubbleState, {
@@ -1497,6 +1618,7 @@
     }
     function actEnabled(avatar) {
       if (avatar?.classList.contains("pet-sprite")) return false;
+      if (idleSleepState.stage !== "awake") return false;
       return shouldRunIdleLife({
         animated: !!avatar && avatar.classList.contains("is-animated"),
         idle: !!avatar && avatar.classList.contains("frame-idle"),
@@ -1508,6 +1630,7 @@
     }
     function blinkEnabled(avatar) {
       if (avatar?.classList.contains("pet-sprite")) return false;
+      if (idleSleepState.stage !== "awake") return false;
       return !!avatar && avatar.classList.contains("is-animated") && !documentHidden && !reducedMotion && !actActive && !avatar.classList.contains("is-pressed") && !avatar.classList.contains("is-dragging");
     }
     function scheduleIdleBlink(avatar) {
@@ -1574,6 +1697,7 @@
     }
     function onVisibilityChange() {
       documentHidden = document.hidden === true;
+      syncIdleSleep(Date.now());
       if (documentHidden) {
         if (idleBlinkTimer) {
           clearTimeout(idleBlinkTimer);
@@ -1680,6 +1804,8 @@
       const state = isPetVisualState(view.presentation) ? view.presentation : "idle";
       const primary = selectPrimaryActivity(view.projects);
       const updateNow = Date.now();
+      sleepPresentation = state;
+      syncIdleSleep(updateNow);
       runningCueState = reduceRunningCueState(
         runningCueState,
         { presentation: state, cue: resolveRunningCue(primary) },
@@ -1712,7 +1838,8 @@
           clearTransition();
         }
         const spriteClass = spriteActive ? ` pet-sprite pet-sprite-${manifest.id}` : "";
-        petAvatar.className = `pet-avatar${spriteClass} frame-${frame.frame}${frame.animated ? " is-animated" : ""}${transitionClass ? ` ${transitionClass}` : ""}`;
+        const sleepClass = idleSleepState.stage !== "awake" ? ` pet-${idleSleepState.stage}` : "";
+        petAvatar.className = `pet-avatar${spriteClass} frame-${frame.frame}${frame.animated ? " is-animated" : ""}${transitionClass ? ` ${transitionClass}` : ""}${sleepClass}`;
         petAvatar.setAttribute("data-state", state);
         if (state === "running") {
           petAvatar.setAttribute("data-running-cue", runningCue);
@@ -2158,6 +2285,7 @@
       return (view.presentation === "needs_input" || view.presentation === "blocked") && (primary?.presentation === "needs_input" || primary?.presentation === "blocked");
     }
     function activatePet() {
+      wakeIdleSleep();
       if (!current) {
         bridge?.toggleTray();
         return;
@@ -2201,6 +2329,7 @@
     petButton?.addEventListener("pointerdown", (event) => {
       if (!(petButton instanceof HTMLElement)) return;
       if (event.button !== 0) return;
+      wakeIdleSleep();
       petPointerId = event.pointerId;
       petDragOriginX = event.screenX;
       petDragOriginY = event.screenY;
@@ -2219,6 +2348,7 @@
       if (!(petButton instanceof HTMLElement)) return;
       if (petPointerId === null) {
         applyEyeFollow(event);
+        maybeWakeOnHover();
         return;
       }
       if (petPointerId !== event.pointerId) return;
@@ -2319,6 +2449,7 @@
       bridge?.toggleTray();
     });
     btnSettings?.addEventListener("click", () => {
+      wakeIdleSleep();
       setTrayMoreOpen(false);
       settingsOpen = !settingsOpen;
       if (current) update(current);
@@ -2460,6 +2591,7 @@
       destroy: () => {
         clearBubbleTimer();
         clearElapsedTimer();
+        clearIdleSleepTimer();
         if (runningCueTimer != null) {
           clearTimeout(runningCueTimer);
           runningCueTimer = null;

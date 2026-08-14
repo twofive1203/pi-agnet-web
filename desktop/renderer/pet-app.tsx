@@ -19,6 +19,7 @@ import { acceptStaticPetPreview } from "./pet-assets";
 import {
   connectionBannerText,
   countActivitiesByFilter,
+  createInitialIdleSleepState,
   createInitialPetBubbleState,
   createInitialPetCelebrateState,
   createInitialRunningCueState,
@@ -35,6 +36,7 @@ import {
   petStateGlyph,
   petStateLabel,
   petTerminalOutcome,
+  reduceIdleSleepState,
   reducePetBubbleState,
   reduceRunningCueState,
   resolveActivityElapsedMs,
@@ -48,7 +50,9 @@ import {
   selectPrimaryActivity,
   shouldCelebrateCompletion,
   shouldRunIdleLife,
+  PET_IDLE_POINTER_WAKE_THROTTLE_MS,
   type DesktopActivityFilter,
+  type IdleSleepStage,
   type PetBubbleSignal,
   type PetManifest,
   type PetTransitionAction,
@@ -163,8 +167,13 @@ export function renderPetApp(root: Document = document): {
   let bubbleState = createInitialPetBubbleState();
   let celebrateState = createInitialPetCelebrateState();
   let runningCueState = createInitialRunningCueState();
+  let idleSleepState = createInitialIdleSleepState();
   let bubbleTimer: ReturnType<typeof setTimeout> | null = null;
   let runningCueTimer: ReturnType<typeof setTimeout> | null = null;
+  let idleSleepTimer: ReturnType<typeof setTimeout> | null = null;
+  let idleSleepTimerTargetMs: number | null = null;
+  let lastIdlePointerWakeAt = 0;
+  let sleepPresentation: PetVisualState = "idle";
   let elapsedTimer: ReturnType<typeof setInterval> | null = null;
   let reducedMotion =
     typeof window.matchMedia === "function" &&
@@ -283,6 +292,92 @@ export function renderPetApp(root: Document = document): {
     }, Math.max(0, updateAt - now));
   }
 
+  // --- Progressive idle sleep (U3): renderer-local decorative stage ---
+  // One local timer advances awake → sleepy → sleeping while the observer stays
+  // idle. Same-state snapshots never reset the origin; any real state, hiding,
+  // reduced-motion or a press/drag gesture resets to awake immediately.
+
+  function clearIdleSleepTimer(): void {
+    if (idleSleepTimer != null) {
+      clearTimeout(idleSleepTimer);
+      idleSleepTimer = null;
+    }
+    idleSleepTimerTargetMs = null;
+  }
+
+  function applySleepClassToAvatar(stage: IdleSleepStage, stageChanged: boolean): void {
+    const avatar = petAvatar instanceof HTMLElement ? petAvatar : null;
+    if (avatar) {
+      avatar.classList.remove("pet-sleepy", "pet-sleeping");
+      if (stage === "sleepy") avatar.classList.add("pet-sleepy");
+      else if (stage === "sleeping") avatar.classList.add("pet-sleeping");
+      if (stage === "awake") avatar.removeAttribute("data-idle-sleep");
+      else avatar.setAttribute("data-idle-sleep", stage);
+    }
+    if (!stageChanged) return;
+    // Pause decorative blink/random acts while drowsy or asleep so their keyframe
+    // restarts never fight the sleep posture; re-arm them on wake.
+    if (stage === "awake") {
+      scheduleIdleBlink(avatar);
+      scheduleIdleActs(avatar);
+    } else {
+      if (idleBlinkTimer) {
+        clearTimeout(idleBlinkTimer);
+        idleBlinkTimer = null;
+      }
+      clearIdleAct(avatar);
+    }
+  }
+
+  function syncIdleSleep(now: number): void {
+    const avatar = petAvatar instanceof HTMLElement ? petAvatar : null;
+    const prevStage = idleSleepState.stage;
+    const next = reduceIdleSleepState(
+      idleSleepState,
+      {
+        presentation: sleepPresentation,
+        hidden: documentHidden,
+        reducedMotion,
+        pressed: avatar?.classList.contains("is-pressed") ?? false,
+        dragging: avatar?.classList.contains("is-dragging") ?? false,
+      },
+      now,
+    );
+    idleSleepState = next;
+    applySleepClassToAvatar(next.stage, next.stage !== prevStage);
+    if (next.nextBoundaryAt == null) {
+      clearIdleSleepTimer();
+      return;
+    }
+    // The absolute boundary timestamp is stable across same-state snapshots, so a
+    // resource refresh never rebuilds the timer.
+    if (idleSleepTimer != null && idleSleepTimerTargetMs === next.nextBoundaryAt) return;
+    clearIdleSleepTimer();
+    idleSleepTimerTargetMs = next.nextBoundaryAt;
+    idleSleepTimer = setTimeout(() => {
+      idleSleepTimer = null;
+      idleSleepTimerTargetMs = null;
+      if (current) syncIdleSleep(Date.now());
+    }, Math.max(0, next.nextBoundaryAt - now));
+  }
+
+  /** A user interaction restarts the idle origin without any business side effect. */
+  function wakeIdleSleep(): void {
+    // Keep the current stage so syncIdleSleep can detect the awake transition and
+    // re-arm decorative blink/acts; only the idle origin is discarded.
+    idleSleepState = { ...idleSleepState, idleSince: null, nextBoundaryAt: null };
+    syncIdleSleep(Date.now());
+  }
+
+  /** Hover over the pet only wakes it once it is drowsy/asleep; throttled. */
+  function maybeWakeOnHover(): void {
+    if (idleSleepState.stage === "awake") return;
+    const now = Date.now();
+    if (now - lastIdlePointerWakeAt < PET_IDLE_POINTER_WAKE_THROTTLE_MS) return;
+    lastIdlePointerWakeAt = now;
+    wakeIdleSleep();
+  }
+
   function dismissActivityBubble(activity: DesktopActivityRow | null): void {
     if (!activity) return;
     bubbleState = reducePetBubbleState(bubbleState, {
@@ -322,8 +417,10 @@ export function renderPetApp(root: Document = document): {
   // Whether the decorative idle acts may run right now (pure policy in pet-state).
   function actEnabled(avatar: HTMLElement | null): boolean {
     // Spritesheet pets are animated by CSS steps(); their anatomy is hidden so
-    // blink/idle-act timers have nothing to drive.
+    // blink/idle-act timers have nothing to drive. The drowsy/asleep stages also
+    // pause random acts so a stretch never interrupts a sleeping pose.
     if (avatar?.classList.contains("pet-sprite")) return false;
+    if (idleSleepState.stage !== "awake") return false;
     return shouldRunIdleLife({
       animated: !!avatar && avatar.classList.contains("is-animated"),
       idle: !!avatar && avatar.classList.contains("frame-idle"),
@@ -337,6 +434,7 @@ export function renderPetApp(root: Document = document): {
   // Blink runs in every animated state, but pauses while an idle act owns the eyes.
   function blinkEnabled(avatar: HTMLElement | null): boolean {
     if (avatar?.classList.contains("pet-sprite")) return false;
+    if (idleSleepState.stage !== "awake") return false;
     return (
       !!avatar &&
       avatar.classList.contains("is-animated") &&
@@ -425,6 +523,9 @@ export function renderPetApp(root: Document = document): {
   // Hidden windows pause decorative timers; re-arming happens on visibility.
   function onVisibilityChange(): void {
     documentHidden = document.hidden === true;
+    // Hide clears the sleep timer and re-show restarts the idle origin from awake,
+    // so background time never accumulates into an instant deep sleep.
+    syncIdleSleep(Date.now());
     if (documentHidden) {
       if (idleBlinkTimer) {
         clearTimeout(idleBlinkTimer);
@@ -543,6 +644,8 @@ export function renderPetApp(root: Document = document): {
     const state = isPetVisualState(view.presentation) ? view.presentation : "idle";
     const primary = selectPrimaryActivity(view.projects);
     const updateNow = Date.now();
+    sleepPresentation = state;
+    syncIdleSleep(updateNow);
     runningCueState = reduceRunningCueState(
       runningCueState,
       { presentation: state, cue: resolveRunningCue(primary) },
@@ -576,7 +679,8 @@ export function renderPetApp(root: Document = document): {
         clearTransition();
       }
       const spriteClass = spriteActive ? ` pet-sprite pet-sprite-${manifest.id}` : "";
-      petAvatar.className = `pet-avatar${spriteClass} frame-${frame.frame}${frame.animated ? " is-animated" : ""}${transitionClass ? ` ${transitionClass}` : ""}`;
+      const sleepClass = idleSleepState.stage !== "awake" ? ` pet-${idleSleepState.stage}` : "";
+      petAvatar.className = `pet-avatar${spriteClass} frame-${frame.frame}${frame.animated ? " is-animated" : ""}${transitionClass ? ` ${transitionClass}` : ""}${sleepClass}`;
       petAvatar.setAttribute("data-state", state);
       if (state === "running") {
         petAvatar.setAttribute("data-running-cue", runningCue);
@@ -1112,6 +1216,9 @@ export function renderPetApp(root: Document = document): {
   }
 
   function activatePet(): void {
+    // Any direct activation wakes the pet from its decorative sleep stage first;
+    // this never opens a task or marks anything read on its own.
+    wakeIdleSleep();
     if (!current) {
       bridge?.toggleTray();
       return;
@@ -1164,6 +1271,7 @@ export function renderPetApp(root: Document = document): {
   petButton?.addEventListener("pointerdown", (event) => {
     if (!(petButton instanceof HTMLElement)) return;
     if (event.button !== 0) return;
+    wakeIdleSleep();
     petPointerId = event.pointerId;
     petDragOriginX = event.screenX;
     petDragOriginY = event.screenY;
@@ -1185,6 +1293,7 @@ export function renderPetApp(root: Document = document): {
     if (!(petButton instanceof HTMLElement)) return;
     if (petPointerId === null) {
       applyEyeFollow(event);
+      maybeWakeOnHover();
       return;
     }
     if (petPointerId !== event.pointerId) return;
@@ -1310,6 +1419,7 @@ export function renderPetApp(root: Document = document): {
   });
 
   btnSettings?.addEventListener("click", () => {
+    wakeIdleSleep();
     setTrayMoreOpen(false);
     settingsOpen = !settingsOpen;
     if (current) update(current);
@@ -1489,6 +1599,7 @@ export function renderPetApp(root: Document = document): {
     destroy: () => {
       clearBubbleTimer();
       clearElapsedTimer();
+      clearIdleSleepTimer();
       if (runningCueTimer != null) {
         clearTimeout(runningCueTimer);
         runningCueTimer = null;
