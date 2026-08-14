@@ -95,6 +95,7 @@ select {
 .activity-tray[hidden],
 .pet-caption[hidden],
 .pet-badge[hidden],
+.pet-context-meter[hidden],
 .connection-banner[hidden],
 .auth-panel[hidden],
 .settings-panel[hidden],
@@ -455,6 +456,58 @@ select {
   text-overflow: ellipsis;
   white-space: nowrap;
   pointer-events: none;
+}
+
+.pet-context-meter {
+  position: absolute;
+  left: 0;
+  bottom: 20px;
+  z-index: 8;
+  display: flex;
+  width: 36px;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  pointer-events: none;
+}
+
+.pet-context-ring {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: conic-gradient(
+    var(--pet-context-fill, var(--pet-ok)) calc(var(--context-percent, 0) * 1%),
+    rgba(255, 255, 255, 0.18) 0
+  );
+  -webkit-mask: radial-gradient(farthest-side, transparent 55%, #000 57%);
+  mask: radial-gradient(farthest-side, transparent 55%, #000 57%);
+}
+
+.pet-context-meter[data-level="ok"] {
+  --pet-context-fill: var(--pet-ok);
+}
+
+.pet-context-meter[data-level="warn"] {
+  --pet-context-fill: var(--pet-warn);
+}
+
+.pet-context-meter[data-level="high"] {
+  --pet-context-fill: var(--pet-danger);
+}
+
+.pet-context-meter-label {
+  width: 36px;
+  padding: 1px 2px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 6px;
+  background: rgba(18, 23, 31, 0.88);
+  color: var(--pet-text);
+  font-size: 8px;
+  font-weight: 700;
+  line-height: 1.15;
+  text-align: center;
+  white-space: normal;
 }
 
 .pet-badge {

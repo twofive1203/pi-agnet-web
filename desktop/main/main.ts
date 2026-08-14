@@ -736,6 +736,7 @@ export async function startDesktopPetMain(deps: DesktopMainDeps): Promise<{
         clickThrough: p.clickThrough,
         launchAtLogin: p.launchAtLogin,
         activityTrayOpen: p.activityTrayOpen,
+        showContextMeter: p.showContextMeter,
         notification: p.notification,
         port: p.port,
       });

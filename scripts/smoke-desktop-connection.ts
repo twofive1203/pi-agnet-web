@@ -558,6 +558,7 @@ async function main() {
   assert.equal(defaults.port, 62666);
   assert.equal(defaults.version, 1);
   assert.equal(defaults.petScale, "medium");
+  assert.equal(defaults.showContextMeter, true);
   assertDesktopSettingsSafe(defaults);
 
   const dirty = normalizeDesktopSettings({
@@ -571,14 +572,20 @@ async function main() {
   assert.equal(dirty.port, DESKTOP_DEFAULT_PORT);
   assert.equal(dirty.selectedPetId, "snail-default");
   assert.equal(dirty.petScale, "medium");
+  assert.equal(dirty.showContextMeter, true);
   assert.equal(dirty.notification.completion, "background-only");
   assert.deepEqual(dirty.acknowledgedTransitionIds, ["a", "b"]);
   // Forbidden keys stripped by normalization (not present on public shape)
   assert.equal("token" in dirty, false);
 
-  const updated = updateDesktopSettings(defaults, { port: 62667, alwaysOnTop: false });
+  const updated = updateDesktopSettings(defaults, {
+    port: 62667,
+    alwaysOnTop: false,
+    showContextMeter: false,
+  });
   assert.equal(updated.port, 62667);
   assert.equal(updated.alwaysOnTop, false);
+  assert.equal(updated.showContextMeter, false);
 
   const roundTrip = parseDesktopSettingsJson(serializeDesktopSettings(updated));
   assert.equal(roundTrip.port, 62667);

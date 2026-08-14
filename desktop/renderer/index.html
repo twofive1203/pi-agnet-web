@@ -61,6 +61,10 @@
               <span id="pet-glyph" class="pet-glyph" aria-hidden="true">·</span>
             </div>
             <div id="pet-badge" class="pet-badge" hidden>0</div>
+            <div id="pet-context-meter" class="pet-context-meter" hidden>
+              <span class="pet-context-ring" aria-hidden="true"></span>
+              <span id="pet-context-meter-label" class="pet-context-meter-label"></span>
+            </div>
             <div id="pet-label" class="pet-label">空闲</div>
           </div>
         </button>
@@ -178,6 +182,10 @@
             <label class="setting-toggle setting-toggle-warning">
               <input id="pref-click-through" type="checkbox" />
               <span>鼠标穿透（可从系统托盘恢复）</span>
+            </label>
+            <label class="setting-toggle">
+              <input id="pref-show-context-meter" type="checkbox" />
+              <span>显示上下文占比</span>
             </label>
           </div>
           <div class="settings-heading">通知</div>

@@ -115,6 +115,7 @@ export type DesktopActivityView = {
   alwaysOnTop: boolean;
   clickThrough: boolean;
   launchAtLogin: boolean;
+  showContextMeter: boolean;
   notification: DesktopPetSettings["notification"];
   reducedMotion: boolean;
   /** Reset/baseline snapshot marker for renderer-local transient presentation. */
@@ -405,6 +406,7 @@ export function buildActivityView(input: ActivityStoreSnapshotInput): DesktopAct
     alwaysOnTop: input.settings.alwaysOnTop,
     clickThrough: input.settings.clickThrough,
     launchAtLogin: input.settings.launchAtLogin,
+    showContextMeter: input.settings.showContextMeter,
     notification: { ...input.settings.notification },
     reducedMotion: input.reducedMotion === true,
     reset: input.reset === true || input.snapshot?.reset === true,

@@ -35,6 +35,8 @@ export type DesktopPetSettings = {
   clickThrough: boolean;
   launchAtLogin: boolean;
   activityTrayOpen: boolean;
+  /** Compact pet-side context ring; missing v1 files migrate to on. */
+  showContextMeter: boolean;
   windowPosition: { x: number; y: number } | null;
   notification: {
     needsInput: boolean;
@@ -56,6 +58,7 @@ export const DESKTOP_SETTINGS_DEFAULTS: DesktopPetSettings = {
   clickThrough: false,
   launchAtLogin: false,
   activityTrayOpen: false,
+  showContextMeter: true,
   windowPosition: null,
   notification: {
     needsInput: true,
@@ -102,6 +105,7 @@ export function normalizeDesktopSettings(input: unknown): DesktopPetSettings {
     clickThrough: raw.clickThrough === true,
     launchAtLogin: raw.launchAtLogin === true,
     activityTrayOpen: raw.activityTrayOpen === true,
+    showContextMeter: raw.showContextMeter !== false,
     windowPosition,
     notification: {
       needsInput: notificationRaw.needsInput !== false,
@@ -137,6 +141,7 @@ export function updateDesktopSettings(
     clickThrough: boolean;
     launchAtLogin: boolean;
     activityTrayOpen: boolean;
+    showContextMeter: boolean;
     windowPosition: { x: number; y: number } | null;
     notification: Partial<DesktopPetSettings["notification"]>;
     acknowledgedTransitionIds: string[];

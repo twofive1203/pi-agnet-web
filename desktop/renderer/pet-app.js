@@ -692,6 +692,25 @@
     }
     return primary;
   }
+  function resolvePrimaryContextMeter(input) {
+    if (!input.enabled || input.stale) return null;
+    const activity = input.activity;
+    if (activity == null || activity.source !== "agent") return null;
+    const percent = activity.sessionResources?.context?.percent;
+    if (typeof percent !== "number" || !Number.isFinite(percent)) return null;
+    const bounded = Math.max(0, Math.min(100, percent));
+    const displayPercent = Math.round(bounded);
+    const label = `\u4E0A\u4E0B\u6587 ${displayPercent}%`;
+    const title = `\u5F53\u524D\u4E3B\u4EFB\u52A1\u4E0A\u4E0B\u6587\u5DF2\u4F7F\u7528 ${displayPercent}%`;
+    return {
+      percent: bounded,
+      displayPercent,
+      label,
+      title,
+      ariaLabel: title,
+      level: bounded >= 90 ? "high" : bounded >= 80 ? "warn" : "ok"
+    };
+  }
   var THINKING_TOOL_NAMES = /* @__PURE__ */ new Set(["read", "grep", "find", "ls"]);
   var EDITING_TOOL_NAMES = /* @__PURE__ */ new Set(["edit", "write"]);
   var COMMAND_TOOL_NAMES = /* @__PURE__ */ new Set(["bash"]);
@@ -1157,6 +1176,8 @@
     const petGlyph = root.getElementById("pet-glyph");
     const petLabel = root.getElementById("pet-label");
     const petBadge = root.getElementById("pet-badge");
+    const petContextMeter = root.getElementById("pet-context-meter");
+    const petContextMeterLabel = root.getElementById("pet-context-meter-label");
     const petCaption = root.getElementById("pet-caption");
     const petCaptionState = root.getElementById("pet-caption-state");
     const petCaptionTitle = root.getElementById("pet-caption-title");
@@ -1187,6 +1208,7 @@
     const prefCompletion = root.getElementById("pref-completion");
     const prefNeedsInput = root.getElementById("pref-needs-input");
     const prefBlocked = root.getElementById("pref-blocked");
+    const prefShowContextMeter = root.getElementById("pref-show-context-meter");
     const staleFlag = root.getElementById("stale-flag");
     const hideToTray = () => {
       bridge?.hideToTray();
@@ -1627,6 +1649,31 @@
           petBadge.hidden = true;
         }
       }
+      const contextMeter = resolvePrimaryContextMeter({
+        activity: primary,
+        stale: view.stale,
+        enabled: view.showContextMeter
+      });
+      if (petContextMeter) {
+        if (contextMeter) {
+          petContextMeter.hidden = false;
+          petContextMeter.dataset.level = contextMeter.level;
+          petContextMeter.style.setProperty("--context-percent", String(contextMeter.percent));
+          petContextMeter.title = contextMeter.title;
+          petContextMeter.setAttribute("aria-label", contextMeter.ariaLabel);
+          petContextMeter.setAttribute("role", "img");
+        } else {
+          petContextMeter.hidden = true;
+          petContextMeter.removeAttribute("data-level");
+          petContextMeter.style.removeProperty("--context-percent");
+          petContextMeter.removeAttribute("title");
+          petContextMeter.removeAttribute("aria-label");
+          petContextMeter.removeAttribute("role");
+        }
+      }
+      if (petContextMeterLabel) {
+        petContextMeterLabel.textContent = contextMeter?.label ?? "";
+      }
       if (tray) tray.hidden = !view.trayOpen;
       if (!view.trayOpen) {
         settingsOpen = false;
@@ -1709,6 +1756,7 @@
       if (prefCompletion) prefCompletion.value = view.notification.completion;
       if (prefNeedsInput) prefNeedsInput.checked = view.notification.needsInput;
       if (prefBlocked) prefBlocked.checked = view.notification.blocked;
+      if (prefShowContextMeter) prefShowContextMeter.checked = view.showContextMeter;
       petPicker?.querySelectorAll("[data-pet-id]").forEach((option) => {
         const selected = option.dataset.petId === view.selectedPetId;
         option.setAttribute("aria-checked", selected ? "true" : "false");
@@ -2187,6 +2235,9 @@
     });
     prefBlocked?.addEventListener("change", () => {
       bridge?.setPrefs({ notification: { blocked: prefBlocked.checked } });
+    });
+    prefShowContextMeter?.addEventListener("change", () => {
+      bridge?.setPrefs({ showContextMeter: prefShowContextMeter.checked });
     });
     const onKeyDown = (event) => {
       if (event.key === "Escape" && trayMoreOpen) {

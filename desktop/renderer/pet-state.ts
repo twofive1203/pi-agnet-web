@@ -256,6 +256,47 @@ export function selectPrimaryActivity(
   return primary;
 }
 
+export type PrimaryContextMeter = {
+  /** Bounded 0–100 value used only as ring geometry, never as a class/key. */
+  percent: number;
+  /** Rounded whole-number display value. */
+  displayPercent: number;
+  /** Visible text, e.g. 上下文 72%. */
+  label: string;
+  title: string;
+  ariaLabel: string;
+  level: "ok" | "warn" | "high";
+};
+
+/**
+ * Compact pet-side context meter for the same activity that drives the pet.
+ * Settled/ready Agent primaries still render when they carry a real percent;
+ * missing/non-Agent/stale primaries hide the meter instead of borrowing another row.
+ */
+export function resolvePrimaryContextMeter(input: {
+  activity: DesktopActivityRow | null;
+  stale: boolean;
+  enabled: boolean;
+}): PrimaryContextMeter | null {
+  if (!input.enabled || input.stale) return null;
+  const activity = input.activity;
+  if (activity == null || activity.source !== "agent") return null;
+  const percent = activity.sessionResources?.context?.percent;
+  if (typeof percent !== "number" || !Number.isFinite(percent)) return null;
+  const bounded = Math.max(0, Math.min(100, percent));
+  const displayPercent = Math.round(bounded);
+  const label = `上下文 ${displayPercent}%`;
+  const title = `当前主任务上下文已使用 ${displayPercent}%`;
+  return {
+    percent: bounded,
+    displayPercent,
+    label,
+    title,
+    ariaLabel: title,
+    level: bounded >= 90 ? "high" : bounded >= 80 ? "warn" : "ok",
+  };
+}
+
 export type RunningCue =
   | "thinking"
   | "editing"

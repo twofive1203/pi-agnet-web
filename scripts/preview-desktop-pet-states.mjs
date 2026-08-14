@@ -67,6 +67,7 @@ function baseView(overrides = {}) {
     alwaysOnTop: true,
     clickThrough: false,
     launchAtLogin: false,
+    showContextMeter: true,
     notification: { needsInput: true, blocked: true, completion: "background-only" },
     reducedMotion: false,
     reset: false,
@@ -112,7 +113,11 @@ function activityFor(state) {
         : { kind: "indeterminate" },
     activeModel: { provider: "anthropic", modelId: "claude-sonnet-4" },
     sessionResources: {
-      context: { percent: 42.3, usedTokens: 84600, contextWindow: 200000 },
+      context: {
+        percent: state === "disconnected" ? null : 42.3,
+        usedTokens: 84600,
+        contextWindow: 200000,
+      },
       billing: { totalTokens: 128400, costUsd: 0.0842 },
       performance: { avgTps: 31.8, sampleCount: 6 },
     },
@@ -157,7 +162,7 @@ function viewForCell({ state, petId, petScale, trayOpen, settingsOpen, reducedMo
     petScale,
     reducedMotion,
     settingsOpen,
-    stale: state === "disconnected",
+    stale: state === "disconnected" || state === "service_not_running",
     attentionCount: activity.unread ? 1 : 0,
     activeCount: state === "running" || state === "retrying" || state === "needs_input" ? 1 : 0,
     aggregate: {

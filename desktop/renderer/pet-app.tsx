@@ -41,6 +41,7 @@ import {
   resolveActivitySelection,
   resolvePetFrame,
   resolvePetTransitionAction,
+  resolvePrimaryContextMeter,
   resolveRunningCue,
   resolveRunningCueVisual,
   runningCueNextUpdateAt,
@@ -89,6 +90,8 @@ export function renderPetApp(root: Document = document): {
   const petGlyph = root.getElementById("pet-glyph");
   const petLabel = root.getElementById("pet-label");
   const petBadge = root.getElementById("pet-badge");
+  const petContextMeter = root.getElementById("pet-context-meter");
+  const petContextMeterLabel = root.getElementById("pet-context-meter-label");
   const petCaption = root.getElementById("pet-caption");
   const petCaptionState = root.getElementById("pet-caption-state");
   const petCaptionTitle = root.getElementById("pet-caption-title");
@@ -119,6 +122,7 @@ export function renderPetApp(root: Document = document): {
   const prefCompletion = root.getElementById("pref-completion") as HTMLSelectElement | null;
   const prefNeedsInput = root.getElementById("pref-needs-input") as HTMLInputElement | null;
   const prefBlocked = root.getElementById("pref-blocked") as HTMLInputElement | null;
+  const prefShowContextMeter = root.getElementById("pref-show-context-meter") as HTMLInputElement | null;
   const staleFlag = root.getElementById("stale-flag");
 
   const hideToTray = () => {
@@ -639,6 +643,32 @@ export function renderPetApp(root: Document = document): {
       }
     }
 
+    const contextMeter = resolvePrimaryContextMeter({
+      activity: primary,
+      stale: view.stale,
+      enabled: view.showContextMeter,
+    });
+    if (petContextMeter) {
+      if (contextMeter) {
+        petContextMeter.hidden = false;
+        petContextMeter.dataset.level = contextMeter.level;
+        petContextMeter.style.setProperty("--context-percent", String(contextMeter.percent));
+        petContextMeter.title = contextMeter.title;
+        petContextMeter.setAttribute("aria-label", contextMeter.ariaLabel);
+        petContextMeter.setAttribute("role", "img");
+      } else {
+        petContextMeter.hidden = true;
+        petContextMeter.removeAttribute("data-level");
+        petContextMeter.style.removeProperty("--context-percent");
+        petContextMeter.removeAttribute("title");
+        petContextMeter.removeAttribute("aria-label");
+        petContextMeter.removeAttribute("role");
+      }
+    }
+    if (petContextMeterLabel) {
+      petContextMeterLabel.textContent = contextMeter?.label ?? "";
+    }
+
     if (tray) tray.hidden = !view.trayOpen;
     if (!view.trayOpen) {
       settingsOpen = false;
@@ -737,6 +767,7 @@ export function renderPetApp(root: Document = document): {
     if (prefCompletion) prefCompletion.value = view.notification.completion;
     if (prefNeedsInput) prefNeedsInput.checked = view.notification.needsInput;
     if (prefBlocked) prefBlocked.checked = view.notification.blocked;
+    if (prefShowContextMeter) prefShowContextMeter.checked = view.showContextMeter;
     petPicker?.querySelectorAll<HTMLElement>("[data-pet-id]").forEach((option) => {
       const selected = option.dataset.petId === view.selectedPetId;
       option.setAttribute("aria-checked", selected ? "true" : "false");
@@ -1331,6 +1362,9 @@ export function renderPetApp(root: Document = document): {
   });
   prefBlocked?.addEventListener("change", () => {
     bridge?.setPrefs({ notification: { blocked: prefBlocked.checked } });
+  });
+  prefShowContextMeter?.addEventListener("change", () => {
+    bridge?.setPrefs({ showContextMeter: prefShowContextMeter.checked });
   });
 
   const onKeyDown = (event: KeyboardEvent) => {

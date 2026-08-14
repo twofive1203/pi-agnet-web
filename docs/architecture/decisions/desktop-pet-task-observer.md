@@ -362,6 +362,7 @@ The renderer is a dedicated small bundle. The desktop package contains the pet o
 - Multiple versioned built-in pet manifests map required states to assets/static fallback.
 - Persist pet selection and position.
 - Honor reduced motion and provide non-color state cues.
+- The pet-side compact resource ring uses only the U1 primary activity's `sessionResources.context.percent`. Settled/ready Agent primaries may show their own percent; non-Agent, missing/`null`/invalid, or stale snapshots hide the ring instead of borrowing another activity or drawing a fake 0%.
 - Tray always offers show, disable click-through, Retry, Open WebUI and Quit.
 
 ### Main/preload security
@@ -387,6 +388,7 @@ Electron `userData` stores:
 - window position and Activity tray state;
 - selected built-in pet;
 - always-on-top/click-through;
+- compact primary-activity context meter visibility;
 - notification settings;
 - launch at login;
 - configured loopback port;

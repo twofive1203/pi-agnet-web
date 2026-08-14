@@ -116,6 +116,7 @@ import {
   resolveActivitySelection,
   resolveBuiltinPetManifest,
   resolvePetFrame,
+  resolvePrimaryContextMeter,
   resolvePetTransitionAction,
   resolveRunningCue,
   resolveRunningCueVisual,
@@ -488,6 +489,181 @@ async function main() {
     "active-older",
   );
   assert.equal(selectPrimaryActivity([]), null);
+
+  // --- Compact context meter uses the same primary, never another Agent ---
+  const meterPrimary = {
+    ...primaryBase,
+    source: "agent" as const,
+    sessionResources: {
+      context: { percent: 72.4, usedTokens: 144800, contextWindow: 200000 },
+      billing: { totalTokens: 128400, costUsd: 0.08 },
+      performance: { avgTps: 31.8, sampleCount: 6 },
+    },
+  };
+  const meterVisible = (percent: number) =>
+    resolvePrimaryContextMeter({
+      activity: {
+        ...meterPrimary,
+        sessionResources: {
+          context: { percent, usedTokens: 1, contextWindow: 200000 },
+        },
+      },
+      stale: false,
+      enabled: true,
+    });
+  assert.deepEqual(meterVisible(0), {
+    percent: 0,
+    displayPercent: 0,
+    label: "上下文 0%",
+    title: "当前主任务上下文已使用 0%",
+    ariaLabel: "当前主任务上下文已使用 0%",
+    level: "ok",
+  });
+  assert.equal(meterVisible(72.4)?.displayPercent, 72);
+  assert.equal(meterVisible(72.4)?.label, "上下文 72%");
+  assert.equal(meterVisible(89.4)?.level, "warn");
+  assert.equal(meterVisible(99.6)?.displayPercent, 100);
+  assert.equal(meterVisible(100)?.percent, 100);
+  assert.equal(meterVisible(100)?.level, "high");
+  assert.equal(
+    resolvePrimaryContextMeter({
+      activity: {
+        ...meterPrimary,
+        sessionResources: { context: { percent: null, usedTokens: 1, contextWindow: 200000 } },
+      },
+      stale: false,
+      enabled: true,
+    }),
+    null,
+  );
+  assert.equal(
+    resolvePrimaryContextMeter({
+      activity: { ...meterPrimary, sessionResources: undefined },
+      stale: false,
+      enabled: true,
+    }),
+    null,
+  );
+  assert.equal(
+    resolvePrimaryContextMeter({
+      activity: {
+        ...meterPrimary,
+        sessionResources: {
+          context: {
+            percent: Number.NaN,
+            usedTokens: 1,
+            contextWindow: 200000,
+          },
+        },
+      },
+      stale: false,
+      enabled: true,
+    }),
+    null,
+  );
+  assert.equal(
+    resolvePrimaryContextMeter({
+      activity: { ...meterPrimary, source: "snflow" },
+      stale: false,
+      enabled: true,
+    }),
+    null,
+  );
+  assert.equal(
+    resolvePrimaryContextMeter({ activity: meterPrimary, stale: true, enabled: true }),
+    null,
+  );
+  assert.equal(
+    resolvePrimaryContextMeter({ activity: meterPrimary, stale: false, enabled: false }),
+    null,
+  );
+  const settledPrimary = {
+    ...meterPrimary,
+    presentation: "ready" as const,
+    executionState: "settled" as const,
+    sessionResources: {
+      context: { percent: 41, usedTokens: 82000, contextWindow: 200000 },
+    },
+  };
+  assert.equal(
+    resolvePrimaryContextMeter({
+      activity: settledPrimary,
+      stale: false,
+      enabled: true,
+    })?.displayPercent,
+    41,
+  );
+  const olderAgent = {
+    ...meterPrimary,
+    activityId: "older-agent",
+    updatedAt: "2026-08-12T12:00:00.000Z",
+    sessionResources: {
+      context: { percent: 11, usedTokens: 1, contextWindow: 200000 },
+    },
+  };
+  const newerAgent = {
+    ...meterPrimary,
+    activityId: "newer-agent",
+    updatedAt: "2026-08-12T12:20:00.000Z",
+    sessionResources: {
+      context: { percent: 88, usedTokens: 1, contextWindow: 200000 },
+    },
+  };
+  const mixedPrimary = selectPrimaryActivity([
+    {
+      projectKey: "alpha",
+      displayName: "Alpha",
+      counts: { active: 1, needsInput: 0, blocked: 0, ready: 0, unread: 0 },
+      activities: [olderAgent],
+    },
+    {
+      projectKey: "zulu",
+      displayName: "Zulu",
+      counts: { active: 1, needsInput: 0, blocked: 0, ready: 0, unread: 0 },
+      activities: [newerAgent],
+    },
+  ]);
+  assert.equal(mixedPrimary?.activityId, newerAgent.activityId);
+  assert.equal(
+    resolvePrimaryContextMeter({
+      activity: mixedPrimary,
+      stale: false,
+      enabled: true,
+    })?.displayPercent,
+    88,
+  );
+  const nonAgentPrimary = selectPrimaryActivity([
+    {
+      projectKey: "flow",
+      displayName: "Flow",
+      counts: { active: 0, needsInput: 1, blocked: 0, ready: 0, unread: 1 },
+      activities: [
+        {
+          ...meterPrimary,
+          activityId: "snflow-needs-input",
+          source: "snflow",
+          presentation: "needs_input",
+          executionState: "running",
+          sessionResources: undefined,
+        },
+      ],
+    },
+    {
+      projectKey: "agent-b",
+      displayName: "Agent B",
+      counts: { active: 1, needsInput: 0, blocked: 0, ready: 0, unread: 0 },
+      activities: [newerAgent],
+    },
+  ]);
+  assert.equal(nonAgentPrimary?.activityId, "snflow-needs-input");
+  assert.equal(
+    resolvePrimaryContextMeter({
+      activity: nonAgentPrimary,
+      stale: false,
+      enabled: true,
+    }),
+    null,
+  );
 
   // --- Running cue classification uses finite local allowlists only ---
   const runningCueRow = {
@@ -1282,6 +1458,15 @@ async function main() {
   });
   assert.equal(offlineView.presentation, "service_not_running");
   assert.equal(offlineView.petScale, "medium");
+  assert.equal(offlineView.showContextMeter, true);
+  assert.equal(
+    buildActivityView({
+      snapshot: null,
+      connection: offline,
+      settings: updateDesktopSettings(createDefaultDesktopSettings(), { showContextMeter: false }),
+    }).showContextMeter,
+    false,
+  );
   assert.equal(offlineView.canCopyStartCommand, true);
   assert.equal(offlineView.startCommand, DESKTOP_START_COMMAND);
   const banner = connectionBannerText({
@@ -1671,8 +1856,14 @@ async function main() {
     }),
   );
   assert.equal(migrated.petScale, "medium");
+  assert.equal(migrated.showContextMeter, true);
   assert.equal(migrated.selectedPetId, "snail-classic");
   assert.deepEqual(migrated.windowPosition, { x: 120, y: 80 });
+  assert.equal(
+    updateDesktopSettings(createDefaultDesktopSettings(), { showContextMeter: false }).showContextMeter,
+    false,
+  );
+  assert.equal(normalizeDesktopSettings({ showContextMeter: "nope" }).showContextMeter, true);
   assert.equal(normalizeDesktopSettings({ petScale: "huge" }).petScale, "medium");
   assert.equal(normalizeDesktopSettings({ petScale: 0.85 }).petScale, "small");
   assert.equal(normalizeDesktopSettings({ petScale: 1.2 }).petScale, "large");
@@ -1932,6 +2123,9 @@ async function main() {
   assert.ok(html.includes('data-pet-id="snail-classic"'));
   assert.ok(html.includes('data-pet-scale="large"'));
   assert.ok(html.includes("恢复默认位置与尺寸"));
+  assert.ok(html.includes("显示上下文占比"));
+  assert.ok(html.includes('id="pet-context-meter"'));
+  assert.ok(html.includes('id="pref-show-context-meter"'));
   assert.ok(html.includes("收起活动列表"));
   assert.ok(html.includes('id="activity-filters"'));
   for (const filter of ["all", "attention", "running", "completed"]) {
@@ -1944,7 +2138,11 @@ async function main() {
   // Author display rules must not resurrect [hidden] surfaces (collapsed tray bleed).
   assert.ok(css.includes(".activity-tray[hidden]"));
   assert.ok(css.includes(".pet-badge[hidden]"));
+  assert.ok(css.includes(".pet-context-meter[hidden]"));
   assert.ok(css.includes("display: none !important"));
+  assert.ok(css.includes(".pet-context-ring"));
+  assert.ok(css.includes("conic-gradient"));
+  assert.ok(css.includes("--context-percent"));
   assert.ok(css.includes('data-tray-anchor="bottom-right"'));
   assert.ok(css.includes("column-reverse"));
   assert.ok(css.includes('.pet-root[data-pet="snail-classic"]'));
@@ -1997,6 +2195,8 @@ async function main() {
   assert.ok(rendererSource.includes("launchConfetti"));
   assert.ok(rendererSource.includes("dataset.presentation"));
   assert.ok(rendererSource.includes("selectPrimaryActivity"));
+  assert.ok(rendererSource.includes("resolvePrimaryContextMeter"));
+  assert.ok(rendererSource.includes("showContextMeter"));
   assert.ok(rendererSource.includes("resolveRunningCue"));
   assert.ok(rendererSource.includes('setAttribute("data-running-cue", runningCue)'));
   assert.ok(rendererSource.includes("scheduleRunningCueUpdate"));
@@ -2095,6 +2295,8 @@ async function main() {
   assert.ok(petAppJs.includes("formatSessionResources"));
   assert.ok(petAppJs.includes("markRead"));
   assert.ok(petAppJs.includes("selectPrimaryActivity"));
+  assert.ok(petAppJs.includes("resolvePrimaryContextMeter"));
+  assert.ok(petAppJs.includes("showContextMeter"));
   assert.ok(petAppJs.includes("data-running-cue"));
   assert.ok(petAppJs.includes("scheduleRunningCueUpdate"));
 
