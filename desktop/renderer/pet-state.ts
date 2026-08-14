@@ -382,12 +382,17 @@ export function reducePetBubbleState(
 }
 
 // ---------------------------------------------------------------------------
-// Completion celebration dedup (pure)
+// Completion celebration dedup + coalescing (pure)
 // ---------------------------------------------------------------------------
 
+/** Completions landing within this window share one confetti burst (P2). */
+export const PET_CELEBRATE_COALESCE_MS = 1500;
+
 export type PetCelebrateState = {
-  /** Transition id of the last ready transition that already produced a burst. */
+  /** Transition id of the last ready transition already covered by a burst. */
   lastTransitionId: string | null;
+  /** Wall clock of the last burst (null until one fires). */
+  lastCelebratedAt: number | null;
 };
 
 export type PetCelebrateSignal = {
@@ -399,17 +404,19 @@ export type PetCelebrateSignal = {
 };
 
 export function createInitialPetCelebrateState(): PetCelebrateState {
-  return { lastTransitionId: null };
+  return { lastTransitionId: null, lastCelebratedAt: null };
 }
 
 /**
  * Decide whether a ready transition should fire one confetti burst.
  * Same transition replay, reset/baseline, reduced-motion and non-ready states
- * never celebrate; a fresh ready transition celebrates exactly once.
+ * never celebrate; a fresh ready transition celebrates once, and multiple
+ * completions within the coalesce window collapse into a single burst.
  */
 export function shouldCelebrateCompletion(
   state: PetCelebrateState,
   signal: PetCelebrateSignal,
+  now: number,
 ): { celebrate: boolean; state: PetCelebrateState } {
   if (signal.reducedMotion) return { celebrate: false, state };
   if (signal.presentation !== "ready") return { celebrate: false, state };
@@ -417,7 +424,80 @@ export function shouldCelebrateCompletion(
   const transitionId = signal.transitionId?.trim() || null;
   if (!transitionId) return { celebrate: false, state };
   if (transitionId === state.lastTransitionId) return { celebrate: false, state };
-  return { celebrate: true, state: { lastTransitionId: transitionId } };
+  if (
+    state.lastCelebratedAt != null &&
+    now - state.lastCelebratedAt < PET_CELEBRATE_COALESCE_MS
+  ) {
+    // Absorb the completion into the active burst instead of starting a storm.
+    return { celebrate: false, state: { ...state, lastTransitionId: transitionId } };
+  }
+  return {
+    celebrate: true,
+    state: { lastTransitionId: transitionId, lastCelebratedAt: now },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// One-shot semantic transition actions (P2)
+// ---------------------------------------------------------------------------
+
+export type PetTransitionAction = "ready-to-idle-sink" | "retrying-to-running-go";
+
+/**
+ * Map a real aggregate presentation change to a short, interruptible transition
+ * action. Null means no transition action (same state, baseline, or reduced
+ * motion). Frequent same-state snapshots never replay these.
+ */
+export function resolvePetTransitionAction(
+  from: PetVisualState | null,
+  to: PetVisualState,
+  reducedMotion: boolean,
+): PetTransitionAction | null {
+  if (reducedMotion) return null;
+  if (from === "ready" && to === "idle") return "ready-to-idle-sink";
+  if (from === "retrying" && to === "running") return "retrying-to-running-go";
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Idle-life scheduling policy (pure, P2)
+// ---------------------------------------------------------------------------
+
+export const PET_BLINK_DELAY_MIN_MS = 2600;
+export const PET_BLINK_DELAY_RANGE_MS = 4600;
+export const PET_ACT_DELAY_MIN_MS = 6500;
+export const PET_ACT_DELAY_RANGE_MS = 7500;
+
+/** Next random blink delay (injectable random for tests). */
+export function nextBlinkDelayMs(random: () => number = Math.random): number {
+  return PET_BLINK_DELAY_MIN_MS + random() * PET_BLINK_DELAY_RANGE_MS;
+}
+
+/** Next random idle-act delay (injectable random for tests). */
+export function nextActDelayMs(random: () => number = Math.random): number {
+  return PET_ACT_DELAY_MIN_MS + random() * PET_ACT_DELAY_RANGE_MS;
+}
+
+/**
+ * Pure gate for decorative idle life (blink + random acts). Off while hidden,
+ * reduced-motion, pressed, dragging, or not in the animated idle pose.
+ */
+export function shouldRunIdleLife(input: {
+  animated: boolean;
+  idle: boolean;
+  hidden: boolean;
+  reducedMotion: boolean;
+  pressed: boolean;
+  dragging: boolean;
+}): boolean {
+  return (
+    input.animated &&
+    input.idle &&
+    !input.hidden &&
+    !input.reducedMotion &&
+    !input.pressed &&
+    !input.dragging
+  );
 }
 
 export type DesktopActivityFilter = "all" | "attention" | "running" | "completed";

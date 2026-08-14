@@ -762,6 +762,30 @@ select {
   100% { transform: scaleY(1); }
 }
 
+/* One-shot semantic state transitions (P2): ready → idle sink-nod and
+   retrying → running re-departure. Short and interruptible; reduced-motion
+   never sets these classes. */
+.pet-avatar.is-animated.transition-ready-sink .pet-head {
+  animation: transition-ready-sink-head 520ms ease-in-out;
+}
+
+.pet-avatar.is-animated.transition-retry-go {
+  animation: transition-retry-go 560ms ease-out;
+}
+
+@keyframes transition-ready-sink-head {
+  0% { transform: translateY(0) rotate(0); }
+  35% { transform: translateY(2px) rotate(2deg); }
+  70% { transform: translateY(0) rotate(-1deg); }
+  100% { transform: translateY(0) rotate(0); }
+}
+
+@keyframes transition-retry-go {
+  0% { transform: translateX(-1px); }
+  45% { transform: translateX(2.5px) translateY(-1px); }
+  100% { transform: translateX(0) translateY(0); }
+}
+
 /* Idle mini-acts, scheduled at random from JS. Every keyframe starts and ends
    in the rest pose so the blink jitter can restart animations mid-act cleanly. */
 .pet-avatar.is-animated.frame-idle.idle-act-look .pet-eye {

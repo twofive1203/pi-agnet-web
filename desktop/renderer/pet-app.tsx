@@ -26,6 +26,8 @@ import {
   formatElapsed,
   getBuiltinPetManifest,
   moveActivitySelection,
+  nextActDelayMs,
+  nextBlinkDelayMs,
   petSourceLabel,
   petStateGlyph,
   petStateLabel,
@@ -34,9 +36,12 @@ import {
   resolveActivityElapsedMs,
   resolveActivitySelection,
   resolvePetFrame,
+  resolvePetTransitionAction,
   shouldCelebrateCompletion,
+  shouldRunIdleLife,
   type DesktopActivityFilter,
   type PetBubbleSignal,
+  type PetTransitionAction,
   type PetVisualState,
 } from "./pet-state";
 
@@ -112,6 +117,13 @@ export function renderPetApp(root: Document = document): {
   /** Pixel threshold before a pointer gesture becomes a window drag. */
   const DRAG_THRESHOLD_PX = 5;
 
+  /** One-shot semantic transition action classes + their removal delay. */
+  const TRANSITION_CLASS: Record<PetTransitionAction, string> = {
+    "ready-to-idle-sink": "transition-ready-sink",
+    "retrying-to-running-go": "transition-retry-go",
+  };
+  const TRANSITION_ACTION_MS = 620;
+
   let current: DesktopActivityView | null = null;
   let settingsOpen = false;
   let trayMoreOpen = false;
@@ -119,6 +131,10 @@ export function renderPetApp(root: Document = document): {
   let idleActTimer: ReturnType<typeof setTimeout> | null = null;
   let idleActRemoveTimer: ReturnType<typeof setTimeout> | null = null;
   let petDropPopTimer: ReturnType<typeof setTimeout> | null = null;
+  let transitionClass: string | null = null;
+  let transitionTimer: ReturnType<typeof setTimeout> | null = null;
+  let actActive = false;
+  let documentHidden = typeof document !== "undefined" && document.hidden === true;
   let idleLifeKey: string | null = null;
   let activityFilter: DesktopActivityFilter = "all";
   let selectedVisibleActivityId: string | null = null;
@@ -140,6 +156,9 @@ export function renderPetApp(root: Document = document): {
       if (current) update(current);
     };
     mq.addEventListener?.("change", onMotion);
+  }
+  if (typeof document !== "undefined") {
+    document.addEventListener("visibilitychange", onVisibilityChange);
   }
 
   function activityIds(projects: readonly DesktopProjectGroup[]): string[] {
@@ -258,6 +277,31 @@ export function renderPetApp(root: Document = document): {
     if (focus) focusActivityRow(activityId);
   }
 
+  // Whether the decorative idle acts may run right now (pure policy in pet-state).
+  function actEnabled(avatar: HTMLElement | null): boolean {
+    return shouldRunIdleLife({
+      animated: !!avatar && avatar.classList.contains("is-animated"),
+      idle: !!avatar && avatar.classList.contains("frame-idle"),
+      hidden: documentHidden,
+      reducedMotion,
+      pressed: !!avatar && avatar.classList.contains("is-pressed"),
+      dragging: !!avatar && avatar.classList.contains("is-dragging"),
+    });
+  }
+
+  // Blink runs in every animated state, but pauses while an idle act owns the eyes.
+  function blinkEnabled(avatar: HTMLElement | null): boolean {
+    return (
+      !!avatar &&
+      avatar.classList.contains("is-animated") &&
+      !documentHidden &&
+      !reducedMotion &&
+      !actActive &&
+      !avatar.classList.contains("is-pressed") &&
+      !avatar.classList.contains("is-dragging")
+    );
+  }
+
   // Blinks feel alive only when the cadence is irregular: restart the eye CSS
   // animation at random offsets. The blink keyframes sit on the eye spans, so the
   // restart must target them directly — resetting the avatar's own animation
@@ -268,10 +312,10 @@ export function renderPetApp(root: Document = document): {
       clearTimeout(idleBlinkTimer);
       idleBlinkTimer = null;
     }
-    if (!avatar || !avatar.classList.contains("is-animated")) return;
+    if (!blinkEnabled(avatar)) return;
     idleBlinkTimer = setTimeout(() => {
       idleBlinkTimer = null;
-      if (!avatar.isConnected || !avatar.classList.contains("is-animated")) return;
+      if (!avatar?.isConnected || !blinkEnabled(avatar)) return;
       const eyes = avatar.querySelectorAll(".pet-eye");
       eyes.forEach((eye) => {
         if (eye instanceof HTMLElement) eye.style.animation = "none";
@@ -281,7 +325,7 @@ export function renderPetApp(root: Document = document): {
         if (eye instanceof HTMLElement) eye.style.animation = "";
       });
       scheduleIdleBlink(avatar);
-    }, 2600 + Math.random() * 4600);
+    }, nextBlinkDelayMs());
   }
 
   // Random idle mini-acts (look around / doze off / stretch) keep the pet from
@@ -301,40 +345,50 @@ export function renderPetApp(root: Document = document): {
       clearTimeout(idleActRemoveTimer);
       idleActRemoveTimer = null;
     }
+    actActive = false;
     avatar?.classList.remove("idle-act-look", "idle-act-sleepy", "idle-act-stretch");
   }
 
   function scheduleIdleActs(avatar: HTMLElement | null): void {
     clearIdleAct(avatar);
-    if (
-      !avatar ||
-      !avatar.classList.contains("frame-idle") ||
-      !avatar.classList.contains("is-animated")
-    ) {
-      return;
-    }
+    if (!avatar || !actEnabled(avatar)) return;
     const queueNext = () => {
       idleActTimer = setTimeout(() => {
         idleActTimer = null;
-        if (
-          !avatar.isConnected ||
-          !avatar.classList.contains("frame-idle") ||
-          !avatar.classList.contains("is-animated")
-        ) {
-          return;
+        if (!avatar.isConnected || !actEnabled(avatar) || actActive) return;
+        const act = IDLE_ACTS[Math.floor(Math.random() * IDLE_ACTS.length)];
+        actActive = true;
+        // Pause blink restarts while the act owns the eyes; resume after it ends.
+        if (idleBlinkTimer) {
+          clearTimeout(idleBlinkTimer);
+          idleBlinkTimer = null;
         }
-        if (!avatar.classList.contains("is-pressed")) {
-          const act = IDLE_ACTS[Math.floor(Math.random() * IDLE_ACTS.length)];
-          avatar.classList.add(act.className);
-          idleActRemoveTimer = setTimeout(() => {
-            idleActRemoveTimer = null;
-            avatar.classList.remove(act.className);
-          }, act.durationMs + 80);
-        }
+        avatar.classList.add(act.className);
+        idleActRemoveTimer = setTimeout(() => {
+          idleActRemoveTimer = null;
+          actActive = false;
+          avatar.classList.remove(act.className);
+          scheduleIdleBlink(avatar);
+        }, act.durationMs + 80);
         queueNext();
-      }, 6500 + Math.random() * 7500);
+      }, nextActDelayMs());
     };
     queueNext();
+  }
+
+  // Hidden windows pause decorative timers; re-arming happens on visibility.
+  function onVisibilityChange(): void {
+    documentHidden = document.hidden === true;
+    if (documentHidden) {
+      if (idleBlinkTimer) {
+        clearTimeout(idleBlinkTimer);
+        idleBlinkTimer = null;
+      }
+      clearIdleAct(petAvatar instanceof HTMLElement ? petAvatar : null);
+    } else if (petAvatar instanceof HTMLElement) {
+      scheduleIdleBlink(petAvatar);
+      scheduleIdleActs(petAvatar);
+    }
   }
 
   // One burst of confetti when the aggregate state reaches "ready". Particles
@@ -368,6 +422,35 @@ export function renderPetApp(root: Document = document): {
     btnTrayMore?.setAttribute("aria-expanded", open ? "true" : "false");
   }
 
+  function startTransition(className: string): void {
+    if (transitionTimer) {
+      clearTimeout(transitionTimer);
+      transitionTimer = null;
+    }
+    if (transitionClass && petAvatar instanceof HTMLElement) {
+      petAvatar.classList.remove(transitionClass);
+    }
+    transitionClass = className;
+    transitionTimer = setTimeout(() => {
+      transitionTimer = null;
+      transitionClass = null;
+      if (petAvatar instanceof HTMLElement) {
+        petAvatar.classList.remove(className);
+      }
+    }, TRANSITION_ACTION_MS);
+  }
+
+  function clearTransition(): void {
+    if (transitionTimer) {
+      clearTimeout(transitionTimer);
+      transitionTimer = null;
+    }
+    if (transitionClass && petAvatar instanceof HTMLElement) {
+      petAvatar.classList.remove(transitionClass);
+    }
+    transitionClass = null;
+  }
+
   function update(view: DesktopActivityView): void {
     const previousView = current;
     current = view;
@@ -377,10 +460,21 @@ export function renderPetApp(root: Document = document): {
     }
     const state = isPetVisualState(view.presentation) ? view.presentation : "idle";
     const manifest = getBuiltinPetManifest(view.selectedPetId);
-    const frame = resolvePetFrame(manifest, state, view.reducedMotion || reducedMotion);
+    const motionReduced = view.reducedMotion || reducedMotion;
+    const frame = resolvePetFrame(manifest, state, motionReduced);
 
     if (petAvatar) {
-      petAvatar.className = `pet-avatar frame-${frame.frame}${frame.animated ? " is-animated" : ""}`;
+      const transitionAction = resolvePetTransitionAction(
+        previousView?.presentation ?? null,
+        state,
+        motionReduced,
+      );
+      if (transitionAction) {
+        startTransition(TRANSITION_CLASS[transitionAction]);
+      } else if (motionReduced) {
+        clearTransition();
+      }
+      petAvatar.className = `pet-avatar frame-${frame.frame}${frame.animated ? " is-animated" : ""}${transitionClass ? ` ${transitionClass}` : ""}`;
       petAvatar.setAttribute("data-state", state);
       // Re-arm idle life only when the visual frame actually changes, so frequent
       // view updates never starve the blink/act timers.
@@ -414,12 +508,16 @@ export function renderPetApp(root: Document = document): {
       signal,
       now: bubbleNow,
     });
-    const celebrateDecision = shouldCelebrateCompletion(celebrateState, {
-      presentation: state,
-      transitionId: signal.transitionId,
-      reducedMotion: view.reducedMotion || reducedMotion,
-      reset: signal.reset,
-    });
+    const celebrateDecision = shouldCelebrateCompletion(
+      celebrateState,
+      {
+        presentation: state,
+        transitionId: signal.transitionId,
+        reducedMotion: motionReduced,
+        reset: signal.reset,
+      },
+      bubbleNow,
+    );
     celebrateState = celebrateDecision.state;
     if (celebrateDecision.celebrate) {
       launchConfetti();
@@ -1222,7 +1320,11 @@ export function renderPetApp(root: Document = document): {
         clearTimeout(petDropPopTimer);
         petDropPopTimer = null;
       }
+      clearTransition();
       clearIdleAct(petAvatar instanceof HTMLElement ? petAvatar : null);
+      if (typeof document !== "undefined") {
+        document.removeEventListener("visibilitychange", onVisibilityChange);
+      }
       root.removeEventListener("keydown", onKeyDown);
       root.removeEventListener("click", onRootClick);
       unsubscribe?.();

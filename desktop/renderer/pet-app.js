@@ -662,17 +662,43 @@
       expiresAt: visible && mode === "transient" ? event.now + PET_BUBBLE_TRANSIENT_MS : null
     };
   }
+  var PET_CELEBRATE_COALESCE_MS = 1500;
   function createInitialPetCelebrateState() {
-    return { lastTransitionId: null };
+    return { lastTransitionId: null, lastCelebratedAt: null };
   }
-  function shouldCelebrateCompletion(state, signal) {
+  function shouldCelebrateCompletion(state, signal, now) {
     if (signal.reducedMotion) return { celebrate: false, state };
     if (signal.presentation !== "ready") return { celebrate: false, state };
     if (signal.reset) return { celebrate: false, state };
     const transitionId = signal.transitionId?.trim() || null;
     if (!transitionId) return { celebrate: false, state };
     if (transitionId === state.lastTransitionId) return { celebrate: false, state };
-    return { celebrate: true, state: { lastTransitionId: transitionId } };
+    if (state.lastCelebratedAt != null && now - state.lastCelebratedAt < PET_CELEBRATE_COALESCE_MS) {
+      return { celebrate: false, state: { ...state, lastTransitionId: transitionId } };
+    }
+    return {
+      celebrate: true,
+      state: { lastTransitionId: transitionId, lastCelebratedAt: now }
+    };
+  }
+  function resolvePetTransitionAction(from, to, reducedMotion) {
+    if (reducedMotion) return null;
+    if (from === "ready" && to === "idle") return "ready-to-idle-sink";
+    if (from === "retrying" && to === "running") return "retrying-to-running-go";
+    return null;
+  }
+  var PET_BLINK_DELAY_MIN_MS = 2600;
+  var PET_BLINK_DELAY_RANGE_MS = 4600;
+  var PET_ACT_DELAY_MIN_MS = 6500;
+  var PET_ACT_DELAY_RANGE_MS = 7500;
+  function nextBlinkDelayMs(random = Math.random) {
+    return PET_BLINK_DELAY_MIN_MS + random() * PET_BLINK_DELAY_RANGE_MS;
+  }
+  function nextActDelayMs(random = Math.random) {
+    return PET_ACT_DELAY_MIN_MS + random() * PET_ACT_DELAY_RANGE_MS;
+  }
+  function shouldRunIdleLife(input) {
+    return input.animated && input.idle && !input.hidden && !input.reducedMotion && !input.pressed && !input.dragging;
   }
   function activityMatchesFilter(activity, filter) {
     switch (filter) {
@@ -802,6 +828,11 @@
       bridge?.hideToTray();
     };
     const DRAG_THRESHOLD_PX = 5;
+    const TRANSITION_CLASS = {
+      "ready-to-idle-sink": "transition-ready-sink",
+      "retrying-to-running-go": "transition-retry-go"
+    };
+    const TRANSITION_ACTION_MS = 620;
     let current = null;
     let settingsOpen = false;
     let trayMoreOpen = false;
@@ -809,6 +840,10 @@
     let idleActTimer = null;
     let idleActRemoveTimer = null;
     let petDropPopTimer = null;
+    let transitionClass = null;
+    let transitionTimer = null;
+    let actActive = false;
+    let documentHidden = typeof document !== "undefined" && document.hidden === true;
     let idleLifeKey = null;
     let activityFilter = "all";
     let selectedVisibleActivityId = null;
@@ -827,6 +862,9 @@
         if (current) update(current);
       };
       mq.addEventListener?.("change", onMotion);
+    }
+    if (typeof document !== "undefined") {
+      document.addEventListener("visibilitychange", onVisibilityChange);
     }
     function activityIds(projects) {
       const ids = [];
@@ -925,15 +963,28 @@
       if (current) update(current);
       if (focus) focusActivityRow(activityId);
     }
+    function actEnabled(avatar) {
+      return shouldRunIdleLife({
+        animated: !!avatar && avatar.classList.contains("is-animated"),
+        idle: !!avatar && avatar.classList.contains("frame-idle"),
+        hidden: documentHidden,
+        reducedMotion,
+        pressed: !!avatar && avatar.classList.contains("is-pressed"),
+        dragging: !!avatar && avatar.classList.contains("is-dragging")
+      });
+    }
+    function blinkEnabled(avatar) {
+      return !!avatar && avatar.classList.contains("is-animated") && !documentHidden && !reducedMotion && !actActive && !avatar.classList.contains("is-pressed") && !avatar.classList.contains("is-dragging");
+    }
     function scheduleIdleBlink(avatar) {
       if (idleBlinkTimer) {
         clearTimeout(idleBlinkTimer);
         idleBlinkTimer = null;
       }
-      if (!avatar || !avatar.classList.contains("is-animated")) return;
+      if (!blinkEnabled(avatar)) return;
       idleBlinkTimer = setTimeout(() => {
         idleBlinkTimer = null;
-        if (!avatar.isConnected || !avatar.classList.contains("is-animated")) return;
+        if (!avatar?.isConnected || !blinkEnabled(avatar)) return;
         const eyes = avatar.querySelectorAll(".pet-eye");
         eyes.forEach((eye) => {
           if (eye instanceof HTMLElement) eye.style.animation = "none";
@@ -943,7 +994,7 @@
           if (eye instanceof HTMLElement) eye.style.animation = "";
         });
         scheduleIdleBlink(avatar);
-      }, 2600 + Math.random() * 4600);
+      }, nextBlinkDelayMs());
     }
     const IDLE_ACTS = [
       { className: "idle-act-look", durationMs: 2400 },
@@ -959,31 +1010,46 @@
         clearTimeout(idleActRemoveTimer);
         idleActRemoveTimer = null;
       }
+      actActive = false;
       avatar?.classList.remove("idle-act-look", "idle-act-sleepy", "idle-act-stretch");
     }
     function scheduleIdleActs(avatar) {
       clearIdleAct(avatar);
-      if (!avatar || !avatar.classList.contains("frame-idle") || !avatar.classList.contains("is-animated")) {
-        return;
-      }
+      if (!avatar || !actEnabled(avatar)) return;
       const queueNext = () => {
         idleActTimer = setTimeout(() => {
           idleActTimer = null;
-          if (!avatar.isConnected || !avatar.classList.contains("frame-idle") || !avatar.classList.contains("is-animated")) {
-            return;
+          if (!avatar.isConnected || !actEnabled(avatar) || actActive) return;
+          const act = IDLE_ACTS[Math.floor(Math.random() * IDLE_ACTS.length)];
+          actActive = true;
+          if (idleBlinkTimer) {
+            clearTimeout(idleBlinkTimer);
+            idleBlinkTimer = null;
           }
-          if (!avatar.classList.contains("is-pressed")) {
-            const act = IDLE_ACTS[Math.floor(Math.random() * IDLE_ACTS.length)];
-            avatar.classList.add(act.className);
-            idleActRemoveTimer = setTimeout(() => {
-              idleActRemoveTimer = null;
-              avatar.classList.remove(act.className);
-            }, act.durationMs + 80);
-          }
+          avatar.classList.add(act.className);
+          idleActRemoveTimer = setTimeout(() => {
+            idleActRemoveTimer = null;
+            actActive = false;
+            avatar.classList.remove(act.className);
+            scheduleIdleBlink(avatar);
+          }, act.durationMs + 80);
           queueNext();
-        }, 6500 + Math.random() * 7500);
+        }, nextActDelayMs());
       };
       queueNext();
+    }
+    function onVisibilityChange() {
+      documentHidden = document.hidden === true;
+      if (documentHidden) {
+        if (idleBlinkTimer) {
+          clearTimeout(idleBlinkTimer);
+          idleBlinkTimer = null;
+        }
+        clearIdleAct(petAvatar instanceof HTMLElement ? petAvatar : null);
+      } else if (petAvatar instanceof HTMLElement) {
+        scheduleIdleBlink(petAvatar);
+        scheduleIdleActs(petAvatar);
+      }
     }
     function launchConfetti() {
       const host = petButton instanceof HTMLElement ? petButton.querySelector(".pet-stage") : null;
@@ -1011,6 +1077,33 @@
       if (trayMoreMenu) trayMoreMenu.hidden = !open;
       btnTrayMore?.setAttribute("aria-expanded", open ? "true" : "false");
     }
+    function startTransition(className) {
+      if (transitionTimer) {
+        clearTimeout(transitionTimer);
+        transitionTimer = null;
+      }
+      if (transitionClass && petAvatar instanceof HTMLElement) {
+        petAvatar.classList.remove(transitionClass);
+      }
+      transitionClass = className;
+      transitionTimer = setTimeout(() => {
+        transitionTimer = null;
+        transitionClass = null;
+        if (petAvatar instanceof HTMLElement) {
+          petAvatar.classList.remove(className);
+        }
+      }, TRANSITION_ACTION_MS);
+    }
+    function clearTransition() {
+      if (transitionTimer) {
+        clearTimeout(transitionTimer);
+        transitionTimer = null;
+      }
+      if (transitionClass && petAvatar instanceof HTMLElement) {
+        petAvatar.classList.remove(transitionClass);
+      }
+      transitionClass = null;
+    }
     function update(view) {
       const previousView = current;
       current = view;
@@ -1020,9 +1113,20 @@
       }
       const state = isPetVisualState(view.presentation) ? view.presentation : "idle";
       const manifest = getBuiltinPetManifest(view.selectedPetId);
-      const frame = resolvePetFrame(manifest, state, view.reducedMotion || reducedMotion);
+      const motionReduced = view.reducedMotion || reducedMotion;
+      const frame = resolvePetFrame(manifest, state, motionReduced);
       if (petAvatar) {
-        petAvatar.className = `pet-avatar frame-${frame.frame}${frame.animated ? " is-animated" : ""}`;
+        const transitionAction = resolvePetTransitionAction(
+          previousView?.presentation ?? null,
+          state,
+          motionReduced
+        );
+        if (transitionAction) {
+          startTransition(TRANSITION_CLASS[transitionAction]);
+        } else if (motionReduced) {
+          clearTransition();
+        }
+        petAvatar.className = `pet-avatar frame-${frame.frame}${frame.animated ? " is-animated" : ""}${transitionClass ? ` ${transitionClass}` : ""}`;
         petAvatar.setAttribute("data-state", state);
         const lifeKey = `${frame.frame}:${frame.animated ? "1" : "0"}`;
         if (lifeKey !== idleLifeKey) {
@@ -1050,12 +1154,16 @@
         signal,
         now: bubbleNow
       });
-      const celebrateDecision = shouldCelebrateCompletion(celebrateState, {
-        presentation: state,
-        transitionId: signal.transitionId,
-        reducedMotion: view.reducedMotion || reducedMotion,
-        reset: signal.reset
-      });
+      const celebrateDecision = shouldCelebrateCompletion(
+        celebrateState,
+        {
+          presentation: state,
+          transitionId: signal.transitionId,
+          reducedMotion: motionReduced,
+          reset: signal.reset
+        },
+        bubbleNow
+      );
       celebrateState = celebrateDecision.state;
       if (celebrateDecision.celebrate) {
         launchConfetti();
@@ -1705,7 +1813,11 @@
           clearTimeout(petDropPopTimer);
           petDropPopTimer = null;
         }
+        clearTransition();
         clearIdleAct(petAvatar instanceof HTMLElement ? petAvatar : null);
+        if (typeof document !== "undefined") {
+          document.removeEventListener("visibilitychange", onVisibilityChange);
+        }
         root.removeEventListener("keydown", onKeyDown);
         root.removeEventListener("click", onRootClick);
         unsubscribe?.();

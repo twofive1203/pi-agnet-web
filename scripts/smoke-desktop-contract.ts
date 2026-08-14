@@ -104,6 +104,8 @@ import {
   formatElapsed,
   getBuiltinPetManifest,
   moveActivitySelection,
+  nextActDelayMs,
+  nextBlinkDelayMs,
   petSourceLabel,
   petTerminalOutcome,
   reducePetBubbleState,
@@ -111,7 +113,9 @@ import {
   resolveActivitySelection,
   resolveBuiltinPetManifest,
   resolvePetFrame,
+  resolvePetTransitionAction,
   shouldCelebrateCompletion,
+  shouldRunIdleLife,
 } from "../desktop/renderer/pet-state";
 import { DESKTOP_PACKAGE_CONTRACT } from "../forge.config";
 import { buildAgentDeepLink } from "../lib/desktop-deep-link";
@@ -573,7 +577,7 @@ async function main() {
   });
   assert.equal(bubble.visible, false);
 
-  // --- Completion celebration dedup (transitionId-based, pure) ---
+  // --- Completion celebration dedup + coalescing (transitionId-based, pure) ---
   const readyCelebrateSignal = {
     presentation: "ready" as const,
     transitionId: "celebrate-ready-1",
@@ -581,57 +585,118 @@ async function main() {
     reset: false,
   };
   let celebrate = createInitialPetCelebrateState();
-  const firstCelebrate = shouldCelebrateCompletion(celebrate, readyCelebrateSignal);
+  const firstCelebrate = shouldCelebrateCompletion(celebrate, readyCelebrateSignal, 1000);
   assert.equal(firstCelebrate.celebrate, true);
   celebrate = firstCelebrate.state;
   assert.equal(celebrate.lastTransitionId, "celebrate-ready-1");
+  assert.equal(celebrate.lastCelebratedAt, 1000);
   // Same transition replay (SSE redelivery) must not re-fire.
-  assert.equal(shouldCelebrateCompletion(celebrate, readyCelebrateSignal).celebrate, false);
+  assert.equal(
+    shouldCelebrateCompletion(celebrate, readyCelebrateSignal, 1100).celebrate,
+    false,
+  );
   // Reset/baseline must not replay historical celebration.
   assert.equal(
-    shouldCelebrateCompletion(createInitialPetCelebrateState(), {
-      ...readyCelebrateSignal,
-      transitionId: "celebrate-ready-2",
-      reset: true,
-    }).celebrate,
+    shouldCelebrateCompletion(
+      createInitialPetCelebrateState(),
+      { ...readyCelebrateSignal, transitionId: "celebrate-ready-2", reset: true },
+      2000,
+    ).celebrate,
     false,
   );
   // Reduced motion never celebrates.
   assert.equal(
-    shouldCelebrateCompletion(createInitialPetCelebrateState(), {
-      ...readyCelebrateSignal,
-      transitionId: "celebrate-ready-3",
-      reducedMotion: true,
-    }).celebrate,
+    shouldCelebrateCompletion(
+      createInitialPetCelebrateState(),
+      { ...readyCelebrateSignal, transitionId: "celebrate-ready-3", reducedMotion: true },
+      2000,
+    ).celebrate,
     false,
   );
   // Non-ready and missing transition id never celebrate.
   assert.equal(
-    shouldCelebrateCompletion(createInitialPetCelebrateState(), {
-      presentation: "running",
-      transitionId: "celebrate-running-1",
-      reducedMotion: false,
-      reset: false,
-    }).celebrate,
+    shouldCelebrateCompletion(
+      createInitialPetCelebrateState(),
+      {
+        presentation: "running",
+        transitionId: "celebrate-running-1",
+        reducedMotion: false,
+        reset: false,
+      },
+      2000,
+    ).celebrate,
     false,
   );
   assert.equal(
-    shouldCelebrateCompletion(createInitialPetCelebrateState(), {
-      presentation: "ready",
-      transitionId: null,
-      reducedMotion: false,
-      reset: false,
-    }).celebrate,
+    shouldCelebrateCompletion(
+      createInitialPetCelebrateState(),
+      {
+        presentation: "ready",
+        transitionId: null,
+        reducedMotion: false,
+        reset: false,
+      },
+      2000,
+    ).celebrate,
     false,
   );
-  // A fresh ready transition celebrates again.
+  // A completion inside the coalesce window is absorbed into the active burst.
+  const coalesced = shouldCelebrateCompletion(
+    celebrate,
+    { ...readyCelebrateSignal, transitionId: "celebrate-ready-2" },
+    2000,
+  );
+  assert.equal(coalesced.celebrate, false);
+  celebrate = coalesced.state;
+  assert.equal(celebrate.lastTransitionId, "celebrate-ready-2");
+  assert.equal(celebrate.lastCelebratedAt, 1000);
+  // After the window, a fresh completion celebrates again.
+  const fresh = shouldCelebrateCompletion(
+    celebrate,
+    { ...readyCelebrateSignal, transitionId: "celebrate-ready-3" },
+    3000,
+  );
+  assert.equal(fresh.celebrate, true);
+  celebrate = fresh.state;
+  assert.equal(celebrate.lastCelebratedAt, 3000);
+
+  // --- One-shot semantic transition actions (pure) ---
+  assert.equal(resolvePetTransitionAction("ready", "idle", false), "ready-to-idle-sink");
+  assert.equal(resolvePetTransitionAction("retrying", "running", false), "retrying-to-running-go");
+  assert.equal(resolvePetTransitionAction("ready", "idle", true), null);
+  assert.equal(resolvePetTransitionAction(null, "idle", false), null);
+  assert.equal(resolvePetTransitionAction("running", "idle", false), null);
+  assert.equal(resolvePetTransitionAction("idle", "idle", false), null);
+
+  // --- Idle-life scheduling policy (pure) ---
   assert.equal(
-    shouldCelebrateCompletion(celebrate, {
-      ...readyCelebrateSignal,
-      transitionId: "celebrate-ready-4",
-    }).celebrate,
+    shouldRunIdleLife({ animated: true, idle: true, hidden: false, reducedMotion: false, pressed: false, dragging: false }),
     true,
   );
+  assert.equal(
+    shouldRunIdleLife({ animated: true, idle: true, hidden: true, reducedMotion: false, pressed: false, dragging: false }),
+    false,
+  );
+  assert.equal(
+    shouldRunIdleLife({ animated: true, idle: true, hidden: false, reducedMotion: true, pressed: false, dragging: false }),
+    false,
+  );
+  assert.equal(
+    shouldRunIdleLife({ animated: true, idle: false, hidden: false, reducedMotion: false, pressed: false, dragging: false }),
+    false,
+  );
+  assert.equal(
+    shouldRunIdleLife({ animated: true, idle: true, hidden: false, reducedMotion: false, pressed: true, dragging: false }),
+    false,
+  );
+  assert.equal(
+    shouldRunIdleLife({ animated: false, idle: true, hidden: false, reducedMotion: false, pressed: false, dragging: false }),
+    false,
+  );
+  assert.equal(nextBlinkDelayMs(() => 0), 2600);
+  assert.equal(nextActDelayMs(() => 0), 6500);
+  assert.equal(nextBlinkDelayMs(() => 1), 7200);
+  assert.equal(nextActDelayMs(() => 1), 14000);
 
   // --- Terminal outcome label stays visible after read (decoupled from presentation) ---
   assert.deepEqual(petTerminalOutcome("succeeded"), { label: "已完成", glyph: "✓" });
@@ -1655,6 +1720,8 @@ async function main() {
     "running-tail-stretch",
     "running-shell-gloss",
     "pop-out",
+    "transition-ready-sink",
+    "transition-retry-go",
   ]) {
     assert.ok(css.includes(marker), `pet.css missing ${marker}`);
   }
@@ -1674,6 +1741,18 @@ async function main() {
   assert.ok(rendererSource.includes("petDropPopTimer"));
   assert.ok(rendererSource.includes("clearTimeout(petDropPopTimer)"));
   assert.ok(rendererSource.includes("dataset.outcome"));
+  // P2: transition actions, blink/act scheduling, hidden-window pause.
+  assert.ok(rendererSource.includes("resolvePetTransitionAction"));
+  assert.ok(rendererSource.includes("startTransition"));
+  assert.ok(rendererSource.includes("clearTransition"));
+  assert.ok(rendererSource.includes("blinkEnabled"));
+  assert.ok(rendererSource.includes("actEnabled"));
+  assert.ok(rendererSource.includes("actActive"));
+  assert.ok(rendererSource.includes("onVisibilityChange"));
+  assert.ok(rendererSource.includes('addEventListener("visibilitychange"'));
+  assert.ok(rendererSource.includes('removeEventListener("visibilitychange"'));
+  assert.ok(rendererSource.includes("nextBlinkDelayMs"));
+  assert.ok(rendererSource.includes("nextActDelayMs"));
   assert.ok(css.includes(".row-child-meta"));
   assert.ok(css.includes(".row-actions"));
   assert.ok(html.includes("pet-stack"));

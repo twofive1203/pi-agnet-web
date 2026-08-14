@@ -197,12 +197,14 @@ P1 已于 2026-08-14 完成：Running 常驻动作重做为低幅度、非对称
 5. ~~评估 Needs input / Blocked 的安全快速跳转，并同步键盘路径。~~ 完成。
 6. ~~为庆祝去重、气泡和 timer 生命周期增加行为测试。~~ 完成。
 
-### P2：表现力与小型工程优化
+### P2：表现力与小型工程优化（已完成，第 10 项除外）
 
-7. 基于 transitionId 合并多任务完成庆祝。
-8. 增加少量语义状态转换动作。
-9. 统一 blink / idle act 调度，并在窗口隐藏时暂停装饰性 timer。
-10. 视实际性能证据决定是否移除 blink 强制 reflow。
+P2 已于 2026-08-14 完成 7/8/9 项：庆祝触发改为 transitionId 去重 + 1.5s 合并窗口，窗口内多任务完成合并为一次撒花（reset/SSE 重放/reduced-motion 仍不回放）；新增 ready→idle 下沉点头、retrying→running 重新出发两个一次性语义转换动作（可中断、尊重 reduced-motion、同态快照不重播）；blink/idle act 调度统一为可测试纯策略（`shouldRunIdleLife`/`nextBlinkDelayMs`/`nextActDelayMs`），idle act 播放期间暂停 blink 重启、窗口隐藏时暂停并销毁装饰性 timer、可见时恢复。实现见 `desktop/renderer/pet-state.ts`、`desktop/renderer/pet-app.tsx`、`desktop/renderer/pet.css` 与 `scripts/smoke-desktop-contract.ts`。
+
+7. ~~基于 transitionId 合并多任务完成庆祝。~~ 完成。
+8. ~~增加少量语义状态转换动作。~~ 完成。
+9. ~~统一 blink / idle act 调度，并在窗口隐藏时暂停装饰性 timer。~~ 完成。
+10. 视实际性能证据决定是否移除 blink 强制 reflow。 → 无性能证据，暂不修改（维持现状）。
 
 ### P3：正式资源能力
 
