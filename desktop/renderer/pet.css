@@ -879,6 +879,33 @@ select {
   100% { transform: translateX(0) translateY(0); }
 }
 
+/* U4b fun reactions: short, interruptible, low-amplitude nudges. Applied only
+   in idle and only while motion is allowed (the reduced-motion block below
+   also collapses their durations). Spritesheet pets reuse existing frames — the
+   nudge moves the whole bitmap wrapper, never the anatomy or the manifest. The
+   durations must match PET_POKE_ANIMATION_MS / PET_FLAIL_ANIMATION_MS. */
+.pet-avatar.is-animated.reaction-poke {
+  animation: reaction-poke 380ms ease-in-out;
+}
+
+.pet-avatar.is-animated.reaction-flail {
+  animation: reaction-flail 750ms ease-in-out;
+}
+
+@keyframes reaction-poke {
+  0%, 100% { transform: translateX(0) translateY(0) rotate(0); }
+  30% { transform: translateX(2px) translateY(-1px) rotate(-2deg); }
+  60% { transform: translateX(-1px) translateY(0) rotate(1deg); }
+}
+
+@keyframes reaction-flail {
+  0%, 100% { transform: translateX(0) rotate(0); }
+  20% { transform: translateX(-3px) rotate(-5deg); }
+  40% { transform: translateX(3px) rotate(5deg); }
+  60% { transform: translateX(-2px) rotate(-3deg); }
+  80% { transform: translateX(2px) rotate(3deg); }
+}
+
 /* Idle mini-acts, scheduled at random from JS. Every keyframe starts and ends
    in the rest pose so the blink jitter can restart animations mid-act cleanly. */
 .pet-avatar.is-animated.frame-idle.idle-act-look .pet-eye {

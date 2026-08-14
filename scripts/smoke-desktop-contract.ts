@@ -113,6 +113,7 @@ import {
   createInitialIdleSleepState,
   createInitialPetBubbleState,
   createInitialPetCelebrateState,
+  createInitialPetClickSequenceState,
   createInitialRunningCueState,
   filterProjectGroups,
   formatActiveModel,
@@ -128,22 +129,29 @@ import {
   petTerminalOutcome,
   reduceIdleSleepState,
   reducePetBubbleState,
+  reducePetClickSequence,
   reduceRunningCueState,
   resolveActivityElapsedMs,
   resolveActivitySelection,
   resolveBuiltinPetManifest,
   resolveIdleSleepStage,
   resolvePetFrame,
+  resolvePetReaction,
   resolvePrimaryContextMeter,
   resolvePetTransitionAction,
   resolveRunningCue,
   resolveRunningCueVisual,
   runningCueNextUpdateAt,
   selectPrimaryActivity,
+  shouldAllowPetReaction,
   shouldCelebrateCompletion,
   shouldRunIdleLife,
   shouldRunProgressiveSleep,
+  PET_DOUBLE_CLICK_INTERVAL_MS,
+  PET_FLAIL_ANIMATION_MS,
   PET_IDLE_POINTER_WAKE_THROTTLE_MS,
+  PET_POKE_ANIMATION_MS,
+  PET_QUAD_CLICK_WINDOW_MS,
   PET_SLEEPING_AFTER_MS,
   PET_SLEEPY_AFTER_MS,
   RUNNING_CUE_DEBOUNCE_MS,
@@ -1195,6 +1203,98 @@ async function main() {
     assert.equal(reset.idleSince, null);
     assert.equal(reset.nextBoundaryAt, null);
   }
+
+  // --- U4b fun reactions: click-sequence reducer + reaction gate (pure) ---
+  // Concentrated timing constants stay inside the recommended ranges.
+  assert.ok(PET_DOUBLE_CLICK_INTERVAL_MS >= 300 && PET_DOUBLE_CLICK_INTERVAL_MS <= 350);
+  assert.ok(PET_QUAD_CLICK_WINDOW_MS >= 800 && PET_QUAD_CLICK_WINDOW_MS <= 1000);
+  assert.ok(PET_POKE_ANIMATION_MS >= 300 && PET_POKE_ANIMATION_MS <= 500);
+  assert.ok(PET_FLAIL_ANIMATION_MS >= 600 && PET_FLAIL_ANIMATION_MS <= 900);
+
+  assert.equal(resolvePetReaction(2, PET_DOUBLE_CLICK_INTERVAL_MS), "poke");
+  assert.equal(resolvePetReaction(2, PET_DOUBLE_CLICK_INTERVAL_MS + 1), null);
+  assert.equal(resolvePetReaction(4, PET_QUAD_CLICK_WINDOW_MS), "flail");
+  assert.equal(resolvePetReaction(4, PET_QUAD_CLICK_WINDOW_MS + 1), null);
+  assert.equal(resolvePetReaction(3, PET_QUAD_CLICK_WINDOW_MS), null);
+  assert.equal(resolvePetReaction(5, PET_QUAD_CLICK_WINDOW_MS), "flail");
+  assert.equal(resolvePetReaction(1, 0), null);
+
+  // Only idle allows a reaction; reduced motion never does.
+  assert.equal(shouldAllowPetReaction("idle", false), true);
+  for (const presentation of [
+    "needs_input",
+    "blocked",
+    "ready",
+    "retrying",
+    "running",
+    "disconnected",
+    "service_not_running",
+  ] as const) {
+    assert.equal(
+      shouldAllowPetReaction(presentation, false),
+      false,
+      `${presentation} must not allow reactions`,
+    );
+  }
+  assert.equal(shouldAllowPetReaction("idle", true), false, "reduced motion disables reactions");
+
+  // Single click keeps the existing immediate activation (toggle tray / 直达).
+  let clickSeq = createInitialPetClickSequenceState();
+  let clickOut = reducePetClickSequence(clickSeq, { type: "click", now: 1000 });
+  assert.equal(clickOut.singleClick, true);
+  assert.equal(clickOut.startReaction, null);
+  assert.equal(clickOut.cancelReaction, null);
+  clickSeq = clickOut.state;
+
+  // Double click: the second click does not re-toggle and defers a single poke.
+  clickOut = reducePetClickSequence(clickSeq, { type: "click", now: 1200 });
+  assert.equal(clickOut.singleClick, false, "double-click second click must not re-toggle");
+  assert.equal(clickOut.startReaction, null);
+  assert.equal(clickOut.state.pendingReaction, "poke");
+  clickSeq = clickOut.state;
+
+  // Committing the deferred poke fires it exactly once.
+  clickOut = reducePetClickSequence(clickSeq, { type: "commit", now: 1600 });
+  assert.equal(clickOut.startReaction, "poke");
+  assert.equal(clickOut.singleClick, false);
+  clickSeq = clickOut.state;
+  assert.equal(clickSeq.committedReaction, "poke");
+
+  // A late click (past the double interval) starts a fresh single-click sequence.
+  clickOut = reducePetClickSequence(clickSeq, { type: "click", now: 5000 });
+  assert.equal(clickOut.singleClick, true, "timeout restarts the sequence");
+  clickSeq = clickOut.state;
+
+  // Quad click: flail supersedes the deferred poke and cancels it.
+  clickSeq = createInitialPetClickSequenceState();
+  clickSeq = reducePetClickSequence(clickSeq, { type: "click", now: 100 }).state;
+  clickOut = reducePetClickSequence(clickSeq, { type: "click", now: 300 });
+  assert.equal(clickOut.state.pendingReaction, "poke");
+  clickSeq = clickOut.state;
+  clickOut = reducePetClickSequence(clickSeq, { type: "click", now: 500 });
+  assert.equal(clickOut.state.pendingReaction, "poke", "third click still waits for a quad");
+  assert.equal(clickOut.startReaction, null);
+  clickSeq = clickOut.state;
+  clickOut = reducePetClickSequence(clickSeq, { type: "click", now: 700 });
+  assert.equal(clickOut.startReaction, "flail");
+  assert.equal(clickOut.cancelReaction, "poke", "flail cancels the not-yet-played poke");
+  assert.equal(clickOut.singleClick, false);
+  clickSeq = clickOut.state;
+  assert.equal(clickSeq.committedReaction, "flail");
+
+  // A rapid 5th click inside the same sequence is inert: no re-toggle, no re-fire.
+  clickOut = reducePetClickSequence(clickSeq, { type: "click", now: 800 });
+  assert.equal(clickOut.singleClick, false, "post-flail rapid click must not re-toggle the tray");
+  assert.equal(clickOut.startReaction, null);
+  assert.equal(clickOut.cancelReaction, null);
+  clickSeq = clickOut.state;
+
+  // Drag / pointercancel / lost capture / hidden / preempt / destroy all cancel.
+  const cancelled = reducePetClickSequence(clickSeq, { type: "cancel" });
+  assert.deepEqual(cancelled.state, createInitialPetClickSequenceState());
+  assert.equal(cancelled.singleClick, false);
+  assert.equal(cancelled.startReaction, null);
+  assert.equal(cancelled.cancelReaction, null);
 
   // --- Terminal outcome label stays visible after read (decoupled from presentation) ---
   assert.deepEqual(petTerminalOutcome("succeeded"), { label: "已完成", glyph: "✓" });
@@ -3148,6 +3248,23 @@ async function main() {
   assert.ok(rendererSource.includes('data-idle-sleep'));
   assert.ok(rendererSource.includes("PET_IDLE_POINTER_WAKE_THROTTLE_MS"));
   assert.equal(rendererSource.includes("powerMonitor"), false, "U3 must not use powerMonitor");
+  // U4b: poke/flail are renderer-local and never enter the observer/8-state contract.
+  assert.ok(rendererSource.includes("reducePetClickSequence"));
+  assert.ok(rendererSource.includes("shouldAllowPetReaction"));
+  assert.ok(rendererSource.includes("cancelClickSequence"));
+  assert.ok(rendererSource.includes("handlePetClick"));
+  assert.ok(rendererSource.includes("playReaction"));
+  assert.ok(rendererSource.includes("PET_DOUBLE_CLICK_INTERVAL_MS"));
+  assert.ok(rendererSource.includes('addEventListener("lostpointercapture"'));
+  assert.ok(rendererSource.includes('event.key === "p"'));
+  assert.ok(rendererSource.includes("PET_POKE_ANIMATION_MS"));
+  assert.ok(rendererSource.includes("PET_FLAIL_ANIMATION_MS"));
+  assert.ok(rendererSource.includes("reactionClass"));
+  assert.ok(rendererSource.includes("shiftKey"));
+  assert.ok(css.includes("reaction-poke"));
+  assert.ok(css.includes("reaction-flail"));
+  assert.ok(css.includes("@keyframes reaction-poke"));
+  assert.ok(css.includes("@keyframes reaction-flail"));
   assert.ok(css.includes(".row-child-meta"));
   assert.ok(css.includes(".row-actions"));
   assert.ok(html.includes("pet-stack"));

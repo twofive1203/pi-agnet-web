@@ -1033,3 +1033,164 @@ export function connectionBannerText(input: {
   }
   return null;
 }
+
+// ---------------------------------------------------------------------------
+// Fun click reactions (U4b): poke (double-click) and flail (quad-click)
+//
+// Renderer-local decorative feedback. Only the idle presentation allows a
+// reaction; every attention/terminal/running/connection state preempts it.
+// The first click of a sequence always performs the normal single-click action
+// (toggle tray / attention直达) immediately, and later clicks in the same
+// sequence never re-toggle the tray.
+// ---------------------------------------------------------------------------
+
+export type PetReaction = "poke" | "flail";
+
+/** Maximum gap between consecutive clicks that still extends a click sequence. */
+export const PET_DOUBLE_CLICK_INTERVAL_MS = 320;
+/** Total window (first → last click) a quadruple click must fit within. */
+export const PET_QUAD_CLICK_WINDOW_MS = 900;
+/** CSS animation duration for the poke reaction. */
+export const PET_POKE_ANIMATION_MS = 380;
+/** CSS animation duration for the flail reaction. */
+export const PET_FLAIL_ANIMATION_MS = 750;
+
+export type PetClickSequenceState = {
+  /** Ascending timestamps of the current click sequence. */
+  clickTimes: number[];
+  /** Reaction deferred while waiting to see whether a flail supersedes it. */
+  pendingReaction: PetReaction | null;
+  /** Reaction already committed for this sequence; blocks re-toggles/re-fires. */
+  committedReaction: PetReaction | null;
+};
+
+export function createInitialPetClickSequenceState(): PetClickSequenceState {
+  return { clickTimes: [], pendingReaction: null, committedReaction: null };
+}
+
+export type PetClickSequenceEvent =
+  | { type: "click"; now: number }
+  | { type: "commit"; now: number }
+  | { type: "cancel" };
+
+export type PetClickSequenceOutcome = {
+  state: PetClickSequenceState;
+  /** Perform the normal single-click activation (toggle tray / attention直达). */
+  singleClick: boolean;
+  /** Start this reaction now (committed poke, or flail). */
+  startReaction: PetReaction | null;
+  /** Cancel this pending reaction (flail supersedes poke). */
+  cancelReaction: PetReaction | null;
+};
+
+/**
+ * Map a click count + elapsed window to a reaction. flail wins over poke so a
+ * recognized quadruple click cancels the deferred poke before it ever plays.
+ */
+export function resolvePetReaction(
+  clickCount: number,
+  elapsedMs: number,
+): PetReaction | null {
+  if (clickCount >= 4 && elapsedMs <= PET_QUAD_CLICK_WINDOW_MS) return "flail";
+  if (clickCount === 2 && elapsedMs <= PET_DOUBLE_CLICK_INTERVAL_MS) return "poke";
+  return null;
+}
+
+/**
+ * Fun reactions are decorative and only ever play in idle. Attention, terminal,
+ * running and connection states are business states that must preempt them, and
+ * reduced motion never plays displacement reactions.
+ */
+export function shouldAllowPetReaction(
+  presentation: PetVisualState,
+  reducedMotion: boolean,
+): boolean {
+  if (reducedMotion) return false;
+  return presentation === "idle";
+}
+
+function noClickOutcome(state: PetClickSequenceState): PetClickSequenceOutcome {
+  return { state, singleClick: false, startReaction: null, cancelReaction: null };
+}
+
+/**
+ * Pure click-sequence reducer. Callers inject wall-clock timestamps and own the
+ * two short timers (the deferred-poke commit and the reaction class removal).
+ * Drag, pointercancel, lost capture, hiding, state preemption and teardown all
+ * feed `cancel`.
+ */
+export function reducePetClickSequence(
+  state: PetClickSequenceState,
+  event: PetClickSequenceEvent,
+): PetClickSequenceOutcome {
+  if (event.type === "cancel") {
+    return noClickOutcome(createInitialPetClickSequenceState());
+  }
+
+  if (event.type === "commit") {
+    if (state.pendingReaction !== "poke") return noClickOutcome(state);
+    return {
+      state: {
+        clickTimes: state.clickTimes,
+        pendingReaction: null,
+        committedReaction: "poke",
+      },
+      singleClick: false,
+      startReaction: "poke",
+      cancelReaction: null,
+    };
+  }
+
+  // type === "click"
+  const last = state.clickTimes[state.clickTimes.length - 1];
+  // A click beyond the double-click interval ends the prior sequence and starts
+  // a fresh single click.
+  if (last !== undefined && event.now - last > PET_DOUBLE_CLICK_INTERVAL_MS) {
+    return {
+      state: { clickTimes: [event.now], pendingReaction: null, committedReaction: null },
+      singleClick: true,
+      startReaction: null,
+      cancelReaction: null,
+    };
+  }
+  // A committed reaction already owns this sequence: rapid follow-ups are inert
+  // so the tray never flaps and the same reaction never re-fires.
+  if (state.committedReaction !== null) {
+    return noClickOutcome(state);
+  }
+
+  const clickTimes = [...state.clickTimes, event.now];
+  if (state.clickTimes.length === 0) {
+    return {
+      state: { clickTimes, pendingReaction: null, committedReaction: null },
+      singleClick: true,
+      startReaction: null,
+      cancelReaction: null,
+    };
+  }
+
+  const reaction = resolvePetReaction(clickTimes.length, event.now - clickTimes[0]);
+  if (reaction === "flail") {
+    return {
+      state: { clickTimes, pendingReaction: null, committedReaction: "flail" },
+      singleClick: false,
+      startReaction: "flail",
+      cancelReaction: state.pendingReaction,
+    };
+  }
+  if (reaction === "poke") {
+    return {
+      state: { clickTimes, pendingReaction: "poke", committedReaction: null },
+      singleClick: false,
+      startReaction: null,
+      cancelReaction: null,
+    };
+  }
+  // Three clicks (or a slow quad beyond the window): keep the poke deferred.
+  return {
+    state: { clickTimes, pendingReaction: state.pendingReaction, committedReaction: null },
+    singleClick: false,
+    startReaction: null,
+    cancelReaction: null,
+  };
+}

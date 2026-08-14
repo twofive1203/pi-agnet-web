@@ -22,6 +22,7 @@ import {
   createInitialIdleSleepState,
   createInitialPetBubbleState,
   createInitialPetCelebrateState,
+  createInitialPetClickSequenceState,
   createInitialRunningCueState,
   filterProjectGroups,
   formatActiveModel,
@@ -38,6 +39,7 @@ import {
   petTerminalOutcome,
   reduceIdleSleepState,
   reducePetBubbleState,
+  reducePetClickSequence,
   reduceRunningCueState,
   resolveActivityElapsedMs,
   resolveActivitySelection,
@@ -48,13 +50,19 @@ import {
   resolveRunningCueVisual,
   runningCueNextUpdateAt,
   selectPrimaryActivity,
+  shouldAllowPetReaction,
   shouldCelebrateCompletion,
   shouldRunIdleLife,
+  PET_DOUBLE_CLICK_INTERVAL_MS,
+  PET_FLAIL_ANIMATION_MS,
   PET_IDLE_POINTER_WAKE_THROTTLE_MS,
+  PET_POKE_ANIMATION_MS,
   type DesktopActivityFilter,
   type IdleSleepStage,
   type PetBubbleSignal,
+  type PetClickSequenceState,
   type PetManifest,
+  type PetReaction,
   type PetTransitionAction,
   type PetVisualState,
 } from "./pet-state";
@@ -175,6 +183,11 @@ export function renderPetApp(root: Document = document): {
   let lastIdlePointerWakeAt = 0;
   let sleepPresentation: PetVisualState = "idle";
   let elapsedTimer: ReturnType<typeof setInterval> | null = null;
+  // U4b: poke/flail click-sequence state + the two short timers it needs.
+  let clickSequenceState: PetClickSequenceState = createInitialPetClickSequenceState();
+  let pokeCommitTimer: ReturnType<typeof setTimeout> | null = null;
+  let reactionClass: string | null = null;
+  let reactionTimer: ReturnType<typeof setTimeout> | null = null;
   let reducedMotion =
     typeof window.matchMedia === "function" &&
     window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -532,6 +545,8 @@ export function renderPetApp(root: Document = document): {
         idleBlinkTimer = null;
       }
       clearIdleAct(petAvatar instanceof HTMLElement ? petAvatar : null);
+      // Hiding the window also cancels any in-flight click sequence / reaction.
+      cancelClickSequence();
     } else if (petAvatar instanceof HTMLElement) {
       scheduleIdleBlink(petAvatar);
       scheduleIdleActs(petAvatar);
@@ -598,6 +613,85 @@ export function renderPetApp(root: Document = document): {
     transitionClass = null;
   }
 
+  // --- U4b fun reactions (poke/flail): short, interruptible class modifiers ---
+
+  function currentPresentation(): PetVisualState {
+    return current && isPetVisualState(current.presentation) ? current.presentation : "idle";
+  }
+
+  function clearReaction(): void {
+    if (reactionTimer) {
+      clearTimeout(reactionTimer);
+      reactionTimer = null;
+    }
+    if (reactionClass && petAvatar instanceof HTMLElement) {
+      petAvatar.classList.remove("reaction-poke", "reaction-flail");
+    }
+    reactionClass = null;
+  }
+
+  function playReaction(reaction: PetReaction): void {
+    clearReaction();
+    reactionClass = reaction === "flail" ? "reaction-flail" : "reaction-poke";
+    if (petAvatar instanceof HTMLElement) {
+      petAvatar.classList.add(reactionClass);
+    }
+    reactionTimer = setTimeout(() => {
+      reactionTimer = null;
+      clearReaction();
+    }, reaction === "flail" ? PET_FLAIL_ANIMATION_MS : PET_POKE_ANIMATION_MS);
+  }
+
+  /** Drag, cancel, lost capture, hiding, preemption and teardown all reset here. */
+  function cancelClickSequence(): void {
+    clickSequenceState = createInitialPetClickSequenceState();
+    if (pokeCommitTimer) {
+      clearTimeout(pokeCommitTimer);
+      pokeCommitTimer = null;
+    }
+    clearReaction();
+  }
+
+  function schedulePokeCommit(): void {
+    if (pokeCommitTimer) {
+      clearTimeout(pokeCommitTimer);
+      pokeCommitTimer = null;
+    }
+    if (clickSequenceState.pendingReaction !== "poke") return;
+    pokeCommitTimer = setTimeout(() => {
+      pokeCommitTimer = null;
+      const outcome = reducePetClickSequence(clickSequenceState, {
+        type: "commit",
+        now: Date.now(),
+      });
+      clickSequenceState = outcome.state;
+      if (outcome.startReaction) playReaction(outcome.startReaction);
+    }, PET_DOUBLE_CLICK_INTERVAL_MS);
+  }
+
+  /**
+   * Route one resolved pet click. The first click of a sequence keeps the
+   * existing single-click activation (toggle tray / attention直达); later clicks
+   * only feed the sequence so poke/flail never re-open/close the tray.
+   */
+  function handlePetClick(): void {
+    const motionReduced = reducedMotion || current?.reducedMotion === true;
+    if (!shouldAllowPetReaction(currentPresentation(), motionReduced)) {
+      cancelClickSequence();
+      activatePet();
+      return;
+    }
+    const outcome = reducePetClickSequence(clickSequenceState, {
+      type: "click",
+      now: Date.now(),
+    });
+    clickSequenceState = outcome.state;
+    if (outcome.cancelReaction) clearReaction();
+    if (outcome.startReaction) playReaction(outcome.startReaction);
+    if (outcome.singleClick) activatePet();
+    schedulePokeCommit();
+  }
+
   function ensureSpriteStylesheet(manifest: PetManifest): void {
     if (spriteStyleSheets.has(manifest.id)) return;
     const text = buildSpriteSheetStyleText(manifest, PET_SHEET_DATA_URLS[manifest.id] ?? null);
@@ -645,6 +739,11 @@ export function renderPetApp(root: Document = document): {
     const primary = selectPrimaryActivity(view.projects);
     const updateNow = Date.now();
     sleepPresentation = state;
+    // Preempt any pending/active fun reaction the moment the pet leaves idle
+    // (attention, terminal, running, connection) or motion is reduced.
+    if (!shouldAllowPetReaction(state, view.reducedMotion || reducedMotion)) {
+      cancelClickSequence();
+    }
     syncIdleSleep(updateNow);
     runningCueState = reduceRunningCueState(
       runningCueState,
@@ -680,7 +779,7 @@ export function renderPetApp(root: Document = document): {
       }
       const spriteClass = spriteActive ? ` pet-sprite pet-sprite-${manifest.id}` : "";
       const sleepClass = idleSleepState.stage !== "awake" ? ` pet-${idleSleepState.stage}` : "";
-      petAvatar.className = `pet-avatar${spriteClass} frame-${frame.frame}${frame.animated ? " is-animated" : ""}${transitionClass ? ` ${transitionClass}` : ""}${sleepClass}`;
+      petAvatar.className = `pet-avatar${spriteClass} frame-${frame.frame}${frame.animated ? " is-animated" : ""}${transitionClass ? ` ${transitionClass}` : ""}${sleepClass}${reactionClass ? ` ${reactionClass}` : ""}`;
       petAvatar.setAttribute("data-state", state);
       if (state === "running") {
         petAvatar.setAttribute("data-running-cue", runningCue);
@@ -819,14 +918,16 @@ export function renderPetApp(root: Document = document): {
     if (petButton) {
       petButton.setAttribute("aria-expanded", view.trayOpen ? "true" : "false");
       const attentionJump = canJumpToPrimary(view);
+      const keyboardHint = "聚焦后：P 轻戳 · Shift+P 摆动";
       petButton.setAttribute(
         "aria-label",
         view.trayOpen
-          ? "桌宠，点击收起活动列表，拖动可移动"
+          ? `桌宠，点击收起活动列表，拖动可移动。${keyboardHint}`
           : attentionJump
-            ? "桌宠，点击直达待处理任务，拖动可移动"
-            : "桌宠，点击展开活动列表，拖动可移动",
+            ? `桌宠，点击直达待处理任务，拖动可移动。${keyboardHint}`
+            : `桌宠，点击展开活动列表，拖动可移动。${keyboardHint}`,
       );
+      petButton.title = keyboardHint;
     }
 
     if (trayCounts) {
@@ -1236,6 +1337,12 @@ export function renderPetApp(root: Document = document): {
 
   const endPetPointer = (target: HTMLElement, pointerId: number, playDrop = true) => {
     if (petPointerId !== pointerId) return;
+    // Clear the pointer identity before releasing capture so the synchronous
+    // (or queued) `lostpointercapture` handler below can never mistake the
+    // normal pointerup path for an unexpected capture loss.
+    const wasDragging = petDragging;
+    petPointerId = null;
+    petDragging = false;
     try {
       if (target.hasPointerCapture?.(pointerId)) {
         target.releasePointerCapture(pointerId);
@@ -1245,11 +1352,8 @@ export function renderPetApp(root: Document = document): {
     }
     target.classList.remove("is-dragging");
     petAvatar?.classList.remove("is-pressed", "is-dragging");
-    const wasDragging = petDragging;
-    petPointerId = null;
-    petDragging = false;
     if (!wasDragging) {
-      activatePet();
+      handlePetClick();
       return;
     }
     // One-shot probe-out after a completed drag (skipped on cancel/reduced motion).
@@ -1304,6 +1408,9 @@ export function renderPetApp(root: Document = document): {
       (Math.abs(totalDx) >= DRAG_THRESHOLD_PX || Math.abs(totalDy) >= DRAG_THRESHOLD_PX)
     ) {
       petDragging = true;
+      // Crossing the drag threshold cancels the whole click sequence, so a drag
+      // never re-toggles the tray or fires a deferred poke/flail.
+      cancelClickSequence();
       petButton.classList.add("is-dragging");
       petAvatar?.classList.remove("is-pressed");
       petAvatar?.classList.add("is-dragging");
@@ -1327,9 +1434,23 @@ export function renderPetApp(root: Document = document): {
     if (!(petButton instanceof HTMLElement)) return;
     // Cancelled gestures should not toggle the tray or play a drop pop.
     if (petPointerId === event.pointerId) {
+      cancelClickSequence();
       petDragging = true;
       endPetPointer(petButton, event.pointerId, false);
     }
+  });
+
+  // Capture can be lost without a pointerup/cancel (OS gesture, window blur,
+  // overlay). Clean up the drag state and the click sequence so no dangling
+  // timer or class survives.
+  petButton?.addEventListener("lostpointercapture", (event) => {
+    if (!(petButton instanceof HTMLElement)) return;
+    if (petPointerId !== event.pointerId) return;
+    petPointerId = null;
+    petDragging = false;
+    petButton.classList.remove("is-dragging");
+    petAvatar?.classList.remove("is-pressed", "is-dragging");
+    cancelClickSequence();
   });
 
   petButton?.addEventListener("pointerleave", () => {
@@ -1337,8 +1458,18 @@ export function renderPetApp(root: Document = document): {
   });
 
   // Keyboard activation mirrors the contextual pointer action (Enter/Space).
+  // P / Shift+P are the keyboard equivalents of the idle poke / flail reactions.
   // The click handler below still swallows the browser-synthesized click.
   petButton?.addEventListener("keydown", (event) => {
+    if (event.key === "p" || event.key === "P") {
+      const motionReduced = reducedMotion || current?.reducedMotion === true;
+      if (!shouldAllowPetReaction(currentPresentation(), motionReduced)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      cancelClickSequence();
+      playReaction(event.shiftKey ? "flail" : "poke");
+      return;
+    }
     if (event.key !== "Enter" && event.key !== " ") return;
     event.preventDefault();
     event.stopPropagation();
@@ -1613,6 +1744,7 @@ export function renderPetApp(root: Document = document): {
         petDropPopTimer = null;
       }
       clearTransition();
+      cancelClickSequence();
       clearIdleAct(petAvatar instanceof HTMLElement ? petAvatar : null);
       if (typeof document !== "undefined") {
         document.removeEventListener("visibilitychange", onVisibilityChange);

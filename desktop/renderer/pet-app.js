@@ -1129,6 +1129,87 @@
     }
     return null;
   }
+  var PET_DOUBLE_CLICK_INTERVAL_MS = 320;
+  var PET_QUAD_CLICK_WINDOW_MS = 900;
+  var PET_POKE_ANIMATION_MS = 380;
+  var PET_FLAIL_ANIMATION_MS = 750;
+  function createInitialPetClickSequenceState() {
+    return { clickTimes: [], pendingReaction: null, committedReaction: null };
+  }
+  function resolvePetReaction(clickCount, elapsedMs) {
+    if (clickCount >= 4 && elapsedMs <= PET_QUAD_CLICK_WINDOW_MS) return "flail";
+    if (clickCount === 2 && elapsedMs <= PET_DOUBLE_CLICK_INTERVAL_MS) return "poke";
+    return null;
+  }
+  function shouldAllowPetReaction(presentation, reducedMotion) {
+    if (reducedMotion) return false;
+    return presentation === "idle";
+  }
+  function noClickOutcome(state) {
+    return { state, singleClick: false, startReaction: null, cancelReaction: null };
+  }
+  function reducePetClickSequence(state, event) {
+    if (event.type === "cancel") {
+      return noClickOutcome(createInitialPetClickSequenceState());
+    }
+    if (event.type === "commit") {
+      if (state.pendingReaction !== "poke") return noClickOutcome(state);
+      return {
+        state: {
+          clickTimes: state.clickTimes,
+          pendingReaction: null,
+          committedReaction: "poke"
+        },
+        singleClick: false,
+        startReaction: "poke",
+        cancelReaction: null
+      };
+    }
+    const last = state.clickTimes[state.clickTimes.length - 1];
+    if (last !== void 0 && event.now - last > PET_DOUBLE_CLICK_INTERVAL_MS) {
+      return {
+        state: { clickTimes: [event.now], pendingReaction: null, committedReaction: null },
+        singleClick: true,
+        startReaction: null,
+        cancelReaction: null
+      };
+    }
+    if (state.committedReaction !== null) {
+      return noClickOutcome(state);
+    }
+    const clickTimes = [...state.clickTimes, event.now];
+    if (state.clickTimes.length === 0) {
+      return {
+        state: { clickTimes, pendingReaction: null, committedReaction: null },
+        singleClick: true,
+        startReaction: null,
+        cancelReaction: null
+      };
+    }
+    const reaction = resolvePetReaction(clickTimes.length, event.now - clickTimes[0]);
+    if (reaction === "flail") {
+      return {
+        state: { clickTimes, pendingReaction: null, committedReaction: "flail" },
+        singleClick: false,
+        startReaction: "flail",
+        cancelReaction: state.pendingReaction
+      };
+    }
+    if (reaction === "poke") {
+      return {
+        state: { clickTimes, pendingReaction: "poke", committedReaction: null },
+        singleClick: false,
+        startReaction: null,
+        cancelReaction: null
+      };
+    }
+    return {
+      state: { clickTimes, pendingReaction: state.pendingReaction, committedReaction: null },
+      singleClick: false,
+      startReaction: null,
+      cancelReaction: null
+    };
+  }
 
   // desktop/renderer/pet-sheet.ts
   var PET_SPRITE_AVATAR_WIDTH = 108;
@@ -1424,6 +1505,10 @@
     let lastIdlePointerWakeAt = 0;
     let sleepPresentation = "idle";
     let elapsedTimer = null;
+    let clickSequenceState = createInitialPetClickSequenceState();
+    let pokeCommitTimer = null;
+    let reactionClass = null;
+    let reactionTimer = null;
     let reducedMotion = typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const spriteStyleSheets = /* @__PURE__ */ new Map();
     const spriteVerified = /* @__PURE__ */ new Set();
@@ -1704,6 +1789,7 @@
           idleBlinkTimer = null;
         }
         clearIdleAct(petAvatar instanceof HTMLElement ? petAvatar : null);
+        cancelClickSequence();
       } else if (petAvatar instanceof HTMLElement) {
         scheduleIdleBlink(petAvatar);
         scheduleIdleActs(petAvatar);
@@ -1762,6 +1848,71 @@
       }
       transitionClass = null;
     }
+    function currentPresentation() {
+      return current && isPetVisualState(current.presentation) ? current.presentation : "idle";
+    }
+    function clearReaction() {
+      if (reactionTimer) {
+        clearTimeout(reactionTimer);
+        reactionTimer = null;
+      }
+      if (reactionClass && petAvatar instanceof HTMLElement) {
+        petAvatar.classList.remove("reaction-poke", "reaction-flail");
+      }
+      reactionClass = null;
+    }
+    function playReaction(reaction) {
+      clearReaction();
+      reactionClass = reaction === "flail" ? "reaction-flail" : "reaction-poke";
+      if (petAvatar instanceof HTMLElement) {
+        petAvatar.classList.add(reactionClass);
+      }
+      reactionTimer = setTimeout(() => {
+        reactionTimer = null;
+        clearReaction();
+      }, reaction === "flail" ? PET_FLAIL_ANIMATION_MS : PET_POKE_ANIMATION_MS);
+    }
+    function cancelClickSequence() {
+      clickSequenceState = createInitialPetClickSequenceState();
+      if (pokeCommitTimer) {
+        clearTimeout(pokeCommitTimer);
+        pokeCommitTimer = null;
+      }
+      clearReaction();
+    }
+    function schedulePokeCommit() {
+      if (pokeCommitTimer) {
+        clearTimeout(pokeCommitTimer);
+        pokeCommitTimer = null;
+      }
+      if (clickSequenceState.pendingReaction !== "poke") return;
+      pokeCommitTimer = setTimeout(() => {
+        pokeCommitTimer = null;
+        const outcome = reducePetClickSequence(clickSequenceState, {
+          type: "commit",
+          now: Date.now()
+        });
+        clickSequenceState = outcome.state;
+        if (outcome.startReaction) playReaction(outcome.startReaction);
+      }, PET_DOUBLE_CLICK_INTERVAL_MS);
+    }
+    function handlePetClick() {
+      const motionReduced = reducedMotion || current?.reducedMotion === true;
+      if (!shouldAllowPetReaction(currentPresentation(), motionReduced)) {
+        cancelClickSequence();
+        activatePet();
+        return;
+      }
+      const outcome = reducePetClickSequence(clickSequenceState, {
+        type: "click",
+        now: Date.now()
+      });
+      clickSequenceState = outcome.state;
+      if (outcome.cancelReaction) clearReaction();
+      if (outcome.startReaction) playReaction(outcome.startReaction);
+      if (outcome.singleClick) activatePet();
+      schedulePokeCommit();
+    }
     function ensureSpriteStylesheet(manifest) {
       if (spriteStyleSheets.has(manifest.id)) return;
       const text = buildSpriteSheetStyleText(manifest, PET_SHEET_DATA_URLS[manifest.id] ?? null);
@@ -1805,6 +1956,9 @@
       const primary = selectPrimaryActivity(view.projects);
       const updateNow = Date.now();
       sleepPresentation = state;
+      if (!shouldAllowPetReaction(state, view.reducedMotion || reducedMotion)) {
+        cancelClickSequence();
+      }
       syncIdleSleep(updateNow);
       runningCueState = reduceRunningCueState(
         runningCueState,
@@ -1839,7 +1993,7 @@
         }
         const spriteClass = spriteActive ? ` pet-sprite pet-sprite-${manifest.id}` : "";
         const sleepClass = idleSleepState.stage !== "awake" ? ` pet-${idleSleepState.stage}` : "";
-        petAvatar.className = `pet-avatar${spriteClass} frame-${frame.frame}${frame.animated ? " is-animated" : ""}${transitionClass ? ` ${transitionClass}` : ""}${sleepClass}`;
+        petAvatar.className = `pet-avatar${spriteClass} frame-${frame.frame}${frame.animated ? " is-animated" : ""}${transitionClass ? ` ${transitionClass}` : ""}${sleepClass}${reactionClass ? ` ${reactionClass}` : ""}`;
         petAvatar.setAttribute("data-state", state);
         if (state === "running") {
           petAvatar.setAttribute("data-running-cue", runningCue);
@@ -1963,10 +2117,12 @@
       if (petButton) {
         petButton.setAttribute("aria-expanded", view.trayOpen ? "true" : "false");
         const attentionJump = canJumpToPrimary(view);
+        const keyboardHint = "\u805A\u7126\u540E\uFF1AP \u8F7B\u6233 \xB7 Shift+P \u6446\u52A8";
         petButton.setAttribute(
           "aria-label",
-          view.trayOpen ? "\u684C\u5BA0\uFF0C\u70B9\u51FB\u6536\u8D77\u6D3B\u52A8\u5217\u8868\uFF0C\u62D6\u52A8\u53EF\u79FB\u52A8" : attentionJump ? "\u684C\u5BA0\uFF0C\u70B9\u51FB\u76F4\u8FBE\u5F85\u5904\u7406\u4EFB\u52A1\uFF0C\u62D6\u52A8\u53EF\u79FB\u52A8" : "\u684C\u5BA0\uFF0C\u70B9\u51FB\u5C55\u5F00\u6D3B\u52A8\u5217\u8868\uFF0C\u62D6\u52A8\u53EF\u79FB\u52A8"
+          view.trayOpen ? `\u684C\u5BA0\uFF0C\u70B9\u51FB\u6536\u8D77\u6D3B\u52A8\u5217\u8868\uFF0C\u62D6\u52A8\u53EF\u79FB\u52A8\u3002${keyboardHint}` : attentionJump ? `\u684C\u5BA0\uFF0C\u70B9\u51FB\u76F4\u8FBE\u5F85\u5904\u7406\u4EFB\u52A1\uFF0C\u62D6\u52A8\u53EF\u79FB\u52A8\u3002${keyboardHint}` : `\u684C\u5BA0\uFF0C\u70B9\u51FB\u5C55\u5F00\u6D3B\u52A8\u5217\u8868\uFF0C\u62D6\u52A8\u53EF\u79FB\u52A8\u3002${keyboardHint}`
         );
+        petButton.title = keyboardHint;
       }
       if (trayCounts) {
         const active = view.activeCount;
@@ -2302,6 +2458,9 @@
     }
     const endPetPointer = (target, pointerId, playDrop = true) => {
       if (petPointerId !== pointerId) return;
+      const wasDragging = petDragging;
+      petPointerId = null;
+      petDragging = false;
       try {
         if (target.hasPointerCapture?.(pointerId)) {
           target.releasePointerCapture(pointerId);
@@ -2310,11 +2469,8 @@
       }
       target.classList.remove("is-dragging");
       petAvatar?.classList.remove("is-pressed", "is-dragging");
-      const wasDragging = petDragging;
-      petPointerId = null;
-      petDragging = false;
       if (!wasDragging) {
-        activatePet();
+        handlePetClick();
         return;
       }
       if (playDrop && petAvatar instanceof HTMLElement && !reducedMotion && petAvatar.classList.contains("is-animated")) {
@@ -2356,6 +2512,7 @@
       const totalDy = event.screenY - petDragOriginY;
       if (!petDragging && (Math.abs(totalDx) >= DRAG_THRESHOLD_PX || Math.abs(totalDy) >= DRAG_THRESHOLD_PX)) {
         petDragging = true;
+        cancelClickSequence();
         petButton.classList.add("is-dragging");
         petAvatar?.classList.remove("is-pressed");
         petAvatar?.classList.add("is-dragging");
@@ -2376,14 +2533,33 @@
     petButton?.addEventListener("pointercancel", (event) => {
       if (!(petButton instanceof HTMLElement)) return;
       if (petPointerId === event.pointerId) {
+        cancelClickSequence();
         petDragging = true;
         endPetPointer(petButton, event.pointerId, false);
       }
+    });
+    petButton?.addEventListener("lostpointercapture", (event) => {
+      if (!(petButton instanceof HTMLElement)) return;
+      if (petPointerId !== event.pointerId) return;
+      petPointerId = null;
+      petDragging = false;
+      petButton.classList.remove("is-dragging");
+      petAvatar?.classList.remove("is-pressed", "is-dragging");
+      cancelClickSequence();
     });
     petButton?.addEventListener("pointerleave", () => {
       if (petPointerId === null) resetEyeFollow();
     });
     petButton?.addEventListener("keydown", (event) => {
+      if (event.key === "p" || event.key === "P") {
+        const motionReduced = reducedMotion || current?.reducedMotion === true;
+        if (!shouldAllowPetReaction(currentPresentation(), motionReduced)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        cancelClickSequence();
+        playReaction(event.shiftKey ? "flail" : "poke");
+        return;
+      }
       if (event.key !== "Enter" && event.key !== " ") return;
       event.preventDefault();
       event.stopPropagation();
@@ -2605,6 +2781,7 @@
           petDropPopTimer = null;
         }
         clearTransition();
+        cancelClickSequence();
         clearIdleAct(petAvatar instanceof HTMLElement ? petAvatar : null);
         if (typeof document !== "undefined") {
           document.removeEventListener("visibilitychange", onVisibilityChange);
