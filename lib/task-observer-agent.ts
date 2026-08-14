@@ -20,6 +20,7 @@ import {
 } from "./task-observer-projection";
 import {
   TASK_OBSERVER_BUDGETS,
+  type TaskObserverActiveModel,
   type TaskObserverActivityInput,
   type TaskObserverAttention,
   type TaskObserverChildSummaryInput,
@@ -198,6 +199,7 @@ export class AgentTaskObserver {
   private promptEpoch = 0;
   private current: InternalActivity | null = null;
   private explicitTitle: string | null;
+  private activeModel: TaskObserverActiveModel | undefined;
   private sessionResources: TaskObserverSessionResources | undefined;
   private readonly clock: () => number;
 
@@ -222,7 +224,11 @@ export class AgentTaskObserver {
     this.explicitTitle = next || null;
   }
 
-  /** Resource refreshes change snapshot content but never create task transitions. */
+  /** Runtime metadata refreshes change snapshot content but never create task transitions. */
+  setActiveModel(model: TaskObserverActiveModel | null | undefined): void {
+    this.activeModel = model ?? undefined;
+  }
+
   setSessionResources(resources: TaskObserverSessionResources | null | undefined): void {
     this.sessionResources = resources ?? undefined;
   }
@@ -453,6 +459,7 @@ export class AgentTaskObserver {
       phase: activity.phase,
       reasonCode: activity.reasonCode,
       progress: this.buildProgress(activity),
+      activeModel: this.activeModel,
       sessionResources: this.sessionResources,
       startedAt: activity.startedAt,
       updatedAt: activity.updatedAt,

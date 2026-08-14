@@ -47,6 +47,7 @@ export type DesktopActivityRow = {
   phase?: string;
   reasonCode?: string;
   progress: TaskObserverProgress;
+  activeModel?: TaskObserverActivity["activeModel"];
   sessionResources?: TaskObserverActivity["sessionResources"];
   startedAt?: string;
   updatedAt?: string;
@@ -227,6 +228,7 @@ export function projectActivityRow(
     phase: activity.phase,
     reasonCode: activity.reasonCode,
     progress: activity.progress,
+    activeModel: activity.activeModel ? { ...activity.activeModel } : undefined,
     sessionResources: activity.sessionResources
       ? {
           context: activity.sessionResources.context

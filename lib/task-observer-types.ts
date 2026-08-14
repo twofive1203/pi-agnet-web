@@ -24,6 +24,8 @@ export const TASK_OBSERVER_BUDGETS = {
   maxReasonCodeChars: 64,
   maxDeepLinkChars: 256,
   maxToolNameChars: 64,
+  maxModelProviderChars: 64,
+  maxModelIdChars: 160,
   maxDiagnostics: 20,
   maxDiagnosticCodeChars: 64,
   maxDiagnosticMessageChars: 160,
@@ -143,6 +145,11 @@ export type TaskObserverSessionResources = {
   };
 };
 
+export type TaskObserverActiveModel = {
+  provider: string;
+  modelId: string;
+};
+
 export type TaskObserverActivity = {
   taskKey: string;
   activityId: string;
@@ -159,6 +166,8 @@ export type TaskObserverActivity = {
   /** Bounded stable reason code for failures/attention. */
   reasonCode?: string;
   progress: TaskObserverProgress;
+  /** Current ordinary Agent model; omitted for non-Agent sources or unavailable state. */
+  activeModel?: TaskObserverActiveModel;
   /** Session-level values; omitted for non-Agent sources or unavailable metrics. */
   sessionResources?: TaskObserverSessionResources;
   startedAt?: string;
@@ -255,6 +264,7 @@ export type TaskObserverActivityInput = {
   phase?: string | null;
   reasonCode?: string | null;
   progress?: TaskObserverProgress | null;
+  activeModel?: TaskObserverActiveModel | null;
   sessionResources?: TaskObserverSessionResources | null;
   startedAt?: string | null;
   updatedAt?: string | null;

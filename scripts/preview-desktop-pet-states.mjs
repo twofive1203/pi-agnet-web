@@ -110,6 +110,7 @@ function activityFor(state) {
       state === "running"
         ? { kind: "ratio", current: 2, total: 5 }
         : { kind: "indeterminate" },
+    activeModel: { provider: "anthropic", modelId: "claude-sonnet-4" },
     sessionResources: {
       context: { percent: 42.3, usedTokens: 84600, contextWindow: 200000 },
       billing: { totalTokens: 128400, costUsd: 0.0842 },

@@ -22,6 +22,7 @@ import {
   createInitialPetBubbleState,
   createInitialPetCelebrateState,
   filterProjectGroups,
+  formatActiveModel,
   formatActivityProgress,
   formatElapsed,
   formatSessionResources,
@@ -855,12 +856,15 @@ export function renderPetApp(root: Document = document): {
       main.appendChild(progress);
     }
 
-    const resourceLabel = formatSessionResources(activity.sessionResources);
+    const resourceLabel = [
+      formatActiveModel(activity.executionState === "settled" ? undefined : activity.activeModel),
+      formatSessionResources(activity.sessionResources),
+    ].filter((part): part is string => Boolean(part)).join(" · ");
     if (resourceLabel) {
       const resources = document.createElement("span");
       resources.className = "row-resources";
       resources.textContent = resourceLabel;
-      resources.title = "当前会话资源：上下文、会话加权平均 TPS、累计费用或 Token";
+      resources.title = "当前模型与会话资源：上下文、会话加权平均 TPS、累计费用或 Token";
       main.appendChild(resources);
     }
 

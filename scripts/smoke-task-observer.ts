@@ -57,6 +57,7 @@ function agentActivity(input: {
   phase?: string;
   reasonCode?: string;
   progress?: TaskObserverActivityInput["progress"];
+  activeModel?: TaskObserverActivityInput["activeModel"];
   sessionResources?: TaskObserverActivityInput["sessionResources"];
   children?: TaskObserverChildSummaryInput[];
   startedAt?: string;
@@ -86,6 +87,7 @@ function agentActivity(input: {
     phase: input.phase,
     reasonCode: input.reasonCode,
     progress: input.progress,
+    activeModel: input.activeModel,
     sessionResources: input.sessionResources,
     children: input.children,
     deepLink: `/?session=${encodeURIComponent(sessionId)}`,
@@ -165,12 +167,17 @@ async function main() {
     promptEpoch: 1,
     stateVersion: 1,
     executionState: "running",
+    activeModel: { provider: "anthropic", modelId: "claude-sonnet-4" },
     sessionResources: {
       context: { percent: 142, usedTokens: 8400, contextWindow: 20000 },
       billing: { totalTokens: 12000, costUsd: 0.0842 },
       performance: { avgTps: 31.8, sampleCount: 6 },
     },
   }));
+  assert.deepEqual(resourceActivity.activeModel, {
+    provider: "anthropic",
+    modelId: "claude-sonnet-4",
+  });
   assert.deepEqual(resourceActivity.sessionResources, {
     context: { percent: 100, usedTokens: 8400, contextWindow: 20000 },
     billing: { totalTokens: 12000, costUsd: 0.0842 },
@@ -185,10 +192,12 @@ async function main() {
       promptEpoch: 1,
       stateVersion: 1,
       executionState: "running",
+      activeModel: { provider: "anthropic", modelId: "claude-sonnet-4" },
       sessionResources: { billing: { totalTokens: 12000, costUsd: 0.0842 } },
     }),
     source: "automation",
   });
+  assert.equal(nonAgentWithResources.activeModel, undefined);
   assert.equal(nonAgentWithResources.sessionResources, undefined);
 
   // --- Needs input can clear and resume running ---
@@ -826,12 +835,17 @@ async function main() {
 
   // Resource updates do not change transition identity.
   const transitionBeforeResources = observer.toActivityInput()?.lastTransitionId;
+  observer.setActiveModel({ provider: "anthropic", modelId: "claude-sonnet-4" });
   observer.setSessionResources({
     context: { percent: 42.3, usedTokens: 8460, contextWindow: 20000 },
     billing: { totalTokens: 12840, costUsd: 0.0842 },
     performance: { avgTps: 31.8, sampleCount: 6 },
   });
   const withResources = observer.toActivityInput();
+  assert.deepEqual(withResources?.activeModel, {
+    provider: "anthropic",
+    modelId: "claude-sonnet-4",
+  });
   assert.deepEqual(withResources?.sessionResources?.performance, { avgTps: 31.8, sampleCount: 6 });
   assert.equal(withResources?.lastTransitionId, transitionBeforeResources);
 

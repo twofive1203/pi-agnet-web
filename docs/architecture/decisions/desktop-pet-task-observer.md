@@ -177,6 +177,7 @@ Each activity contains only:
 | `executionState`, `outcome`, `attention` | Three-axis state. |
 | `phase`, `reasonCode` | Bounded safe codes, not arbitrary model/error text. |
 | `progress` | Real counters/steps or indeterminate. |
+| `activeModel` | Optional Agent-only bounded provider/model identifier for the current live session. |
 | `sessionResources` | Optional Agent-only numeric context usage, lifetime billing/Token totals, and weighted TPS; no message content or per-call history. |
 | `startedAt`, `updatedAt`, `endedAt` | Lifecycle timestamps where known. |
 | `children` | Bounded active Subagent summaries. |
@@ -202,7 +203,7 @@ Only meaningful source changes increment revision. Heartbeats and wall-clock ela
 
 | Source | Top-level activity | Authority | Notes |
 | --- | --- | --- | --- |
-| Ordinary Agent | Current prompt activity per live wrapper | New wrapper-owned lifecycle projection | Subagents nested; explicit session name or content-free short identifier; current session resources are cached at lifecycle boundaries. |
+| Ordinary Agent | Current prompt activity per live wrapper | New wrapper-owned lifecycle projection | Subagents nested; explicit session name or content-free short identifier; active model and current session resources are cached at lifecycle boundaries. |
 | SnFlow | Active/bounded recent terminal run | SnFlow store and terminal reducer | Matching ordinary host suppressed. |
 | Automation | Active/bounded recent terminal run | Persistent run record + active registry | Preserve blocked/ambiguous meaning. |
 | Quick Command | Active/bounded in-memory recent run | Quick Command registry | Exclude command/output/env/path; no restart recovery. |

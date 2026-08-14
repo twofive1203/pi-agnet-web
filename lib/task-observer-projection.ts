@@ -9,6 +9,7 @@ import {
   TASK_OBSERVER_GENERIC_TITLES,
   TASK_OBSERVER_PRESENTATION_PRIORITY,
   TASK_OBSERVER_PROTOCOL_VERSION,
+  type TaskObserverActiveModel,
   type TaskObserverActivity,
   type TaskObserverActivityInput,
   type TaskObserverAggregate,
@@ -168,6 +169,15 @@ export function normalizeProgress(raw: TaskObserverProgress | null | undefined):
   return { kind: "indeterminate" };
 }
 
+function normalizeActiveModel(
+  raw: TaskObserverActiveModel | null | undefined,
+): TaskObserverActiveModel | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const provider = clampString(raw.provider, TASK_OBSERVER_BUDGETS.maxModelProviderChars);
+  const modelId = clampString(raw.modelId, TASK_OBSERVER_BUDGETS.maxModelIdChars);
+  return provider && modelId ? { provider, modelId } : undefined;
+}
+
 function normalizeSessionResources(
   raw: TaskObserverSessionResources | null | undefined,
 ): TaskObserverSessionResources | undefined {
@@ -301,6 +311,7 @@ export function projectActivityDetailed(input: TaskObserverActivityInput): Proje
       phase: clampString(input.phase, TASK_OBSERVER_BUDGETS.maxPhaseChars),
       reasonCode: clampString(input.reasonCode, TASK_OBSERVER_BUDGETS.maxReasonCodeChars),
       progress: normalizeProgress(input.progress),
+      activeModel: source === "agent" ? normalizeActiveModel(input.activeModel) : undefined,
       sessionResources: source === "agent"
         ? normalizeSessionResources(input.sessionResources)
         : undefined,
@@ -736,6 +747,7 @@ const ACTIVITY_KEYS = new Set([
   "phase",
   "reasonCode",
   "progress",
+  "activeModel",
   "sessionResources",
   "startedAt",
   "updatedAt",

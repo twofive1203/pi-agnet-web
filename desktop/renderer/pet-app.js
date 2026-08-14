@@ -520,6 +520,8 @@
     maxReasonCodeChars: 64,
     maxDeepLinkChars: 256,
     maxToolNameChars: 64,
+    maxModelProviderChars: 64,
+    maxModelIdChars: 160,
     maxDiagnostics: 20,
     maxDiagnosticCodeChars: 64,
     maxDiagnosticMessageChars: 160,
@@ -675,6 +677,9 @@
       return parts.length > 0 ? parts.join(" \xB7 ") : null;
     }
     return childCount > 0 ? `${childCount} Subagent` : null;
+  }
+  function formatActiveModel(model) {
+    return model ? `${model.provider}/${model.modelId}` : null;
   }
   function formatCompactNumber(value) {
     if (value >= 1e6) return `${(value / 1e6).toFixed(1)}M`;
@@ -1665,12 +1670,15 @@
         progress.textContent = progressLabel;
         main.appendChild(progress);
       }
-      const resourceLabel = formatSessionResources(activity.sessionResources);
+      const resourceLabel = [
+        formatActiveModel(activity.executionState === "settled" ? void 0 : activity.activeModel),
+        formatSessionResources(activity.sessionResources)
+      ].filter((part) => Boolean(part)).join(" \xB7 ");
       if (resourceLabel) {
         const resources = document.createElement("span");
         resources.className = "row-resources";
         resources.textContent = resourceLabel;
-        resources.title = "\u5F53\u524D\u4F1A\u8BDD\u8D44\u6E90\uFF1A\u4E0A\u4E0B\u6587\u3001\u4F1A\u8BDD\u52A0\u6743\u5E73\u5747 TPS\u3001\u7D2F\u8BA1\u8D39\u7528\u6216 Token";
+        resources.title = "\u5F53\u524D\u6A21\u578B\u4E0E\u4F1A\u8BDD\u8D44\u6E90\uFF1A\u4E0A\u4E0B\u6587\u3001\u4F1A\u8BDD\u52A0\u6743\u5E73\u5747 TPS\u3001\u7D2F\u8BA1\u8D39\u7528\u6216 Token";
         main.appendChild(resources);
       }
       if (activity.progress.kind === "ratio" && activity.progress.total > 0) {

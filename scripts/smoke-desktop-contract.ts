@@ -100,6 +100,7 @@ import {
   createInitialPetBubbleState,
   createInitialPetCelebrateState,
   filterProjectGroups,
+  formatActiveModel,
   formatActivityProgress,
   formatElapsed,
   formatSessionResources,
@@ -151,6 +152,7 @@ function activityInput(input: {
   promptEpoch?: number;
   stateVersion?: number;
   updatedAt?: string;
+  activeModel?: TaskObserverActivityInput["activeModel"];
   sessionResources?: TaskObserverActivityInput["sessionResources"];
   children?: TaskObserverActivityInput["children"];
 }): TaskObserverActivityInput {
@@ -168,6 +170,7 @@ function activityInput(input: {
     outcome: input.outcome ?? null,
     attention: input.attention ?? "none",
     progress: { kind: "indeterminate" },
+    activeModel: input.activeModel,
     sessionResources: input.sessionResources,
     deepLink: buildAgentDeepLink(input.sessionId),
     lastTransitionId: buildAgentTransitionId(instanceId, input.sessionId, promptEpoch, stateVersion),
@@ -303,6 +306,7 @@ async function main() {
       title: "Running agent",
       executionState: "running",
       updatedAt: "2026-08-12T12:01:00.000Z",
+      activeModel: { provider: "anthropic", modelId: "claude-sonnet-4" },
       sessionResources: {
         context: { percent: 42.3, usedTokens: 84600, contextWindow: 200000 },
         billing: { totalTokens: 128400, costUsd: 0.0842 },
@@ -1849,6 +1853,7 @@ async function main() {
   assert.ok(petAppSource.includes("标记已读"));
   assert.ok(petAppSource.includes("Subagent 安全摘要"));
   assert.ok(petAppSource.includes("row-resources"));
+  assert.ok(petAppSource.includes("formatActiveModel"));
   assert.ok(petAppSource.includes("formatSessionResources"));
   assert.ok(petAppSource.includes("syncElapsedTimer"));
   assert.ok(petAppSource.includes("current?.trayOpen === true"));
@@ -1891,6 +1896,7 @@ async function main() {
   assert.ok(petAppJs.includes("resolveActivitySelection"));
   assert.ok(petAppJs.includes("row-child-toggle"));
   assert.ok(petAppJs.includes("row-resources"));
+  assert.ok(petAppJs.includes("formatActiveModel"));
   assert.ok(petAppJs.includes("formatSessionResources"));
   assert.ok(petAppJs.includes("markRead"));
 
@@ -1915,6 +1921,8 @@ async function main() {
   // projectActivityRow sanity
   const row = projectActivityRow(projectActivity(activities[0]), { acknowledgedTransitionIds: [] }, Date.now());
   assert.equal(row.source, "agent");
+  assert.deepEqual(row.activeModel, { provider: "anthropic", modelId: "claude-sonnet-4" });
+  assert.equal(formatActiveModel(row.activeModel), "anthropic/claude-sonnet-4");
   assert.deepEqual(row.sessionResources?.performance, { avgTps: 31.8, sampleCount: 6 });
   assert.equal(
     formatSessionResources(row.sessionResources),

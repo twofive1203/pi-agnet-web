@@ -245,6 +245,12 @@ export function formatActivityProgress(
   return childCount > 0 ? `${childCount} Subagent` : null;
 }
 
+export function formatActiveModel(
+  model: DesktopActivityRow["activeModel"],
+): string | null {
+  return model ? `${model.provider}/${model.modelId}` : null;
+}
+
 function formatCompactNumber(value: number): string {
   if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
   if (value >= 1_000) return `${Math.round(value / 1_000)}k`;

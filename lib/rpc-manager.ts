@@ -209,6 +209,11 @@ export class AgentSessionWrapper {
   }
 
   private refreshTaskObserverResources(): void {
+    const model = this.inner.model;
+    this.taskObserver.setActiveModel(
+      model ? { provider: model.provider, modelId: model.id } : undefined,
+    );
+
     const resources: TaskObserverSessionResources = {};
     try {
       const stats = this.inner.getSessionStats();
