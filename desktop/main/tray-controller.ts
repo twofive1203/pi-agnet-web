@@ -12,6 +12,7 @@ import type { DesktopConnectionStatus } from "./connection-state";
 export type TrayMenuAction =
   | "show-pet"
   | "disable-click-through"
+  | "toggle-dnd"
   | "retry"
   | "open-webui"
   | "copy-start-command"
@@ -22,12 +23,15 @@ export type TrayMenuItem = {
   label: string;
   enabled: boolean;
   type: "normal" | "separator";
+  /** Electron checkbox menu state (DND toggle). */
+  checked?: boolean;
 };
 
 export type TrayMenuModelInput = {
   presentation: TaskObserverPresentationState;
   connectionStatus: DesktopConnectionStatus;
   clickThrough: boolean;
+  dndEnabled: boolean;
   activeCount: number;
   attentionCount: number;
   canCopyStartCommand: boolean;
@@ -68,6 +72,13 @@ export function buildTrayMenuModel(input: TrayMenuModelInput): TrayMenuItem[] {
       label: "取消鼠标穿透",
       enabled: input.clickThrough,
       type: "normal",
+    },
+    {
+      id: "toggle-dnd",
+      label: "勿扰模式",
+      enabled: true,
+      type: "normal",
+      checked: input.dndEnabled,
     },
     { id: "separator", label: "", enabled: false, type: "separator" },
     { id: "retry", label: "重试连接", enabled: true, type: "normal" },
@@ -111,6 +122,7 @@ export function trayItemToAction(id: TrayMenuItem["id"]): TrayMenuAction | null 
   switch (id) {
     case "show-pet":
     case "disable-click-through":
+    case "toggle-dnd":
     case "retry":
     case "open-webui":
     case "copy-start-command":

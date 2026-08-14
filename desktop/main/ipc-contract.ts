@@ -62,6 +62,7 @@ export type PetPrefsPatch = Partial<{
   launchAtLogin: boolean;
   activityTrayOpen: boolean;
   showContextMeter: boolean;
+  dndEnabled: boolean;
   notification: Partial<{
     needsInput: boolean;
     blocked: boolean;

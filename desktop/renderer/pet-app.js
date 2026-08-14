@@ -323,6 +323,18 @@
     return raw;
   }
 
+  // desktop/main/dnd-policy.ts
+  var DND_SUPPRESSIBLE_PRESENTATIONS = /* @__PURE__ */ new Set([
+    "needs_input",
+    "blocked",
+    "ready",
+    "running",
+    "retrying"
+  ]);
+  function isDndSuppressiblePresentation(presentation) {
+    return DND_SUPPRESSIBLE_PRESENTATIONS.has(presentation);
+  }
+
   // desktop/assets/pets/snail-classic/manifest.json
   var manifest_default = {
     id: "snail-classic",
@@ -919,6 +931,7 @@
     }
     const signalKey = petBubbleSignalKey(event.signal);
     const mode = petBubbleMode(event.signal);
+    const dndSilenced = event.signal.dndEnabled && isDndSuppressiblePresentation(event.signal.presentation);
     if (signalKey === state.signalKey) {
       if (mode == null) {
         return { ...state, visible: false, mode: null, expiresAt: null };
@@ -926,16 +939,25 @@
       if (state.dismissedSignalKey === signalKey) {
         return { ...state, visible: false, mode, expiresAt: null };
       }
+      if (dndSilenced) {
+        return {
+          ...state,
+          dismissedSignalKey: state.dismissedSignalKey ?? signalKey,
+          visible: false,
+          mode,
+          expiresAt: null
+        };
+      }
       if (mode === "transient" && state.expiresAt != null && event.now >= state.expiresAt) {
         return { ...state, visible: false, expiresAt: null };
       }
       return { ...state, mode };
     }
-    const visible = mode === "persistent" || mode === "transient" && !event.signal.reset;
+    const visible = !dndSilenced && (mode === "persistent" || mode === "transient" && !event.signal.reset);
     return {
       signalKey,
       transitionId: event.signal.transitionId,
-      dismissedSignalKey: null,
+      dismissedSignalKey: dndSilenced ? signalKey : null,
       visible,
       mode,
       expiresAt: visible && mode === "transient" ? event.now + PET_BUBBLE_TRANSIENT_MS : null
@@ -1209,6 +1231,7 @@
     const prefNeedsInput = root.getElementById("pref-needs-input");
     const prefBlocked = root.getElementById("pref-blocked");
     const prefShowContextMeter = root.getElementById("pref-show-context-meter");
+    const prefDnd = root.getElementById("pref-dnd");
     const staleFlag = root.getElementById("stale-flag");
     const hideToTray = () => {
       bridge?.hideToTray();
@@ -1604,6 +1627,7 @@
         revision: view.revision,
         instanceId: view.instanceId,
         unread: activityDrivesState ? primary.unread : false,
+        dndEnabled: view.dndEnabled === true,
         reset: view.reset || bridge != null && previousView == null || previousView?.instanceId != null && previousView.instanceId !== view.instanceId
       };
       const bubbleNow = updateNow;
@@ -1757,6 +1781,7 @@
       if (prefNeedsInput) prefNeedsInput.checked = view.notification.needsInput;
       if (prefBlocked) prefBlocked.checked = view.notification.blocked;
       if (prefShowContextMeter) prefShowContextMeter.checked = view.showContextMeter;
+      if (prefDnd) prefDnd.checked = view.dndEnabled === true;
       petPicker?.querySelectorAll("[data-pet-id]").forEach((option) => {
         const selected = option.dataset.petId === view.selectedPetId;
         option.setAttribute("aria-checked", selected ? "true" : "false");
@@ -2238,6 +2263,9 @@
     });
     prefShowContextMeter?.addEventListener("change", () => {
       bridge?.setPrefs({ showContextMeter: prefShowContextMeter.checked });
+    });
+    prefDnd?.addEventListener("change", () => {
+      bridge?.setPrefs({ dndEnabled: prefDnd.checked });
     });
     const onKeyDown = (event) => {
       if (event.key === "Escape" && trayMoreOpen) {

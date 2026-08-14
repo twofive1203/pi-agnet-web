@@ -203,11 +203,13 @@ revised: 2026-08-14
 
 该单元不能作为一个大批次一次实现，应拆成独立小项：
 
-#### U7a — DND（优先于完整声音体验）
+#### [x] U7a — DND（优先于完整声音体验）
 
 - 一键抑制 Electron 通知、needs_input 气泡弹出和声音，但 Activity tray 状态继续更新。
 - 不自动改变任务状态，不自动批准/拒绝；恢复后不补播历史声音/通知。
 - 明确手动 DND 与未来安静时段的区别，首期只做手动开关。
+
+**Completed:** 2026-08-14 — 新增纯策略模块 `desktop/main/dnd-policy.ts`（同一门控同时服务系统通知、状态气泡与未来 U4a 声音）；`dndEnabled` 进入 settings-store defaults/normalize/update/serialize（缺省 false，旧 v1 文件迁移为 false，schema 版本不变）并经现有窄 preload `setPrefs` 与设置面板/托盘菜单（checked 状态）双向开关；DND 期间任务态通知与气泡被静默消费（notified/dismissed LRU 前移），关闭 DND、renderer 重建或相同 snapshot 重放均不补播；连接诊断（service_not_running/disconnected/reconnecting）始终可见；不写 acknowledgedTransitionIds、不改 8 态呈现与 Activity tray 未读；与 reduced-motion 相互独立。U4a 声音仅预留门控，未实现音频。
 
 #### U7b — Electron 桌宠 i18n
 

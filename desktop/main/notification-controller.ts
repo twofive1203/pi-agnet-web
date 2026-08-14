@@ -11,6 +11,7 @@ import type {
   TaskObserverTransition,
 } from "../../lib/task-observer-types";
 import { indexActivitiesByTransitionId } from "./activity-store";
+import { shouldSuppressProactiveByDnd } from "./dnd-policy";
 import {
   pushTransitionLru,
   type DesktopNotificationCompletionPolicy,
@@ -136,6 +137,20 @@ export function selectNotifications(input: NotificationPolicyInput): Notificatio
     const id = transition.transitionId.trim();
     if (!id || notified.has(id) || seenEmit.has(id)) continue;
     if (!isNotifiablePresentation(transition.presentation)) continue;
+    if (
+      shouldSuppressProactiveByDnd({
+        dndEnabled: input.settings.dndEnabled,
+        presentation: transition.presentation,
+        surface: "system-notification",
+      })
+    ) {
+      // DND consumes the transition locally: it is treated as silently handled
+      // so disabling DND later never replays missed notifications (U7a).
+      nextNotified = pushTransitionLru(nextNotified, id);
+      notified.add(id);
+      changed = true;
+      continue;
+    }
     if (!presentationAllowed(transition.presentation, input.settings, input.appInBackground)) {
       // Still record as seen only when we intentionally suppress by policy? No —
       // policy off means "don't notify", but replay should not notify later if user

@@ -449,6 +449,7 @@ export async function startDesktopPetMain(deps: DesktopMainDeps): Promise<{
       presentation: view.presentation,
       connectionStatus: view.connectionStatus,
       clickThrough: windowState.clickThrough,
+      dndEnabled: view.dndEnabled,
       activeCount: view.activeCount,
       attentionCount: view.attentionCount,
       canCopyStartCommand: view.canCopyStartCommand,
@@ -467,6 +468,7 @@ export async function startDesktopPetMain(deps: DesktopMainDeps): Promise<{
       return {
         label: item.label,
         enabled: item.enabled,
+        checked: item.checked,
         click: action
           ? () => {
               handleTrayAction(action);
@@ -484,6 +486,16 @@ export async function startDesktopPetMain(deps: DesktopMainDeps): Promise<{
         break;
       case "disable-click-through":
         applyWindowState(handleDisableClickThrough(windowState), "user-disable-click-through");
+        break;
+      case "toggle-dnd":
+        // Local quiet mode only: observation, tray unread and server tasks stay
+        // untouched. pushState also closes active suppressible bubbles in the
+        // renderer immediately.
+        settings = updateDesktopSettings(settings, {
+          dndEnabled: !settings.dndEnabled,
+        });
+        persistSettings();
+        pushState();
         break;
       case "retry":
         client.retry();
@@ -737,6 +749,7 @@ export async function startDesktopPetMain(deps: DesktopMainDeps): Promise<{
         launchAtLogin: p.launchAtLogin,
         activityTrayOpen: p.activityTrayOpen,
         showContextMeter: p.showContextMeter,
+        dndEnabled: p.dndEnabled,
         notification: p.notification,
         port: p.port,
       });

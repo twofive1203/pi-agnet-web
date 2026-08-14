@@ -123,6 +123,7 @@ export function renderPetApp(root: Document = document): {
   const prefNeedsInput = root.getElementById("pref-needs-input") as HTMLInputElement | null;
   const prefBlocked = root.getElementById("pref-blocked") as HTMLInputElement | null;
   const prefShowContextMeter = root.getElementById("pref-show-context-meter") as HTMLInputElement | null;
+  const prefDnd = root.getElementById("pref-dnd") as HTMLInputElement | null;
   const staleFlag = root.getElementById("stale-flag");
 
   const hideToTray = () => {
@@ -593,6 +594,7 @@ export function renderPetApp(root: Document = document): {
       revision: view.revision,
       instanceId: view.instanceId,
       unread: activityDrivesState ? primary.unread : false,
+      dndEnabled: view.dndEnabled === true,
       reset:
         view.reset ||
         (bridge != null && previousView == null) ||
@@ -768,6 +770,7 @@ export function renderPetApp(root: Document = document): {
     if (prefNeedsInput) prefNeedsInput.checked = view.notification.needsInput;
     if (prefBlocked) prefBlocked.checked = view.notification.blocked;
     if (prefShowContextMeter) prefShowContextMeter.checked = view.showContextMeter;
+    if (prefDnd) prefDnd.checked = view.dndEnabled === true;
     petPicker?.querySelectorAll<HTMLElement>("[data-pet-id]").forEach((option) => {
       const selected = option.dataset.petId === view.selectedPetId;
       option.setAttribute("aria-checked", selected ? "true" : "false");
@@ -1365,6 +1368,9 @@ export function renderPetApp(root: Document = document): {
   });
   prefShowContextMeter?.addEventListener("change", () => {
     bridge?.setPrefs({ showContextMeter: prefShowContextMeter.checked });
+  });
+  prefDnd?.addEventListener("change", () => {
+    bridge?.setPrefs({ dndEnabled: prefDnd.checked });
   });
 
   const onKeyDown = (event: KeyboardEvent) => {

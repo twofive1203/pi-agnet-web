@@ -11,6 +11,7 @@ import type {
   TaskObserverSource,
 } from "../../lib/task-observer-types";
 import type { DesktopActivityRow, DesktopProjectGroup } from "../main/activity-store";
+import { isDndSuppressiblePresentation } from "../main/dnd-policy";
 import snailClassicManifestDocument from "../assets/pets/snail-classic/manifest.json";
 import snailDefaultManifestDocument from "../assets/pets/snail-default/manifest.json";
 import snailSpriteManifestDocument from "../assets/pets/snail-sprite/manifest.json";
@@ -546,6 +547,8 @@ export type PetBubbleSignal = {
   revision: number | null;
   instanceId: string | null;
   unread: boolean;
+  /** Manual DND silences task-state bubbles but never connection diagnostics. */
+  dndEnabled: boolean;
   /** Initial/reset snapshots establish a baseline instead of replaying transient bubbles. */
   reset: boolean;
 };
@@ -631,6 +634,10 @@ export function reducePetBubbleState(
 
   const signalKey = petBubbleSignalKey(event.signal);
   const mode = petBubbleMode(event.signal);
+  // DND silences proactive task-state bubbles; connection diagnostics
+  // (service_not_running / disconnected) stay visible.
+  const dndSilenced =
+    event.signal.dndEnabled && isDndSuppressiblePresentation(event.signal.presentation);
   if (signalKey === state.signalKey) {
     if (mode == null) {
       return { ...state, visible: false, mode: null, expiresAt: null };
@@ -638,17 +645,30 @@ export function reducePetBubbleState(
     if (state.dismissedSignalKey === signalKey) {
       return { ...state, visible: false, mode, expiresAt: null };
     }
+    if (dndSilenced) {
+      // Enabling DND closes an active suppressible bubble immediately. The
+      // transition is treated as silently handled, so disabling DND later
+      // never re-opens it (no replay).
+      return {
+        ...state,
+        dismissedSignalKey: state.dismissedSignalKey ?? signalKey,
+        visible: false,
+        mode,
+        expiresAt: null,
+      };
+    }
     if (mode === "transient" && state.expiresAt != null && event.now >= state.expiresAt) {
       return { ...state, visible: false, expiresAt: null };
     }
     return { ...state, mode };
   }
 
-  const visible = mode === "persistent" || (mode === "transient" && !event.signal.reset);
+  const visible =
+    !dndSilenced && (mode === "persistent" || (mode === "transient" && !event.signal.reset));
   return {
     signalKey,
     transitionId: event.signal.transitionId,
-    dismissedSignalKey: null,
+    dismissedSignalKey: dndSilenced ? signalKey : null,
     visible,
     mode,
     expiresAt:

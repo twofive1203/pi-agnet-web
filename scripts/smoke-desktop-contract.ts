@@ -23,6 +23,10 @@ import {
 } from "../desktop/main/activity-store";
 import { applyLaunchAtLogin, readLaunchAtLogin } from "../desktop/main/autostart";
 import {
+  isDndSuppressiblePresentation,
+  shouldSuppressProactiveByDnd,
+} from "../desktop/main/dnd-policy";
+import {
   createInitialConnectionState,
   DESKTOP_START_COMMAND,
   reduceConnectionState,
@@ -55,6 +59,7 @@ import {
   createDefaultDesktopSettings,
   normalizeDesktopSettings,
   parseDesktopSettingsJson,
+  serializeDesktopSettings,
   updateDesktopSettings,
 } from "../desktop/main/settings-store";
 import {
@@ -859,6 +864,7 @@ async function main() {
     revision: 10,
     instanceId: "inst-u7",
     unread: false,
+    dndEnabled: false,
     reset: false,
   };
   bubble = reducePetBubbleState(bubble, { type: "snapshot", signal: runningSignal, now: 100 });
@@ -1193,6 +1199,274 @@ async function main() {
   });
   assert.equal(emittedBaseline.emitted.length, 0);
 
+  // --- DND (U7a): manual local quiet mode ---
+  // Fresh install default + legacy migration keep DND off.
+  assert.equal(createDefaultDesktopSettings().dndEnabled, false);
+  assert.equal(
+    parseDesktopSettingsJson(
+      JSON.stringify({ version: 1, port: 62666, selectedPetId: "snail-default" }),
+    ).dndEnabled,
+    false,
+  );
+  assert.equal(normalizeDesktopSettings({ dndEnabled: "on" }).dndEnabled, false);
+  assert.equal(normalizeDesktopSettings({ dndEnabled: true }).dndEnabled, true);
+  assert.equal(
+    updateDesktopSettings(createDefaultDesktopSettings(), { dndEnabled: true }).dndEnabled,
+    true,
+  );
+  const dndRoundTrip = parseDesktopSettingsJson(
+    serializeDesktopSettings(updateDesktopSettings(createDefaultDesktopSettings(), { dndEnabled: true })),
+  );
+  assert.equal(dndRoundTrip.dndEnabled, true);
+  assert.equal(dndRoundTrip.version, 1, "schema version must stay at 1");
+
+  // Unified policy: task/attention states suppressed; connection diagnostics never.
+  assert.equal(
+    shouldSuppressProactiveByDnd({ dndEnabled: false, presentation: "needs_input", surface: "system-notification" }),
+    false,
+  );
+  assert.equal(
+    shouldSuppressProactiveByDnd({ dndEnabled: true, presentation: "needs_input", surface: "system-notification" }),
+    true,
+  );
+  assert.equal(
+    shouldSuppressProactiveByDnd({ dndEnabled: true, presentation: "blocked", surface: "system-notification" }),
+    true,
+  );
+  assert.equal(
+    shouldSuppressProactiveByDnd({ dndEnabled: true, presentation: "ready", surface: "system-notification" }),
+    true,
+  );
+  assert.equal(
+    shouldSuppressProactiveByDnd({ dndEnabled: true, presentation: "running", surface: "state-bubble" }),
+    true,
+  );
+  assert.equal(
+    shouldSuppressProactiveByDnd({ dndEnabled: true, presentation: "retrying", surface: "state-bubble" }),
+    true,
+  );
+  assert.equal(
+    shouldSuppressProactiveByDnd({ dndEnabled: true, presentation: "service_not_running", surface: "state-bubble" }),
+    false,
+  );
+  assert.equal(
+    shouldSuppressProactiveByDnd({ dndEnabled: true, presentation: "disconnected", surface: "state-bubble" }),
+    false,
+  );
+  assert.equal(
+    shouldSuppressProactiveByDnd({ dndEnabled: true, presentation: "idle", surface: "state-bubble" }),
+    false,
+  );
+  assert.equal(isDndSuppressiblePresentation("needs_input"), true);
+  assert.equal(isDndSuppressiblePresentation("service_not_running"), false);
+
+  // DND suppresses notifications and consumes the transition silently:
+  // disabling DND must not replay missed notifications.
+  const dndTransitionId = buildAgentTransitionId("inst-u7", "s-need", 3, 9);
+  const dndSnapshot = buildTaskObserverSnapshot({
+    instanceId: "inst-u7",
+    revision: 3,
+    activities,
+    recentTransitions: [
+      {
+        transitionId: dndTransitionId,
+        taskKey: buildAgentTaskKey("s-need"),
+        activityId: buildAgentActivityId("inst-u7", "s-need", 3),
+        source: "agent",
+        projectKey: "proj-c",
+        presentation: "needs_input",
+        executionState: "running",
+        outcome: null,
+        attention: "needs_input",
+        at: "2026-08-12T12:20:00.000Z",
+      },
+    ],
+  });
+  const dndOnSettings = updateDesktopSettings(createDefaultDesktopSettings(), {
+    dndEnabled: true,
+    notifiedTransitionIds: [],
+  });
+  const dndSuppressed = selectNotifications({
+    settings: dndOnSettings,
+    snapshot: dndSnapshot,
+    resetBaseline: false,
+    appInBackground: true,
+  });
+  assert.equal(dndSuppressed.toNotify.length, 0);
+  assert.ok(
+    dndSuppressed.notifiedTransitionIds.includes(dndTransitionId),
+    "DND transitions are silently consumed",
+  );
+  const dndOffSettings = updateDesktopSettings(dndOnSettings, {
+    dndEnabled: false,
+    notifiedTransitionIds: dndSuppressed.notifiedTransitionIds,
+  });
+  const dndReplay = selectNotifications({
+    settings: dndOffSettings,
+    snapshot: dndSnapshot,
+    resetBaseline: false,
+    appInBackground: true,
+  });
+  assert.equal(dndReplay.toNotify.length, 0, "disabling DND must not replay missed notifications");
+  assert.equal(
+    dndOffSettings.acknowledgedTransitionIds.length,
+    0,
+    "DND must never write acknowledgedTransitionIds (no mark-read)",
+  );
+
+  // A throwing notification host must not affect DND handling or observation.
+  const dndController = new DesktopNotificationController({
+    isSupported: () => true,
+    show: () => {
+      throw new Error("broken notification host");
+    },
+  });
+  const dndControllerResult = dndController.handleSnapshot({
+    settings: dndOnSettings,
+    snapshot: dndSnapshot,
+    resetBaseline: false,
+  });
+  assert.equal(dndControllerResult.emitted.length, 0);
+  assert.ok(dndControllerResult.settings.notifiedTransitionIds.includes(dndTransitionId));
+
+  // DND passes through the sanitized view without changing task presentation.
+  const dndView = buildActivityView({
+    snapshot,
+    connection,
+    settings: dndOnSettings,
+    now: Date.parse("2026-08-12T12:05:00.000Z"),
+  });
+  assert.equal(dndView.dndEnabled, true);
+  assert.equal(dndView.presentation, "needs_input", "DND never rewrites the pet state");
+  assert.ok(dndView.attentionCount >= 1, "Activity tray attention stays observable");
+  assert.ok(
+    flattenActivities(dndView.projects).some((row) => row.presentation === "needs_input" && row.unread),
+    "DND keeps tray unread state untouched",
+  );
+  assert.equal(
+    buildActivityView({
+      snapshot,
+      connection,
+      settings: createDefaultDesktopSettings(),
+      now: Date.parse("2026-08-12T12:05:00.000Z"),
+    }).dndEnabled,
+    false,
+  );
+
+  // Bubbles: silenced during DND, no replay after disable, diagnostics visible.
+  let dndBubble = createInitialPetBubbleState();
+  const dndNeedsSignal = {
+    presentation: "needs_input" as const,
+    transitionId: "dnd-need-1",
+    revision: 30,
+    instanceId: "inst-u7",
+    unread: true,
+    dndEnabled: true,
+    reset: false,
+  };
+  dndBubble = reducePetBubbleState(dndBubble, {
+    type: "snapshot",
+    signal: dndNeedsSignal,
+    now: 1000,
+  });
+  assert.equal(dndBubble.visible, false, "needs_input bubble suppressed under DND");
+  assert.equal(
+    dndBubble.dismissedSignalKey,
+    "needs_input:transition:dnd-need-1",
+    "suppressed transition is silently handled",
+  );
+  dndBubble = reducePetBubbleState(dndBubble, {
+    type: "snapshot",
+    signal: { ...dndNeedsSignal, dndEnabled: false },
+    now: 2000,
+  });
+  assert.equal(dndBubble.visible, false, "no bubble replay after DND off");
+  // A genuinely new transition after DND off alerts again.
+  const dndFreshSignal = { ...dndNeedsSignal, transitionId: "dnd-need-2", dndEnabled: false };
+  dndBubble = reducePetBubbleState(dndBubble, {
+    type: "snapshot",
+    signal: dndFreshSignal,
+    now: 3000,
+  });
+  assert.equal(dndBubble.visible, true);
+  // Enabling DND closes the active bubble immediately and keeps it closed.
+  dndBubble = reducePetBubbleState(dndBubble, {
+    type: "snapshot",
+    signal: { ...dndFreshSignal, dndEnabled: true },
+    now: 4000,
+  });
+  assert.equal(dndBubble.visible, false, "enabling DND closes the active bubble");
+  dndBubble = reducePetBubbleState(dndBubble, {
+    type: "snapshot",
+    signal: { ...dndFreshSignal, dndEnabled: false },
+    now: 5000,
+  });
+  assert.equal(dndBubble.visible, false, "closed bubble stays closed after DND off");
+
+  // Connection diagnostics must stay visible under DND.
+  let dndDiagBubble = createInitialPetBubbleState();
+  dndDiagBubble = reducePetBubbleState(dndDiagBubble, {
+    type: "snapshot",
+    signal: {
+      presentation: "service_not_running",
+      transitionId: null,
+      revision: null,
+      instanceId: "inst-u7",
+      unread: false,
+      dndEnabled: true,
+      reset: false,
+    },
+    now: 1000,
+  });
+  assert.equal(dndDiagBubble.visible, true, "service_not_running stays visible under DND");
+  assert.equal(dndDiagBubble.mode, "persistent");
+  dndDiagBubble = reducePetBubbleState(dndDiagBubble, {
+    type: "snapshot",
+    signal: {
+      presentation: "disconnected",
+      transitionId: null,
+      revision: null,
+      instanceId: "inst-u7",
+      unread: false,
+      dndEnabled: true,
+      reset: false,
+    },
+    now: 2000,
+  });
+  assert.equal(dndDiagBubble.visible, true, "disconnected stays visible under DND");
+  assert.equal(dndDiagBubble.mode, "persistent");
+
+  // Transient running bubbles are proactive and suppressed under DND.
+  let dndRunBubble = createInitialPetBubbleState();
+  dndRunBubble = reducePetBubbleState(dndRunBubble, {
+    type: "snapshot",
+    signal: {
+      presentation: "running",
+      transitionId: null,
+      revision: 31,
+      instanceId: "inst-u7",
+      unread: false,
+      dndEnabled: true,
+      reset: false,
+    },
+    now: 1000,
+  });
+  assert.equal(dndRunBubble.visible, false, "running bubble suppressed under DND");
+  dndRunBubble = reducePetBubbleState(dndRunBubble, {
+    type: "snapshot",
+    signal: {
+      presentation: "running",
+      transitionId: null,
+      revision: 31,
+      instanceId: "inst-u7",
+      unread: false,
+      dndEnabled: false,
+      reset: false,
+    },
+    now: 2000,
+  });
+  assert.equal(dndRunBubble.visible, false, "suppressed running bubble never replays");
+
   // --- Default position is bottom-right of work area (not 0,0) ---
   const pos = defaultPetWindowPosition({ x: 0, y: 0, width: 1920, height: 1080 });
   assert.ok(pos.x > 1000);
@@ -1522,6 +1796,7 @@ async function main() {
     presentation: "service_not_running",
     connectionStatus: "service-not-running",
     clickThrough: true,
+    dndEnabled: false,
     activeCount: 0,
     attentionCount: 0,
     canCopyStartCommand: true,
@@ -1530,6 +1805,7 @@ async function main() {
   const labels = trayModel.map((i) => i.label).join(" | ");
   assert.ok(labels.includes("显示桌宠"));
   assert.ok(labels.includes("取消鼠标穿透"));
+  assert.ok(labels.includes("勿扰模式"));
   assert.ok(labels.includes("重试连接"));
   assert.ok(labels.includes("打开 WebUI"));
   assert.ok(labels.includes("退出桌宠"));
@@ -1538,6 +1814,22 @@ async function main() {
   assert.ok(quit);
   assertQuitLabelSafe(quit!.label);
   assert.equal(trayItemToAction("quit"), "quit");
+  assert.equal(trayItemToAction("toggle-dnd"), "toggle-dnd");
+  const trayDndOff = trayModel.find((i) => i.id === "toggle-dnd");
+  assert.ok(trayDndOff);
+  assert.equal(trayDndOff!.checked, false);
+  const trayDndOn = buildTrayMenuModel({
+    presentation: "running",
+    connectionStatus: "connected",
+    clickThrough: false,
+    dndEnabled: true,
+    activeCount: 1,
+    attentionCount: 0,
+    canCopyStartCommand: false,
+    startCommand: DESKTOP_START_COMMAND,
+  }).find((i) => i.id === "toggle-dnd");
+  assert.ok(trayDndOn);
+  assert.equal(trayDndOn!.checked, true);
   assert.ok(buildTrayTooltip({ presentation: "running", activeCount: 2, attentionCount: 1 }).includes("运行中"));
 
   // --- Preview isolation + builtin pet manifest v2 ---
@@ -1857,6 +2149,7 @@ async function main() {
   );
   assert.equal(migrated.petScale, "medium");
   assert.equal(migrated.showContextMeter, true);
+  assert.equal(migrated.dndEnabled, false);
   assert.equal(migrated.selectedPetId, "snail-classic");
   assert.deepEqual(migrated.windowPosition, { x: 120, y: 80 });
   assert.equal(
@@ -2001,6 +2294,27 @@ async function main() {
   assert.ok(preloadSrc.includes("contextBridge.exposeInMainWorld"));
   assert.ok(preloadSrc.includes("snailPet"));
 
+  // DND travels the narrow existing bridge: panel checkbox -> setPrefs patch ->
+  // main persist + tray rebuild. No new IPC channels.
+  const ipcSrc = readFileSync(
+    path.join(process.cwd(), "desktop", "main", "ipc-contract.ts"),
+    "utf8",
+  );
+  assert.ok(ipcSrc.includes("dndEnabled"));
+  const petAppSrc = readFileSync(
+    path.join(process.cwd(), "desktop", "renderer", "pet-app.tsx"),
+    "utf8",
+  );
+  assert.ok(petAppSrc.includes("pref-dnd"));
+  assert.ok(petAppSrc.includes("setPrefs({ dndEnabled: prefDnd.checked })"));
+  assert.ok(petAppSrc.includes("dndEnabled: view.dndEnabled === true"));
+  const indexHtmlSrc = readFileSync(
+    path.join(process.cwd(), "desktop", "renderer", "index.html"),
+    "utf8",
+  );
+  assert.ok(indexHtmlSrc.includes('id="pref-dnd"'));
+  assert.equal(/nodeIntegration|child_process/.test(indexHtmlSrc), false);
+
   // --- Static desktop tree: no service control ---
   const desktopRoot = path.join(process.cwd(), "desktop");
   for (const file of collectDesktopSources(desktopRoot)) {
@@ -2040,6 +2354,11 @@ async function main() {
   assert.equal(/会中断任务|interrupt tasks|stop the service/.test(mainSrc), false);
   assert.ok(mainSrc.includes("No task-interruption warning") || mainSrc.includes("cannot stop"));
   assert.ok(mainSrc.includes("dragWorkAreas.length > 0 ? dragWorkAreas : resolveWorkArea()"));
+
+  // Tray DND toggle persists settings and pushes state without any process control.
+  assert.ok(mainSrc.includes('"toggle-dnd"'));
+  assert.ok(mainSrc.includes("dndEnabled: p.dndEnabled"));
+  assert.ok(mainSrc.includes("dndEnabled: !settings.dndEnabled"));
 
   // copyStartCommand must not execute
   assert.ok(mainSrc.includes("Copy only"));

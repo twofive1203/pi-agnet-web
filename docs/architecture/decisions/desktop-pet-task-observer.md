@@ -338,6 +338,7 @@ desktop/
     window-manager.ts
     tray-controller.ts
     notification-controller.ts
+    dnd-policy.ts
     settings-store.ts
     autostart.ts
   preload/pet-preload.ts
@@ -363,7 +364,7 @@ The renderer is a dedicated small bundle. The desktop package contains the pet o
 - Persist pet selection and position.
 - Honor reduced motion and provide non-color state cues.
 - The pet-side compact resource ring uses only the U1 primary activity's `sessionResources.context.percent`. Settled/ready Agent primaries may show their own percent; non-Agent, missing/`null`/invalid, or stale snapshots hide the ring instead of borrowing another activity or drawing a fake 0%.
-- Tray always offers show, disable click-through, Retry, Open WebUI and Quit.
+- Tray always offers show, disable click-through, DND toggle (checked state), Retry, Open WebUI and Quit.
 
 ### Main/preload security
 
@@ -381,6 +382,15 @@ The renderer is a dedicated small bundle. The desktop package contains the pet o
 - Persist bounded acknowledged/notified transition LRU.
 - Activity tray works when Windows notification permission is denied.
 
+### Manual Do Not Disturb (U7a)
+
+- `dndEnabled` is a desktop-local presentation setting (default false) toggled from the settings panel and the tray menu (checked state); both surfaces share the same persisted flag.
+- While enabled, proactive surfaces are gated through the shared `dnd-policy`: Electron notifications and task-state bubbles (Needs input / Blocked / Ready / Running / Retrying) are suppressed. Connection diagnostics (service not running / disconnected / reconnecting) always remain visible.
+- Enabling DND closes the current suppressible bubble immediately; transitions during DND are treated as silently handled (notified/dismissed LRUs advance), so disabling DND, renderer rebuilds, or snapshot replays never re-alert.
+- DND never writes `acknowledgedTransitionIds` (no mark-read), never changes the 8-state presentation, pet visuals, glyphs, Activity tray unread projection, retry/deep-link/mark-read actions, or server/observer state.
+- DND does not switch the pet to idle/sleeping and is independent of reduced motion.
+- Future U4a sounds must pass the same gate with the `sound` surface before playback; U7a itself implements no audio.
+
 ## Configuration and Persistence
 
 Electron `userData` stores:
@@ -389,6 +399,7 @@ Electron `userData` stores:
 - selected built-in pet;
 - always-on-top/click-through;
 - compact primary-activity context meter visibility;
+- manual Do Not Disturb (`dndEnabled`, default off; missing v1 files migrate to off);
 - notification settings;
 - launch at login;
 - configured loopback port;
@@ -435,7 +446,8 @@ Auto-update remains outside v1.
 - serialization proving no cwd/firstMessage/prompt/error/command/env/output;
 - stable transition dedupe and local acknowledgement;
 - connection-state machine for connected/not-running/incompatible/reconnecting;
-- deep-link allowlist and settings validation.
+- deep-link allowlist and settings validation;
+- DND: default-off and legacy migration, notification/bubble suppression with silent transition consumption (no replay after disable or snapshot replay), immediate close of the active bubble on enable, connection diagnostics staying visible, no acknowledged-LRU writes, and view/tray passthrough.
 
 ### Server integration smokes
 

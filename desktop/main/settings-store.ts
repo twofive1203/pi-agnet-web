@@ -37,6 +37,11 @@ export type DesktopPetSettings = {
   activityTrayOpen: boolean;
   /** Compact pet-side context ring; missing v1 files migrate to on. */
   showContextMeter: boolean;
+  /**
+   * Manual Do Not Disturb: suppresses proactive notifications/bubbles (and future
+   * sounds) while observation keeps running. Missing v1 files migrate to off.
+   */
+  dndEnabled: boolean;
   windowPosition: { x: number; y: number } | null;
   notification: {
     needsInput: boolean;
@@ -59,6 +64,7 @@ export const DESKTOP_SETTINGS_DEFAULTS: DesktopPetSettings = {
   launchAtLogin: false,
   activityTrayOpen: false,
   showContextMeter: true,
+  dndEnabled: false,
   windowPosition: null,
   notification: {
     needsInput: true,
@@ -106,6 +112,7 @@ export function normalizeDesktopSettings(input: unknown): DesktopPetSettings {
     launchAtLogin: raw.launchAtLogin === true,
     activityTrayOpen: raw.activityTrayOpen === true,
     showContextMeter: raw.showContextMeter !== false,
+    dndEnabled: raw.dndEnabled === true,
     windowPosition,
     notification: {
       needsInput: notificationRaw.needsInput !== false,
@@ -142,6 +149,7 @@ export function updateDesktopSettings(
     launchAtLogin: boolean;
     activityTrayOpen: boolean;
     showContextMeter: boolean;
+    dndEnabled: boolean;
     windowPosition: { x: number; y: number } | null;
     notification: Partial<DesktopPetSettings["notification"]>;
     acknowledgedTransitionIds: string[];

@@ -68,6 +68,7 @@ function baseView(overrides = {}) {
     clickThrough: false,
     launchAtLogin: false,
     showContextMeter: true,
+    dndEnabled: false,
     notification: { needsInput: true, blocked: true, completion: "background-only" },
     reducedMotion: false,
     reset: false,
