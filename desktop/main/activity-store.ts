@@ -118,6 +118,7 @@ export type DesktopActivityView = {
   showContextMeter: boolean;
   dndEnabled: boolean;
   notification: DesktopPetSettings["notification"];
+  sound: DesktopPetSettings["sound"];
   reducedMotion: boolean;
   /** Reset/baseline snapshot marker for renderer-local transient presentation. */
   reset: boolean;
@@ -410,6 +411,7 @@ export function buildActivityView(input: ActivityStoreSnapshotInput): DesktopAct
     showContextMeter: input.settings.showContextMeter,
     dndEnabled: input.settings.dndEnabled,
     notification: { ...input.settings.notification },
+    sound: { ...input.settings.sound },
     reducedMotion: input.reducedMotion === true,
     reset: input.reset === true || input.snapshot?.reset === true,
     revision: input.snapshot?.revision ?? null,

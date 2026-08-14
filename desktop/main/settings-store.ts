@@ -38,8 +38,8 @@ export type DesktopPetSettings = {
   /** Compact pet-side context ring; missing v1 files migrate to on. */
   showContextMeter: boolean;
   /**
-   * Manual Do Not Disturb: suppresses proactive notifications/bubbles (and future
-   * sounds) while observation keeps running. Missing v1 files migrate to off.
+   * Manual Do Not Disturb: suppresses proactive notifications/bubbles/sounds
+   * while observation keeps running. Missing v1 files migrate to off.
    */
   dndEnabled: boolean;
   windowPosition: { x: number; y: number } | null;
@@ -48,10 +48,21 @@ export type DesktopPetSettings = {
     blocked: boolean;
     completion: DesktopNotificationCompletionPolicy;
   };
+  /**
+   * Desktop sound cues (U4a). Master defaults OFF so upgrades never suddenly
+   * beep; per-event switches default ON and are preserved while master is off.
+   */
+  sound: {
+    masterEnabled: boolean;
+    needsInput: boolean;
+    completion: boolean;
+  };
   /** Bounded transition ids acknowledged locally (presentation only). */
   acknowledgedTransitionIds: string[];
   /** Bounded transition ids already notified (dedupe). */
   notifiedTransitionIds: string[];
+  /** Bounded transition ids already sounded (dedupe, independent of notifications). */
+  soundedTransitionIds: string[];
 };
 
 export const DESKTOP_SETTINGS_DEFAULTS: DesktopPetSettings = {
@@ -71,8 +82,14 @@ export const DESKTOP_SETTINGS_DEFAULTS: DesktopPetSettings = {
     blocked: true,
     completion: "background-only",
   },
+  sound: {
+    masterEnabled: false,
+    needsInput: true,
+    completion: true,
+  },
   acknowledgedTransitionIds: [],
   notifiedTransitionIds: [],
+  soundedTransitionIds: [],
 };
 
 const MAX_TRANSITION_LRU = 500;
@@ -98,6 +115,7 @@ export function normalizeDesktopSettings(input: unknown): DesktopPetSettings {
 
   const notificationRaw = isRecord(raw.notification) ? raw.notification : {};
   const completion = normalizeCompletion(notificationRaw.completion);
+  const soundRaw = isRecord(raw.sound) ? raw.sound : {};
 
   const windowPosition = normalizeWindowPosition(raw.windowPosition);
   const petScale = normalizePetScale(raw.petScale);
@@ -119,8 +137,14 @@ export function normalizeDesktopSettings(input: unknown): DesktopPetSettings {
       blocked: notificationRaw.blocked !== false,
       completion,
     },
+    sound: {
+      masterEnabled: soundRaw.masterEnabled === true,
+      needsInput: soundRaw.needsInput !== false,
+      completion: soundRaw.completion !== false,
+    },
     acknowledgedTransitionIds: normalizeIdList(raw.acknowledgedTransitionIds),
     notifiedTransitionIds: normalizeIdList(raw.notifiedTransitionIds),
+    soundedTransitionIds: normalizeIdList(raw.soundedTransitionIds),
   };
 }
 
@@ -152,8 +176,10 @@ export function updateDesktopSettings(
     dndEnabled: boolean;
     windowPosition: { x: number; y: number } | null;
     notification: Partial<DesktopPetSettings["notification"]>;
+    sound: Partial<DesktopPetSettings["sound"]>;
     acknowledgedTransitionIds: string[];
     notifiedTransitionIds: string[];
+    soundedTransitionIds: string[];
   }>,
 ): DesktopPetSettings {
   const next: Record<string, unknown> = { ...current };
@@ -165,6 +191,10 @@ export function updateDesktopSettings(
     notification: {
       ...current.notification,
       ...(patch.notification ?? {}),
+    },
+    sound: {
+      ...current.sound,
+      ...(patch.sound ?? {}),
     },
   });
 }

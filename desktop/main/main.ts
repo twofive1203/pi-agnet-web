@@ -35,6 +35,7 @@ import { openValidatedDeepLink, rejectArbitraryRendererUrl } from "./deep-link-o
 import { PET_IPC_CHANNELS, type PetPrefsPatch } from "./ipc-contract";
 import { DesktopNotificationController } from "./notification-controller";
 import { DesktopObserverClient } from "./observer-client";
+import { DesktopSoundCueController } from "./sound-policy";
 import {
   loadDesktopSettingsFile,
   saveDesktopSettingsFile,
@@ -260,6 +261,16 @@ export async function startDesktopPetMain(deps: DesktopMainDeps): Promise<{
     },
   });
 
+  // U4a: sounds are auxiliary cues only. The policy runs in main; the renderer
+  // receives the finite cue vocabulary through the narrow push channel and
+  // synthesizes audio locally (no file paths, URLs or audio parameters ever
+  // cross IPC). Emission is best-effort — a missing/rebuilding window drops it.
+  const sounds = new DesktopSoundCueController({
+    emit: (cue) => {
+      sendPetWindowChannel(petWindow, PET_IPC_CHANNELS.soundCue, { kind: cue });
+    },
+  });
+
   const persistSettings = () => {
     try {
       saveDesktopSettingsFile(userDataDir, settings, settingsFs);
@@ -354,8 +365,17 @@ export async function startDesktopPetMain(deps: DesktopMainDeps): Promise<{
       snapshot,
       resetBaseline: meta.reset,
     });
-    if (result.settings !== settings) {
-      settings = result.settings;
+    // Sounds consume the same transitions through their own independent LRU;
+    // baseline/reset still seeds it so history never beeps after reconnect.
+    let nextSettings = result.settings;
+    const soundResult = sounds.handleSnapshot({
+      settings: nextSettings,
+      snapshot,
+      resetBaseline: meta.reset,
+    });
+    nextSettings = soundResult.settings;
+    if (nextSettings !== settings) {
+      settings = nextSettings;
       persistSettings();
     }
     pushState();
@@ -450,6 +470,7 @@ export async function startDesktopPetMain(deps: DesktopMainDeps): Promise<{
       connectionStatus: view.connectionStatus,
       clickThrough: windowState.clickThrough,
       dndEnabled: view.dndEnabled,
+      soundMasterEnabled: view.sound.masterEnabled,
       activeCount: view.activeCount,
       attentionCount: view.attentionCount,
       canCopyStartCommand: view.canCopyStartCommand,
@@ -493,6 +514,14 @@ export async function startDesktopPetMain(deps: DesktopMainDeps): Promise<{
         // renderer immediately.
         settings = updateDesktopSettings(settings, {
           dndEnabled: !settings.dndEnabled,
+        });
+        persistSettings();
+        pushState();
+        break;
+      case "toggle-sound":
+        // Master sound switch only — per-event toggles are preserved untouched.
+        settings = updateDesktopSettings(settings, {
+          sound: { masterEnabled: !settings.sound.masterEnabled },
         });
         persistSettings();
         pushState();
@@ -751,6 +780,7 @@ export async function startDesktopPetMain(deps: DesktopMainDeps): Promise<{
         showContextMeter: p.showContextMeter,
         dndEnabled: p.dndEnabled,
         notification: p.notification,
+        sound: p.sound,
         port: p.port,
       });
       if (typeof p.launchAtLogin === "boolean") {

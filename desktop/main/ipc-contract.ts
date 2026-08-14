@@ -27,6 +27,8 @@ export const PET_IPC_CHANNELS = {
   /** Main-only: set/clear server access key (never echoed back). */
   setAccessKey: "pet:set-access-key",
   clearAccessKey: "pet:clear-access-key",
+  /** Main→renderer push: finite sound cue vocabulary (U4a). Renderer can never send this. */
+  soundCue: "pet:sound-cue",
 } as const;
 
 export type PetIpcChannel = (typeof PET_IPC_CHANNELS)[keyof typeof PET_IPC_CHANNELS];
@@ -52,7 +54,10 @@ export const PET_RENDERER_ALLOWED_CHANNELS: readonly string[] = [
 ];
 
 /** Channels main may push to renderer. */
-export const PET_MAIN_PUSH_CHANNELS: readonly string[] = [PET_IPC_CHANNELS.stateChanged];
+export const PET_MAIN_PUSH_CHANNELS: readonly string[] = [
+  PET_IPC_CHANNELS.stateChanged,
+  PET_IPC_CHANNELS.soundCue,
+];
 
 export type PetPrefsPatch = Partial<{
   selectedPetId: string;
@@ -67,6 +72,11 @@ export type PetPrefsPatch = Partial<{
     needsInput: boolean;
     blocked: boolean;
     completion: "never" | "background-only" | "always";
+  }>;
+  sound: Partial<{
+    masterEnabled: boolean;
+    needsInput: boolean;
+    completion: boolean;
   }>;
   port: number;
 }>;

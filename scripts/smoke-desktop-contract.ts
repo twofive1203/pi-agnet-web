@@ -38,6 +38,7 @@ import {
 import {
   isRendererIpcChannel,
   PET_IPC_CHANNELS,
+  PET_MAIN_PUSH_CHANNELS,
   PET_RENDERER_ALLOWED_CHANNELS,
 } from "../desktop/main/ipc-contract";
 import {
@@ -49,6 +50,13 @@ import {
   notificationBodyFor,
   selectNotifications,
 } from "../desktop/main/notification-controller";
+import {
+  DesktopSoundCueController,
+  selectSoundCues,
+  soundCueForPresentation,
+  SOUND_COOLDOWN_MS,
+} from "../desktop/main/sound-policy";
+import { isSoundCueKind, SOUND_CUE_KINDS } from "../desktop/main/sound-cue";
 import {
   loadDesktopSettingsFile,
   saveDesktopSettingsFile,
@@ -141,6 +149,13 @@ import {
   spriteCellPosition,
   spriteSheetBackgroundSize,
 } from "../desktop/renderer/pet-sheet";
+import {
+  PetSoundPlayer,
+  SOUND_CUE_PATTERNS,
+  SOUND_MASTER_GAIN,
+  SOUND_MAX_CUE_MS,
+  type PetAudioContextLike,
+} from "../desktop/renderer/pet-sound";
 import { DESKTOP_PACKAGE_CONTRACT } from "../forge.config";
 import { buildAgentDeepLink } from "../lib/desktop-deep-link";
 import {
@@ -1467,6 +1482,454 @@ async function main() {
   });
   assert.equal(dndRunBubble.visible, false, "suppressed running bubble never replays");
 
+  // --- Sound cues (U4a): defaults, migration, gating, DND, cooldown, dedupe ---
+  // Fresh install never beeps; per-event switches default on (preserved when master off).
+  assert.deepEqual(createDefaultDesktopSettings().sound, {
+    masterEnabled: false,
+    needsInput: true,
+    completion: true,
+  });
+  const legacySound = parseDesktopSettingsJson(
+    JSON.stringify({ version: 1, port: 62666, selectedPetId: "snail-default" }),
+  );
+  assert.equal(legacySound.sound.masterEnabled, false, "legacy v1 files migrate sound off");
+  assert.equal(legacySound.sound.needsInput, true);
+  assert.equal(legacySound.sound.completion, true);
+  assert.equal(legacySound.version, 1, "sound settings must not bump the schema version");
+  assert.equal(normalizeDesktopSettings({ sound: { masterEnabled: "on" } }).sound.masterEnabled, false);
+  assert.equal(
+    normalizeDesktopSettings({ sound: { masterEnabled: true, needsInput: false, completion: false } })
+      .sound.needsInput,
+    false,
+  );
+  const soundRoundTrip = parseDesktopSettingsJson(
+    serializeDesktopSettings(
+      updateDesktopSettings(createDefaultDesktopSettings(), {
+        sound: { masterEnabled: true, needsInput: false },
+        soundedTransitionIds: ["snd-a", "snd-b"],
+      }),
+    ),
+  );
+  assert.equal(soundRoundTrip.sound.masterEnabled, true);
+  assert.equal(soundRoundTrip.sound.needsInput, false);
+  assert.equal(soundRoundTrip.sound.completion, true, "untouched event switch keeps its default");
+  assert.deepEqual(soundRoundTrip.soundedTransitionIds, ["snd-a", "snd-b"]);
+  assert.equal(soundRoundTrip.version, 1);
+
+  // Classification: only needs_input / ready map; everything else silent.
+  assert.equal(soundCueForPresentation("needs_input"), "attention");
+  assert.equal(soundCueForPresentation("ready"), "completion");
+  assert.equal(soundCueForPresentation("blocked"), null);
+  assert.equal(soundCueForPresentation("running"), null);
+  assert.equal(soundCueForPresentation("retrying"), null);
+  assert.equal(soundCueForPresentation("idle"), null);
+  assert.deepEqual(SOUND_CUE_KINDS, ["attention", "completion"]);
+  assert.equal(isSoundCueKind("attention"), true);
+  assert.equal(isSoundCueKind("completion"), true);
+  assert.equal(isSoundCueKind("file://x"), false);
+  assert.equal(isSoundCueKind(42), false);
+  assert.ok(SOUND_COOLDOWN_MS >= 10_000);
+
+  // Baseline seeds the sounded LRU and emits nothing.
+  const soundBaseSettings = createDefaultDesktopSettings();
+  const soundBaseline = selectSoundCues({
+    settings: soundBaseSettings,
+    snapshot,
+    resetBaseline: true,
+  });
+  assert.deepEqual(soundBaseline.cues, []);
+  assert.ok(soundBaseline.soundedTransitionIds.length >= 1);
+  assert.ok(soundBaseline.changed);
+  // Independent sounded LRU: sound processing never touches the notified LRU.
+  assert.deepEqual(soundBaseSettings.notifiedTransitionIds, []);
+
+  const soundSettings = updateDesktopSettings(soundBaseSettings, {
+    sound: { masterEnabled: true, needsInput: true, completion: true },
+    soundedTransitionIds: soundBaseline.soundedTransitionIds,
+  });
+
+  const sndTransition = (id: string, presentation: string): TaskObserverTransitionInput => ({
+    transitionId: id,
+    taskKey: buildAgentTaskKey("s-snd"),
+    activityId: buildAgentActivityId("inst-u7", "s-snd", 1),
+    source: "agent",
+    projectKey: "proj-a",
+    presentation: presentation as TaskObserverTransitionInput["presentation"],
+    executionState: "settled",
+    outcome: "succeeded",
+    attention: "none",
+    at: "2026-08-12T12:20:00.000Z",
+  });
+
+  const needId = buildAgentTransitionId("inst-u7", "s-need", 7, 3);
+  const needSnap = buildTaskObserverSnapshot({
+    instanceId: "inst-u7",
+    revision: 10,
+    activities,
+    recentTransitions: [sndTransition(needId, "needs_input")],
+  });
+  const needSound = selectSoundCues({
+    settings: soundSettings,
+    snapshot: needSnap,
+    resetBaseline: false,
+    now: 10_000,
+  });
+  assert.deepEqual(needSound.cues, ["attention"], "needs_input maps to the attention cue");
+  assert.ok(needSound.soundedTransitionIds.includes(needId));
+
+  const needSettings = updateDesktopSettings(soundSettings, {
+    soundedTransitionIds: needSound.soundedTransitionIds,
+  });
+  // SSE replay / same snapshot never repeats.
+  const needReplay = selectSoundCues({
+    settings: needSettings,
+    snapshot: needSnap,
+    resetBaseline: false,
+    now: 11_000,
+  });
+  assert.deepEqual(needReplay.cues, []);
+  assert.equal(needReplay.changed, false);
+
+  // ready maps to completion.
+  const readyId = buildAgentTransitionId("inst-u7", "s-ready", 7, 4);
+  const readySnap = buildTaskObserverSnapshot({
+    instanceId: "inst-u7",
+    revision: 11,
+    activities,
+    recentTransitions: [sndTransition(readyId, "ready")],
+  });
+  const readySound = selectSoundCues({
+    settings: soundSettings,
+    snapshot: readySnap,
+    resetBaseline: false,
+    now: 20_000,
+  });
+  assert.deepEqual(readySound.cues, ["completion"], "ready maps to the completion cue");
+
+  // blocked/running/retrying transitions never sound.
+  const blockedId = buildAgentTransitionId("inst-u7", "s-block", 7, 5);
+  const blockedSnap = buildTaskObserverSnapshot({
+    instanceId: "inst-u7",
+    revision: 12,
+    activities,
+    recentTransitions: [sndTransition(blockedId, "blocked")],
+  });
+  const blockedSound = selectSoundCues({
+    settings: soundSettings,
+    snapshot: blockedSnap,
+    resetBaseline: false,
+    now: 30_000,
+  });
+  assert.deepEqual(blockedSound.cues, []);
+  assert.equal(blockedSound.changed, false);
+
+  // Master off consumes transitions silently; enabling later never replays.
+  const masterOffSettings = updateDesktopSettings(soundSettings, {
+    sound: { masterEnabled: false },
+  });
+  const masterOff = selectSoundCues({
+    settings: masterOffSettings,
+    snapshot: readySnap,
+    resetBaseline: false,
+    now: 40_000,
+  });
+  assert.deepEqual(masterOff.cues, []);
+  assert.ok(masterOff.soundedTransitionIds.includes(readyId), "settings-off transitions are consumed");
+  const masterOnLater = updateDesktopSettings(masterOffSettings, {
+    sound: { masterEnabled: true },
+    soundedTransitionIds: masterOff.soundedTransitionIds,
+  });
+  const noReplayAfterToggle = selectSoundCues({
+    settings: masterOnLater,
+    snapshot: readySnap,
+    resetBaseline: false,
+    now: 41_000,
+  });
+  assert.deepEqual(noReplayAfterToggle.cues, [], "enabling master must not replay history");
+
+  // Per-event switch off consumes that kind silently.
+  const needsInputOffSettings = updateDesktopSettings(soundSettings, {
+    sound: { needsInput: false },
+  });
+  const needsOff = selectSoundCues({
+    settings: needsInputOffSettings,
+    snapshot: needSnap,
+    resetBaseline: false,
+    now: 50_000,
+  });
+  assert.deepEqual(needsOff.cues, []);
+  assert.ok(needsOff.soundedTransitionIds.includes(needId));
+
+  // DND silences sounds and consumes the transition; disabling DND never replays.
+  const dndSoundSettings = updateDesktopSettings(soundSettings, { dndEnabled: true });
+  const dndSound = selectSoundCues({
+    settings: dndSoundSettings,
+    snapshot: needSnap,
+    resetBaseline: false,
+    now: 60_000,
+  });
+  assert.deepEqual(dndSound.cues, []);
+  assert.ok(dndSound.soundedTransitionIds.includes(needId), "DND consumes sound transitions");
+  const dndOffSoundSettings = updateDesktopSettings(dndSoundSettings, {
+    dndEnabled: false,
+    soundedTransitionIds: dndSound.soundedTransitionIds,
+  });
+  const dndOffSound = selectSoundCues({
+    settings: dndOffSoundSettings,
+    snapshot: needSnap,
+    resetBaseline: false,
+    now: 61_000,
+  });
+  assert.deepEqual(dndOffSound.cues, [], "disabling DND never replays sounds");
+  assert.equal(dndOffSoundSettings.acknowledgedTransitionIds.length, 0, "DND never writes acknowledged ids");
+  assert.equal(dndOffSoundSettings.sound.masterEnabled, true, "DND never mutates sound preferences");
+
+  // Per-kind cooldown merges bursts; suppressed transitions are consumed.
+  const coolReadyA = buildAgentTransitionId("inst-u7", "s-cool-a", 7, 6);
+  const coolReadyB = buildAgentTransitionId("inst-u7", "s-cool-b", 7, 7);
+  const coolSnapA = buildTaskObserverSnapshot({
+    instanceId: "inst-u7",
+    revision: 13,
+    activities,
+    recentTransitions: [sndTransition(coolReadyA, "ready")],
+  });
+  const coolFirst = selectSoundCues({
+    settings: soundSettings,
+    snapshot: coolSnapA,
+    resetBaseline: false,
+    now: 100_000,
+  });
+  assert.deepEqual(coolFirst.cues, ["completion"]);
+  const coolSettings = updateDesktopSettings(soundSettings, {
+    soundedTransitionIds: coolFirst.soundedTransitionIds,
+  });
+  const coolSnapB = buildTaskObserverSnapshot({
+    instanceId: "inst-u7",
+    revision: 14,
+    activities,
+    recentTransitions: [sndTransition(coolReadyB, "ready")],
+  });
+  const coolSecond = selectSoundCues({
+    settings: coolSettings,
+    snapshot: coolSnapB,
+    resetBaseline: false,
+    now: 103_000,
+    lastPlayedAt: coolFirst.lastPlayedAt,
+  });
+  assert.deepEqual(coolSecond.cues, [], "cooldown merges same-kind bursts");
+  assert.ok(coolSecond.soundedTransitionIds.includes(coolReadyB), "cooldown-suppressed transitions are consumed");
+  const coolSettings2 = updateDesktopSettings(coolSettings, {
+    soundedTransitionIds: coolSecond.soundedTransitionIds,
+  });
+  // After cooldown, the same id stays deduped; a genuinely new one plays.
+  const coolAfter = selectSoundCues({
+    settings: coolSettings2,
+    snapshot: coolSnapB,
+    resetBaseline: false,
+    now: 111_000,
+    lastPlayedAt: coolFirst.lastPlayedAt,
+  });
+  assert.deepEqual(coolAfter.cues, [], "same id stays deduped after cooldown");
+  const coolSnapC = buildTaskObserverSnapshot({
+    instanceId: "inst-u7",
+    revision: 15,
+    activities,
+    recentTransitions: [sndTransition(buildAgentTransitionId("inst-u7", "s-cool-c", 7, 8), "ready")],
+  });
+  const coolAfterNew = selectSoundCues({
+    settings: coolSettings2,
+    snapshot: coolSnapC,
+    resetBaseline: false,
+    now: 111_000,
+    lastPlayedAt: coolFirst.lastPlayedAt,
+  });
+  assert.deepEqual(coolAfterNew.cues, ["completion"], "fresh transition after cooldown plays");
+
+  // Multiple completions in one snapshot play exactly once.
+  const multiA = buildAgentTransitionId("inst-u7", "s-multi-a", 7, 9);
+  const multiB = buildAgentTransitionId("inst-u7", "s-multi-b", 7, 10);
+  const multiSnap = buildTaskObserverSnapshot({
+    instanceId: "inst-u7",
+    revision: 16,
+    activities,
+    recentTransitions: [sndTransition(multiA, "ready"), sndTransition(multiB, "ready")],
+  });
+  const multi = selectSoundCues({
+    settings: soundSettings,
+    snapshot: multiSnap,
+    resetBaseline: false,
+    now: 200_000,
+  });
+  assert.deepEqual(multi.cues, ["completion"], "same-kind cluster plays exactly once");
+  assert.ok(multi.soundedTransitionIds.includes(multiA));
+  assert.ok(multi.soundedTransitionIds.includes(multiB));
+
+  // Different kinds in one snapshot each emit once.
+  const bothSnap = buildTaskObserverSnapshot({
+    instanceId: "inst-u7",
+    revision: 17,
+    activities,
+    recentTransitions: [
+      sndTransition(buildAgentTransitionId("inst-u7", "s-both-a", 7, 11), "needs_input"),
+      sndTransition(buildAgentTransitionId("inst-u7", "s-both-b", 7, 12), "ready"),
+    ],
+  });
+  const both = selectSoundCues({
+    settings: soundSettings,
+    snapshot: bothSnap,
+    resetBaseline: false,
+    now: 300_000,
+  });
+  assert.deepEqual([...both.cues].sort(), ["attention", "completion"]);
+
+  // Sounded LRU is bounded and independent of the notified LRU.
+  const boundedIds = Array.from({ length: 600 }, (_item, index) => `snd-${index}`);
+  const bounded = selectSoundCues({
+    settings: updateDesktopSettings(soundSettings, { soundedTransitionIds: boundedIds }),
+    snapshot: multiSnap,
+    resetBaseline: false,
+    now: 400_000,
+  });
+  assert.ok(bounded.soundedTransitionIds.length <= 500, "sounded LRU stays bounded");
+  assert.ok(bounded.soundedTransitionIds.includes(multiB));
+  assert.equal(bounded.soundedTransitionIds.includes("snd-0"), false, "oldest ids evicted");
+
+  // Controller forwards cues, seeds baseline silently, and survives throwing emitters.
+  const emittedCues: string[] = [];
+  const soundController = new DesktopSoundCueController({ emit: (cue) => emittedCues.push(cue) });
+  const controllerBaseline = soundController.handleSnapshot({
+    settings: soundSettings,
+    snapshot,
+    resetBaseline: true,
+  });
+  assert.equal(controllerBaseline.emitted.length, 0);
+  assert.ok(controllerBaseline.settings.soundedTransitionIds.length >= 1);
+  const controllerResult = soundController.handleSnapshot({
+    settings: soundSettings,
+    snapshot: readySnap,
+    resetBaseline: false,
+  });
+  assert.ok(emittedCues.includes("completion"));
+  assert.ok(controllerResult.settings.soundedTransitionIds.includes(readyId));
+
+  let throwingCount = 0;
+  const throwingController = new DesktopSoundCueController({
+    emit: () => {
+      throwingCount += 1;
+      throw new Error("no audio sink");
+    },
+  });
+  const throwingResult = throwingController.handleSnapshot({
+    settings: soundSettings,
+    snapshot: needSnap,
+    resetBaseline: false,
+  });
+  assert.equal(throwingCount, 1);
+  assert.equal(throwingResult.emitted.length, 1);
+  assert.ok(throwingResult.settings.soundedTransitionIds.includes(needId), "emitter failure never loses consumption");
+
+  // --- Renderer player: bounded synthesis, silent failure, teardown (U4a) ---
+  for (const tones of Object.values(SOUND_CUE_PATTERNS)) {
+    for (const tone of tones) {
+      assert.ok(tone.startMs + tone.durationMs <= SOUND_MAX_CUE_MS, "cue stays within duration cap");
+      assert.ok(tone.freq >= 100 && tone.freq <= 4000, "fixed bounded frequency range");
+    }
+  }
+  assert.ok(SOUND_MASTER_GAIN <= 0.1, "volume cap stays low");
+
+  class FakeParam {
+    values: number[] = [];
+    setValueAtTime(value: number): void {
+      this.values.push(value);
+    }
+    linearRampToValueAtTime(value: number): void {
+      this.values.push(value);
+    }
+  }
+  class FakeOsc {
+    type = "";
+    frequency = new FakeParam();
+    gain: FakeGain | null = null;
+    started = 0;
+    stopped = 0;
+    connect(node: unknown): void {
+      this.gain = node as FakeGain;
+    }
+    start(when = 0): void {
+      this.started = when;
+    }
+    stop(when = 0): void {
+      this.stopped = when;
+    }
+  }
+  class FakeGain {
+    gain = new FakeParam();
+    destination: unknown = null;
+    connect(node: unknown): void {
+      this.destination = node;
+    }
+  }
+  class FakeContext {
+    currentTime = 1.5;
+    state = "running";
+    destination = {};
+    resumeCalls = 0;
+    closeCalls = 0;
+    oscillators: FakeOsc[] = [];
+    resume(): Promise<unknown> {
+      this.resumeCalls += 1;
+      return Promise.resolve();
+    }
+    close(): Promise<unknown> {
+      this.closeCalls += 1;
+      return Promise.resolve();
+    }
+    createOscillator(): FakeOsc {
+      const osc = new FakeOsc();
+      this.oscillators.push(osc);
+      return osc;
+    }
+    createGain(): FakeGain {
+      return new FakeGain();
+    }
+  }
+
+  const fakeCtx = new FakeContext();
+  const player = new PetSoundPlayer(() => fakeCtx as unknown as PetAudioContextLike);
+  assert.equal(player.play("attention"), true);
+  assert.equal(fakeCtx.oscillators.length, 2);
+  assert.equal(fakeCtx.oscillators[0].type, "sine");
+  const allGainValues = fakeCtx.oscillators.flatMap((osc) => osc.gain?.gain.values ?? []);
+  assert.ok(allGainValues.length > 0);
+  assert.ok(allGainValues.every((value) => value <= SOUND_MASTER_GAIN + 0.001), "gain never exceeds the cap");
+  assert.deepEqual(
+    fakeCtx.oscillators.map((osc) => osc.frequency.values[0]),
+    SOUND_CUE_PATTERNS.attention.map((tone) => tone.freq),
+  );
+  const firstSpan = fakeCtx.oscillators.reduce((max, osc) => Math.max(max, osc.stopped - osc.started), 0);
+  assert.ok(firstSpan <= SOUND_MAX_CUE_MS / 1000 + 0.01);
+  // Per-kind defensive gap drops duplicate replays; other kinds still play.
+  assert.equal(player.play("attention"), false);
+  assert.equal(player.play("completion"), true);
+  assert.equal(fakeCtx.oscillators.length, 4);
+  player.destroy();
+  assert.equal(fakeCtx.closeCalls, 1, "destroy closes the AudioContext");
+  assert.equal(player.play("attention"), false, "destroyed player never plays");
+
+  // Missing / throwing context factories and suspended contexts stay silent/no-throw.
+  const nullPlayer = new PetSoundPlayer(() => null);
+  assert.equal(nullPlayer.play("attention"), false);
+  assert.equal(nullPlayer.play("completion"), false);
+  const throwingPlayer = new PetSoundPlayer(() => {
+    throw new Error("no audio device");
+  });
+  assert.equal(throwingPlayer.play("attention"), false);
+  const suspendedCtx = new FakeContext();
+  suspendedCtx.state = "suspended";
+  const suspendedPlayer = new PetSoundPlayer(() => suspendedCtx as unknown as PetAudioContextLike);
+  assert.equal(suspendedPlayer.play("completion"), true);
+  assert.equal(suspendedCtx.resumeCalls, 1, "suspended context resumes best-effort");
+
   // --- Default position is bottom-right of work area (not 0,0) ---
   const pos = defaultPetWindowPosition({ x: 0, y: 0, width: 1920, height: 1080 });
   assert.ok(pos.x > 1000);
@@ -1797,6 +2260,7 @@ async function main() {
     connectionStatus: "service-not-running",
     clickThrough: true,
     dndEnabled: false,
+    soundMasterEnabled: false,
     activeCount: 0,
     attentionCount: 0,
     canCopyStartCommand: true,
@@ -1823,6 +2287,7 @@ async function main() {
     connectionStatus: "connected",
     clickThrough: false,
     dndEnabled: true,
+    soundMasterEnabled: true,
     activeCount: 1,
     attentionCount: 0,
     canCopyStartCommand: false,
@@ -1830,6 +2295,24 @@ async function main() {
   }).find((i) => i.id === "toggle-dnd");
   assert.ok(trayDndOn);
   assert.equal(trayDndOn!.checked, true);
+  assert.ok(labels.includes("声音提示"));
+  assert.equal(trayItemToAction("toggle-sound"), "toggle-sound");
+  const traySoundOff = trayModel.find((i) => i.id === "toggle-sound");
+  assert.ok(traySoundOff);
+  assert.equal(traySoundOff!.checked, false);
+  const traySoundOn = buildTrayMenuModel({
+    presentation: "running",
+    connectionStatus: "connected",
+    clickThrough: false,
+    dndEnabled: false,
+    soundMasterEnabled: true,
+    activeCount: 1,
+    attentionCount: 0,
+    canCopyStartCommand: false,
+    startCommand: DESKTOP_START_COMMAND,
+  }).find((i) => i.id === "toggle-sound");
+  assert.ok(traySoundOn);
+  assert.equal(traySoundOn!.checked, true, "tray mirrors the sound master switch");
   assert.ok(buildTrayTooltip({ presentation: "running", activeCount: 2, attentionCount: 1 }).includes("运行中"));
 
   // --- Preview isolation + builtin pet manifest v2 ---
@@ -2354,6 +2837,10 @@ async function main() {
   assert.equal(/会中断任务|interrupt tasks|stop the service/.test(mainSrc), false);
   assert.ok(mainSrc.includes("No task-interruption warning") || mainSrc.includes("cannot stop"));
   assert.ok(mainSrc.includes("dragWorkAreas.length > 0 ? dragWorkAreas : resolveWorkArea()"));
+  // U4a: main owns the sound policy and pushes only the finite cue vocabulary.
+  assert.ok(mainSrc.includes("DesktopSoundCueController"));
+  assert.ok(mainSrc.includes("PET_IPC_CHANNELS.soundCue"));
+  assert.ok(mainSrc.includes('sound: { masterEnabled: !settings.sound.masterEnabled }'));
 
   // Tray DND toggle persists settings and pushes state without any process control.
   assert.ok(mainSrc.includes('"toggle-dnd"'));
@@ -2552,12 +3039,31 @@ async function main() {
   assert.equal(isRendererIpcChannel(PET_IPC_CHANNELS.restoreDefaultPosition), true);
   assert.ok(PET_RENDERER_ALLOWED_CHANNELS.includes(PET_IPC_CHANNELS.restoreDefaultPosition));
 
+  // --- U4a sound surface: settings panel, tray, IPC, preload, renderer ---
+  assert.ok(html.includes('id="pref-sound-master"'));
+  assert.ok(html.includes('id="pref-sound-needs-input"'));
+  assert.ok(html.includes('id="pref-sound-completion"'));
+  assert.ok(html.includes('id="sound-dnd-note"'));
+  assert.ok(html.includes("声音已被勿扰模式静音"));
+  // Synthesized audio adds no remote content: CSP stays without media-src.
+  assert.equal(html.includes("media-src"), false);
+  assert.ok(PET_MAIN_PUSH_CHANNELS.includes(PET_IPC_CHANNELS.soundCue));
+  assert.equal(
+    PET_RENDERER_ALLOWED_CHANNELS.includes(PET_IPC_CHANNELS.soundCue),
+    false,
+    "renderer can never send sound cues",
+  );
+  assert.equal(isRendererIpcChannel(PET_IPC_CHANNELS.soundCue), false);
+  assert.ok(css.includes("sound-dnd-note"));
+
   const preloadBridge = readFileSync(
     path.join(process.cwd(), "desktop", "preload", "pet-preload.ts"),
     "utf8",
   );
   assert.ok(preloadBridge.includes("moveBy"));
   assert.ok(preloadBridge.includes("restoreDefaultPosition"));
+  assert.ok(preloadBridge.includes("onSoundCue"));
+  assert.ok(preloadBridge.includes("isSoundCueKind"));
 
   const petAppSource = readFileSync(
     path.join(process.cwd(), "desktop", "renderer", "pet-app.tsx"),
@@ -2570,6 +3076,11 @@ async function main() {
   assert.ok(petAppSource.includes("formatActiveModel"));
   assert.ok(petAppSource.includes("formatSessionResources"));
   assert.ok(petAppSource.includes("syncElapsedTimer"));
+  assert.ok(petAppSource.includes("PetSoundPlayer"));
+  assert.ok(petAppSource.includes("onSoundCue"));
+  assert.ok(petAppSource.includes("prefSoundMaster"));
+  assert.ok(petAppSource.includes("soundDndNote"));
+  assert.ok(petAppSource.includes("soundPlayer.destroy"));
   assert.ok(petAppSource.includes("current?.trayOpen === true"));
   assert.ok(petAppSource.includes("!settingsOpen"));
   assert.ok(petAppSource.includes("setInterval(refreshElapsedLabels, 1000)"));
@@ -2618,6 +3129,21 @@ async function main() {
   assert.ok(petAppJs.includes("showContextMeter"));
   assert.ok(petAppJs.includes("data-running-cue"));
   assert.ok(petAppJs.includes("scheduleRunningCueUpdate"));
+  assert.ok(petAppJs.includes("PetSoundPlayer"));
+  assert.ok(petAppJs.includes("onSoundCue"));
+
+  const petSoundSrc = readFileSync(
+    path.join(process.cwd(), "desktop", "renderer", "pet-sound.ts"),
+    "utf8",
+  );
+  assert.equal(
+    /fetch\s*\(|XMLHttpRequest|https?:\/\//.test(petSoundSrc),
+    false,
+    "sound synthesis never touches the network",
+  );
+  assert.ok(petSoundSrc.includes("SOUND_MASTER_GAIN"));
+  assert.ok(petSoundSrc.includes("createOscillator"));
+  assert.ok(petSoundSrc.includes("SOUND_MAX_CUE_MS"));
 
   // Collapsed avatar labels stay short Chinese strings (fit 112px surface).
   assert.equal(resolvePetFrame(getBuiltinPetManifest("snail-default"), "idle", false).label, "空闲");

@@ -339,6 +339,8 @@ desktop/
     tray-controller.ts
     notification-controller.ts
     dnd-policy.ts
+    sound-cue.ts
+    sound-policy.ts
     settings-store.ts
     autostart.ts
   preload/pet-preload.ts
@@ -346,6 +348,7 @@ desktop/
     index.html
     pet-app.tsx
     pet-state.ts
+    pet-sound.ts
     pet.css
   assets/
     pets/<pet-id>/manifest.json
@@ -382,6 +385,16 @@ The renderer is a dedicated small bundle. The desktop package contains the pet o
 - Persist bounded acknowledged/notified transition LRU.
 - Activity tray works when Windows notification permission is denied.
 
+### Sound cues (U4a)
+
+- Short, low-volume, dismissible sound cues for `needs_input` (attention) and `ready` (completion). Blocked/running/retrying and connection states never sound in the first release.
+- Sounds are auxiliary: they never change task state and are never the only state cue (pet visuals, tray rows and system notifications keep their own paths).
+- The pure policy module `desktop/main/sound-policy.ts` classifies transitions, seeds baseline, applies settings gates (master + per-event), the shared DND gate (`surface: "sound"`), an independent bounded `soundedTransitionIds` LRU and a 10s per-kind cooldown. Every suppressed transition (settings off, DND, cooldown) is still consumed, so enabling a toggle, disabling DND or cooling down never replays history.
+- The main process pushes only the finite cue vocabulary `attention | completion` over the narrow `pet:sound-cue` push channel; the renderer can never send cues, file paths, URLs or audio parameters.
+- The renderer synthesizes audio locally with Web Audio: fixed frequencies/durations, a hard gain cap, no files, no network, no new CSP directives (`media-src` stays absent) and no third-party audio dependency. AudioContext missing/suspended, no audio device or playback errors fail silently and never affect the Activity tray or the observer. The player holds no queue and closes its AudioContext on renderer teardown.
+- Defaults: master OFF (upgrades never suddenly beep), `needsInput`/`completion` ON and preserved while master is off. The settings panel offers the master switch and both per-event switches; the tray menu offers a checked "声音提示" master toggle; with DND enabled the panel shows “声音已被勿扰模式静音” without mutating sound preferences.
+- WebUI and the pet are separate processes with no cross-process sound coordination; accidental double prompts are mitigated by the pet sound defaults (off), the panel/tray explanation, and the pet's own transition dedupe. WebUI `useAudio` behavior is unchanged.
+
 ### Manual Do Not Disturb (U7a)
 
 - `dndEnabled` is a desktop-local presentation setting (default false) toggled from the settings panel and the tray menu (checked state); both surfaces share the same persisted flag.
@@ -389,7 +402,7 @@ The renderer is a dedicated small bundle. The desktop package contains the pet o
 - Enabling DND closes the current suppressible bubble immediately; transitions during DND are treated as silently handled (notified/dismissed LRUs advance), so disabling DND, renderer rebuilds, or snapshot replays never re-alert.
 - DND never writes `acknowledgedTransitionIds` (no mark-read), never changes the 8-state presentation, pet visuals, glyphs, Activity tray unread projection, retry/deep-link/mark-read actions, or server/observer state.
 - DND does not switch the pet to idle/sleeping and is independent of reduced motion.
-- Future U4a sounds must pass the same gate with the `sound` surface before playback; U7a itself implements no audio.
+- U4a sounds pass the same gate with the `sound` surface before playback: transitions during DND are silently consumed into the sounded LRU and are never replayed after DND is disabled.
 
 ## Configuration and Persistence
 
@@ -401,9 +414,10 @@ Electron `userData` stores:
 - compact primary-activity context meter visibility;
 - manual Do Not Disturb (`dndEnabled`, default off; missing v1 files migrate to off);
 - notification settings;
+- sound settings (`sound.masterEnabled` default off, `sound.needsInput`/`sound.completion` default on; missing v1 files migrate to those defaults without a schema version bump);
 - launch at login;
 - configured loopback port;
-- acknowledged/notified transition LRU.
+- acknowledged/notified/sounded transition LRUs (all bounded at 500 entries).
 
 Do not store observer tokens, service credentials/PIDs, prompts, output, cwd lists or task transcripts.
 
@@ -447,7 +461,8 @@ Auto-update remains outside v1.
 - stable transition dedupe and local acknowledgement;
 - connection-state machine for connected/not-running/incompatible/reconnecting;
 - deep-link allowlist and settings validation;
-- DND: default-off and legacy migration, notification/bubble suppression with silent transition consumption (no replay after disable or snapshot replay), immediate close of the active bubble on enable, connection diagnostics staying visible, no acknowledged-LRU writes, and view/tray passthrough.
+- DND: default-off and legacy migration, notification/bubble suppression with silent transition consumption (no replay after disable or snapshot replay), immediate close of the active bubble on enable, connection diagnostics staying visible, no acknowledged-LRU writes, and view/tray passthrough;
+- sound (U4a): fresh-install master-off defaults and legacy v1 migration (schema version unchanged), independent master/needsInput/completion gates, needs_input→attention and ready→completion mapping, blocked/running/retrying never sounding, baseline/reset/instance change seeding the sounded LRU without playback, SSE replay and same-transition dedupe, bounded independent sounded LRU persistence, DND silencing with consumption and no replay after disable, per-kind 10s cooldown with suppressed transitions still consumed, same-kind clusters playing once, throwing emitters/audio hosts leaving observation untouched, tray/settings synchronization, and Web Audio player bounds (fixed frequencies/durations, gain cap, silent failure on missing/suspended/throwing contexts, context close on destroy).
 
 ### Server integration smokes
 

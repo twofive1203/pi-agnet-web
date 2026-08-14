@@ -13,6 +13,7 @@ export type TrayMenuAction =
   | "show-pet"
   | "disable-click-through"
   | "toggle-dnd"
+  | "toggle-sound"
   | "retry"
   | "open-webui"
   | "copy-start-command"
@@ -32,6 +33,8 @@ export type TrayMenuModelInput = {
   connectionStatus: DesktopConnectionStatus;
   clickThrough: boolean;
   dndEnabled: boolean;
+  /** Sound cue master switch (U4a); mirrored as a checked tray item. */
+  soundMasterEnabled: boolean;
   activeCount: number;
   attentionCount: number;
   canCopyStartCommand: boolean;
@@ -80,6 +83,13 @@ export function buildTrayMenuModel(input: TrayMenuModelInput): TrayMenuItem[] {
       type: "normal",
       checked: input.dndEnabled,
     },
+    {
+      id: "toggle-sound",
+      label: "声音提示",
+      enabled: true,
+      type: "normal",
+      checked: input.soundMasterEnabled,
+    },
     { id: "separator", label: "", enabled: false, type: "separator" },
     { id: "retry", label: "重试连接", enabled: true, type: "normal" },
     { id: "open-webui", label: "打开 WebUI", enabled: true, type: "normal" },
@@ -123,6 +133,7 @@ export function trayItemToAction(id: TrayMenuItem["id"]): TrayMenuAction | null 
     case "show-pet":
     case "disable-click-through":
     case "toggle-dnd":
+    case "toggle-sound":
     case "retry":
     case "open-webui":
     case "copy-start-command":

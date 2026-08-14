@@ -1323,6 +1323,12 @@ select {
   color: #f3d6a6;
 }
 
+.sound-dnd-note {
+  margin: 0 2px 4px;
+  color: var(--pet-muted);
+  font-size: 10px;
+}
+
 .setting-field {
   justify-content: space-between;
 }

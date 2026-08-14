@@ -14,6 +14,7 @@ import {
   PET_IPC_CHANNELS,
   type PetPrefsPatch,
 } from "../main/ipc-contract";
+import { isSoundCueKind, type SoundCueKind } from "../main/sound-cue";
 
 export type SnailPetBridge = {
   getState: () => Promise<unknown>;
@@ -38,6 +39,11 @@ export type SnailPetBridge = {
   /** Submit server access key (main never echoes it back). */
   setAccessKey: (accessKey: string) => Promise<unknown>;
   clearAccessKey: () => Promise<unknown>;
+  /**
+   * Read-only sound cue subscription (U4a). Main pushes only the finite cue
+   * vocabulary; the renderer can never send cues or audio parameters back.
+   */
+  onSoundCue: (handler: (cue: SoundCueKind) => void) => () => void;
 };
 
 function send(channel: string, ...args: unknown[]): void {
@@ -80,6 +86,21 @@ const bridge: SnailPetBridge = {
   setReducedMotion: (value) => send(PET_IPC_CHANNELS.setReducedMotion, value),
   setAccessKey: (accessKey) => invoke(PET_IPC_CHANNELS.setAccessKey, accessKey),
   clearAccessKey: () => invoke(PET_IPC_CHANNELS.clearAccessKey),
+  onSoundCue: (handler) => {
+    const listener = (_event: unknown, payload: unknown) => {
+      // Defense in depth: forward only the narrow allowlisted vocabulary.
+      const kind =
+        Boolean(payload) &&
+        typeof payload === "object" &&
+        (payload as { kind?: unknown }).kind;
+      if (!isSoundCueKind(kind)) return;
+      handler(kind);
+    };
+    ipcRenderer.on(PET_IPC_CHANNELS.soundCue, listener);
+    return () => {
+      ipcRenderer.removeAllListeners(PET_IPC_CHANNELS.soundCue);
+    };
+  },
 };
 
 contextBridge.exposeInMainWorld("snailPet", bridge);

@@ -1186,6 +1186,110 @@
     "snail-sprite": snailSpriteSheet
   };
 
+  // desktop/renderer/pet-sound.ts
+  var SOUND_MASTER_GAIN = 0.06;
+  var SOUND_MIN_KIND_GAP_MS = 320;
+  var SOUND_CUE_PATTERNS = {
+    // Two quick rising blips — short attention poke.
+    attention: [
+      { freq: 880, startMs: 0, durationMs: 70 },
+      { freq: 1174.66, startMs: 95, durationMs: 110 }
+    ],
+    // Two rising notes — small completion chime.
+    completion: [
+      { freq: 659.25, startMs: 0, durationMs: 80 },
+      { freq: 880, startMs: 100, durationMs: 160 }
+    ]
+  };
+  function defaultAudioContextFactory() {
+    if (typeof window === "undefined") return null;
+    const Ctor = window.AudioContext ?? window.webkitAudioContext;
+    if (typeof Ctor !== "function") return null;
+    try {
+      return new Ctor();
+    } catch {
+      return null;
+    }
+  }
+  var ATTACK_S = 8e-3;
+  var RELEASE_S = 0.02;
+  function playTone(ctx, tone) {
+    const durationS = Math.max(0.01, tone.durationMs / 1e3);
+    const startS = ctx.currentTime + tone.startMs / 1e3;
+    const endS = startS + durationS;
+    const osc = ctx.createOscillator();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(tone.freq, startS);
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(1e-4, startS);
+    gain.gain.linearRampToValueAtTime(SOUND_MASTER_GAIN, startS + ATTACK_S);
+    gain.gain.setValueAtTime(SOUND_MASTER_GAIN, Math.max(startS + ATTACK_S, endS - RELEASE_S));
+    gain.gain.linearRampToValueAtTime(1e-4, endS);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(startS);
+    osc.stop(endS + 0.01);
+  }
+  var PetSoundPlayer = class {
+    constructor(factory) {
+      this.context = null;
+      this.contextFailed = false;
+      this.disposed = false;
+      this.lastPlayedAt = {};
+      this.factory = factory ?? defaultAudioContextFactory;
+    }
+    /** Play a cue; suppressed/no-op paths return false (still "handled"). */
+    play(kind) {
+      if (this.disposed) return false;
+      try {
+        const now = Date.now();
+        if ((this.lastPlayedAt[kind] ?? Number.NEGATIVE_INFINITY) + SOUND_MIN_KIND_GAP_MS > now) {
+          return false;
+        }
+        this.lastPlayedAt[kind] = now;
+        if (!this.context && !this.contextFailed) {
+          this.context = this.factory();
+          if (!this.context) {
+            this.contextFailed = true;
+            return false;
+          }
+        }
+        const ctx = this.context;
+        if (!ctx) return false;
+        if (ctx.state === "suspended") {
+          try {
+            const resuming = ctx.resume();
+            if (resuming && typeof resuming.catch === "function") {
+              resuming.catch(() => void 0);
+            }
+          } catch {
+          }
+        }
+        const pattern = SOUND_CUE_PATTERNS[kind];
+        for (const tone of pattern) {
+          playTone(ctx, tone);
+        }
+        return true;
+      } catch {
+        return false;
+      }
+    }
+    /** Release the AudioContext and stop accepting cues (renderer teardown). */
+    destroy() {
+      this.disposed = true;
+      const ctx = this.context;
+      this.context = null;
+      if (!ctx) return;
+      try {
+        const closing = ctx.close();
+        if (closing && typeof closing.catch === "function") {
+          closing.catch(() => void 0);
+        }
+      } catch {
+      }
+    }
+  };
+
   // desktop/renderer/pet-app.tsx
   function isPetVisualState(value) {
     return value === "service_not_running" || value === "disconnected" || value === "needs_input" || value === "blocked" || value === "ready" || value === "retrying" || value === "running" || value === "idle";
@@ -1232,6 +1336,10 @@
     const prefBlocked = root.getElementById("pref-blocked");
     const prefShowContextMeter = root.getElementById("pref-show-context-meter");
     const prefDnd = root.getElementById("pref-dnd");
+    const prefSoundMaster = root.getElementById("pref-sound-master");
+    const prefSoundNeedsInput = root.getElementById("pref-sound-needs-input");
+    const prefSoundCompletion = root.getElementById("pref-sound-completion");
+    const soundDndNote = root.getElementById("sound-dnd-note");
     const staleFlag = root.getElementById("stale-flag");
     const hideToTray = () => {
       bridge?.hideToTray();
@@ -1267,6 +1375,7 @@
     const spriteStyleSheets = /* @__PURE__ */ new Map();
     const spriteVerified = /* @__PURE__ */ new Set();
     const spriteFailed = /* @__PURE__ */ new Set();
+    const soundPlayer = new PetSoundPlayer();
     bridge?.setReducedMotion(reducedMotion);
     if (typeof window.matchMedia === "function") {
       const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -1782,6 +1891,12 @@
       if (prefBlocked) prefBlocked.checked = view.notification.blocked;
       if (prefShowContextMeter) prefShowContextMeter.checked = view.showContextMeter;
       if (prefDnd) prefDnd.checked = view.dndEnabled === true;
+      if (prefSoundMaster) prefSoundMaster.checked = view.sound.masterEnabled === true;
+      if (prefSoundNeedsInput) prefSoundNeedsInput.checked = view.sound.needsInput !== false;
+      if (prefSoundCompletion) prefSoundCompletion.checked = view.sound.completion !== false;
+      if (soundDndNote) {
+        soundDndNote.hidden = !(view.dndEnabled === true && view.sound.masterEnabled === true);
+      }
       petPicker?.querySelectorAll("[data-pet-id]").forEach((option) => {
         const selected = option.dataset.petId === view.selectedPetId;
         option.setAttribute("aria-checked", selected ? "true" : "false");
@@ -2267,6 +2382,15 @@
     prefDnd?.addEventListener("change", () => {
       bridge?.setPrefs({ dndEnabled: prefDnd.checked });
     });
+    prefSoundMaster?.addEventListener("change", () => {
+      bridge?.setPrefs({ sound: { masterEnabled: prefSoundMaster.checked } });
+    });
+    prefSoundNeedsInput?.addEventListener("change", () => {
+      bridge?.setPrefs({ sound: { needsInput: prefSoundNeedsInput.checked } });
+    });
+    prefSoundCompletion?.addEventListener("change", () => {
+      bridge?.setPrefs({ sound: { completion: prefSoundCompletion.checked } });
+    });
     const onKeyDown = (event) => {
       if (event.key === "Escape" && trayMoreOpen) {
         setTrayMoreOpen(false);
@@ -2319,9 +2443,13 @@
     };
     root.addEventListener("keydown", onKeyDown);
     let unsubscribe;
+    let unsubscribeSoundCue;
     if (bridge) {
       unsubscribe = bridge.onStateChanged((view) => {
         update(view);
+      });
+      unsubscribeSoundCue = bridge.onSoundCue((cue) => {
+        soundPlayer.play(cue);
       });
       void bridge.getState().then((view) => {
         if (view) update(view);
@@ -2354,6 +2482,8 @@
         for (const style of spriteStyleSheets.values()) style.remove();
         spriteStyleSheets.clear();
         unsubscribe?.();
+        unsubscribeSoundCue?.();
+        soundPlayer.destroy();
       }
     };
   }

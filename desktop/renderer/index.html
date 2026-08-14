@@ -207,6 +207,24 @@
               <span>受阻/失败</span>
             </label>
           </div>
+          <div class="settings-heading">声音</div>
+          <div class="settings-grid">
+            <label class="setting-toggle">
+              <input id="pref-sound-master" type="checkbox" />
+              <span>声音提示（默认关闭，开启后播放短促提示音）</span>
+            </label>
+          </div>
+          <div class="settings-grid settings-grid-compact">
+            <label class="setting-toggle">
+              <input id="pref-sound-needs-input" type="checkbox" />
+              <span>待输入提示音</span>
+            </label>
+            <label class="setting-toggle">
+              <input id="pref-sound-completion" type="checkbox" />
+              <span>完成提示音</span>
+            </label>
+          </div>
+          <p id="sound-dnd-note" class="sound-dnd-note" hidden>声音已被勿扰模式静音</p>
           <div class="settings-heading">勿扰</div>
           <div class="settings-grid">
             <label class="setting-toggle">

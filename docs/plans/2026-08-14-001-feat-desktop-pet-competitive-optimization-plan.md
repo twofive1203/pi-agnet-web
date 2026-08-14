@@ -14,7 +14,7 @@ revised: 2026-08-14
 
 对标 OpenAI Codex Pets、Claude Code `/buddy`、Anthropic `claude-desktop-buddy` 参考实现及开源项目 Clawd on Desk，梳理蜗牛派桌宠可借鉴的后续优化点，并按现有 observer、Electron 和隐私边界形成可执行 backlog。
 
-本规划是 **active backlog**：调研和项目事实复核已完成。U1 Running 工作细分与 U2 真实上下文占比视觉化已落地。其余单元仍待实现。已落地能力（8 态呈现、Activity tray、spritesheet 运行时、庆祝去重、Running 主循环重做、终态文案解耦、启动/重连 baseline、Running cue、主 activity 上下文环等）见：
+本规划是 **active backlog**：调研和项目事实复核已完成。U1 Running 工作细分、U2 真实上下文占比视觉化、U7a DND 与 U4a 声音提示已落地。其余单元仍待实现。已落地能力（8 态呈现、Activity tray、spritesheet 运行时、庆祝去重、Running 主循环重做、终态文案解耦、启动/重连 baseline、Running cue、主 activity 上下文环、DND 静音、needs_input/ready 短音等）见：
 
 - `docs/research/desktop-pet-improvements-2026-08-13.md`
 - `docs/architecture/decisions/desktop-pet-task-observer.md`
@@ -62,7 +62,7 @@ revised: 2026-08-14
 | 自定义宠物包 / Codex Pet 包导入 | Codex `/hatch` / Clawd | 仅内置 manifest 与 spritesheet；无用户导入 | ➕ U6（独立安全设计） |
 | 渐进式睡眠 | Clawd | idle 随机小动作；无按 idle 时长分级 | ➕ U3 |
 | 趣味点击反应 | Clawd | 无；现有单击承担 tray/needs_input 直达 | ➕ U4 |
-| 声音提示 | Clawd | 桌宠仅 Electron 通知；WebUI 有独立完成音效 | ➕ U4（避免重复提示） |
+| 声音提示 | Clawd | needs_input/ready 短音已落地（U4a，主默认关、事件开关、冷却、DND 静音）；趣味交互未做 | △ U4（U4a 已交付，U4b 待定） |
 | 迷你模式 | Clawd | 无 | ➕ U7 |
 | Do Not Disturb | Clawd | 无应用级 DND | ➕ U7（U4 声音的前置策略） |
 | 启动/重连 baseline | Clawd | 已实现：重新 attach 后建立 baseline，不回放历史通知 | ✅（补实机证据，不重复立项） |
@@ -156,6 +156,10 @@ revised: 2026-08-14
 - reduced-motion 下用短暂静态表情或不播放；声音不能成为唯一状态线索。
 
 **依赖**：U4a 在没有 U7 DND 时可先以独立静音开关交付，但完整验收必须覆盖 DND；U4b 依赖现有拖动阈值、pointer capture 和键盘路径回归。
+
+#### [x] U4a — 声音提示
+
+**Completed:** 2026-08-14 — 新增纯策略模块 `desktop/main/sound-policy.ts`（参考 notification-controller 结构）：仅 `needs_input`→`attention`、`ready`→`completion` 可发声，blocked/running/retrying/连接状态不发声；初始连接、reset、instanceId 变化与重连 baseline 播种有界独立 `soundedTransitionIds` LRU 且不播放；设置门控（`sound.masterEnabled` 默认关闭 + 独立 `needsInput`/`completion` 开关，master 关闭时保留事件开关）、DND 门控（`surface: "sound"`）与每类 10 秒冷却统一消费被抑制的 transition（关闭 DND / 开启设置 / 冷却结束均不补播）；SSE replay 与相同 transition 去重。settings v1 不变，旧文件缺 `sound`/`soundedTransitionIds` 时按默认迁移并过 normalize/serialize/forbidden-key。main 经窄 IPC `pet:sound-cue` 只推有限枚举（renderer 不可发送、不可传路径/URL/音频参数），preload 只暴露只读 `onSoundCue` 并校验枚举。renderer `pet-sound.ts` 用本地 Web Audio 合成（固定频率/时长、音量上限 0.06、单次≤300ms、无文件/网络/队列，AudioContext 缺失/suspended/播放异常静默失败，destroy 释放 context）；不新增 CSP `media-src`、不引入第三方播放依赖。设置面板提供总开关+两个事件开关+“声音已被勿扰模式静音”提示，托盘提供 checked 状态的“声音提示”总开关。不改 `acknowledgedTransitionIds`/未读状态/服务端 transition，不修改 WebUI `useAudio`。策略与 IPC 已自动验证；Windows 实际音频播放仍需实机验证。
 
 **验收要点**：单击直达优先、拖动不计点击、双击/四连击判定、冷却、DND、WebUI 重复声音、系统无音频设备、reduced-motion。
 

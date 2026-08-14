@@ -56,6 +56,7 @@ import {
 } from "./pet-state";
 import { buildSpriteSheetStyleText, resolveSpriteSheetStyle } from "./pet-sheet";
 import { PET_SHEET_DATA_URLS } from "./pet-sheet-assets";
+import { PetSoundPlayer } from "./pet-sound";
 
 declare global {
   interface Window {
@@ -124,6 +125,10 @@ export function renderPetApp(root: Document = document): {
   const prefBlocked = root.getElementById("pref-blocked") as HTMLInputElement | null;
   const prefShowContextMeter = root.getElementById("pref-show-context-meter") as HTMLInputElement | null;
   const prefDnd = root.getElementById("pref-dnd") as HTMLInputElement | null;
+  const prefSoundMaster = root.getElementById("pref-sound-master") as HTMLInputElement | null;
+  const prefSoundNeedsInput = root.getElementById("pref-sound-needs-input") as HTMLInputElement | null;
+  const prefSoundCompletion = root.getElementById("pref-sound-completion") as HTMLInputElement | null;
+  const soundDndNote = root.getElementById("sound-dnd-note");
   const staleFlag = root.getElementById("stale-flag");
 
   const hideToTray = () => {
@@ -170,6 +175,10 @@ export function renderPetApp(root: Document = document): {
   const spriteStyleSheets = new Map<string, HTMLStyleElement>();
   const spriteVerified = new Set<string>();
   const spriteFailed = new Set<string>();
+
+  // U4a: local synthesized cues only. Playback failure is silent by design and
+  // never affects the tray, bubbles or observation.
+  const soundPlayer = new PetSoundPlayer();
 
   bridge?.setReducedMotion(reducedMotion);
   if (typeof window.matchMedia === "function") {
@@ -771,6 +780,14 @@ export function renderPetApp(root: Document = document): {
     if (prefBlocked) prefBlocked.checked = view.notification.blocked;
     if (prefShowContextMeter) prefShowContextMeter.checked = view.showContextMeter;
     if (prefDnd) prefDnd.checked = view.dndEnabled === true;
+    if (prefSoundMaster) prefSoundMaster.checked = view.sound.masterEnabled === true;
+    if (prefSoundNeedsInput) prefSoundNeedsInput.checked = view.sound.needsInput !== false;
+    if (prefSoundCompletion) prefSoundCompletion.checked = view.sound.completion !== false;
+    // DND never mutates sound preferences — it only silences playback, so the
+    // panel keeps the toggles editable and shows why nothing beeps.
+    if (soundDndNote) {
+      soundDndNote.hidden = !(view.dndEnabled === true && view.sound.masterEnabled === true);
+    }
     petPicker?.querySelectorAll<HTMLElement>("[data-pet-id]").forEach((option) => {
       const selected = option.dataset.petId === view.selectedPetId;
       option.setAttribute("aria-checked", selected ? "true" : "false");
@@ -1372,6 +1389,16 @@ export function renderPetApp(root: Document = document): {
   prefDnd?.addEventListener("change", () => {
     bridge?.setPrefs({ dndEnabled: prefDnd.checked });
   });
+  prefSoundMaster?.addEventListener("change", () => {
+    // Master off keeps the per-event toggles untouched in settings.
+    bridge?.setPrefs({ sound: { masterEnabled: prefSoundMaster.checked } });
+  });
+  prefSoundNeedsInput?.addEventListener("change", () => {
+    bridge?.setPrefs({ sound: { needsInput: prefSoundNeedsInput.checked } });
+  });
+  prefSoundCompletion?.addEventListener("change", () => {
+    bridge?.setPrefs({ sound: { completion: prefSoundCompletion.checked } });
+  });
 
   const onKeyDown = (event: KeyboardEvent) => {
     if (event.key === "Escape" && trayMoreOpen) {
@@ -1443,9 +1470,14 @@ export function renderPetApp(root: Document = document): {
   root.addEventListener("keydown", onKeyDown);
 
   let unsubscribe: (() => void) | undefined;
+  let unsubscribeSoundCue: (() => void) | undefined;
   if (bridge) {
     unsubscribe = bridge.onStateChanged((view) => {
       update(view as DesktopActivityView);
+    });
+    // Cues arrive pre-gated from main; the player itself stays failure-silent.
+    unsubscribeSoundCue = bridge.onSoundCue((cue) => {
+      soundPlayer.play(cue);
     });
     void bridge.getState().then((view) => {
       if (view) update(view as DesktopActivityView);
@@ -1479,6 +1511,8 @@ export function renderPetApp(root: Document = document): {
       for (const style of spriteStyleSheets.values()) style.remove();
       spriteStyleSheets.clear();
       unsubscribe?.();
+      unsubscribeSoundCue?.();
+      soundPlayer.destroy();
     },
   };
 }
