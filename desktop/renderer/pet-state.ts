@@ -219,6 +219,188 @@ export function petSourceLabel(source: TaskObserverSource): string {
   return SOURCE_LABELS[source] ?? source;
 }
 
+function isPrimaryActivityActive(activity: DesktopActivityRow): boolean {
+  return (
+    activity.executionState === "queued" ||
+    activity.executionState === "running" ||
+    activity.executionState === "retrying"
+  );
+}
+
+function comparePrimaryActivity(a: DesktopActivityRow, b: DesktopActivityRow): number {
+  const rankDiff = PET_STATE_ORDER.indexOf(a.presentation) - PET_STATE_ORDER.indexOf(b.presentation);
+  if (rankDiff !== 0) return rankDiff;
+  const activeDiff = Number(isPrimaryActivityActive(b)) - Number(isPrimaryActivityActive(a));
+  if (activeDiff !== 0) return activeDiff;
+  const aUpdated = Date.parse(a.updatedAt ?? "") || 0;
+  const bUpdated = Date.parse(b.updatedAt ?? "") || 0;
+  if (aUpdated !== bUpdated) return bUpdated - aUpdated;
+  return a.activityId.localeCompare(b.activityId);
+}
+
+/**
+ * Pick the one activity that drives the pet, caption, and contextual action.
+ * Project display-name ordering is intentionally excluded from this decision.
+ */
+export function selectPrimaryActivity(
+  groups: readonly DesktopProjectGroup[],
+): DesktopActivityRow | null {
+  let primary: DesktopActivityRow | null = null;
+  for (const group of groups) {
+    for (const activity of group.activities) {
+      if (primary == null || comparePrimaryActivity(activity, primary) < 0) {
+        primary = activity;
+      }
+    }
+  }
+  return primary;
+}
+
+export type RunningCue =
+  | "thinking"
+  | "editing"
+  | "command"
+  | "subagent_one"
+  | "subagent_many"
+  | "generic";
+
+const THINKING_TOOL_NAMES = new Set(["read", "grep", "find", "ls"]);
+const EDITING_TOOL_NAMES = new Set(["edit", "write"]);
+const COMMAND_TOOL_NAMES = new Set(["bash"]);
+
+const RUNNING_CUE_VISUALS: Record<RunningCue, { glyph: string; label: string }> = {
+  thinking: { glyph: "…", label: "思考中" },
+  editing: { glyph: "✎", label: "编辑中" },
+  command: { glyph: "›_", label: "命令中" },
+  subagent_one: { glyph: "1", label: "协作中" },
+  subagent_many: { glyph: "2+", label: "协作中" },
+  generic: { glyph: "›", label: "运行中" },
+};
+
+/**
+ * Classify only existing bounded observer fields. Raw tool names are matched
+ * against exact local allowlists and never escape as CSS/resource identifiers.
+ */
+export function resolveRunningCue(activity: DesktopActivityRow | null): RunningCue {
+  if (
+    activity == null ||
+    activity.source !== "agent" ||
+    activity.presentation !== "running" ||
+    (activity.executionState !== "queued" && activity.executionState !== "running")
+  ) {
+    return "generic";
+  }
+
+  const progress = activity.progress;
+  if (progress.kind !== "counters") {
+    return activity.phase === "running" && progress.kind === "indeterminate"
+      ? "thinking"
+      : "generic";
+  }
+
+  const activeSubagents = Math.max(0, Math.floor(progress.activeSubagents ?? 0));
+  const toolName = progress.currentToolName?.trim();
+  // A top-level tool and Subagent running together do not provide one reliable
+  // dominant phase, so the aggregate visual stays generic.
+  if (activeSubagents > 0 && toolName) return "generic";
+  if (activeSubagents >= 2) return "subagent_many";
+  if (activeSubagents === 1) return "subagent_one";
+  if (!toolName) return activity.phase === "running" ? "thinking" : "generic";
+  if (THINKING_TOOL_NAMES.has(toolName)) return "thinking";
+  if (EDITING_TOOL_NAMES.has(toolName)) return "editing";
+  if (COMMAND_TOOL_NAMES.has(toolName)) return "command";
+  return "generic";
+}
+
+export function resolveRunningCueVisual(
+  cue: RunningCue,
+): { glyph: string; label: string } {
+  return RUNNING_CUE_VISUALS[cue];
+}
+
+export const RUNNING_CUE_MIN_DWELL_MS = 900;
+export const RUNNING_CUE_DEBOUNCE_MS = 250;
+
+export type RunningCueState = {
+  active: boolean;
+  cue: RunningCue;
+  shownAt: number;
+  candidateCue: RunningCue | null;
+  candidateSince: number | null;
+};
+
+export type RunningCueSignal = {
+  presentation: PetVisualState;
+  cue: RunningCue;
+};
+
+export function createInitialRunningCueState(): RunningCueState {
+  return {
+    active: false,
+    cue: "generic",
+    shownAt: 0,
+    candidateCue: null,
+    candidateSince: null,
+  };
+}
+
+/**
+ * Keep Running modifiers stable across rapid tool switches. Leaving Running is
+ * always immediate so attention/terminal/connection states can preempt.
+ */
+export function reduceRunningCueState(
+  state: RunningCueState,
+  signal: RunningCueSignal,
+  now: number,
+): RunningCueState {
+  if (signal.presentation !== "running") {
+    return {
+      active: false,
+      cue: "generic",
+      shownAt: now,
+      candidateCue: null,
+      candidateSince: null,
+    };
+  }
+  if (!state.active) {
+    return {
+      active: true,
+      cue: signal.cue,
+      shownAt: now,
+      candidateCue: null,
+      candidateSince: null,
+    };
+  }
+  if (signal.cue === state.cue) {
+    return { ...state, candidateCue: null, candidateSince: null };
+  }
+  if (signal.cue !== state.candidateCue || state.candidateSince == null) {
+    return { ...state, candidateCue: signal.cue, candidateSince: now };
+  }
+  const switchAt = Math.max(
+    state.shownAt + RUNNING_CUE_MIN_DWELL_MS,
+    state.candidateSince + RUNNING_CUE_DEBOUNCE_MS,
+  );
+  if (now < switchAt) return state;
+  return {
+    active: true,
+    cue: signal.cue,
+    shownAt: now,
+    candidateCue: null,
+    candidateSince: null,
+  };
+}
+
+export function runningCueNextUpdateAt(state: RunningCueState): number | null {
+  if (!state.active || state.candidateCue == null || state.candidateSince == null) {
+    return null;
+  }
+  return Math.max(
+    state.shownAt + RUNNING_CUE_MIN_DWELL_MS,
+    state.candidateSince + RUNNING_CUE_DEBOUNCE_MS,
+  );
+}
+
 /** Format only verifiable observer progress; never invent a percentage. */
 export function formatActivityProgress(
   progress: TaskObserverProgress,

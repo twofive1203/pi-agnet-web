@@ -528,8 +528,19 @@
     /** Desktop-local acknowledged/notified transition LRU capacity (presentation only). */
     maxLocalAckTransitions: 500
   };
+  var TASK_OBSERVER_PRESENTATION_PRIORITY = [
+    "service_not_running",
+    "disconnected",
+    "needs_input",
+    "blocked",
+    "ready",
+    "retrying",
+    "running",
+    "idle"
+  ];
 
   // desktop/renderer/pet-state.ts
+  var PET_STATE_ORDER = TASK_OBSERVER_PRESENTATION_PRIORITY;
   var DEFAULT_FRAMES = {
     service_not_running: {
       frame: "service-not-running",
@@ -656,6 +667,121 @@
   };
   function petSourceLabel(source) {
     return SOURCE_LABELS[source] ?? source;
+  }
+  function isPrimaryActivityActive(activity) {
+    return activity.executionState === "queued" || activity.executionState === "running" || activity.executionState === "retrying";
+  }
+  function comparePrimaryActivity(a, b) {
+    const rankDiff = PET_STATE_ORDER.indexOf(a.presentation) - PET_STATE_ORDER.indexOf(b.presentation);
+    if (rankDiff !== 0) return rankDiff;
+    const activeDiff = Number(isPrimaryActivityActive(b)) - Number(isPrimaryActivityActive(a));
+    if (activeDiff !== 0) return activeDiff;
+    const aUpdated = Date.parse(a.updatedAt ?? "") || 0;
+    const bUpdated = Date.parse(b.updatedAt ?? "") || 0;
+    if (aUpdated !== bUpdated) return bUpdated - aUpdated;
+    return a.activityId.localeCompare(b.activityId);
+  }
+  function selectPrimaryActivity(groups) {
+    let primary = null;
+    for (const group of groups) {
+      for (const activity of group.activities) {
+        if (primary == null || comparePrimaryActivity(activity, primary) < 0) {
+          primary = activity;
+        }
+      }
+    }
+    return primary;
+  }
+  var THINKING_TOOL_NAMES = /* @__PURE__ */ new Set(["read", "grep", "find", "ls"]);
+  var EDITING_TOOL_NAMES = /* @__PURE__ */ new Set(["edit", "write"]);
+  var COMMAND_TOOL_NAMES = /* @__PURE__ */ new Set(["bash"]);
+  var RUNNING_CUE_VISUALS = {
+    thinking: { glyph: "\u2026", label: "\u601D\u8003\u4E2D" },
+    editing: { glyph: "\u270E", label: "\u7F16\u8F91\u4E2D" },
+    command: { glyph: "\u203A_", label: "\u547D\u4EE4\u4E2D" },
+    subagent_one: { glyph: "1", label: "\u534F\u4F5C\u4E2D" },
+    subagent_many: { glyph: "2+", label: "\u534F\u4F5C\u4E2D" },
+    generic: { glyph: "\u203A", label: "\u8FD0\u884C\u4E2D" }
+  };
+  function resolveRunningCue(activity) {
+    if (activity == null || activity.source !== "agent" || activity.presentation !== "running" || activity.executionState !== "queued" && activity.executionState !== "running") {
+      return "generic";
+    }
+    const progress = activity.progress;
+    if (progress.kind !== "counters") {
+      return activity.phase === "running" && progress.kind === "indeterminate" ? "thinking" : "generic";
+    }
+    const activeSubagents = Math.max(0, Math.floor(progress.activeSubagents ?? 0));
+    const toolName = progress.currentToolName?.trim();
+    if (activeSubagents > 0 && toolName) return "generic";
+    if (activeSubagents >= 2) return "subagent_many";
+    if (activeSubagents === 1) return "subagent_one";
+    if (!toolName) return activity.phase === "running" ? "thinking" : "generic";
+    if (THINKING_TOOL_NAMES.has(toolName)) return "thinking";
+    if (EDITING_TOOL_NAMES.has(toolName)) return "editing";
+    if (COMMAND_TOOL_NAMES.has(toolName)) return "command";
+    return "generic";
+  }
+  function resolveRunningCueVisual(cue) {
+    return RUNNING_CUE_VISUALS[cue];
+  }
+  var RUNNING_CUE_MIN_DWELL_MS = 900;
+  var RUNNING_CUE_DEBOUNCE_MS = 250;
+  function createInitialRunningCueState() {
+    return {
+      active: false,
+      cue: "generic",
+      shownAt: 0,
+      candidateCue: null,
+      candidateSince: null
+    };
+  }
+  function reduceRunningCueState(state, signal, now) {
+    if (signal.presentation !== "running") {
+      return {
+        active: false,
+        cue: "generic",
+        shownAt: now,
+        candidateCue: null,
+        candidateSince: null
+      };
+    }
+    if (!state.active) {
+      return {
+        active: true,
+        cue: signal.cue,
+        shownAt: now,
+        candidateCue: null,
+        candidateSince: null
+      };
+    }
+    if (signal.cue === state.cue) {
+      return { ...state, candidateCue: null, candidateSince: null };
+    }
+    if (signal.cue !== state.candidateCue || state.candidateSince == null) {
+      return { ...state, candidateCue: signal.cue, candidateSince: now };
+    }
+    const switchAt = Math.max(
+      state.shownAt + RUNNING_CUE_MIN_DWELL_MS,
+      state.candidateSince + RUNNING_CUE_DEBOUNCE_MS
+    );
+    if (now < switchAt) return state;
+    return {
+      active: true,
+      cue: signal.cue,
+      shownAt: now,
+      candidateCue: null,
+      candidateSince: null
+    };
+  }
+  function runningCueNextUpdateAt(state) {
+    if (!state.active || state.candidateCue == null || state.candidateSince == null) {
+      return null;
+    }
+    return Math.max(
+      state.shownAt + RUNNING_CUE_MIN_DWELL_MS,
+      state.candidateSince + RUNNING_CUE_DEBOUNCE_MS
+    );
   }
   function formatActivityProgress(progress, childCount = 0) {
     if (progress.kind === "ratio") {
@@ -1088,7 +1214,9 @@
     const expandedActivityIds = /* @__PURE__ */ new Set();
     let bubbleState = createInitialPetBubbleState();
     let celebrateState = createInitialPetCelebrateState();
+    let runningCueState = createInitialRunningCueState();
     let bubbleTimer = null;
+    let runningCueTimer = null;
     let elapsedTimer = null;
     let reducedMotion = typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const spriteStyleSheets = /* @__PURE__ */ new Map();
@@ -1113,9 +1241,6 @@
         for (const activity of project.activities) ids.push(activity.activityId);
       }
       return ids;
-    }
-    function primaryActivity(view) {
-      return view.projects[0]?.activities[0] ?? null;
     }
     function clearElapsedTimer() {
       if (elapsedTimer != null) {
@@ -1171,6 +1296,18 @@
         if (!bubbleState.visible && petCaption) petCaption.hidden = true;
         bubbleTimer = null;
       }, Math.max(0, bubbleState.expiresAt - now));
+    }
+    function scheduleRunningCueUpdate(now) {
+      if (runningCueTimer != null) {
+        clearTimeout(runningCueTimer);
+        runningCueTimer = null;
+      }
+      const updateAt = runningCueNextUpdateAt(runningCueState);
+      if (updateAt == null) return;
+      runningCueTimer = setTimeout(() => {
+        runningCueTimer = null;
+        if (current) update(current);
+      }, Math.max(0, updateAt - now));
     }
     function dismissActivityBubble(activity) {
       if (!activity) return;
@@ -1387,9 +1524,21 @@
         settingsOpen = previewSettingsOpen;
       }
       const state = isPetVisualState(view.presentation) ? view.presentation : "idle";
+      const primary = selectPrimaryActivity(view.projects);
+      const updateNow = Date.now();
+      runningCueState = reduceRunningCueState(
+        runningCueState,
+        { presentation: state, cue: resolveRunningCue(primary) },
+        updateNow
+      );
+      scheduleRunningCueUpdate(updateNow);
+      const runningCue = runningCueState.active ? runningCueState.cue : "generic";
+      const cueVisual = resolveRunningCueVisual(runningCue);
       const manifest = getBuiltinPetManifest(view.selectedPetId);
       const motionReduced = view.reducedMotion || reducedMotion;
       const frame = resolvePetFrame(manifest, state, motionReduced);
+      const displayGlyph = state === "running" ? cueVisual.glyph : frame.glyph || petStateGlyph(state);
+      const displayLabel = state === "running" ? cueVisual.label : frame.label || petStateLabel(state);
       const spriteImageUrl = PET_SHEET_DATA_URLS[manifest.id] ?? null;
       const spriteStyle = resolveSpriteSheetStyle(manifest, state, spriteImageUrl);
       const spriteActive = spriteStyle != null && !spriteFailed.has(manifest.id);
@@ -1411,6 +1560,11 @@
         const spriteClass = spriteActive ? ` pet-sprite pet-sprite-${manifest.id}` : "";
         petAvatar.className = `pet-avatar${spriteClass} frame-${frame.frame}${frame.animated ? " is-animated" : ""}${transitionClass ? ` ${transitionClass}` : ""}`;
         petAvatar.setAttribute("data-state", state);
+        if (state === "running") {
+          petAvatar.setAttribute("data-running-cue", runningCue);
+        } else {
+          petAvatar.removeAttribute("data-running-cue");
+        }
         const lifeKey = `${frame.frame}:${frame.animated ? "1" : "0"}`;
         if (lifeKey !== idleLifeKey) {
           idleLifeKey = lifeKey;
@@ -1419,9 +1573,8 @@
         }
       }
       if (petRoot) petRoot.setAttribute("data-pet", manifest.id);
-      if (petGlyph) petGlyph.textContent = frame.glyph || petStateGlyph(state);
-      if (petLabel) petLabel.textContent = frame.label || petStateLabel(state);
-      const primary = primaryActivity(view);
+      if (petGlyph) petGlyph.textContent = displayGlyph;
+      if (petLabel) petLabel.textContent = displayLabel;
       const activityDrivesState = primary?.presentation === state;
       const signal = {
         presentation: state,
@@ -1431,7 +1584,7 @@
         unread: activityDrivesState ? primary.unread : false,
         reset: view.reset || bridge != null && previousView == null || previousView?.instanceId != null && previousView.instanceId !== view.instanceId
       };
-      const bubbleNow = Date.now();
+      const bubbleNow = updateNow;
       bubbleState = reducePetBubbleState(bubbleState, {
         type: "snapshot",
         signal,
@@ -1455,7 +1608,7 @@
         petCaption.hidden = !bubbleState.visible;
         petCaption.dataset.bubbleMode = bubbleState.mode ?? "hidden";
       }
-      if (petCaptionState) petCaptionState.textContent = frame.label || petStateLabel(state);
+      if (petCaptionState) petCaptionState.textContent = displayLabel;
       if (petCaptionTitle) {
         petCaptionTitle.textContent = primary?.title ?? connectionBannerText({
           connectionStatus: view.connectionStatus,
@@ -1813,7 +1966,7 @@
     };
     function canJumpToPrimary(view) {
       if (!view || view.trayOpen) return false;
-      const primary = primaryActivity(view);
+      const primary = selectPrimaryActivity(view.projects);
       return (view.presentation === "needs_input" || view.presentation === "blocked") && (primary?.presentation === "needs_input" || primary?.presentation === "blocked");
     }
     function activatePet() {
@@ -1821,7 +1974,7 @@
         bridge?.toggleTray();
         return;
       }
-      const primary = primaryActivity(current);
+      const primary = selectPrimaryActivity(current.projects);
       if (canJumpToPrimary(current) && primary) {
         dismissActivityBubble(primary);
         selectedVisibleActivityId = primary.activityId;
@@ -1935,7 +2088,7 @@
     root.addEventListener("click", onRootClick);
     btnMarkAll?.addEventListener("click", () => {
       setTrayMoreOpen(false);
-      const primary = current ? primaryActivity(current) : null;
+      const primary = current ? selectPrimaryActivity(current.projects) : null;
       if (primary?.presentation === "ready" || primary?.presentation === "blocked") {
         dismissActivityBubble(primary);
       }
@@ -2100,6 +2253,10 @@
       destroy: () => {
         clearBubbleTimer();
         clearElapsedTimer();
+        if (runningCueTimer != null) {
+          clearTimeout(runningCueTimer);
+          runningCueTimer = null;
+        }
         if (idleBlinkTimer) {
           clearTimeout(idleBlinkTimer);
           idleBlinkTimer = null;

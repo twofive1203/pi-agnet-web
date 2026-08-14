@@ -21,6 +21,7 @@ import {
   countActivitiesByFilter,
   createInitialPetBubbleState,
   createInitialPetCelebrateState,
+  createInitialRunningCueState,
   filterProjectGroups,
   formatActiveModel,
   formatActivityProgress,
@@ -35,10 +36,15 @@ import {
   petStateLabel,
   petTerminalOutcome,
   reducePetBubbleState,
+  reduceRunningCueState,
   resolveActivityElapsedMs,
   resolveActivitySelection,
   resolvePetFrame,
   resolvePetTransitionAction,
+  resolveRunningCue,
+  resolveRunningCueVisual,
+  runningCueNextUpdateAt,
+  selectPrimaryActivity,
   shouldCelebrateCompletion,
   shouldRunIdleLife,
   type DesktopActivityFilter,
@@ -146,7 +152,9 @@ export function renderPetApp(root: Document = document): {
   const expandedActivityIds = new Set<string>();
   let bubbleState = createInitialPetBubbleState();
   let celebrateState = createInitialPetCelebrateState();
+  let runningCueState = createInitialRunningCueState();
   let bubbleTimer: ReturnType<typeof setTimeout> | null = null;
+  let runningCueTimer: ReturnType<typeof setTimeout> | null = null;
   let elapsedTimer: ReturnType<typeof setInterval> | null = null;
   let reducedMotion =
     typeof window.matchMedia === "function" &&
@@ -178,10 +186,6 @@ export function renderPetApp(root: Document = document): {
       for (const activity of project.activities) ids.push(activity.activityId);
     }
     return ids;
-  }
-
-  function primaryActivity(view: DesktopActivityView): DesktopActivityRow | null {
-    return view.projects[0]?.activities[0] ?? null;
   }
 
   function clearElapsedTimer(): void {
@@ -250,6 +254,19 @@ export function renderPetApp(root: Document = document): {
       if (!bubbleState.visible && petCaption) petCaption.hidden = true;
       bubbleTimer = null;
     }, Math.max(0, bubbleState.expiresAt - now));
+  }
+
+  function scheduleRunningCueUpdate(now: number): void {
+    if (runningCueTimer != null) {
+      clearTimeout(runningCueTimer);
+      runningCueTimer = null;
+    }
+    const updateAt = runningCueNextUpdateAt(runningCueState);
+    if (updateAt == null) return;
+    runningCueTimer = setTimeout(() => {
+      runningCueTimer = null;
+      if (current) update(current);
+    }, Math.max(0, updateAt - now));
   }
 
   function dismissActivityBubble(activity: DesktopActivityRow | null): void {
@@ -510,9 +527,21 @@ export function renderPetApp(root: Document = document): {
       settingsOpen = previewSettingsOpen;
     }
     const state = isPetVisualState(view.presentation) ? view.presentation : "idle";
+    const primary = selectPrimaryActivity(view.projects);
+    const updateNow = Date.now();
+    runningCueState = reduceRunningCueState(
+      runningCueState,
+      { presentation: state, cue: resolveRunningCue(primary) },
+      updateNow,
+    );
+    scheduleRunningCueUpdate(updateNow);
+    const runningCue = runningCueState.active ? runningCueState.cue : "generic";
+    const cueVisual = resolveRunningCueVisual(runningCue);
     const manifest = getBuiltinPetManifest(view.selectedPetId);
     const motionReduced = view.reducedMotion || reducedMotion;
     const frame = resolvePetFrame(manifest, state, motionReduced);
+    const displayGlyph = state === "running" ? cueVisual.glyph : frame.glyph || petStateGlyph(state);
+    const displayLabel = state === "running" ? cueVisual.label : frame.label || petStateLabel(state);
     const spriteImageUrl = PET_SHEET_DATA_URLS[manifest.id] ?? null;
     const spriteStyle = resolveSpriteSheetStyle(manifest, state, spriteImageUrl);
     const spriteActive = spriteStyle != null && !spriteFailed.has(manifest.id);
@@ -535,6 +564,11 @@ export function renderPetApp(root: Document = document): {
       const spriteClass = spriteActive ? ` pet-sprite pet-sprite-${manifest.id}` : "";
       petAvatar.className = `pet-avatar${spriteClass} frame-${frame.frame}${frame.animated ? " is-animated" : ""}${transitionClass ? ` ${transitionClass}` : ""}`;
       petAvatar.setAttribute("data-state", state);
+      if (state === "running") {
+        petAvatar.setAttribute("data-running-cue", runningCue);
+      } else {
+        petAvatar.removeAttribute("data-running-cue");
+      }
       // Re-arm idle life only when the visual frame actually changes, so frequent
       // view updates never starve the blink/act timers.
       const lifeKey = `${frame.frame}:${frame.animated ? "1" : "0"}`;
@@ -545,10 +579,9 @@ export function renderPetApp(root: Document = document): {
       }
     }
     if (petRoot) petRoot.setAttribute("data-pet", manifest.id);
-    if (petGlyph) petGlyph.textContent = frame.glyph || petStateGlyph(state);
-    if (petLabel) petLabel.textContent = frame.label || petStateLabel(state);
+    if (petGlyph) petGlyph.textContent = displayGlyph;
+    if (petLabel) petLabel.textContent = displayLabel;
 
-    const primary = primaryActivity(view);
     const activityDrivesState = primary?.presentation === state;
     const signal: PetBubbleSignal = {
       presentation: state,
@@ -561,7 +594,7 @@ export function renderPetApp(root: Document = document): {
         (bridge != null && previousView == null) ||
         (previousView?.instanceId != null && previousView.instanceId !== view.instanceId),
     };
-    const bubbleNow = Date.now();
+    const bubbleNow = updateNow;
     bubbleState = reducePetBubbleState(bubbleState, {
       type: "snapshot",
       signal,
@@ -585,7 +618,7 @@ export function renderPetApp(root: Document = document): {
       petCaption.hidden = !bubbleState.visible;
       petCaption.dataset.bubbleMode = bubbleState.mode ?? "hidden";
     }
-    if (petCaptionState) petCaptionState.textContent = frame.label || petStateLabel(state);
+    if (petCaptionState) petCaptionState.textContent = displayLabel;
     if (petCaptionTitle) {
       petCaptionTitle.textContent = primary?.title ?? connectionBannerText({
         connectionStatus: view.connectionStatus,
@@ -1020,7 +1053,7 @@ export function renderPetApp(root: Document = document): {
   // attention task instead of toggling the tray (P1 quick path).
   function canJumpToPrimary(view: DesktopActivityView | null): boolean {
     if (!view || view.trayOpen) return false;
-    const primary = primaryActivity(view);
+    const primary = selectPrimaryActivity(view.projects);
     return (
       (view.presentation === "needs_input" || view.presentation === "blocked") &&
       (primary?.presentation === "needs_input" || primary?.presentation === "blocked")
@@ -1032,7 +1065,7 @@ export function renderPetApp(root: Document = document): {
       bridge?.toggleTray();
       return;
     }
-    const primary = primaryActivity(current);
+    const primary = selectPrimaryActivity(current.projects);
     if (canJumpToPrimary(current) && primary) {
       dismissActivityBubble(primary);
       selectedVisibleActivityId = primary.activityId;
@@ -1174,7 +1207,7 @@ export function renderPetApp(root: Document = document): {
 
   btnMarkAll?.addEventListener("click", () => {
     setTrayMoreOpen(false);
-    const primary = current ? primaryActivity(current) : null;
+    const primary = current ? selectPrimaryActivity(current.projects) : null;
     if (primary?.presentation === "ready" || primary?.presentation === "blocked") {
       dismissActivityBubble(primary);
     }
@@ -1384,6 +1417,10 @@ export function renderPetApp(root: Document = document): {
     destroy: () => {
       clearBubbleTimer();
       clearElapsedTimer();
+      if (runningCueTimer != null) {
+        clearTimeout(runningCueTimer);
+        runningCueTimer = null;
+      }
       if (idleBlinkTimer) {
         clearTimeout(idleBlinkTimer);
         idleBlinkTimer = null;

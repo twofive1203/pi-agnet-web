@@ -500,6 +500,36 @@ select {
   background: #3d77d7;
 }
 
+/* Running work detail is a renderer-only finite modifier. Spritesheet pets keep
+   their Running cells while the existing glyph/label overlay carries the cue. */
+.pet-avatar[data-running-cue="thinking"] .pet-glyph {
+  border-style: dotted;
+  background: #4c6fb4;
+}
+
+.pet-avatar[data-running-cue="editing"] .pet-glyph {
+  border-radius: 7px;
+  background: #3f8b73;
+}
+
+.pet-avatar[data-running-cue="command"] .pet-glyph {
+  border-radius: 5px;
+  background: #6653a6;
+  font-family: Consolas, "Cascadia Mono", monospace;
+  font-size: 10px;
+}
+
+.pet-avatar[data-running-cue="subagent_one"] .pet-glyph,
+.pet-avatar[data-running-cue="subagent_many"] .pet-glyph {
+  border-color: #f5dc9d;
+  background: #9a6a2d;
+}
+
+.pet-avatar[data-running-cue="subagent_many"] .pet-glyph {
+  min-width: 27px;
+  font-size: 10px;
+}
+
 .frame-retrying .pet-glyph,
 .frame-retrying-static .pet-glyph,
 .frame-needs-input .pet-glyph {

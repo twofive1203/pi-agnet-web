@@ -111,13 +111,21 @@ import {
   petSourceLabel,
   petTerminalOutcome,
   reducePetBubbleState,
+  reduceRunningCueState,
   resolveActivityElapsedMs,
   resolveActivitySelection,
   resolveBuiltinPetManifest,
   resolvePetFrame,
   resolvePetTransitionAction,
+  resolveRunningCue,
+  resolveRunningCueVisual,
+  runningCueNextUpdateAt,
+  selectPrimaryActivity,
   shouldCelebrateCompletion,
   shouldRunIdleLife,
+  createInitialRunningCueState,
+  RUNNING_CUE_DEBOUNCE_MS,
+  RUNNING_CUE_MIN_DWELL_MS,
 } from "../desktop/renderer/pet-state";
 import {
   animationName,
@@ -152,6 +160,8 @@ function activityInput(input: {
   promptEpoch?: number;
   stateVersion?: number;
   updatedAt?: string;
+  phase?: string;
+  progress?: TaskObserverActivityInput["progress"];
   activeModel?: TaskObserverActivityInput["activeModel"];
   sessionResources?: TaskObserverActivityInput["sessionResources"];
   children?: TaskObserverActivityInput["children"];
@@ -169,7 +179,8 @@ function activityInput(input: {
     executionState: input.executionState,
     outcome: input.outcome ?? null,
     attention: input.attention ?? "none",
-    progress: { kind: "indeterminate" },
+    phase: input.phase,
+    progress: input.progress ?? { kind: "indeterminate" },
     activeModel: input.activeModel,
     sessionResources: input.sessionResources,
     deepLink: buildAgentDeepLink(input.sessionId),
@@ -421,6 +432,171 @@ async function main() {
   assert.equal(sortedRows[1].presentation, "blocked");
   assert.equal(sortedRows[2].presentation, "ready");
   assert.equal(sortedRows[3].presentation, "running");
+
+  // --- Primary activity selection must not inherit project-name ordering ---
+  const primaryBase = sortedRows[3];
+  const primaryGroups = [
+    {
+      projectKey: "alpha",
+      displayName: "Alpha",
+      counts: { active: 1, needsInput: 0, blocked: 0, ready: 0, unread: 0 },
+      activities: [
+        {
+          ...primaryBase,
+          activityId: "alpha-older",
+          projectKey: "alpha",
+          projectName: "Alpha",
+          updatedAt: "2026-08-12T12:00:00.000Z",
+        },
+      ],
+    },
+    {
+      projectKey: "zulu",
+      displayName: "Zulu",
+      counts: { active: 1, needsInput: 0, blocked: 0, ready: 0, unread: 0 },
+      activities: [
+        {
+          ...primaryBase,
+          activityId: "zulu-newer",
+          projectKey: "zulu",
+          projectName: "Zulu",
+          updatedAt: "2026-08-12T12:10:00.000Z",
+        },
+      ],
+    },
+  ];
+  assert.equal(selectPrimaryActivity(primaryGroups)?.activityId, "zulu-newer");
+  assert.equal(
+    selectPrimaryActivity([
+      {
+        ...primaryGroups[0],
+        activities: [
+          {
+            ...primaryGroups[0].activities[0],
+            activityId: "active-older",
+            executionState: "running",
+          },
+          {
+            ...primaryGroups[0].activities[0],
+            activityId: "settled-newer",
+            executionState: "settled",
+            updatedAt: "2026-08-12T12:20:00.000Z",
+          },
+        ],
+      },
+    ])?.activityId,
+    "active-older",
+  );
+  assert.equal(selectPrimaryActivity([]), null);
+
+  // --- Running cue classification uses finite local allowlists only ---
+  const runningCueRow = {
+    ...primaryBase,
+    source: "agent" as const,
+    presentation: "running" as const,
+    executionState: "running" as const,
+    attention: "none" as const,
+    phase: "tool",
+  };
+  assert.equal(
+    resolveRunningCue({ ...runningCueRow, progress: { kind: "counters", currentToolName: "edit" } }),
+    "editing",
+  );
+  assert.equal(
+    resolveRunningCue({ ...runningCueRow, progress: { kind: "counters", currentToolName: "write" } }),
+    "editing",
+  );
+  assert.equal(
+    resolveRunningCue({ ...runningCueRow, progress: { kind: "counters", currentToolName: "bash" } }),
+    "command",
+  );
+  assert.equal(
+    resolveRunningCue({ ...runningCueRow, progress: { kind: "counters", currentToolName: "read" } }),
+    "thinking",
+  );
+  assert.equal(
+    resolveRunningCue({ ...runningCueRow, phase: "running", progress: { kind: "indeterminate" } }),
+    "thinking",
+  );
+  assert.equal(
+    resolveRunningCue({ ...runningCueRow, progress: { kind: "counters", activeSubagents: 1 } }),
+    "subagent_one",
+  );
+  assert.equal(
+    resolveRunningCue({ ...runningCueRow, progress: { kind: "counters", activeSubagents: 2 } }),
+    "subagent_many",
+  );
+  assert.equal(
+    resolveRunningCue({ ...runningCueRow, progress: { kind: "counters", currentToolName: "extension_tool" } }),
+    "generic",
+  );
+  assert.equal(
+    resolveRunningCue({ ...runningCueRow, progress: { kind: "counters" } }),
+    "generic",
+  );
+  assert.equal(
+    resolveRunningCue({
+      ...runningCueRow,
+      progress: { kind: "counters", currentToolName: "bash", activeSubagents: 1 },
+    }),
+    "generic",
+  );
+  assert.equal(
+    resolveRunningCue({ ...runningCueRow, source: "snflow" }),
+    "generic",
+  );
+  assert.equal(
+    resolveRunningCue({ ...runningCueRow, presentation: "retrying" }),
+    "generic",
+  );
+  assert.deepEqual(resolveRunningCueVisual("editing"), { glyph: "✎", label: "编辑中" });
+  assert.deepEqual(resolveRunningCueVisual("subagent_many"), { glyph: "2+", label: "协作中" });
+
+  // --- Running cue dwell/debounce; aggregate states preempt immediately ---
+  let cueState = createInitialRunningCueState();
+  cueState = reduceRunningCueState(
+    cueState,
+    { presentation: "running", cue: "editing" },
+    0,
+  );
+  assert.equal(cueState.cue, "editing");
+  cueState = reduceRunningCueState(
+    cueState,
+    { presentation: "running", cue: "command" },
+    100,
+  );
+  assert.equal(cueState.cue, "editing");
+  assert.equal(cueState.candidateCue, "command");
+  assert.equal(
+    runningCueNextUpdateAt(cueState),
+    Math.max(RUNNING_CUE_MIN_DWELL_MS, 100 + RUNNING_CUE_DEBOUNCE_MS),
+  );
+  cueState = reduceRunningCueState(
+    cueState,
+    { presentation: "running", cue: "command" },
+    RUNNING_CUE_MIN_DWELL_MS,
+  );
+  assert.equal(cueState.cue, "command");
+  for (const presentation of ["needs_input", "blocked", "ready", "retrying", "idle"] as const) {
+    const preempted = reduceRunningCueState(
+      cueState,
+      { presentation, cue: "subagent_many" },
+      RUNNING_CUE_MIN_DWELL_MS + 1,
+    );
+    assert.equal(preempted.active, false, `${presentation} must preempt the running cue`);
+    assert.equal(preempted.cue, "generic");
+    assert.equal(runningCueNextUpdateAt(preempted), null);
+  }
+  cueState = reduceRunningCueState(
+    reduceRunningCueState(
+      cueState,
+      { presentation: "needs_input", cue: "generic" },
+      RUNNING_CUE_MIN_DWELL_MS + 1,
+    ),
+    { presentation: "running", cue: "subagent_one" },
+    RUNNING_CUE_MIN_DWELL_MS + 2,
+  );
+  assert.equal(cueState.cue, "subagent_one", "re-entering Running shows the current cue immediately");
 
   assertRendererViewSafe(view);
   assert.deepEqual(sortedRows.find((row) => row.activityId.includes("s-run"))?.children, [
@@ -1412,6 +1588,7 @@ async function main() {
   const staticFrame = resolvePetFrame(manifest, "running", true);
   assert.equal(staticFrame.animated, false);
   assert.equal(staticFrame.frame, "running-static");
+  assert.deepEqual(resolveRunningCueVisual("command"), { glyph: "›_", label: "命令中" });
   assert.equal(resolvePetFrame(manifest, "idle", false).animated, true);
   assert.equal(resolvePetFrame(manifest, "idle", true).animated, false);
   assert.ok(staticFrame.label);
@@ -1731,6 +1908,9 @@ async function main() {
     ]) {
       assert.ok(manifest.states[state], `${petId} missing state ${state}`);
     }
+    for (const cue of ["thinking", "editing", "command", "subagent_one", "subagent_many"]) {
+      assert.equal(manifest.states[cue], undefined, `${petId} must not add cue sub-states`);
+    }
   }
 
   // Renderer HTML CSP + no inline node + drag/close affordances
@@ -1773,6 +1953,15 @@ async function main() {
   assert.ok(css.includes("background: transparent"));
   assert.ok(css.includes("prefers-reduced-motion: reduce"));
   assert.ok(css.includes(".activity-filter"));
+  for (const cue of [
+    "thinking",
+    "editing",
+    "command",
+    "subagent_one",
+    "subagent_many",
+  ]) {
+    assert.ok(css.includes(`data-running-cue="${cue}"`), `pet.css missing ${cue} cue modifier`);
+  }
   // Pet life + tray polish markers (idle acts, press duck, eye follow, confetti, pop).
   for (const marker of [
     "idle-act-look",
@@ -1807,6 +1996,12 @@ async function main() {
   assert.ok(rendererSource.includes("scheduleIdleActs"));
   assert.ok(rendererSource.includes("launchConfetti"));
   assert.ok(rendererSource.includes("dataset.presentation"));
+  assert.ok(rendererSource.includes("selectPrimaryActivity"));
+  assert.ok(rendererSource.includes("resolveRunningCue"));
+  assert.ok(rendererSource.includes('setAttribute("data-running-cue", runningCue)'));
+  assert.ok(rendererSource.includes("scheduleRunningCueUpdate"));
+  assert.ok(rendererSource.includes("clearTimeout(runningCueTimer)"));
+  assert.equal(rendererSource.includes("view.projects[0]?.activities[0]"), false);
   // P1: quick jump + keyboard path, drag pop-out, celebration dedup, timer cleanup, outcome label.
   assert.ok(rendererSource.includes("canJumpToPrimary"));
   assert.ok(rendererSource.includes("activatePet"));
@@ -1899,6 +2094,9 @@ async function main() {
   assert.ok(petAppJs.includes("formatActiveModel"));
   assert.ok(petAppJs.includes("formatSessionResources"));
   assert.ok(petAppJs.includes("markRead"));
+  assert.ok(petAppJs.includes("selectPrimaryActivity"));
+  assert.ok(petAppJs.includes("data-running-cue"));
+  assert.ok(petAppJs.includes("scheduleRunningCueUpdate"));
 
   // Collapsed avatar labels stay short Chinese strings (fit 112px surface).
   assert.equal(resolvePetFrame(getBuiltinPetManifest("snail-default"), "idle", false).label, "空闲");
