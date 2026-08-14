@@ -57,6 +57,7 @@ function agentActivity(input: {
   phase?: string;
   reasonCode?: string;
   progress?: TaskObserverActivityInput["progress"];
+  sessionResources?: TaskObserverActivityInput["sessionResources"];
   children?: TaskObserverChildSummaryInput[];
   startedAt?: string;
   updatedAt?: string;
@@ -85,6 +86,7 @@ function agentActivity(input: {
     phase: input.phase,
     reasonCode: input.reasonCode,
     progress: input.progress,
+    sessionResources: input.sessionResources,
     children: input.children,
     deepLink: `/?session=${encodeURIComponent(sessionId)}`,
     lastTransitionId,
@@ -156,6 +158,38 @@ async function main() {
     toolCount: 3,
     currentToolName: "bash",
   });
+
+  // --- Agent session resources are numeric-only, bounded, and source-scoped ---
+  const resourceActivity = projectActivity(agentActivity({
+    sessionId: "sess-resources",
+    promptEpoch: 1,
+    stateVersion: 1,
+    executionState: "running",
+    sessionResources: {
+      context: { percent: 142, usedTokens: 8400, contextWindow: 20000 },
+      billing: { totalTokens: 12000, costUsd: 0.0842 },
+      performance: { avgTps: 31.8, sampleCount: 6 },
+    },
+  }));
+  assert.deepEqual(resourceActivity.sessionResources, {
+    context: { percent: 100, usedTokens: 8400, contextWindow: 20000 },
+    billing: { totalTokens: 12000, costUsd: 0.0842 },
+    performance: { avgTps: 31.8, sampleCount: 6 },
+  });
+  const resourceJson = JSON.stringify(resourceActivity.sessionResources);
+  assert.equal(resourceJson.includes("prompt"), false);
+  assert.equal(resourceJson.includes("cwd"), false);
+  const nonAgentWithResources = projectActivity({
+    ...agentActivity({
+      sessionId: "not-an-agent-resource",
+      promptEpoch: 1,
+      stateVersion: 1,
+      executionState: "running",
+      sessionResources: { billing: { totalTokens: 12000, costUsd: 0.0842 } },
+    }),
+    source: "automation",
+  });
+  assert.equal(nonAgentWithResources.sessionResources, undefined);
 
   // --- Needs input can clear and resume running ---
   let ack = createEmptyLocalAckState();
@@ -584,6 +618,7 @@ async function main() {
   // =========================================================================
   const {
     AgentTaskObserver,
+    buildAgentFallbackTitle,
     buildProjectDisplayNameFromCwd,
     buildProjectKeyFromCwd,
     canScheduleAgentIdleTeardown,
@@ -602,6 +637,8 @@ async function main() {
   const projectKey = buildProjectKeyFromCwd("D:\\work\\demo-app");
   assert.match(projectKey, /^p_[a-f0-9]{16}$/);
   assert.equal(buildProjectDisplayNameFromCwd("D:\\work\\demo-app"), "demo-app");
+  assert.match(buildAgentFallbackTitle("sess-u2"), /^Agent #[A-F0-9]{6}$/);
+  assert.equal(buildAgentFallbackTitle("sess-u2"), buildAgentFallbackTitle("sess-u2"));
   assert.notEqual(projectKey, "D:\\work\\demo-app");
   assert.equal(
     buildProjectKeyFromCwd("D:\\work\\demo-app"),
@@ -631,7 +668,8 @@ async function main() {
   assert.equal(first.activityId, "inst-u2:sess-u2:1");
   assert.equal(first.executionState, "settled");
   assert.equal(first.outcome, "succeeded");
-  assert.equal(first.title, TASK_OBSERVER_GENERIC_TITLES.agent);
+  assert.equal(first.title, buildAgentFallbackTitle("sess-u2"));
+  assert.notEqual(first.title, TASK_OBSERVER_GENERIC_TITLES.agent);
   assert.equal(first.projectKey, projectKey);
   assert.equal(first.projectName, "demo-app");
   assert.equal(first.deepLink, "/?session=sess-u2");
@@ -783,6 +821,19 @@ async function main() {
   observer.beginUserPrompt();
   observer.observeEvent({ type: "agent_start" });
   assert.equal(observer.toActivityInput()?.title, "My feature work");
+  observer.observeEvent({ type: "session_info_changed", name: "Renamed live session" });
+  assert.equal(observer.toActivityInput()?.title, "Renamed live session");
+
+  // Resource updates do not change transition identity.
+  const transitionBeforeResources = observer.toActivityInput()?.lastTransitionId;
+  observer.setSessionResources({
+    context: { percent: 42.3, usedTokens: 8460, contextWindow: 20000 },
+    billing: { totalTokens: 12840, costUsd: 0.0842 },
+    performance: { avgTps: 31.8, sampleCount: 6 },
+  });
+  const withResources = observer.toActivityInput();
+  assert.deepEqual(withResources?.sessionResources?.performance, { avgTps: 31.8, sampleCount: 6 });
+  assert.equal(withResources?.lastTransitionId, transitionBeforeResources);
 
   // --- Steer stays in current activity ---
   const epochBeforeSteer = observer.getPromptEpoch();

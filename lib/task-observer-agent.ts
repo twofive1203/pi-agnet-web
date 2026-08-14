@@ -26,6 +26,7 @@ import {
   type TaskObserverExecutionState,
   type TaskObserverOutcome,
   type TaskObserverProgress,
+  type TaskObserverSessionResources,
 } from "./task-observer-types";
 
 /** Extension UI methods that block the agent until the user responds. */
@@ -136,6 +137,12 @@ export function buildProjectDisplayNameFromCwd(cwd: string): string {
   return getPathBaseName(cwd) || "Project";
 }
 
+/** Distinguishable content-free fallback for an unnamed ordinary session. */
+export function buildAgentFallbackTitle(sessionId: string): string {
+  const digest = createHash("sha256").update(sessionId.trim() || "unknown").digest("hex").slice(0, 6);
+  return `Agent #${digest.toUpperCase()}`;
+}
+
 /** Map provider/SDK failure text to a stable observer reason code (no raw text). */
 export function classifyObserverReasonCode(error: unknown): AgentObserverReasonCode {
   if (error == null) return "prompt_error";
@@ -191,6 +198,7 @@ export class AgentTaskObserver {
   private promptEpoch = 0;
   private current: InternalActivity | null = null;
   private explicitTitle: string | null;
+  private sessionResources: TaskObserverSessionResources | undefined;
   private readonly clock: () => number;
 
   constructor(
@@ -212,6 +220,11 @@ export class AgentTaskObserver {
   setExplicitTitle(title: string | null | undefined): void {
     const next = typeof title === "string" ? title.trim() : "";
     this.explicitTitle = next || null;
+  }
+
+  /** Resource refreshes change snapshot content but never create task transitions. */
+  setSessionResources(resources: TaskObserverSessionResources | null | undefined): void {
+    this.sessionResources = resources ?? undefined;
   }
 
   /**
@@ -430,13 +443,17 @@ export class AgentTaskObserver {
       source: "agent",
       projectKey,
       projectName,
-      title: resolveSafeTitle("agent", this.explicitTitle),
+      title: resolveSafeTitle(
+        "agent",
+        this.explicitTitle ?? buildAgentFallbackTitle(sessionId),
+      ),
       executionState: activity.executionState,
       outcome: activity.outcome,
       attention: activity.attention,
       phase: activity.phase,
       reasonCode: activity.reasonCode,
       progress: this.buildProgress(activity),
+      sessionResources: this.sessionResources,
       startedAt: activity.startedAt,
       updatedAt: activity.updatedAt,
       endedAt: activity.endedAt,

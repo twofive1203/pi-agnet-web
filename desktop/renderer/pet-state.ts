@@ -245,6 +245,44 @@ export function formatActivityProgress(
   return childCount > 0 ? `${childCount} Subagent` : null;
 }
 
+function formatCompactNumber(value: number): string {
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 1_000) return `${Math.round(value / 1_000)}k`;
+  return String(Math.round(value));
+}
+
+/** Compact current-session context, weighted TPS, and billing for one Agent row. */
+export function formatSessionResources(
+  resources: DesktopActivityRow["sessionResources"],
+): string | null {
+  if (!resources) return null;
+  const parts: string[] = [];
+  if (resources.context) {
+    const contextValue = resources.context.percent !== null
+      ? `${resources.context.percent.toFixed(0)}%`
+      : `?/${formatCompactNumber(resources.context.contextWindow)}`;
+    parts.push(`上下文 ${contextValue}`);
+  }
+  if (resources.performance) {
+    const avgTps = resources.performance.avgTps >= 100
+      ? resources.performance.avgTps.toFixed(0)
+      : resources.performance.avgTps.toFixed(1);
+    parts.push(`${avgTps} t/s`);
+  }
+  if (resources.billing) {
+    if (resources.billing.costUsd > 0) {
+      parts.push(
+        resources.billing.costUsd >= 0.01
+          ? `$${resources.billing.costUsd.toFixed(2)}`
+          : "<$0.01",
+      );
+    } else if (resources.billing.totalTokens > 0) {
+      parts.push(`${formatCompactNumber(resources.billing.totalTokens)} tokens`);
+    }
+  }
+  return parts.length > 0 ? parts.join(" · ") : null;
+}
+
 /** Recompute an activity duration locally without requesting a new server snapshot. */
 export function resolveActivityElapsedMs(
   activity: Pick<DesktopActivityRow, "startedAt" | "endedAt" | "elapsedMs">,

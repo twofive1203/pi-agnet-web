@@ -23,6 +23,7 @@ import {
   type TaskObserverPresentationState,
   type TaskObserverProgress,
   type TaskObserverProject,
+  type TaskObserverSessionResources,
   type TaskObserverSnapshot,
   type TaskObserverSource,
   type TaskObserverTransition,
@@ -167,6 +168,52 @@ export function normalizeProgress(raw: TaskObserverProgress | null | undefined):
   return { kind: "indeterminate" };
 }
 
+function normalizeSessionResources(
+  raw: TaskObserverSessionResources | null | undefined,
+): TaskObserverSessionResources | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const normalized: TaskObserverSessionResources = {};
+
+  const contextWindow = nonNegativeInt(raw.context?.contextWindow);
+  if (contextWindow !== undefined && contextWindow > 0) {
+    const rawPercent = raw.context?.percent;
+    const percent = typeof rawPercent === "number" && Number.isFinite(rawPercent)
+      ? Math.max(0, Math.min(100, rawPercent))
+      : null;
+    const usedTokens = raw.context?.usedTokens === null
+      ? null
+      : nonNegativeInt(raw.context?.usedTokens) ?? null;
+    normalized.context = { percent, usedTokens, contextWindow };
+  }
+
+  const totalTokens = nonNegativeInt(raw.billing?.totalTokens);
+  const costUsd = raw.billing?.costUsd;
+  if (
+    totalTokens !== undefined
+    && typeof costUsd === "number"
+    && Number.isFinite(costUsd)
+    && costUsd >= 0
+  ) {
+    normalized.billing = { totalTokens, costUsd };
+  }
+
+  const avgTps = raw.performance?.avgTps;
+  const sampleCount = nonNegativeInt(raw.performance?.sampleCount);
+  if (
+    typeof avgTps === "number"
+    && Number.isFinite(avgTps)
+    && avgTps > 0
+    && sampleCount !== undefined
+    && sampleCount > 0
+  ) {
+    normalized.performance = { avgTps, sampleCount };
+  }
+
+  return normalized.context || normalized.billing || normalized.performance
+    ? normalized
+    : undefined;
+}
+
 function normalizeOutcome(value: TaskObserverOutcome | undefined): TaskObserverOutcome {
   if (
     value === "succeeded" ||
@@ -254,6 +301,9 @@ export function projectActivityDetailed(input: TaskObserverActivityInput): Proje
       phase: clampString(input.phase, TASK_OBSERVER_BUDGETS.maxPhaseChars),
       reasonCode: clampString(input.reasonCode, TASK_OBSERVER_BUDGETS.maxReasonCodeChars),
       progress: normalizeProgress(input.progress),
+      sessionResources: source === "agent"
+        ? normalizeSessionResources(input.sessionResources)
+        : undefined,
       startedAt: clampString(input.startedAt, 40),
       updatedAt: clampString(input.updatedAt, 40),
       endedAt: clampString(input.endedAt, 40),
@@ -686,6 +736,7 @@ const ACTIVITY_KEYS = new Set([
   "phase",
   "reasonCode",
   "progress",
+  "sessionResources",
   "startedAt",
   "updatedAt",
   "endedAt",

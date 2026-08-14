@@ -110,6 +110,11 @@ function activityFor(state) {
       state === "running"
         ? { kind: "ratio", current: 2, total: 5 }
         : { kind: "indeterminate" },
+    sessionResources: {
+      context: { percent: 42.3, usedTokens: 84600, contextWindow: 200000 },
+      billing: { totalTokens: 128400, costUsd: 0.0842 },
+      performance: { avgTps: 31.8, sampleCount: 6 },
+    },
     deepLink: "/?session=preview",
     lastTransitionId: `preview-transition-${state}`,
     unread: state === "ready" || state === "needs_input" || state === "blocked",

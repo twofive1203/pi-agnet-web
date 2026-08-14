@@ -2,7 +2,11 @@ import { createAgentSession, SessionManager } from "@earendil-works/pi-coding-ag
 import { cleanupSessionResources } from "@earendil-works/pi-ai";
 import { cacheSessionPath } from "./session-reader";
 import { flushSessionFileChanges, recordSessionFileChangeEvent } from "./session-file-changes";
-import { SessionPerformanceRecorder, flushSessionPerformance } from "./session-performance";
+import {
+  SessionPerformanceRecorder,
+  flushSessionPerformance,
+  readSessionPerformanceSummary,
+} from "./session-performance";
 import { canonicalizeCwd } from "./cwd";
 import {
   getSnflowChatLifecycleLoadDiagnostic,
@@ -29,7 +33,11 @@ import {
 import { getProcessInstanceId } from "./process-runtime";
 import { AgentTaskObserver } from "./task-observer-agent";
 import { notifyTaskObserverSourceChange } from "./task-observer-invalidate";
-import type { TaskObserverActivityInput } from "./task-observer-types";
+import type {
+  TaskObserverActivityInput,
+  TaskObserverSessionResources,
+} from "./task-observer-types";
+import type { SessionPerformanceSummary } from "./types";
 
 /** Agent lifecycle edges that should flush the desktop-observer hub immediately. */
 function isUrgentTaskObserverEvent(type: string): boolean {
@@ -120,6 +128,7 @@ export class AgentSessionWrapper {
   private activeToolCallIds = new Set<string>();
   private activeSubagentToolCallIds = new Set<string>();
   private performanceRecorder: SessionPerformanceRecorder | null = null;
+  private latestSessionPerformance: SessionPerformanceSummary | null = null;
   private taskObserver: AgentTaskObserver;
   private _alive = true;
 
@@ -164,6 +173,8 @@ export class AgentSessionWrapper {
       cwd: this.cwd,
       explicitTitle: sessionName ?? null,
     });
+    this.latestSessionPerformance = readSessionPerformanceSummary(this.inner.sessionId);
+    this.refreshTaskObserverResources();
   }
 
   /**
@@ -172,6 +183,12 @@ export class AgentSessionWrapper {
    */
   getTaskObservation(): TaskObserverActivityInput | null {
     return this.taskObserver.toActivityInput();
+  }
+
+  /** Persist through the live AgentSession so observers receive session_info_changed. */
+  setSessionName(name: string): string | undefined {
+    this.inner.setSessionName(name);
+    return this.inner.sessionManager.getSessionName();
   }
 
   /** Test/ops helper: prompt epoch and idle eligibility without activity payload. */
@@ -189,6 +206,48 @@ export class AgentSessionWrapper {
     } catch {
       // Observer bus must never break agent execution.
     }
+  }
+
+  private refreshTaskObserverResources(): void {
+    const resources: TaskObserverSessionResources = {};
+    try {
+      const stats = this.inner.getSessionStats();
+      if (stats.tokens.total > 0 || stats.cost > 0) {
+        resources.billing = {
+          totalTokens: stats.tokens.total,
+          costUsd: stats.cost,
+        };
+      }
+    } catch {
+      // Resource observation is best-effort and must not affect execution.
+    }
+
+    try {
+      const context = this.inner.getContextUsage();
+      if (context?.contextWindow && context.contextWindow > 0) {
+        resources.context = {
+          percent: context.percent,
+          usedTokens: context.tokens,
+          contextWindow: context.contextWindow,
+        };
+      }
+    } catch {
+      // Resource observation is best-effort and must not affect execution.
+    }
+
+    const performance = this.latestSessionPerformance;
+    if (
+      performance?.avgTps != null
+      && Number.isFinite(performance.avgTps)
+      && performance.avgTps > 0
+      && performance.sampleCount > 0
+    ) {
+      resources.performance = {
+        avgTps: performance.avgTps,
+        sampleCount: performance.sampleCount,
+      };
+    }
+    this.taskObserver.setSessionResources(resources);
   }
 
   get sessionId(): string {
@@ -221,6 +280,9 @@ export class AgentSessionWrapper {
       sessionFile: this.sessionFile || undefined,
       onSummary: (summary) => {
         if (!this._alive) return;
+        this.latestSessionPerformance = summary;
+        this.refreshTaskObserverResources();
+        this.notifyTaskObserverChanged();
         this.emitEvent({
           type: "session_performance_update",
           sessionId: this.sessionId,
@@ -241,6 +303,13 @@ export class AgentSessionWrapper {
       try {
         // Task observation runs on the raw event boundary (before SSE throttling).
         this.taskObserver.observeEvent(event);
+        if (
+          event.type === "compaction_end"
+          || event.type === "agent_end"
+          || event.type === "agent_settled"
+        ) {
+          this.refreshTaskObserverResources();
+        }
         this.notifyTaskObserverChanged(
           typeof event.type === "string" && isUrgentTaskObserverEvent(event.type),
         );
@@ -529,6 +598,8 @@ export class AgentSessionWrapper {
         const model = this.inner.modelRuntime.getModel(provider, modelId);
         if (!model) throw new Error(`Model not found: ${provider}/${modelId}`);
         await this.inner.setModel(model);
+        this.refreshTaskObserverResources();
+        this.notifyTaskObserverChanged();
         return { id: model.id, provider: model.provider };
       }
 
@@ -567,6 +638,8 @@ export class AgentSessionWrapper {
 
       case "navigate_tree": {
         const result = await this.inner.navigateTree(command.targetId as string, {});
+        this.refreshTaskObserverResources();
+        this.notifyTaskObserverChanged();
         return { cancelled: result.cancelled };
       }
 
@@ -599,6 +672,8 @@ export class AgentSessionWrapper {
           throw new Error("Conversation too short to compact");
         }
         const result = await this.inner.compact(command.customInstructions as string | undefined);
+        this.refreshTaskObserverResources();
+        this.notifyTaskObserverChanged();
         return result;
       }
 

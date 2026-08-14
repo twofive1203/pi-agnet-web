@@ -173,10 +173,11 @@ Each activity contains only:
 | `taskKey`, `activityId` | Stable entity and execution identities. |
 | `source` | `agent`, `snflow`, `automation`, or `quick_command`. |
 | `projectKey`, `projectName` | Path-free project grouping and display. |
-| `title` | Explicit user/task/command name or generic fallback; never first Prompt. |
+| `title` | Explicit user/task/command name or content-free `Agent #XXXXXX` fallback; never first Prompt. |
 | `executionState`, `outcome`, `attention` | Three-axis state. |
 | `phase`, `reasonCode` | Bounded safe codes, not arbitrary model/error text. |
 | `progress` | Real counters/steps or indeterminate. |
+| `sessionResources` | Optional Agent-only numeric context usage, lifetime billing/Token totals, and weighted TPS; no message content or per-call history. |
 | `startedAt`, `updatedAt`, `endedAt` | Lifecycle timestamps where known. |
 | `children` | Bounded active Subagent summaries. |
 | `deepLink` | Allowlisted relative WebUI path. |
@@ -195,13 +196,13 @@ Automation:   automation:<runId>:<state>:<completedOrUpdatedAt>
 QuickCommand: quick:<runId>:<state>:<endedOrUpdatedAt>
 ```
 
-Only meaningful source changes increment revision. Heartbeats and wall-clock elapsed time do not. Initial connection, explicit reset, and changed `instanceId` establish a notification baseline without emitting notifications from that first snapshot.
+Only meaningful source changes increment revision. Heartbeats and wall-clock elapsed time do not. Numeric resource refreshes may change snapshot revision but retain the activity transition id, so billing/TPS/context updates never create task notifications. Initial connection, explicit reset, and changed `instanceId` establish a notification baseline without emitting notifications from that first snapshot.
 
 ## Source Mapping
 
 | Source | Top-level activity | Authority | Notes |
 | --- | --- | --- | --- |
-| Ordinary Agent | Current prompt activity per live wrapper | New wrapper-owned lifecycle projection | Subagents nested; explicit session name or generic title. |
+| Ordinary Agent | Current prompt activity per live wrapper | New wrapper-owned lifecycle projection | Subagents nested; explicit session name or content-free short identifier; current session resources are cached at lifecycle boundaries. |
 | SnFlow | Active/bounded recent terminal run | SnFlow store and terminal reducer | Matching ordinary host suppressed. |
 | Automation | Active/bounded recent terminal run | Persistent run record + active registry | Preserve blocked/ambiguous meaning. |
 | Quick Command | Active/bounded in-memory recent run | Quick Command registry | Exclude command/output/env/path; no restart recovery. |

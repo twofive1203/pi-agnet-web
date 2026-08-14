@@ -1485,6 +1485,7 @@ select {
 
 .row-meta,
 .row-progress,
+.row-resources,
 .row-children,
 .row-elapsed {
   color: var(--pet-muted);
@@ -1492,11 +1493,17 @@ select {
 }
 
 .row-meta,
-.row-progress {
+.row-progress,
+.row-resources {
   margin-top: 3px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.row-resources {
+  color: var(--pet-accent);
+  font-variant-numeric: tabular-nums;
 }
 
 .row-progress-track {

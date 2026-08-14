@@ -126,6 +126,23 @@ export type TaskObserverChildSummary = {
   updatedAt?: string;
 };
 
+/** Bounded numeric-only resources for one live ordinary Agent session. */
+export type TaskObserverSessionResources = {
+  context?: {
+    percent: number | null;
+    usedTokens: number | null;
+    contextWindow: number;
+  };
+  billing?: {
+    totalTokens: number;
+    costUsd: number;
+  };
+  performance?: {
+    avgTps: number;
+    sampleCount: number;
+  };
+};
+
 export type TaskObserverActivity = {
   taskKey: string;
   activityId: string;
@@ -142,6 +159,8 @@ export type TaskObserverActivity = {
   /** Bounded stable reason code for failures/attention. */
   reasonCode?: string;
   progress: TaskObserverProgress;
+  /** Session-level values; omitted for non-Agent sources or unavailable metrics. */
+  sessionResources?: TaskObserverSessionResources;
   startedAt?: string;
   updatedAt?: string;
   endedAt?: string;
@@ -236,6 +255,7 @@ export type TaskObserverActivityInput = {
   phase?: string | null;
   reasonCode?: string | null;
   progress?: TaskObserverProgress | null;
+  sessionResources?: TaskObserverSessionResources | null;
   startedAt?: string | null;
   updatedAt?: string | null;
   endedAt?: string | null;

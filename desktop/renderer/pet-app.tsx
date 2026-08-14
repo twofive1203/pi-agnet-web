@@ -24,6 +24,7 @@ import {
   filterProjectGroups,
   formatActivityProgress,
   formatElapsed,
+  formatSessionResources,
   getBuiltinPetManifest,
   moveActivitySelection,
   nextActDelayMs,
@@ -852,6 +853,15 @@ export function renderPetApp(root: Document = document): {
       progress.className = "row-progress";
       progress.textContent = progressLabel;
       main.appendChild(progress);
+    }
+
+    const resourceLabel = formatSessionResources(activity.sessionResources);
+    if (resourceLabel) {
+      const resources = document.createElement("span");
+      resources.className = "row-resources";
+      resources.textContent = resourceLabel;
+      resources.title = "当前会话资源：上下文、会话加权平均 TPS、累计费用或 Token";
+      main.appendChild(resources);
     }
 
     if (activity.progress.kind === "ratio" && activity.progress.total > 0) {

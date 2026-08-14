@@ -102,6 +102,7 @@ import {
   filterProjectGroups,
   formatActivityProgress,
   formatElapsed,
+  formatSessionResources,
   getBuiltinPetManifest,
   moveActivitySelection,
   nextActDelayMs,
@@ -150,6 +151,7 @@ function activityInput(input: {
   promptEpoch?: number;
   stateVersion?: number;
   updatedAt?: string;
+  sessionResources?: TaskObserverActivityInput["sessionResources"];
   children?: TaskObserverActivityInput["children"];
 }): TaskObserverActivityInput {
   const instanceId = "inst-u7";
@@ -166,6 +168,7 @@ function activityInput(input: {
     outcome: input.outcome ?? null,
     attention: input.attention ?? "none",
     progress: { kind: "indeterminate" },
+    sessionResources: input.sessionResources,
     deepLink: buildAgentDeepLink(input.sessionId),
     lastTransitionId: buildAgentTransitionId(instanceId, input.sessionId, promptEpoch, stateVersion),
     stateVersion,
@@ -300,6 +303,11 @@ async function main() {
       title: "Running agent",
       executionState: "running",
       updatedAt: "2026-08-12T12:01:00.000Z",
+      sessionResources: {
+        context: { percent: 42.3, usedTokens: 84600, contextWindow: 200000 },
+        billing: { totalTokens: 128400, costUsd: 0.0842 },
+        performance: { avgTps: 31.8, sampleCount: 6 },
+      },
       children: [
         {
           childId: "child-safe-1",
@@ -1840,6 +1848,8 @@ async function main() {
   assert.ok(petAppSource.includes("打开任务"));
   assert.ok(petAppSource.includes("标记已读"));
   assert.ok(petAppSource.includes("Subagent 安全摘要"));
+  assert.ok(petAppSource.includes("row-resources"));
+  assert.ok(petAppSource.includes("formatSessionResources"));
   assert.ok(petAppSource.includes("syncElapsedTimer"));
   assert.ok(petAppSource.includes("current?.trayOpen === true"));
   assert.ok(petAppSource.includes("!settingsOpen"));
@@ -1880,6 +1890,8 @@ async function main() {
   assert.ok(petAppJs.includes("filterProjectGroups"));
   assert.ok(petAppJs.includes("resolveActivitySelection"));
   assert.ok(petAppJs.includes("row-child-toggle"));
+  assert.ok(petAppJs.includes("row-resources"));
+  assert.ok(petAppJs.includes("formatSessionResources"));
   assert.ok(petAppJs.includes("markRead"));
 
   // Collapsed avatar labels stay short Chinese strings (fit 112px surface).
@@ -1903,6 +1915,15 @@ async function main() {
   // projectActivityRow sanity
   const row = projectActivityRow(projectActivity(activities[0]), { acknowledgedTransitionIds: [] }, Date.now());
   assert.equal(row.source, "agent");
+  assert.deepEqual(row.sessionResources?.performance, { avgTps: 31.8, sampleCount: 6 });
+  assert.equal(
+    formatSessionResources(row.sessionResources),
+    "上下文 42% · 31.8 t/s · $0.08",
+  );
+  assert.equal(
+    formatSessionResources({ billing: { totalTokens: 128400, costUsd: 0 } }),
+    "128k tokens",
+  );
   assert.ok(row.deepLink.startsWith("/"));
 
   // sortProjectGroups stable

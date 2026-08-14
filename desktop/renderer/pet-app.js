@@ -676,6 +676,33 @@
     }
     return childCount > 0 ? `${childCount} Subagent` : null;
   }
+  function formatCompactNumber(value) {
+    if (value >= 1e6) return `${(value / 1e6).toFixed(1)}M`;
+    if (value >= 1e3) return `${Math.round(value / 1e3)}k`;
+    return String(Math.round(value));
+  }
+  function formatSessionResources(resources) {
+    if (!resources) return null;
+    const parts = [];
+    if (resources.context) {
+      const contextValue = resources.context.percent !== null ? `${resources.context.percent.toFixed(0)}%` : `?/${formatCompactNumber(resources.context.contextWindow)}`;
+      parts.push(`\u4E0A\u4E0B\u6587 ${contextValue}`);
+    }
+    if (resources.performance) {
+      const avgTps = resources.performance.avgTps >= 100 ? resources.performance.avgTps.toFixed(0) : resources.performance.avgTps.toFixed(1);
+      parts.push(`${avgTps} t/s`);
+    }
+    if (resources.billing) {
+      if (resources.billing.costUsd > 0) {
+        parts.push(
+          resources.billing.costUsd >= 0.01 ? `$${resources.billing.costUsd.toFixed(2)}` : "<$0.01"
+        );
+      } else if (resources.billing.totalTokens > 0) {
+        parts.push(`${formatCompactNumber(resources.billing.totalTokens)} tokens`);
+      }
+    }
+    return parts.length > 0 ? parts.join(" \xB7 ") : null;
+  }
   function resolveActivityElapsedMs(activity, now) {
     const start = Date.parse(activity.startedAt ?? "");
     const end = activity.endedAt ? Date.parse(activity.endedAt) : now;
@@ -1637,6 +1664,14 @@
         progress.className = "row-progress";
         progress.textContent = progressLabel;
         main.appendChild(progress);
+      }
+      const resourceLabel = formatSessionResources(activity.sessionResources);
+      if (resourceLabel) {
+        const resources = document.createElement("span");
+        resources.className = "row-resources";
+        resources.textContent = resourceLabel;
+        resources.title = "\u5F53\u524D\u4F1A\u8BDD\u8D44\u6E90\uFF1A\u4E0A\u4E0B\u6587\u3001\u4F1A\u8BDD\u52A0\u6743\u5E73\u5747 TPS\u3001\u7D2F\u8BA1\u8D39\u7528\u6216 Token";
+        main.appendChild(resources);
       }
       if (activity.progress.kind === "ratio" && activity.progress.total > 0) {
         const track = document.createElement("span");

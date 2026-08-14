@@ -245,11 +245,20 @@ export async function PATCH(
     if (!filePath) {
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
     }
-    const sm = SessionManager.open(filePath);
-    sm.appendSessionInfo(name.trim());
+    const normalizedName = name.trim();
+    const liveSession = getRpcSession(id);
+    const effectiveName = liveSession?.isAlive()
+      && liveSession.sessionFile
+      && canonicalizeCwd(liveSession.sessionFile) === canonicalizeCwd(filePath)
+      ? liveSession.setSessionName(normalizedName)
+      : (() => {
+          const sm = SessionManager.open(filePath);
+          sm.appendSessionInfo(normalizedName);
+          return sm.getSessionName();
+        })();
     // Fingerprint changes with append; drop memory so the next search rebuilds summaries.
     invalidateSessionIndex();
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, name: effectiveName ?? "" });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
   }

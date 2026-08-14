@@ -47,6 +47,7 @@ export type DesktopActivityRow = {
   phase?: string;
   reasonCode?: string;
   progress: TaskObserverProgress;
+  sessionResources?: TaskObserverActivity["sessionResources"];
   startedAt?: string;
   updatedAt?: string;
   endedAt?: string;
@@ -226,6 +227,19 @@ export function projectActivityRow(
     phase: activity.phase,
     reasonCode: activity.reasonCode,
     progress: activity.progress,
+    sessionResources: activity.sessionResources
+      ? {
+          context: activity.sessionResources.context
+            ? { ...activity.sessionResources.context }
+            : undefined,
+          billing: activity.sessionResources.billing
+            ? { ...activity.sessionResources.billing }
+            : undefined,
+          performance: activity.sessionResources.performance
+            ? { ...activity.sessionResources.performance }
+            : undefined,
+        }
+      : undefined,
     startedAt: activity.startedAt,
     updatedAt: activity.updatedAt,
     endedAt: activity.endedAt,
