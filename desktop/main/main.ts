@@ -879,6 +879,17 @@ function assetPath(deps: DesktopMainDeps, kind: "preload" | "renderer" | "assets
 export async function main(): Promise<void> {
   // Dynamic import keeps pure smokes from loading electron at import time.
   const electron = await import("electron");
+  if (isSquirrelLifecycleEvent(process.argv)) {
+    if (process.argv.includes("--squirrel-uninstall")) {
+      try {
+        electron.app.setLoginItemSettings({ openAtLogin: false });
+      } catch {
+        // Best effort: uninstall must still exit promptly.
+      }
+    }
+    electron.app.quit();
+    return;
+  }
   await startDesktopPetMain({
     app: electron.app,
     BrowserWindow: electron.BrowserWindow,
@@ -894,13 +905,30 @@ export async function main(): Promise<void> {
   });
 }
 
+export function shouldAutoStartDesktopMain(input: {
+  isElectron: boolean;
+  disableAutoMain: boolean;
+}): boolean {
+  return input.isElectron && !input.disableAutoMain;
+}
+
+const SQUIRREL_LIFECYCLE_EVENTS = new Set([
+  "--squirrel-install",
+  "--squirrel-updated",
+  "--squirrel-uninstall",
+  "--squirrel-obsolete",
+]);
+
+export function isSquirrelLifecycleEvent(argv: readonly string[]): boolean {
+  return argv.some((arg) => SQUIRREL_LIFECYCLE_EVENTS.has(arg));
+}
+
 function shouldAutoStartMain(): boolean {
   if (typeof process === "undefined") return false;
-  if (!(process.versions as { electron?: string } | undefined)?.electron) return false;
-  if (process.env.SNAIL_PET_DISABLE_AUTOMAIN === "1") return false;
-  if (process.env.SNAIL_PET_MAIN === "1") return true;
-  const entry = (process.argv[1] ?? "").replace(/\\/g, "/");
-  return /\/main(\.(js|cjs|mjs|ts))?$/i.test(entry) || entry.includes("/main.");
+  return shouldAutoStartDesktopMain({
+    isElectron: Boolean((process.versions as { electron?: string } | undefined)?.electron),
+    disableAutoMain: process.env.SNAIL_PET_DISABLE_AUTOMAIN === "1",
+  });
 }
 
 if (shouldAutoStartMain()) {

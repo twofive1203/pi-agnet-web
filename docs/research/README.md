@@ -13,4 +13,8 @@ Archive investigation notes, analysis records, and future-improvement research h
 
 ## Open research
 
-There are currently no research documents marked open. Active performance and functional backlog items are tracked in [`../plans/README.md`](../plans/README.md).
+| Document | Topic |
+| --- | --- |
+| [`desktop-pet-improvements-2026-08-13.md`](desktop-pet-improvements-2026-08-13.md) | 桌宠动画/交互/性能/产品向优化建议清单（未实现） |
+
+Active performance and functional backlog items are tracked in [`../plans/README.md`](../plans/README.md).

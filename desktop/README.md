@@ -62,7 +62,7 @@ Wire constants shared with the server live in `lib/desktop-observer-constants.ts
 ## Packaging notes
 
 - Root `forge.config.ts` is pet-only; npm `package.json#files` must not include `desktop/`.
-- After `electron-forge make`, optional: `DESKTOP_PACKAGE_OUT=out npm run test:desktop-package`.
+- After `npm run desktop:make`, scan the real root-relative output with `DESKTOP_PACKAGE_OUT=desktop/out npm run test:desktop-package` (PowerShell: `$env:DESKTOP_PACKAGE_OUT = "desktop/out"; npm run test:desktop-package`).
 - Full matrix: `docs/operations/desktop-pet-validation.md`.
 
 ## Security reminders

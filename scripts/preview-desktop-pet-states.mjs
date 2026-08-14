@@ -262,7 +262,7 @@ function writeIndex(cellList) {
     <meta charset="UTF-8" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'none'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+      content="default-src 'none'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; frame-src 'self'; font-src 'self' data:; connect-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
     />
     <title>Desktop pet visual preview</title>
     <style>
@@ -306,7 +306,6 @@ function writeIndex(cellList) {
         const index = Math.min(ids.length - 1, ids.indexOf(select.value) + 1);
         show(ids[index]);
       });
-      window.__SNAIL_PET_PREVIEW_FIXTURES__ = fixtures;
       show(ids[0]);
     </script>
   </body>
@@ -314,21 +313,30 @@ function writeIndex(cellList) {
 `;
   writeFileSync(path.join(OUT_DIR, "index.html"), html);
   writeFileSync(path.join(OUT_DIR, "fixtures.json"), `${JSON.stringify(fixtures, null, 2)}\n`);
+  writeFileSync(
+    path.join(OUT_DIR, "fixtures.js"),
+    `window.__SNAIL_PET_PREVIEW_FIXTURES__ = ${JSON.stringify(fixtures)};\n`,
+  );
+  writeFileSync(
+    path.join(OUT_DIR, "preview-frame-bootstrap.js"),
+    `(() => {
+  const cell = new URLSearchParams(window.location.search).get("cell");
+  const fixtures = window.__SNAIL_PET_PREVIEW_FIXTURES__;
+  window.__SNAIL_PET_PREVIEW__ = cell && fixtures ? fixtures[cell] ?? null : null;
+})();
+`,
+  );
 }
 
 function writeFrame() {
   const source = readFileSync(path.join(RENDERER_DIR, "index.html"), "utf8");
   const injected = source
-    .replace("./pet.css", "./pet.css")
+    .replace("frame-ancestors 'none'", "frame-ancestors 'self'")
     .replace(
       '<script src="./pet-app.js"></script>',
-      `<script>
-        const params = new URLSearchParams(location.search);
-        const parentFixtures = window.parent && window.parent.__SNAIL_PET_PREVIEW_FIXTURES__;
-        const cell = params.get("cell");
-        window.__SNAIL_PET_PREVIEW__ = parentFixtures && cell ? parentFixtures[cell] : null;
-      </script>
-      <script src="./pet-app.js"></script>`,
+      `<script src="./fixtures.js"></script>
+    <script src="./preview-frame-bootstrap.js"></script>
+    <script src="./pet-app.js"></script>`,
     );
   writeFileSync(path.join(OUT_DIR, "frame.html"), injected);
 }

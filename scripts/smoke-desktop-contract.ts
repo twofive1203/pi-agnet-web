@@ -5,6 +5,7 @@
  * Pure domain + static source contracts — does not launch Electron.
  */
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 
@@ -35,6 +36,10 @@ import {
   PET_IPC_CHANNELS,
   PET_RENDERER_ALLOWED_CHANNELS,
 } from "../desktop/main/ipc-contract";
+import {
+  isSquirrelLifecycleEvent,
+  shouldAutoStartDesktopMain,
+} from "../desktop/main/main";
 import {
   DesktopNotificationController,
   notificationBodyFor,
@@ -1027,6 +1032,27 @@ async function main() {
   assert.equal(/\bgetToken\s*\(|PI_CODING_AGENT_DIR/.test(previewSrc), false);
   assert.equal(/fetch\s*\(|EventSource|127\.0\.0\.1:\d+\/api/.test(previewSrc), false);
   assert.ok(existsSync(path.join(process.cwd(), "docs", "operations", "desktop-pet-visual-review.md")));
+
+  execFileSync(process.execPath, [path.join(process.cwd(), "scripts", "preview-desktop-pet-states.mjs")], {
+    cwd: process.cwd(),
+    stdio: "pipe",
+  });
+  const previewOut = path.join(process.cwd(), "desktop", ".preview");
+  const previewIndex = readFileSync(path.join(previewOut, "index.html"), "utf8");
+  const previewFrame = readFileSync(path.join(previewOut, "frame.html"), "utf8");
+  assert.ok(previewIndex.includes("frame-src 'self'"));
+  assert.ok(previewFrame.includes("frame-ancestors 'self'"));
+  assert.equal(previewFrame.includes("window.parent"), false);
+  assert.ok(previewFrame.includes('<script src="./fixtures.js"></script>'));
+  assert.ok(previewFrame.includes('<script src="./preview-frame-bootstrap.js"></script>'));
+  const previewBootstrap = readFileSync(
+    path.join(previewOut, "preview-frame-bootstrap.js"),
+    "utf8",
+  );
+  assert.ok(previewBootstrap.includes("__SNAIL_PET_PREVIEW_FIXTURES__"));
+  assert.ok(previewBootstrap.includes("__SNAIL_PET_PREVIEW__"));
+  assert.equal(previewBootstrap.includes("window.parent"), false);
+
   const previewPreloadSrc = readFileSync(
     path.join(process.cwd(), "desktop", "preload", "pet-preload.ts"),
     "utf8",
@@ -1403,6 +1429,32 @@ async function main() {
     const source = readFileSync(file, "utf8");
     assertNoServiceControl(source, rel);
   }
+
+  // Packaged Electron is the application entry even when argv[1] is absent.
+  assert.equal(
+    shouldAutoStartDesktopMain({ isElectron: true, disableAutoMain: false }),
+    true,
+  );
+  assert.equal(
+    shouldAutoStartDesktopMain({ isElectron: false, disableAutoMain: false }),
+    false,
+  );
+  assert.equal(
+    shouldAutoStartDesktopMain({ isElectron: true, disableAutoMain: true }),
+    false,
+  );
+  for (const event of [
+    "--squirrel-install",
+    "--squirrel-updated",
+    "--squirrel-uninstall",
+    "--squirrel-obsolete",
+  ]) {
+    assert.equal(isSquirrelLifecycleEvent(["snail-pi-pet.exe", event]), true);
+  }
+  assert.equal(
+    isSquirrelLifecycleEvent(["snail-pi-pet.exe", "--squirrel-firstrun"]),
+    false,
+  );
 
   // main.ts must not warn about interrupting tasks on quit
   const mainSrc = readFileSync(path.join(process.cwd(), "desktop", "main", "main.ts"), "utf8");

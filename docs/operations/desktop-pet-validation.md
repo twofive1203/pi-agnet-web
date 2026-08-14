@@ -7,12 +7,14 @@
 
 This document is the release/QA checklist for the desktop pet. Automated smokes cover domain and packaging **contracts**. Items marked **未执行** require a real Windows 10/11 host with an installer artifact.
 
+Completed P0 engineering run, prepared artifacts, SHA-256 values, and residual validation checklist: [`desktop-pet-p0-validation-2026-08-13.md`](desktop-pet-p0-validation-2026-08-13.md). P0 closed on 2026-08-14 after the product owner confirmed the repaired installed app and explicitly accepted the remaining manual-validation risks.
+
 ## Hard product boundaries
 
 | Rule | Expected |
 | --- | --- |
 | Attach-only | Pet never spawns/stops/restarts/signals/supervises `spi`. |
-| Loopback only | Connects to `http://127.0.0.1:<port>` local mode only. |
+| Loopback only | Connects only through direct `http://127.0.0.1:<port>`. Ordinary local mode needs no auth; current server mode is attachable only on the same proven loopback boundary with an access key. Remote/multi-instance aggregation remains rejected. |
 | Privacy | Observer payload has no cwd, Prompt/firstMessage, tool args, paths, command/output/env, secrets, raw provider errors. |
 | Deep links | Main validates allowlisted relative paths before `shell.openExternal`. |
 | Data isolation | Uninstalling the pet must not delete `~/.pi/agent` or remove npm `spi`. |
@@ -47,6 +49,8 @@ npm run test:quick-commands
 | `desktop:preview` | Dev-only visual state matrix under `desktop/.preview/` (U3); not packaged |
 
 **Artifact scan:** `npm run desktop:make` writes `desktop/out`; set `DESKTOP_PACKAGE_OUT=desktop/out` and re-run `npm run test:desktop-package`. The smoke scans expanded resources, `app.asar` entries, and Squirrel `.nupkg` paths rather than only top-level filenames.
+
+**2026-08-13 P0 engineering result:** lint, TypeScript, desktop observer, runtime, server-auth, Agent stream, Subagent observability, SnFlow, Automation, and Quick Command suites passed. `desktop:build`, the 51-cell `desktop:preview`, `desktop:package`, and `desktop:make` passed. The post-make scan reported `ARTIFACT_SCAN_OK dir=desktop/out files=84 asars=1`. Owner testing then found two delivery blockers: file preview CSP/frame bootstrap and packaged Electron auto-start. Both are fixed with regression coverage. The repaired 0.1.1 unpacked executable created a visible native window, and Setup updated the local engineering profile from 0.1.0 to 0.1.1 with exit code 0 and a visible installed app. Exact artifacts and hashes are recorded in the current P0 run document linked above. This does not mark clean-profile or subjective visual rows Pass.
 
 ## Independent startup (either order)
 
@@ -97,7 +101,7 @@ WebUI in the default browser is opened only from tray/activity/notification deep
 | AE10 | Quit pet leaves `spi`/tasks running; no “会中断任务” warning | Yes (static quit label + no service control) | Live quit while Agent runs | **Partial** — live quit **未执行** |
 | AE11 | Priority Needs input > Blocked > Ready > Running; mark-read local only | Yes (`test:desktop-contract`) | UI click mark-read | **Partial** |
 | AE12 | Reduced motion static frames; pet selection/position persist | Yes (pet-state + settings) | OS reduced-motion setting | **Partial** — OS preference **未执行** |
-| AE13 | Unknown/incompatible/server-mode diagnostics + Retry, no process takeover | Yes (connection machine) | Point pet at wrong port owner | **Partial** |
+| AE13 | Unknown/incompatible/legacy-server diagnostics + Retry; current server mode requires a valid access key on loopback | Yes (connection/auth state machine) | Point pet at wrong port owner; test missing/invalid/valid access key | **Partial** |
 
 ## Manual Windows matrix (release gate)
 
@@ -109,7 +113,7 @@ Run on clean Windows 10 and Windows 11 profiles when a signed or unsigned instal
 | Service separate | Install/run `spi` via npm/npx separately | Service works without pet; pet attaches | **未执行** |
 | No-service UX | Stop `spi`, launch pet | 服务未执行提示 + copy `spi --no-open` + Retry; no shell popup | **未执行** |
 | Incompatible port | Bind non-Snail process on 62666 | Incompatible diagnostic; no kill/replace | **未执行** |
-| Server mode refusal | `spi --server` on loopback/non-loopback | Pet shows server-mode unsupported; does not attach | **未执行** |
+| Server-mode access key | Start server mode on `127.0.0.1`; test missing, invalid, then valid key | Pet requests the key, rejects invalid input, and attaches only after valid session mint; remote access never relaxes the loopback observer gate | **未执行** |
 | Notification permission denied | Deny Windows notifications | Activity tray still works | **未执行** — U6 自动契约已覆盖通知 host 不支持/抛错时不影响 Activity tray，并验证本地化安全文案；Windows 权限拒绝实机未执行 |
 | Launch at login | Enable option, reboot | Pet starts; does **not** auto-start `spi` | **未执行** |
 | DPI / multi-monitor | 100%/150%/200%, move across displays in both directions | Pet position sane; crosses each display boundary; not off-screen permanently | **未执行** — 自动契约已覆盖 settings 迁移、三档 `petScale` 同比缩放、离屏位置拉回最近 workArea、恢复默认位置与中等尺寸，以及拖拽使用完整虚拟桌面边界而非锁定当前显示器；Windows 100/150/200% 与 1K↔2K 双向拖拽实机未执行 |
@@ -117,7 +121,7 @@ Run on clean Windows 10 and Windows 11 profiles when a signed or unsigned instal
 | User activation | Tray “显示桌宠”, tray icon click, or second-instance while hidden | Pet becomes visible, click-through is cleared, and the pet window focuses | **未执行** — U1 自动契约已覆盖 user-show / second-instance host 序列 |
 | Taskbar positions | Bottom/left/top | Tray menu usable | **未执行** |
 | Themes | Light/dark Windows | Glyph/label state still readable | **未执行** |
-| Update-over-install | Install newer pet over older | Settings LRU retained when compatible | **未执行** |
+| Update-over-install | Install newer pet over older | Settings LRU retained when compatible | **Partial** — local engineering profile updated 0.1.0 → 0.1.1, old app directory was replaced, and installed app showed a native window; a profile with meaningful saved settings/LRUs still needs owner verification |
 | Uninstall pet | Remove pet via Apps & Features | `spi` still runs; `~/.pi/agent` intact; sessions untouched | **未执行** |
 | Quit isolation | Running Agent/Automation while Quit pet | Tasks continue; no service stop | **未执行** |
 | Renderer isolation | DevTools (if enabled in debug builds) | No Node, no token in renderer | **未执行** (release builds should not expose unrestricted DevTools) |
@@ -154,7 +158,8 @@ Unsigned local builds are fine for engineering QA; SmartScreen may warn until si
 | --- | --- |
 | Connection refused | 蜗牛派服务未启动 + copy `spi --no-open` + Retry |
 | Protocol mismatch | 不兼容 / protocol mismatch + Retry |
-| Server mode | Server mode unsupported + Retry |
+| Current server mode on loopback | 访问密钥 required/invalid diagnostic; settings accepts the key and retries session mint |
+| Legacy server-mode observer | Server mode unsupported + Retry |
 | Unknown HTTP on port | Unknown service on port + Retry |
 | SSE drop | Disconnected/reconnecting overlay; last snapshot stale; no false success |
 | Token expiry | Silent remint + baseline reset (no historical toast flood) |
@@ -170,6 +175,7 @@ Unsigned local builds are fine for engineering QA; SmartScreen may warn until si
 
 | Role | Result | Date |
 | --- | --- | --- |
-| Automated contract smokes | Pass when commands above succeed | 2026-08-12 |
-| Windows clean-profile installer | **未执行** | — |
-| Code signing / SmartScreen | **未执行** | — |
+| Agent engineering preparation | **Pass** — automated suites, preview, package/make, real artifact scan, unpacked native-window smoke, and local 0.1.0 → 0.1.1 installed-window update | 2026-08-13 |
+| Product-owner P0 acceptance | **Accepted with documented residual risks** — repaired 0.1.1 installed app confirmed visible; Running redesign remains P1 | 2026-08-14 |
+| Windows clean-profile installer | **未执行，P0 residual accepted** | 2026-08-14 |
+| Code signing / SmartScreen | **未执行，P0 residual accepted** | 2026-08-14 |

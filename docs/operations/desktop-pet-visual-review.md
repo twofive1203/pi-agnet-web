@@ -4,8 +4,11 @@
 - **Plan unit:** U3 (`DESKTOP_PET_NEXT_PHASE_IMPLEMENTATION_PLAN.md`)
 - **Preview:** `npm run desktop:preview` then open `desktop/.preview/index.html`
 - **Safety:** preview loads only static sanitized fixtures. It does not attach to the observer, read session/cwd, or expose production preload/IPC.
+- **Current P0 run:** [`desktop-pet-p0-validation-2026-08-13.md`](desktop-pet-p0-validation-2026-08-13.md) — P0 closed on 2026-08-14 with the remaining visual matrix accepted as documented residual risk; Running redesign remains P1.
 
 Use this sheet for the eight presentation states, two built-in pets, three sizes, tray/settings, and reduced-motion. Automated smokes prove the preview is isolated; they do not replace this visual matrix.
+
+**Known review focus:** the shared Running `pet-scoot` loop has been reported as an unnatural repeated arching/thrusting motion. Do not mark Running Pass solely because it renders without clipping; watch each relevant combination for 10–20 seconds and judge the motion itself.
 
 ## How to review
 

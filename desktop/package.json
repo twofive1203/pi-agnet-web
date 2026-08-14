@@ -1,7 +1,7 @@
 {
   "name": "snail-pi-pet",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Snail Pi Windows desktop pet (attach-only task observer). Separate from npm @twofive/snail-pi-web / spi.",
   "main": "main/main.js",
   "productName": "SnailPiPet",

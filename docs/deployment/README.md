@@ -257,7 +257,7 @@ spi --no-open                 # local service, default http://127.0.0.1:62666
 
 | Rule | Detail |
 | --- | --- |
-| Loopback only | `127.0.0.1` local mode; server mode / remote / multi-instance aggregation are rejected. |
+| Loopback only | Observer traffic must use direct `127.0.0.1`; ordinary local mode needs no auth, while current server mode requires an access key for session minting on the same loopback boundary. Remote / multi-instance aggregation remains rejected. |
 | No process ownership | Pet never spawns, stops, signals, or stores a service PID. |
 | Service not running | UI shows 蜗牛派服务未启动 + copyable `spi --no-open` + Retry (never auto-executes). |
 | Quit / uninstall | Leaving or removing the pet must not stop `spi` or delete `~/.pi/agent`. |
