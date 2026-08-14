@@ -82,6 +82,8 @@ async function build() {
     format: "iife",
     target: "chrome120",
     sourcemap: false,
+    // Built-in sprite sheets inline as CSP-friendly data: URLs (img-src data:).
+    loader: { ".png": "dataurl", ".webp": "dataurl" },
     logLevel: "info",
   });
 

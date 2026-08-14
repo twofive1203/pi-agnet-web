@@ -117,6 +117,14 @@ import {
   shouldCelebrateCompletion,
   shouldRunIdleLife,
 } from "../desktop/renderer/pet-state";
+import {
+  animationName,
+  buildSpriteSheetStyleText,
+  positionCss,
+  resolveSpriteSheetStyle,
+  spriteCellPosition,
+  spriteSheetBackgroundSize,
+} from "../desktop/renderer/pet-sheet";
 import { DESKTOP_PACKAGE_CONTRACT } from "../forge.config";
 import { buildAgentDeepLink } from "../lib/desktop-deep-link";
 import {
@@ -1292,6 +1300,18 @@ async function main() {
     }).ok,
     false,
   );
+  // A frame run that wraps onto a second sheet row cannot be animated with a
+  // single two-keyframe `steps()` animation, so the validator rejects it.
+  assert.equal(
+    validatePetManifestDocument({
+      ...validSpriteManifest,
+      states: {
+        ...spriteStates,
+        idle: { ...spriteStates.idle, firstFrame: 3, frameCount: 2 },
+      },
+    }).ok,
+    false,
+  );
   assert.equal(
     validatePetManifestDocument({
       ...defaultManifest,
@@ -1325,6 +1345,11 @@ async function main() {
       "/pets/snail-classic/manifest.json",
       JSON.stringify({ ...defaultManifest, id: "snail-classic", name: "Classic Snail" }),
     ],
+    [
+      "/pets/snail-sprite/manifest.json",
+      JSON.stringify({ ...validSpriteManifest, id: "snail-sprite", name: "Pixel Snail" }),
+    ],
+    ["/pets/snail-sprite/snail.png", "sprite"],
   ]);
   const packagedIo = {
     readFile: (filePath: string) => packagedFiles.get(filePath) ?? "",
@@ -1335,6 +1360,7 @@ async function main() {
   assert.deepEqual(validatePackagedPetAssets("/pets", packagedIo), [
     { id: "snail-default", renderMode: "spritesheet" },
     { id: "snail-classic", renderMode: "css" },
+    { id: "snail-sprite", renderMode: "spritesheet" },
   ]);
   packagedFiles.delete("/pets/snail-default/snail.png");
   assert.throws(
@@ -1379,6 +1405,43 @@ async function main() {
   assert.ok(staticFrame.label);
   assert.ok(staticFrame.glyph);
   assert.equal(getBuiltinPetManifest("missing").id, "snail-default");
+
+  // --- Spritesheet runtime style + fallback (P3) ---
+  const spriteManifest = getBuiltinPetManifest("snail-sprite");
+  assert.equal(spriteManifest.renderMode, "spritesheet");
+  assert.ok(spriteManifest.sheet);
+  const sheet = spriteManifest.sheet!;
+  assert.equal(sheet.frameWidth, 108);
+  assert.equal(sheet.frameHeight, 92);
+  assert.equal(sheet.columns, 4);
+  assert.equal(sheet.rows, 8);
+  assert.equal(spriteSheetBackgroundSize(sheet), "432px 736px");
+  assert.equal(positionCss(spriteCellPosition(sheet, 0)), "0px 0px");
+  assert.equal(positionCss(spriteCellPosition(sheet, 1)), "-108px 0px");
+  assert.equal(positionCss(spriteCellPosition(sheet, 4)), "0px -92px");
+  assert.equal(positionCss(spriteCellPosition(sheet, 24)), "0px -552px");
+
+  const spriteUrl = "data:image/png;base64,AA==";
+  const idleStyle = resolveSpriteSheetStyle(spriteManifest, "idle", spriteUrl);
+  assert.ok(idleStyle);
+  assert.equal(idleStyle!.animatedPosition, "0px 0px");
+  assert.ok(idleStyle!.animation?.includes("steps(3, end)"));
+  assert.ok(idleStyle!.animation?.includes("1080ms"));
+  const disconnectedStyle = resolveSpriteSheetStyle(spriteManifest, "disconnected", spriteUrl);
+  assert.ok(disconnectedStyle);
+  assert.equal(disconnectedStyle!.animation, null);
+  assert.equal(disconnectedStyle!.staticPosition, "0px -552px");
+  assert.equal(resolveSpriteSheetStyle(spriteManifest, "idle", null), null);
+  assert.equal(resolveSpriteSheetStyle(manifest, "idle", spriteUrl), null);
+  assert.equal(animationName("snail-sprite", "idle"), "pet-sprite-snail-sprite-idle");
+
+  const spriteCss = buildSpriteSheetStyleText(spriteManifest, spriteUrl);
+  assert.ok(spriteCss.includes('.pet-sprite-snail-sprite[data-state="idle"].is-animated'));
+  assert.ok(spriteCss.includes("@keyframes pet-sprite-snail-sprite-idle"));
+  assert.ok(spriteCss.includes("steps(3, end)"));
+  assert.equal(buildSpriteSheetStyleText(spriteManifest, null), "");
+  assert.equal(buildSpriteSheetStyleText(manifest, spriteUrl), "");
+
   assert.equal(formatElapsed(65000), "1m 5s");
   assert.equal(
     resolveActivityElapsedMs(

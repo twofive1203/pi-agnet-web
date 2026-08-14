@@ -1,0 +1,95 @@
+{
+  "id": "snail-sprite",
+  "name": "Pixel Snail",
+  "version": 2,
+  "renderMode": "spritesheet",
+  "states": {
+    "idle": {
+      "frame": "idle",
+      "staticFrame": "idle",
+      "label": "空闲",
+      "glyph": "·",
+      "firstFrame": 0,
+      "frameCount": 3,
+      "durationMs": 360,
+      "staticFrameIndex": 1
+    },
+    "running": {
+      "frame": "running",
+      "staticFrame": "running-static",
+      "label": "运行中",
+      "glyph": "›",
+      "firstFrame": 4,
+      "frameCount": 3,
+      "durationMs": 320,
+      "staticFrameIndex": 0
+    },
+    "retrying": {
+      "frame": "retrying",
+      "staticFrame": "retrying-static",
+      "label": "重试中",
+      "glyph": "↻",
+      "firstFrame": 8,
+      "frameCount": 2,
+      "durationMs": 220,
+      "staticFrameIndex": 0
+    },
+    "needs_input": {
+      "frame": "needs-input",
+      "staticFrame": "needs-input",
+      "label": "待输入",
+      "glyph": "?",
+      "firstFrame": 12,
+      "frameCount": 2,
+      "durationMs": 280,
+      "staticFrameIndex": 0
+    },
+    "ready": {
+      "frame": "ready",
+      "staticFrame": "ready",
+      "label": "已完成",
+      "glyph": "✓",
+      "firstFrame": 16,
+      "frameCount": 2,
+      "durationMs": 300,
+      "staticFrameIndex": 0
+    },
+    "blocked": {
+      "frame": "blocked",
+      "staticFrame": "blocked",
+      "label": "受阻",
+      "glyph": "!",
+      "firstFrame": 20,
+      "frameCount": 2,
+      "durationMs": 320,
+      "staticFrameIndex": 0
+    },
+    "disconnected": {
+      "frame": "disconnected",
+      "staticFrame": "disconnected",
+      "label": "未连接",
+      "glyph": "⚠",
+      "firstFrame": 24,
+      "frameCount": 1,
+      "durationMs": 1000,
+      "staticFrameIndex": 0
+    },
+    "service_not_running": {
+      "frame": "service-not-running",
+      "staticFrame": "service-not-running",
+      "label": "未启动",
+      "glyph": "⏻",
+      "firstFrame": 28,
+      "frameCount": 1,
+      "durationMs": 1000,
+      "staticFrameIndex": 0
+    }
+  },
+  "sheet": {
+    "src": "snail.png",
+    "frameWidth": 108,
+    "frameHeight": 92,
+    "columns": 4,
+    "rows": 8
+  }
+}

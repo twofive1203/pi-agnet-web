@@ -13,6 +13,7 @@ import type {
 import type { DesktopActivityRow, DesktopProjectGroup } from "../main/activity-store";
 import snailClassicManifestDocument from "../assets/pets/snail-classic/manifest.json";
 import snailDefaultManifestDocument from "../assets/pets/snail-default/manifest.json";
+import snailSpriteManifestDocument from "../assets/pets/snail-sprite/manifest.json";
 import { TASK_OBSERVER_PRESENTATION_PRIORITY } from "../../lib/task-observer-types";
 import {
   type BuiltinPetId,
@@ -32,6 +33,11 @@ export type PetManifestStateFrame = {
   label: string;
   /** Non-color glyph/symbol cue. */
   glyph: string;
+  /** Spritesheet timing/frame-range (present only for spritesheet pets). */
+  firstFrame?: number;
+  frameCount?: number;
+  durationMs?: number;
+  staticFrameIndex?: number;
 };
 
 export type PetManifest = {
@@ -113,6 +119,7 @@ export function buildDefaultPetManifest(
 const CSS_FALLBACK_MANIFESTS: readonly PetManifest[] = [
   buildDefaultPetManifest("snail-default", "Snail"),
   buildDefaultPetManifest("snail-classic", "Classic Snail"),
+  buildDefaultPetManifest("snail-sprite", "Pixel Snail"),
 ];
 
 function resolvePetManifestDocument(fallback: PetManifest, raw: unknown): PetManifest {
@@ -132,6 +139,7 @@ function resolvePetManifestDocument(fallback: PetManifest, raw: unknown): PetMan
 export const BUILTIN_PET_MANIFESTS: readonly PetManifest[] = [
   resolvePetManifestDocument(CSS_FALLBACK_MANIFESTS[0], snailDefaultManifestDocument),
   resolvePetManifestDocument(CSS_FALLBACK_MANIFESTS[1], snailClassicManifestDocument),
+  resolvePetManifestDocument(CSS_FALLBACK_MANIFESTS[2], snailSpriteManifestDocument),
 ];
 
 export function getBuiltinPetManifest(petId: string): PetManifest {

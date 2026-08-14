@@ -263,6 +263,16 @@ select {
   transform-origin: 56px 80px;
 }
 
+/* Spritesheet pets replace the CSS snail anatomy with a bitmap. The glyph/label
+   stay visible so the non-color status cues survive the render-mode switch. */
+.pet-avatar.pet-sprite .pet-shadow,
+.pet-avatar.pet-sprite .pet-tail,
+.pet-avatar.pet-sprite .pet-body,
+.pet-avatar.pet-sprite .pet-head,
+.pet-avatar.pet-sprite .pet-shell {
+  display: none;
+}
+
 .pet-shadow {
   position: absolute;
   bottom: 5px;
@@ -1191,6 +1201,10 @@ select {
 
 .preview-classic {
   background: linear-gradient(145deg, #d9a66f, #67412f);
+}
+
+.preview-sprite {
+  background: repeating-linear-gradient(45deg, #85e0d0 0 6px, #286275 6px 12px);
 }
 
 .settings-grid {

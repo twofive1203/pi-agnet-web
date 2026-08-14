@@ -68,8 +68,10 @@ Shared logic lives under `lib/`. Prefer adding behavior here when it is used by 
 | `desktop/main/ipc-contract.ts` | Narrow pet IPC channel allowlist shared by main and preload. |
 | `desktop/main/main.ts` | Electron main wiring: single-instance, observer client, notifications, tray, window, validated deep links; quit never mutates service/tasks. |
 | `desktop/preload/pet-preload.ts` | `contextBridge` surface `window.snailPet` — sanitized state + local actions only. |
-| `desktop/renderer/pet-assets.ts` | Built-in pet manifest v2 validator: allowlisted ids, package-relative paths, state completeness, frame/size limits, capability-key rejection, CSS fallback. |
+| `desktop/renderer/pet-assets.ts` | Built-in pet manifest v2 validator: allowlisted ids, package-relative paths, state completeness, frame/size limits, single-row contiguous sprite runs, capability-key rejection, CSS fallback. |
 | `desktop/renderer/pet-state.ts` | Renderer pure helpers: builtin pet manifests, reduced-motion frames, non-color cues, transition/revision-driven persistent/transient bubble reducer, local All/Attention/Running/Completed filtering/counts, filtered-list selection/reset, keyboard movement, elapsed formatting. Invalid v2 documents fall back to CSS snails. |
+| `desktop/renderer/pet-sheet.ts` | Pure spritesheet runtime math: cell→background-position/size, `steps()` animation, reduced-motion static frame, injectable per-pet stylesheet; null (CSS fallback) on non-spritesheet/missing bitmap. |
+| `desktop/renderer/pet-sheet-assets.ts` | Built-in sprite sheets inlined as `data:` URLs by esbuild; renderer-only import. |
 | `desktop/renderer/pet-app.tsx` (+ `pet-app.js`) | Pet + Activity tray UI with bounded transition-keyed bubbles, local filters, expandable safe Subagent summaries, separate open/read actions, and position/size recovery; presentation only; honors reduced motion and keyboard. Dev preview may inject a sanitized static fixture; production preload never does. |
 | `forge.config.ts` | Pet-only Electron Forge config + `DESKTOP_PACKAGE_CONTRACT` / `DESKTOP_FORBIDDEN_BUNDLE_PATHS` (no Next/pi/node-pty/`spi` runtime; signing env placeholders). |
 | `desktop/package.json` | Private `snail-pi-pet` package metadata; not published with npm `spi`. |

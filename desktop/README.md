@@ -35,7 +35,7 @@ Generated main/preload bundles (`main.js`, `pet-preload.js`, maps, `.build-stamp
 | --- | --- |
 | Drag pet body | Move frameless window (body uses click-vs-drag threshold) |
 | Click pet body | Toggle Activity tray (pet icon stays put; tray grows down/right, or up/left near edges) |
-| Activity tray → **⚙** | Manage the server access key, choose the built-in snail or size, restore default position and medium size, and adjust always-on-top, click-through, login launch, and notifications |
+| Activity tray → **⚙** | Manage the server access key, choose a built-in snail (星海/经典 CSS, 像素 spritesheet) or size, restore default position and medium size, and adjust always-on-top, click-through, login launch, and notifications |
 | Activity tray → **⌄** | Collapse only the Activity tray; the pet stays visible |
 | Pet chrome → **×** | Hide to system tray (process keeps observing) |
 | Tray → 显示桌宠 | Show window again |
@@ -53,7 +53,7 @@ desktop/
   main/           # Electron main (connection, SSE, tray, window, notifications)
   preload/        # Narrow contextBridge (window.snailPet)
   renderer/       # index.html + pet-app + CSS (no Node)
-  assets/pets/    # Builtin pet manifests (v2 CSS contract; spritesheet optional later)
+  assets/pets/    # Builtin pet manifests (v2: two CSS snails + one spritesheet pet)
   package.json    # private snail-pi-pet; main → main/main.js
 ```
 

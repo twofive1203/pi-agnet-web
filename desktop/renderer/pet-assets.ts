@@ -6,7 +6,7 @@
  * Renderer must not fetch or concatenate untrusted paths.
  */
 
-export const BUILTIN_PET_IDS = ["snail-default", "snail-classic"] as const;
+export const BUILTIN_PET_IDS = ["snail-default", "snail-classic", "snail-sprite"] as const;
 export type BuiltinPetId = (typeof BUILTIN_PET_IDS)[number];
 
 export const PET_MANIFEST_VERSION = 2;
@@ -283,6 +283,15 @@ export function validatePetManifestDocument(raw: unknown): PetManifestValidation
       }
       if (frame.firstFrame + frame.frameCount > sheetCapacity) {
         return { ok: false, reason: `${state}_frame_range` };
+      }
+      // The renderer animates a state by stepping background-position with a
+      // single two-keyframe `steps()` animation, which only stays on integer
+      // cells when the frame run does not wrap to a second sheet row.
+      if (
+        Math.floor(frame.firstFrame / columns) !==
+        Math.floor((frame.firstFrame + frame.frameCount - 1) / columns)
+      ) {
+        return { ok: false, reason: `${state}_frame_wraps_row` };
       }
     }
     sheet = {

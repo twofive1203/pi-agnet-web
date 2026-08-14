@@ -30,6 +30,7 @@ const STATES = [
 const PETS = [
   { id: "snail-default", name: "星海蜗牛" },
   { id: "snail-classic", name: "经典蜗牛" },
+  { id: "snail-sprite", name: "像素蜗牛" },
 ];
 const SCALES = ["small", "medium", "large"];
 const LONG_TITLE = "超长安全标题用于检查折叠窗口与活动列表是否会被撑破一二三四五六七八九十";

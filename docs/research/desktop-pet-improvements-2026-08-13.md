@@ -64,7 +64,7 @@ Needs input / Blocked 已有持续气泡、非颜色符号和差异姿态；点�
 
 建议让 `is-dragging` 同步驱动缩壳姿态，并在 pointerup 后播放短暂探头动作。拖动反馈不得影响窗口移动流畅度，也不得在 reduced-motion 下播放弹性位移动画。
 
-### 5. 打通 spritesheet 运行时渲染（待实现）
+### 5. 打通 spritesheet 运行时渲染（已完成，占位美术）
 
 现有 manifest validator 和打包检查已具备基础，但 renderer 仍只设置 CSS frame class。启用正式序列帧皮肤前还需要：
 
@@ -75,6 +75,8 @@ Needs input / Blocked 已有持续气泡、非颜色符号和差异姿态；点�
 - 增加真实渲染和坏资源回退测试，而不只是 manifest 校验。
 
 正式美术和运行时渲染应作为独立工作单元，不应描述为“只需提供一套图片”。
+
+2026-08-14 已完成：新增 `desktop/renderer/pet-sheet.ts`（纯帧位置/style 计算 + `buildSpriteSheetStyleText` 注入式样式表）、`desktop/renderer/pet-sheet-assets.ts`（esbuild `dataurl` 内联位图，仅 renderer 导入）、内置第三个角色 `snail-sprite`（`renderMode: "spritesheet"`，4 列 × 8 行 × 108×92 帧，由 `scripts/generate-desktop-pet-sheet.mjs` 生成占位像素美术）；renderer 按 `firstFrame`/`frameCount`/`durationMs` 计算背景位置并以 `steps()` 驱动序列帧，reduced-motion 使用 `staticFrameIndex`，图片缺失或解码失败时回退 CSS 蜗牛。manifest v2 新增单行连续约束（帧区间不得跨行），坏资源回退与帧计算的契约测试已加入 `scripts/smoke-desktop-contract.ts`。正式高帧率美术仍作为独立资源工作单元待后续替换（脚本可再生，不触碰运行时/契约）。
 
 ## 二、状态语义与交互
 
@@ -206,9 +208,9 @@ P2 已于 2026-08-14 完成 7/8/9 项：庆祝触发改为 transitionId 去重 +
 9. ~~统一 blink / idle act 调度，并在窗口隐藏时暂停装饰性 timer。~~ 完成。
 10. 视实际性能证据决定是否移除 blink 强制 reflow。 → 无性能证据，暂不修改（维持现状）。
 
-### P3：正式资源能力
+### P3：正式资源能力（已完成，占位美术）
 
-11. 打通 spritesheet 运行时渲染、坏资源回退和正式内置美术。
+11. ~~打通 spritesheet 运行时渲染、坏资源回退和正式内置美术。~~ 完成：运行时序列帧渲染（`pet-sheet.ts` 帧位置/steps 计算 + 注入式样式表）、坏资源回退（图片缺失/解码失败回退 CSS 蜗牛）、内置第三个角色 `snail-sprite`（`scripts/generate-desktop-pet-sheet.mjs` 生成的占位像素美术，4×8×108×92）；正式高帧率美术仍作为独立资源工作单元待替换。
 
 ### Deferred：单独立项
 

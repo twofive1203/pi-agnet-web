@@ -41,9 +41,12 @@ import {
   shouldRunIdleLife,
   type DesktopActivityFilter,
   type PetBubbleSignal,
+  type PetManifest,
   type PetTransitionAction,
   type PetVisualState,
 } from "./pet-state";
+import { buildSpriteSheetStyleText, resolveSpriteSheetStyle } from "./pet-sheet";
+import { PET_SHEET_DATA_URLS } from "./pet-sheet-assets";
 
 declare global {
   interface Window {
@@ -146,6 +149,12 @@ export function renderPetApp(root: Document = document): {
   let reducedMotion =
     typeof window.matchMedia === "function" &&
     window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  // Spritesheet pets inject one per-pet <style> and verify the inlined bitmap
+  // decodes; a load/decode failure falls back to the CSS snail.
+  const spriteStyleSheets = new Map<string, HTMLStyleElement>();
+  const spriteVerified = new Set<string>();
+  const spriteFailed = new Set<string>();
 
   bridge?.setReducedMotion(reducedMotion);
   if (typeof window.matchMedia === "function") {
@@ -279,6 +288,9 @@ export function renderPetApp(root: Document = document): {
 
   // Whether the decorative idle acts may run right now (pure policy in pet-state).
   function actEnabled(avatar: HTMLElement | null): boolean {
+    // Spritesheet pets are animated by CSS steps(); their anatomy is hidden so
+    // blink/idle-act timers have nothing to drive.
+    if (avatar?.classList.contains("pet-sprite")) return false;
     return shouldRunIdleLife({
       animated: !!avatar && avatar.classList.contains("is-animated"),
       idle: !!avatar && avatar.classList.contains("frame-idle"),
@@ -291,6 +303,7 @@ export function renderPetApp(root: Document = document): {
 
   // Blink runs in every animated state, but pauses while an idle act owns the eyes.
   function blinkEnabled(avatar: HTMLElement | null): boolean {
+    if (avatar?.classList.contains("pet-sprite")) return false;
     return (
       !!avatar &&
       avatar.classList.contains("is-animated") &&
@@ -451,6 +464,42 @@ export function renderPetApp(root: Document = document): {
     transitionClass = null;
   }
 
+  function ensureSpriteStylesheet(manifest: PetManifest): void {
+    if (spriteStyleSheets.has(manifest.id)) return;
+    const text = buildSpriteSheetStyleText(manifest, PET_SHEET_DATA_URLS[manifest.id] ?? null);
+    if (!text) return;
+    const style = root.createElement("style");
+    style.setAttribute("data-pet-sprite", manifest.id);
+    style.textContent = text;
+    root.head?.appendChild(style);
+    spriteStyleSheets.set(manifest.id, style);
+  }
+
+  // Inlined data URLs cannot fail to fetch, but a corrupt bitmap still can; a
+  // decode rejection marks the pet failed so the renderer re-renders as CSS.
+  function verifySpriteImage(petId: string, url: string): void {
+    if (spriteVerified.has(petId) || spriteFailed.has(petId)) return;
+    const img = root.createElement("img");
+    img.addEventListener("error", () => {
+      spriteFailed.add(petId);
+      if (current) update(current);
+    });
+    img.addEventListener("load", () => {
+      if (typeof img.decode !== "function") {
+        spriteVerified.add(petId);
+        return;
+      }
+      void img.decode().then(
+        () => spriteVerified.add(petId),
+        () => {
+          spriteFailed.add(petId);
+          if (current) update(current);
+        },
+      );
+    });
+    img.src = url;
+  }
+
   function update(view: DesktopActivityView): void {
     const previousView = current;
     current = view;
@@ -462,6 +511,13 @@ export function renderPetApp(root: Document = document): {
     const manifest = getBuiltinPetManifest(view.selectedPetId);
     const motionReduced = view.reducedMotion || reducedMotion;
     const frame = resolvePetFrame(manifest, state, motionReduced);
+    const spriteImageUrl = PET_SHEET_DATA_URLS[manifest.id] ?? null;
+    const spriteStyle = resolveSpriteSheetStyle(manifest, state, spriteImageUrl);
+    const spriteActive = spriteStyle != null && !spriteFailed.has(manifest.id);
+    if (spriteActive && spriteImageUrl) {
+      ensureSpriteStylesheet(manifest);
+      verifySpriteImage(manifest.id, spriteImageUrl);
+    }
 
     if (petAvatar) {
       const transitionAction = resolvePetTransitionAction(
@@ -474,7 +530,8 @@ export function renderPetApp(root: Document = document): {
       } else if (motionReduced) {
         clearTransition();
       }
-      petAvatar.className = `pet-avatar frame-${frame.frame}${frame.animated ? " is-animated" : ""}${transitionClass ? ` ${transitionClass}` : ""}`;
+      const spriteClass = spriteActive ? ` pet-sprite pet-sprite-${manifest.id}` : "";
+      petAvatar.className = `pet-avatar${spriteClass} frame-${frame.frame}${frame.animated ? " is-animated" : ""}${transitionClass ? ` ${transitionClass}` : ""}`;
       petAvatar.setAttribute("data-state", state);
       // Re-arm idle life only when the visual frame actually changes, so frequent
       // view updates never starve the blink/act timers.
@@ -930,6 +987,7 @@ export function renderPetApp(root: Document = document): {
   const applyEyeFollow = (event: PointerEvent) => {
     if (!(petAvatar instanceof HTMLElement) || !(petButton instanceof HTMLElement)) return;
     if (!petAvatar.classList.contains("is-animated")) return;
+    if (petAvatar.classList.contains("pet-sprite")) return;
     const stage = petButton.querySelector(".pet-stage");
     const rect = stage?.getBoundingClientRect();
     if (!rect || rect.width === 0) return;
@@ -1327,6 +1385,8 @@ export function renderPetApp(root: Document = document): {
       }
       root.removeEventListener("keydown", onKeyDown);
       root.removeEventListener("click", onRootClick);
+      for (const style of spriteStyleSheets.values()) style.remove();
+      spriteStyleSheets.clear();
       unsubscribe?.();
     },
   };

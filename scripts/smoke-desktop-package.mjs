@@ -254,6 +254,8 @@ async function main() {
     "desktop/renderer/pet.css",
     "desktop/assets/pets/snail-default/manifest.json",
     "desktop/assets/pets/snail-classic/manifest.json",
+    "desktop/assets/pets/snail-sprite/manifest.json",
+    "desktop/assets/pets/snail-sprite/snail.png",
     "desktop/assets/icons/icon.ico",
     "desktop/assets/icons/icon.png",
     "desktop/assets/tray/tray-icon.png",
@@ -309,6 +311,7 @@ async function main() {
   assert.deepEqual(sourcePetAssets, [
     { id: "snail-default", renderMode: "css" },
     { id: "snail-classic", renderMode: "css" },
+    { id: "snail-sprite", renderMode: "spritesheet" },
   ]);
   const ico = readFileSync(path.join(ROOT, "desktop", "assets", "icons", "icon.ico"));
   assert.equal(ico.readUInt16LE(0), 0, "icon.ico reserved header");
@@ -408,7 +411,7 @@ async function main() {
         size: (filePath) => statSync(filePath).size,
         join: path.join,
       });
-      assert.equal(packagedPets.length, 2, "artifact must contain both builtin pets");
+      assert.equal(packagedPets.length, 3, "artifact must contain all three builtin pets");
     } else if (asars.length > 0) {
       const extracted = extractAsarForAssetCheck(asars[0]);
       try {
