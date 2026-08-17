@@ -977,6 +977,17 @@ export async function startDesktopPetMain(deps: DesktopMainDeps): Promise<{
       return { ok: true, catalog: result.value };
     });
 
+    ipcMain.handle(PET_IPC_CHANNELS.listQuickSessionModels, async (event, payload: unknown) => {
+      if (!isTrustedPetSender(event)) {
+        return { ok: false, code: "unauthorized" };
+      }
+      const projectRef = typeof payload === "string" ? payload : "";
+      const result = await quickSessionClient.listModels(projectRef);
+      if (!result.ok) return { ok: false, code: result.code };
+      assertRendererViewSafe(result.value);
+      return { ok: true, catalog: result.value };
+    });
+
     ipcMain.handle(PET_IPC_CHANNELS.createQuickSession, async (event, payload: unknown) => {
       if (!isTrustedPetSender(event)) {
         return { ok: false, code: "unauthorized" };
@@ -986,6 +997,8 @@ export async function startDesktopPetMain(deps: DesktopMainDeps): Promise<{
         projectRef: input.projectRef,
         message: input.message,
         requestId: input.requestId,
+        provider: input.provider,
+        modelId: input.modelId,
       });
       if (!result.ok) return { ok: false, code: result.code };
       assertRendererViewSafe(result.value);

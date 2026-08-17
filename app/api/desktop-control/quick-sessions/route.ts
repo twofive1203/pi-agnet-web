@@ -83,6 +83,8 @@ export async function POST(req: Request): Promise<Response> {
       projectRef: record.projectRef,
       message: record.message,
       requestId: record.requestId,
+      provider: record.provider,
+      modelId: record.modelId,
     });
     if (!result.ok) {
       return new Response(JSON.stringify({ error: result.code, code: result.code }), {

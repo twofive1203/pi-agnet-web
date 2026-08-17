@@ -39,6 +39,8 @@ export const PET_IPC_CHANNELS = {
   rescanCustomPets: "pet:rescan-custom-pets",
   /** List path-free projects for the in-tray quick-session composer. */
   listQuickSessionProjects: "pet:list-quick-session-projects",
+  /** List path-free models for the selected project. */
+  listQuickSessionModels: "pet:list-quick-session-models",
   /** Start one Agent session with the first text message. */
   createQuickSession: "pet:create-quick-session",
 } as const;
@@ -67,6 +69,7 @@ export const PET_RENDERER_ALLOWED_CHANNELS: readonly string[] = [
   PET_IPC_CHANNELS.openCustomPetsDir,
   PET_IPC_CHANNELS.rescanCustomPets,
   PET_IPC_CHANNELS.listQuickSessionProjects,
+  PET_IPC_CHANNELS.listQuickSessionModels,
   PET_IPC_CHANNELS.createQuickSession,
 ];
 

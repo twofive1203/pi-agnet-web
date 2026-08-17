@@ -1,12 +1,14 @@
 /**
  * Pure renderer state for the in-tray quick-session composer.
- * Holds only safe project labels, the in-memory draft, and request identity.
+ * Holds only safe project/model labels, the in-memory draft, and request identity.
  */
 
 import {
   DESKTOP_QUICK_SESSION_MAX_MESSAGE_CHARS,
   DESKTOP_QUICK_SESSION_PROJECT_REF_PATTERN,
   DESKTOP_QUICK_SESSION_REQUEST_ID_PATTERN,
+  isDesktopQuickSessionModelId,
+  isDesktopQuickSessionProvider,
 } from "../../lib/desktop-quick-session-limits";
 
 export const QUICK_SESSION_MAX_MESSAGE_CHARS = DESKTOP_QUICK_SESSION_MAX_MESSAGE_CHARS;
@@ -18,6 +20,10 @@ export type QuickSessionPhase =
   | "submitting"
   | "success"
   | "error";
+
+export type QuickSessionPicker = "none" | "project" | "model";
+
+export type QuickSessionModelsPhase = "idle" | "loading" | "ready" | "error";
 
 export type QuickSessionErrorCode =
   | "disconnected"
@@ -52,6 +58,20 @@ export type QuickSessionCatalog = {
   omitted: number;
 };
 
+export type QuickSessionModel = {
+  provider: string;
+  modelId: string;
+  name: string;
+  primaryCandidate: boolean;
+};
+
+export type QuickSessionModelCatalog = {
+  projectRef: string;
+  defaultModel: { provider: string; modelId: string } | null;
+  models: QuickSessionModel[];
+  truncated: boolean;
+};
+
 export type QuickSessionSuccess = {
   sessionId: string;
   deepLink: string;
@@ -68,6 +88,14 @@ export type QuickSessionState = {
   requestId: string | null;
   errorCode: QuickSessionErrorCode | null;
   success: QuickSessionSuccess | null;
+  openPicker: QuickSessionPicker;
+  modelQuery: string;
+  models: QuickSessionModel[];
+  modelsTruncated: boolean;
+  modelsProjectRef: string | null;
+  modelsPhase: QuickSessionModelsPhase;
+  selectedProvider: string | null;
+  selectedModelId: string | null;
 };
 
 export type QuickSessionEvent =
@@ -76,6 +104,13 @@ export type QuickSessionEvent =
   | { type: "catalog_failed"; code: QuickSessionErrorCode }
   | { type: "set_query"; query: string }
   | { type: "select_project"; projectRef: string }
+  | { type: "toggle_picker"; picker: Exclude<QuickSessionPicker, "none"> }
+  | { type: "close_picker" }
+  | { type: "set_model_query"; query: string }
+  | { type: "models_loading"; projectRef: string }
+  | { type: "models_loaded"; catalog: QuickSessionModelCatalog }
+  | { type: "models_failed"; projectRef: string; code: QuickSessionErrorCode }
+  | { type: "select_model"; provider: string; modelId: string }
   | { type: "set_draft"; draft: string }
   | { type: "submit" }
   | { type: "submit_success"; sessionId: string; deepLink: string }
@@ -97,6 +132,14 @@ export function createInitialQuickSessionState(): QuickSessionState {
     requestId: null,
     errorCode: null,
     success: null,
+    openPicker: "none",
+    modelQuery: "",
+    models: [],
+    modelsTruncated: false,
+    modelsProjectRef: null,
+    modelsPhase: "idle",
+    selectedProvider: null,
+    selectedModelId: null,
   };
 }
 
@@ -112,6 +155,7 @@ export function countQuickSessionChars(text: string): number {
 export function canSubmitQuickSession(state: QuickSessionState): boolean {
   if (state.phase !== "editing" && state.phase !== "error") return false;
   if (!state.selectedProjectRef) return false;
+  if (state.modelsPhase === "ready" && state.models.length === 0) return false;
   const trimmed = state.draft.trim();
   if (!trimmed) return false;
   return countQuickSessionChars(state.draft) <= QUICK_SESSION_MAX_MESSAGE_CHARS;
@@ -129,6 +173,18 @@ export function filterQuickSessionProjects(
   });
 }
 
+export function filterQuickSessionModels(
+  models: readonly QuickSessionModel[],
+  query: string,
+): QuickSessionModel[] {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return [...models];
+  return models.filter((model) => {
+    const hay = `${model.name} ${model.provider} ${model.modelId}`.toLowerCase();
+    return hay.includes(needle);
+  });
+}
+
 export function selectedQuickSessionProject(
   state: QuickSessionState,
 ): QuickSessionProject | null {
@@ -136,11 +192,25 @@ export function selectedQuickSessionProject(
   return state.projects.find((item) => item.projectRef === state.selectedProjectRef) ?? null;
 }
 
+export function selectedQuickSessionModel(
+  state: QuickSessionState,
+): QuickSessionModel | null {
+  if (!state.selectedProvider || !state.selectedModelId) return null;
+  return state.models.find(
+    (item) => item.provider === state.selectedProvider && item.modelId === state.selectedModelId,
+  ) ?? null;
+}
+
 export function formatQuickSessionProjectLabel(project: QuickSessionProject | null): string {
-  if (!project) return "未选择项目";
+  if (!project) return "选择项目";
   return project.disambiguator
     ? `${project.displayName} · ${project.disambiguator}`
     : project.displayName;
+}
+
+export function formatQuickSessionModelLabel(model: QuickSessionModel | null): string {
+  if (!model) return "默认模型";
+  return model.name === model.modelId ? `${model.name} · ${model.provider}` : model.name;
 }
 
 export function quickSessionErrorText(code: QuickSessionErrorCode | null): string {
@@ -160,7 +230,7 @@ export function quickSessionErrorText(code: QuickSessionErrorCode | null): strin
     case "project_collision":
       return "项目引用冲突，无法启动。";
     case "model_unavailable":
-      return "没有可用的默认模型，请先在 WebUI 配置模型。";
+      return "没有可用模型，请先在 WebUI 配置模型。";
     case "message_empty":
       return "请输入首条消息。";
     case "message_too_long":
@@ -182,6 +252,35 @@ function defaultSelectedRef(projects: readonly QuickSessionProject[]): string | 
   return projects[0]?.projectRef ?? null;
 }
 
+function defaultSelectedModel(
+  catalog: QuickSessionModelCatalog,
+): { provider: string; modelId: string } | null {
+  if (catalog.defaultModel) {
+    const match = catalog.models.find(
+      (item) =>
+        item.provider === catalog.defaultModel?.provider
+        && item.modelId === catalog.defaultModel.modelId,
+    );
+    if (match) return { provider: match.provider, modelId: match.modelId };
+  }
+  const first = catalog.models[0];
+  return first ? { provider: first.provider, modelId: first.modelId } : null;
+}
+
+function resetModels(state: QuickSessionState): QuickSessionState {
+  return {
+    ...state,
+    modelQuery: "",
+    models: [],
+    modelsTruncated: false,
+    modelsProjectRef: null,
+    modelsPhase: "idle",
+    selectedProvider: null,
+    selectedModelId: null,
+    openPicker: state.openPicker === "model" ? "none" : state.openPicker,
+  };
+}
+
 function clearComposer(state: QuickSessionState): QuickSessionState {
   return {
     ...state,
@@ -191,6 +290,14 @@ function clearComposer(state: QuickSessionState): QuickSessionState {
     requestId: null,
     errorCode: null,
     success: null,
+    openPicker: "none",
+    modelQuery: "",
+    models: [],
+    modelsTruncated: false,
+    modelsProjectRef: null,
+    modelsPhase: "idle",
+    selectedProvider: null,
+    selectedModelId: null,
   };
 }
 
@@ -207,13 +314,15 @@ export function reduceQuickSessionState(
         errorCode: null,
         success: null,
         requestId: null,
+        openPicker: "none",
       };
     case "catalog_loaded": {
       const selected =
         event.catalog.projects.some((item) => item.projectRef === state.selectedProjectRef)
           ? state.selectedProjectRef
           : defaultSelectedRef(event.catalog.projects);
-      return {
+      const projectChanged = selected !== state.selectedProjectRef;
+      const next: QuickSessionState = {
         ...state,
         phase: "editing",
         projects: event.catalog.projects,
@@ -221,13 +330,16 @@ export function reduceQuickSessionState(
         omitted: event.catalog.omitted,
         selectedProjectRef: selected,
         errorCode: event.catalog.projects.length === 0 ? "project_unknown" : null,
+        openPicker: "none",
       };
+      return projectChanged ? resetModels(next) : next;
     }
     case "catalog_failed":
       return {
         ...state,
         phase: "error",
         errorCode: event.code,
+        openPicker: "none",
       };
     case "set_query":
       if (state.phase === "submitting") return state;
@@ -236,13 +348,95 @@ export function reduceQuickSessionState(
       if (state.phase === "submitting") return state;
       if (!state.projects.some((item) => item.projectRef === event.projectRef)) return state;
       const changed = state.selectedProjectRef !== event.projectRef;
-      return {
+      const next: QuickSessionState = {
         ...state,
         selectedProjectRef: event.projectRef,
         requestId: changed ? null : state.requestId,
         errorCode: state.phase === "error" && changed ? null : state.errorCode,
         phase: state.phase === "success" ? "editing" : state.phase,
         success: changed ? null : state.success,
+        openPicker: "none",
+        query: "",
+      };
+      return changed ? resetModels(next) : next;
+    }
+    case "toggle_picker":
+      if (state.phase === "submitting" || state.phase === "success") return state;
+      return {
+        ...state,
+        openPicker: state.openPicker === event.picker ? "none" : event.picker,
+      };
+    case "close_picker":
+      if (state.openPicker === "none") return state;
+      return { ...state, openPicker: "none" };
+    case "set_model_query":
+      if (state.phase === "submitting") return state;
+      return { ...state, modelQuery: event.query };
+    case "models_loading":
+      if (state.selectedProjectRef !== event.projectRef) return state;
+      return {
+        ...state,
+        modelsPhase: "loading",
+        modelsProjectRef: event.projectRef,
+      };
+    case "models_loaded": {
+      if (state.selectedProjectRef !== event.catalog.projectRef) return state;
+      const keepCurrent =
+        state.selectedProvider
+        && state.selectedModelId
+        && event.catalog.models.some(
+          (item) => item.provider === state.selectedProvider && item.modelId === state.selectedModelId,
+        );
+      const selected = keepCurrent
+        ? { provider: state.selectedProvider!, modelId: state.selectedModelId! }
+        : defaultSelectedModel(event.catalog);
+      return {
+        ...state,
+        modelsPhase: "ready",
+        modelsProjectRef: event.catalog.projectRef,
+        models: event.catalog.models,
+        modelsTruncated: event.catalog.truncated,
+        selectedProvider: selected?.provider ?? null,
+        selectedModelId: selected?.modelId ?? null,
+        errorCode:
+          event.catalog.models.length === 0
+            ? "model_unavailable"
+            : state.errorCode === "model_unavailable"
+              ? null
+              : state.errorCode,
+      };
+    }
+    case "models_failed":
+      if (state.selectedProjectRef !== event.projectRef) return state;
+      return {
+        ...state,
+        modelsPhase: "error",
+        modelsProjectRef: event.projectRef,
+        models: [],
+        modelsTruncated: false,
+        selectedProvider: null,
+        selectedModelId: null,
+        errorCode: event.code === "model_unavailable" ? "model_unavailable" : state.errorCode,
+      };
+    case "select_model": {
+      if (state.phase === "submitting") return state;
+      if (
+        !state.models.some((item) => item.provider === event.provider && item.modelId === event.modelId)
+      ) {
+        return state;
+      }
+      const changed =
+        state.selectedProvider !== event.provider || state.selectedModelId !== event.modelId;
+      return {
+        ...state,
+        selectedProvider: event.provider,
+        selectedModelId: event.modelId,
+        requestId: changed ? null : state.requestId,
+        errorCode: state.phase === "error" && changed ? null : state.errorCode,
+        phase: state.phase === "success" ? "editing" : state.phase,
+        success: changed ? null : state.success,
+        openPicker: "none",
+        modelQuery: "",
       };
     }
     case "set_draft":
@@ -263,6 +457,7 @@ export function reduceQuickSessionState(
         requestId: state.requestId ?? newQuickSessionRequestId(),
         errorCode: null,
         success: null,
+        openPicker: "none",
       };
     }
     case "submit_success":
@@ -273,12 +468,14 @@ export function reduceQuickSessionState(
         requestId: null,
         errorCode: null,
         success: { sessionId: event.sessionId, deepLink: event.deepLink },
+        openPicker: "none",
       };
     case "submit_error":
       return {
         ...state,
         phase: "error",
         errorCode: event.code,
+        openPicker: "none",
       };
     case "retry":
       if (state.phase !== "error") return state;
@@ -287,6 +484,7 @@ export function reduceQuickSessionState(
           ...state,
           phase: "submitting",
           requestId: state.requestId ?? newQuickSessionRequestId(),
+          openPicker: "none",
         };
       }
       if (!canSubmitQuickSession({ ...state, phase: "error" })) return state;
@@ -295,6 +493,7 @@ export function reduceQuickSessionState(
         phase: "submitting",
         requestId: newQuickSessionRequestId(),
         errorCode: null,
+        openPicker: "none",
       };
     case "close":
       if (state.phase === "closed") return state;
@@ -302,6 +501,7 @@ export function reduceQuickSessionState(
         ...state,
         phase: "closed",
         success: null,
+        openPicker: "none",
       };
     case "cancel":
       return clearComposer(state);
@@ -313,6 +513,7 @@ export function reduceQuickSessionState(
         requestId: null,
         errorCode: null,
         success: null,
+        openPicker: "none",
       };
     default:
       return state;
@@ -325,4 +526,8 @@ export function isQuickSessionRequestId(value: string): boolean {
 
 export function isQuickSessionProjectRef(value: string): boolean {
   return DESKTOP_QUICK_SESSION_PROJECT_REF_PATTERN.test(value);
+}
+
+export function isQuickSessionModelRef(provider: string, modelId: string): boolean {
+  return isDesktopQuickSessionProvider(provider) && isDesktopQuickSessionModelId(modelId);
 }

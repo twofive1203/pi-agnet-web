@@ -71,7 +71,7 @@ npm run desktop:dev     # rebuilds when stale, then launches Electron
 `desktop:dev` does **not** start `spi`. Default probe origin: `http://127.0.0.1:62666`.
 Developer map: `desktop/README.md`.
 
-UI: drag the pet/body grip to move; pet chrome **×** hides to tray; Activity tray **⌄** only collapses the list; **⚙** opens local pet/notification preferences; tray Quit ends pet only.
+UI: drag the pet/body grip to move; pet chrome **×** hides to tray; Activity tray **−** only collapses the list; **⚙** opens local pet/notification preferences; tray Quit ends pet only.
 
 ### Packaged / installed
 

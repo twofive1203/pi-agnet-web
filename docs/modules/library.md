@@ -54,14 +54,15 @@ Shared logic lives under `lib/`. Prefer adding behavior here when it is used by 
 | `lib/desktop-control-constants.ts` | Control token header/TTL and `quick_session` capability/scope constants, safe for the pet bundle. |
 | `lib/desktop-control-access.ts` | Independent hashed control-token store with `quick_session` scope. Observer tokens are rejected. |
 | `lib/desktop-project-catalog.ts` | Bounded path-free project catalog and submit-time resolver. Public payload has no cwd/firstMessage. |
-| `lib/desktop-quick-session.ts` | Desktop create path: bounded input, default-model precheck, instance-scoped requestId idempotency. |
-| `lib/desktop-quick-session-limits.ts` | Shared message/requestId/projectRef limits for server and Electron. |
+| `lib/desktop-quick-session.ts` | Desktop create path: bounded input, optional explicit model or WebUI default, instance-scoped requestId idempotency. |
+| `lib/desktop-quick-session-models.ts` | Path-free model catalog and submit-time model resolver for a projectRef. |
+| `lib/desktop-quick-session-limits.ts` | Shared message/requestId/projectRef/model-id limits for server and Electron. |
 | `lib/model-metadata.ts` | Shared `/api/models` metadata cache and configured-default-or-first-available selection. |
 | `lib/new-agent-session.ts` | Shared new-session starter used by `/api/agent/new` and desktop create. |
 | `lib/desktop-deep-link.ts` | Allowlisted relative WebUI deep links for the desktop pet: builders for Agent/SnFlow/Automation/Quick Command, parse/validate (reject absolute/protocol-relative/cwd-bearing/unknown keys), one-time intent parse, loopback origin resolve, and intent-query strip helpers. Smoke: `scripts/smoke-desktop-deep-links.ts`. |
 | `desktop/main/connection-state.ts` | Pure attach-only connection state machine (`probing` / `connected` / `reconnecting` / `service-not-running` / `incompatible`) with copyable `spi --no-open`, additive `quickSessionAvailable`, and no process ownership. |
 | `desktop/main/observer-client.ts` | Main-process observer client: health → protocol → session token → live SSE (`/events` envelope unwrap + reconnect); optional server access key for session mint; injectable fetch/SSE transport; token/key never leave main memory; no child_process/PID/signal. Interprets additive protocol capabilities without failing old servers. |
-| `desktop/main/quick-session-client.ts` | Main-only control client: mints scoped control token, lists safe projects, creates one session. Never exposes token/cwd/message echo to renderer. |
+| `desktop/main/quick-session-client.ts` | Main-only control client: mints scoped control token, lists safe projects/models, creates one session. Never exposes token/cwd/message echo to renderer. |
 | `desktop/main/access-key-store.ts` | Main-only server access-key persistence via Electron `safeStorage` ciphertext file (`desktop-pet-access-key.json`); never written into settings JSON; memory-only fallback when encryption is unavailable. |
 | `scripts/build-desktop-pet.mjs` | esbuild bundle for desktop main/preload/renderer plus built-in pet asset validation. |
 | `scripts/run-desktop-pet.mjs` | Dev launcher: rebuild when stale, then spawn Electron (`npm run desktop:dev`). Does not start `spi`. |
@@ -83,7 +84,7 @@ Shared logic lives under `lib/`. Prefer adding behavior here when it is used by 
 | `desktop/renderer/pet-state.ts` | Renderer pure helpers: builtin pet manifests, reduced-motion frames, non-color cues, transition/revision-driven persistent/transient bubble reducer with DND gating (task bubbles silenced without replay, connection diagnostics visible), local All/Attention/Running/Completed filtering/counts, filtered-list selection/reset, keyboard movement, elapsed formatting, active-model formatting, compact context/TPS/cost-or-Token formatting, and the primary-activity context meter (`resolvePrimaryContextMeter`). Invalid v2 documents fall back to CSS snails. |
 | `desktop/renderer/pet-sheet.ts` | Pure spritesheet runtime math: cell→background-position/size, `steps()` animation, reduced-motion static frame, injectable per-pet stylesheet; null (CSS fallback) on non-spritesheet/missing bitmap. |
 | `desktop/renderer/pet-sheet-assets.ts` | Built-in sprite sheets inlined as `data:` URLs by esbuild; renderer-only import. |
-| `desktop/renderer/quick-session-state.ts` | Pure in-tray composer reducer: closed/loading/editing/submitting/success/error, in-memory draft, requestId reuse, and safe error copy. |
+| `desktop/renderer/quick-session-state.ts` | Pure in-tray composer reducer: compact project/model pickers, in-memory draft, requestId reuse, and safe error copy. |
 | `desktop/renderer/pet-app.tsx` (+ `pet-app.js`) | Pet + Activity tray UI with bounded transition-keyed bubbles, local filters, compact Agent model/resource rows, a pet-side primary-activity context ring, expandable safe Subagent summaries, separate open/read actions, an optional in-tray first-message composer, and position/size recovery; presentation only; honors reduced motion and keyboard. Dev preview may inject a sanitized static fixture; production preload never does. |
 | `forge.config.ts` | Pet-only Electron Forge config + `DESKTOP_PACKAGE_CONTRACT` / `DESKTOP_FORBIDDEN_BUNDLE_PATHS` (no Next/pi/node-pty/`spi` runtime; signing env placeholders). |
 | `desktop/package.json` | Private `snail-pi-pet` package metadata; not published with npm `spi`. |

@@ -1497,7 +1497,15 @@
       draft: "",
       requestId: null,
       errorCode: null,
-      success: null
+      success: null,
+      openPicker: "none",
+      modelQuery: "",
+      models: [],
+      modelsTruncated: false,
+      modelsProjectRef: null,
+      modelsPhase: "idle",
+      selectedProvider: null,
+      selectedModelId: null
     };
   }
   function newQuickSessionRequestId(random = Math.random) {
@@ -1510,6 +1518,7 @@
   function canSubmitQuickSession(state) {
     if (state.phase !== "editing" && state.phase !== "error") return false;
     if (!state.selectedProjectRef) return false;
+    if (state.modelsPhase === "ready" && state.models.length === 0) return false;
     const trimmed = state.draft.trim();
     if (!trimmed) return false;
     return countQuickSessionChars(state.draft) <= QUICK_SESSION_MAX_MESSAGE_CHARS;
@@ -1522,13 +1531,31 @@
       return hay.includes(needle);
     });
   }
+  function filterQuickSessionModels(models, query) {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return [...models];
+    return models.filter((model) => {
+      const hay = `${model.name} ${model.provider} ${model.modelId}`.toLowerCase();
+      return hay.includes(needle);
+    });
+  }
   function selectedQuickSessionProject(state) {
     if (!state.selectedProjectRef) return null;
     return state.projects.find((item) => item.projectRef === state.selectedProjectRef) ?? null;
   }
+  function selectedQuickSessionModel(state) {
+    if (!state.selectedProvider || !state.selectedModelId) return null;
+    return state.models.find(
+      (item) => item.provider === state.selectedProvider && item.modelId === state.selectedModelId
+    ) ?? null;
+  }
   function formatQuickSessionProjectLabel(project) {
-    if (!project) return "\u672A\u9009\u62E9\u9879\u76EE";
+    if (!project) return "\u9009\u62E9\u9879\u76EE";
     return project.disambiguator ? `${project.displayName} \xB7 ${project.disambiguator}` : project.displayName;
+  }
+  function formatQuickSessionModelLabel(model) {
+    if (!model) return "\u9ED8\u8BA4\u6A21\u578B";
+    return model.name === model.modelId ? `${model.name} \xB7 ${model.provider}` : model.name;
   }
   function quickSessionErrorText(code) {
     switch (code) {
@@ -1547,7 +1574,7 @@
       case "project_collision":
         return "\u9879\u76EE\u5F15\u7528\u51B2\u7A81\uFF0C\u65E0\u6CD5\u542F\u52A8\u3002";
       case "model_unavailable":
-        return "\u6CA1\u6709\u53EF\u7528\u7684\u9ED8\u8BA4\u6A21\u578B\uFF0C\u8BF7\u5148\u5728 WebUI \u914D\u7F6E\u6A21\u578B\u3002";
+        return "\u6CA1\u6709\u53EF\u7528\u6A21\u578B\uFF0C\u8BF7\u5148\u5728 WebUI \u914D\u7F6E\u6A21\u578B\u3002";
       case "message_empty":
         return "\u8BF7\u8F93\u5165\u9996\u6761\u6D88\u606F\u3002";
       case "message_too_long":
@@ -1567,6 +1594,29 @@
   function defaultSelectedRef(projects) {
     return projects[0]?.projectRef ?? null;
   }
+  function defaultSelectedModel(catalog) {
+    if (catalog.defaultModel) {
+      const match = catalog.models.find(
+        (item) => item.provider === catalog.defaultModel?.provider && item.modelId === catalog.defaultModel.modelId
+      );
+      if (match) return { provider: match.provider, modelId: match.modelId };
+    }
+    const first = catalog.models[0];
+    return first ? { provider: first.provider, modelId: first.modelId } : null;
+  }
+  function resetModels(state) {
+    return {
+      ...state,
+      modelQuery: "",
+      models: [],
+      modelsTruncated: false,
+      modelsProjectRef: null,
+      modelsPhase: "idle",
+      selectedProvider: null,
+      selectedModelId: null,
+      openPicker: state.openPicker === "model" ? "none" : state.openPicker
+    };
+  }
   function clearComposer(state) {
     return {
       ...state,
@@ -1575,7 +1625,15 @@
       draft: "",
       requestId: null,
       errorCode: null,
-      success: null
+      success: null,
+      openPicker: "none",
+      modelQuery: "",
+      models: [],
+      modelsTruncated: false,
+      modelsProjectRef: null,
+      modelsPhase: "idle",
+      selectedProvider: null,
+      selectedModelId: null
     };
   }
   function reduceQuickSessionState(state, event) {
@@ -1587,25 +1645,30 @@
           phase: "loading",
           errorCode: null,
           success: null,
-          requestId: null
+          requestId: null,
+          openPicker: "none"
         };
       case "catalog_loaded": {
         const selected = event.catalog.projects.some((item) => item.projectRef === state.selectedProjectRef) ? state.selectedProjectRef : defaultSelectedRef(event.catalog.projects);
-        return {
+        const projectChanged = selected !== state.selectedProjectRef;
+        const next = {
           ...state,
           phase: "editing",
           projects: event.catalog.projects,
           truncated: event.catalog.truncated,
           omitted: event.catalog.omitted,
           selectedProjectRef: selected,
-          errorCode: event.catalog.projects.length === 0 ? "project_unknown" : null
+          errorCode: event.catalog.projects.length === 0 ? "project_unknown" : null,
+          openPicker: "none"
         };
+        return projectChanged ? resetModels(next) : next;
       }
       case "catalog_failed":
         return {
           ...state,
           phase: "error",
-          errorCode: event.code
+          errorCode: event.code,
+          openPicker: "none"
         };
       case "set_query":
         if (state.phase === "submitting") return state;
@@ -1614,13 +1677,82 @@
         if (state.phase === "submitting") return state;
         if (!state.projects.some((item) => item.projectRef === event.projectRef)) return state;
         const changed = state.selectedProjectRef !== event.projectRef;
-        return {
+        const next = {
           ...state,
           selectedProjectRef: event.projectRef,
           requestId: changed ? null : state.requestId,
           errorCode: state.phase === "error" && changed ? null : state.errorCode,
           phase: state.phase === "success" ? "editing" : state.phase,
-          success: changed ? null : state.success
+          success: changed ? null : state.success,
+          openPicker: "none",
+          query: ""
+        };
+        return changed ? resetModels(next) : next;
+      }
+      case "toggle_picker":
+        if (state.phase === "submitting" || state.phase === "success") return state;
+        return {
+          ...state,
+          openPicker: state.openPicker === event.picker ? "none" : event.picker
+        };
+      case "close_picker":
+        if (state.openPicker === "none") return state;
+        return { ...state, openPicker: "none" };
+      case "set_model_query":
+        if (state.phase === "submitting") return state;
+        return { ...state, modelQuery: event.query };
+      case "models_loading":
+        if (state.selectedProjectRef !== event.projectRef) return state;
+        return {
+          ...state,
+          modelsPhase: "loading",
+          modelsProjectRef: event.projectRef
+        };
+      case "models_loaded": {
+        if (state.selectedProjectRef !== event.catalog.projectRef) return state;
+        const keepCurrent = state.selectedProvider && state.selectedModelId && event.catalog.models.some(
+          (item) => item.provider === state.selectedProvider && item.modelId === state.selectedModelId
+        );
+        const selected = keepCurrent ? { provider: state.selectedProvider, modelId: state.selectedModelId } : defaultSelectedModel(event.catalog);
+        return {
+          ...state,
+          modelsPhase: "ready",
+          modelsProjectRef: event.catalog.projectRef,
+          models: event.catalog.models,
+          modelsTruncated: event.catalog.truncated,
+          selectedProvider: selected?.provider ?? null,
+          selectedModelId: selected?.modelId ?? null,
+          errorCode: event.catalog.models.length === 0 ? "model_unavailable" : state.errorCode === "model_unavailable" ? null : state.errorCode
+        };
+      }
+      case "models_failed":
+        if (state.selectedProjectRef !== event.projectRef) return state;
+        return {
+          ...state,
+          modelsPhase: "error",
+          modelsProjectRef: event.projectRef,
+          models: [],
+          modelsTruncated: false,
+          selectedProvider: null,
+          selectedModelId: null,
+          errorCode: event.code === "model_unavailable" ? "model_unavailable" : state.errorCode
+        };
+      case "select_model": {
+        if (state.phase === "submitting") return state;
+        if (!state.models.some((item) => item.provider === event.provider && item.modelId === event.modelId)) {
+          return state;
+        }
+        const changed = state.selectedProvider !== event.provider || state.selectedModelId !== event.modelId;
+        return {
+          ...state,
+          selectedProvider: event.provider,
+          selectedModelId: event.modelId,
+          requestId: changed ? null : state.requestId,
+          errorCode: state.phase === "error" && changed ? null : state.errorCode,
+          phase: state.phase === "success" ? "editing" : state.phase,
+          success: changed ? null : state.success,
+          openPicker: "none",
+          modelQuery: ""
         };
       }
       case "set_draft":
@@ -1640,7 +1772,8 @@
           phase: "submitting",
           requestId: state.requestId ?? newQuickSessionRequestId(),
           errorCode: null,
-          success: null
+          success: null,
+          openPicker: "none"
         };
       }
       case "submit_success":
@@ -1650,13 +1783,15 @@
           draft: "",
           requestId: null,
           errorCode: null,
-          success: { sessionId: event.sessionId, deepLink: event.deepLink }
+          success: { sessionId: event.sessionId, deepLink: event.deepLink },
+          openPicker: "none"
         };
       case "submit_error":
         return {
           ...state,
           phase: "error",
-          errorCode: event.code
+          errorCode: event.code,
+          openPicker: "none"
         };
       case "retry":
         if (state.phase !== "error") return state;
@@ -1664,7 +1799,8 @@
           return {
             ...state,
             phase: "submitting",
-            requestId: state.requestId ?? newQuickSessionRequestId()
+            requestId: state.requestId ?? newQuickSessionRequestId(),
+            openPicker: "none"
           };
         }
         if (!canSubmitQuickSession({ ...state, phase: "error" })) return state;
@@ -1672,14 +1808,16 @@
           ...state,
           phase: "submitting",
           requestId: newQuickSessionRequestId(),
-          errorCode: null
+          errorCode: null,
+          openPicker: "none"
         };
       case "close":
         if (state.phase === "closed") return state;
         return {
           ...state,
           phase: "closed",
-          success: null
+          success: null,
+          openPicker: "none"
         };
       case "cancel":
         return clearComposer(state);
@@ -1690,7 +1828,8 @@
           draft: "",
           requestId: null,
           errorCode: null,
-          success: null
+          success: null,
+          openPicker: "none"
         };
       default:
         return state;
@@ -1735,9 +1874,13 @@
     const quickSessionPanel = root.getElementById("quick-session-panel");
     const qsStatus = root.getElementById("qs-status");
     const qsSelected = root.getElementById("qs-selected");
-    const qsProjectSearch = root.getElementById("qs-project-search");
-    const qsProjectList = root.getElementById("qs-project-list");
-    const qsTruncated = root.getElementById("qs-truncated");
+    const qsModelSelected = root.getElementById("qs-model-selected");
+    const qsProjectTrigger = root.getElementById("qs-project-trigger");
+    const qsModelTrigger = root.getElementById("qs-model-trigger");
+    const qsPicker = root.getElementById("qs-picker");
+    const qsPickerSearch = root.getElementById("qs-picker-search");
+    const qsPickerList = root.getElementById("qs-picker-list");
+    const qsPickerNote = root.getElementById("qs-picker-note");
     const qsMessage = root.getElementById("qs-message");
     const qsCount = root.getElementById("qs-count");
     const qsError = root.getElementById("qs-error");
@@ -1783,6 +1926,7 @@
     let quickSession = createInitialQuickSessionState();
     let qsImeComposing = false;
     let qsSubmitInFlight = false;
+    let qsModelsInFlight = null;
     let trayMoreOpen = false;
     let idleBlinkTimer = null;
     let idleActTimer = null;
@@ -2677,6 +2821,37 @@
         omitted: typeof source.omitted === "number" ? source.omitted : 0
       };
     }
+    function parseQuickSessionModelCatalog(payload) {
+      if (!payload || typeof payload !== "object") return null;
+      const record = payload;
+      const source = record.catalog && typeof record.catalog === "object" ? record.catalog : record;
+      if (typeof source.projectRef !== "string" || !Array.isArray(source.models)) return null;
+      const models = source.models.flatMap((item) => {
+        if (!item || typeof item !== "object") return [];
+        const row = item;
+        if (typeof row.provider !== "string" || typeof row.modelId !== "string" || typeof row.name !== "string") {
+          return [];
+        }
+        return [{
+          provider: row.provider,
+          modelId: row.modelId,
+          name: row.name,
+          primaryCandidate: row.primaryCandidate === true
+        }];
+      });
+      const rawDefault = source.defaultModel && typeof source.defaultModel === "object" ? source.defaultModel : null;
+      return {
+        projectRef: source.projectRef,
+        defaultModel: rawDefault && typeof rawDefault.provider === "string" && typeof rawDefault.modelId === "string" ? { provider: rawDefault.provider, modelId: rawDefault.modelId } : null,
+        models,
+        truncated: source.truncated === true
+      };
+    }
+    function shouldLoadQuickSessionModels(state, options) {
+      return Boolean(
+        state.selectedProjectRef && state.phase !== "closed" && (state.modelsPhase === "idle" || options?.retryError === true && state.modelsPhase === "error" || state.modelsProjectRef !== state.selectedProjectRef)
+      );
+    }
     async function loadQuickSessionCatalog() {
       applyQuickSession({ type: "open" });
       if (!bridge?.listQuickSessionProjects) {
@@ -2704,6 +2879,42 @@
         applyQuickSession({ type: "catalog_failed", code: "result_unknown" });
       }
     }
+    async function loadQuickSessionModels(options) {
+      const projectRef = quickSession.selectedProjectRef;
+      if (!projectRef || !shouldLoadQuickSessionModels(quickSession, options)) return;
+      if (qsModelsInFlight === projectRef) return;
+      if (!bridge?.listQuickSessionModels) {
+        applyQuickSession({ type: "models_failed", projectRef, code: "feature_unavailable" });
+        return;
+      }
+      qsModelsInFlight = projectRef;
+      applyQuickSession({ type: "models_loading", projectRef });
+      try {
+        const payload = await bridge.listQuickSessionModels(projectRef);
+        if (quickSession.selectedProjectRef !== projectRef) return;
+        if (payload && typeof payload === "object" && payload.ok === false) {
+          const code = payload.code;
+          applyQuickSession({
+            type: "models_failed",
+            projectRef,
+            code: typeof code === "string" ? code : "result_unknown"
+          });
+          return;
+        }
+        const catalog = parseQuickSessionModelCatalog(payload);
+        if (!catalog) {
+          applyQuickSession({ type: "models_failed", projectRef, code: "result_unknown" });
+          return;
+        }
+        applyQuickSession({ type: "models_loaded", catalog });
+      } catch {
+        if (quickSession.selectedProjectRef === projectRef) {
+          applyQuickSession({ type: "models_failed", projectRef, code: "result_unknown" });
+        }
+      } finally {
+        if (qsModelsInFlight === projectRef) qsModelsInFlight = null;
+      }
+    }
     async function submitQuickSession() {
       if (qsSubmitInFlight) return;
       if (quickSession.phase !== "submitting") {
@@ -2721,7 +2932,11 @@
         const payload = await bridge.createQuickSession({
           projectRef: quickSession.selectedProjectRef,
           message: quickSession.draft,
-          requestId: quickSession.requestId
+          requestId: quickSession.requestId,
+          ...quickSession.selectedProvider && quickSession.selectedModelId ? {
+            provider: quickSession.selectedProvider,
+            modelId: quickSession.selectedModelId
+          } : {}
         });
         if (payload && typeof payload === "object" && payload.ok === false) {
           const code = payload.code;
@@ -2747,6 +2962,113 @@
         qsSubmitInFlight = false;
       }
     }
+    function renderQuickSessionPicker() {
+      const picker = quickSession.openPicker;
+      const submitting = quickSession.phase === "submitting";
+      const success = quickSession.phase === "success";
+      const pickerOpen = picker !== "none" && !success;
+      if (qsPicker) {
+        qsPicker.hidden = !pickerOpen;
+        qsPicker.dataset.align = pickerOpen ? picker : "";
+      }
+      if (qsProjectTrigger) {
+        qsProjectTrigger.disabled = submitting || success;
+        qsProjectTrigger.setAttribute("aria-expanded", picker === "project" ? "true" : "false");
+      }
+      if (qsModelTrigger) {
+        qsModelTrigger.disabled = submitting || success || !quickSession.selectedProjectRef;
+        qsModelTrigger.setAttribute("aria-expanded", picker === "model" ? "true" : "false");
+      }
+      if (!qsPickerList || !pickerOpen) return;
+      const query = picker === "model" ? quickSession.modelQuery : quickSession.query;
+      if (qsPickerSearch && qsPickerSearch.value !== query) qsPickerSearch.value = query;
+      if (qsPickerSearch) {
+        qsPickerSearch.disabled = submitting;
+        qsPickerSearch.placeholder = picker === "model" ? "\u641C\u7D22\u6A21\u578B" : "\u641C\u7D22\u9879\u76EE";
+      }
+      const signature = picker === "model" ? `model:${query}:${quickSession.models.length}:${quickSession.modelsPhase}` : `project:${query}:${quickSession.projects.length}:${quickSession.phase}`;
+      const selectedKey = picker === "model" ? `${quickSession.selectedProvider ?? ""}\0${quickSession.selectedModelId ?? ""}` : quickSession.selectedProjectRef ?? "";
+      if (qsPickerList.dataset.signature === signature) {
+        for (const option of qsPickerList.querySelectorAll("[role='option']")) {
+          const key = picker === "model" ? `${option.dataset.provider ?? ""}\0${option.dataset.modelId ?? ""}` : option.dataset.projectRef ?? "";
+          option.setAttribute("aria-selected", key === selectedKey ? "true" : "false");
+        }
+      } else {
+        qsPickerList.replaceChildren();
+        if (picker === "model") {
+          const visible = filterQuickSessionModels(quickSession.models, query);
+          if (quickSession.modelsPhase === "loading" || visible.length === 0) {
+            const empty = document.createElement("div");
+            empty.className = "qs-picker-empty";
+            empty.textContent = quickSession.modelsPhase === "loading" ? "\u6B63\u5728\u52A0\u8F7D\u6A21\u578B\u2026" : quickSession.modelsPhase === "error" ? "\u6A21\u578B\u5217\u8868\u52A0\u8F7D\u5931\u8D25" : quickSession.models.length === 0 ? "\u5F53\u524D\u6CA1\u6709\u53EF\u7528\u6A21\u578B" : "\u6CA1\u6709\u5339\u914D\u7684\u6A21\u578B";
+            qsPickerList.appendChild(empty);
+          } else {
+            for (const model of visible) {
+              const option = document.createElement("button");
+              option.type = "button";
+              option.className = "qs-picker-option";
+              option.dataset.provider = model.provider;
+              option.dataset.modelId = model.modelId;
+              option.setAttribute("role", "option");
+              option.setAttribute(
+                "aria-selected",
+                model.provider === quickSession.selectedProvider && model.modelId === quickSession.selectedModelId ? "true" : "false"
+              );
+              option.disabled = submitting;
+              const name = document.createElement("span");
+              name.textContent = model.name;
+              option.appendChild(name);
+              const meta = document.createElement("span");
+              meta.className = "qs-picker-meta";
+              meta.textContent = model.primaryCandidate ? `${model.provider} \xB7 \u6536\u85CF` : model.provider;
+              option.appendChild(meta);
+              qsPickerList.appendChild(option);
+            }
+          }
+        } else {
+          const visible = filterQuickSessionProjects(quickSession.projects, query);
+          if (visible.length === 0) {
+            const empty = document.createElement("div");
+            empty.className = "qs-picker-empty";
+            empty.textContent = quickSession.phase === "loading" ? "\u6B63\u5728\u52A0\u8F7D\u9879\u76EE\u2026" : quickSession.projects.length === 0 ? "\u5F53\u524D\u6CA1\u6709\u53EF\u542F\u52A8\u7684\u9879\u76EE" : "\u6CA1\u6709\u5339\u914D\u7684\u9879\u76EE";
+            qsPickerList.appendChild(empty);
+          } else {
+            for (const project of visible) {
+              const option = document.createElement("button");
+              option.type = "button";
+              option.className = "qs-picker-option";
+              option.dataset.projectRef = project.projectRef;
+              option.setAttribute("role", "option");
+              option.setAttribute(
+                "aria-selected",
+                project.projectRef === quickSession.selectedProjectRef ? "true" : "false"
+              );
+              option.disabled = submitting;
+              const name = document.createElement("span");
+              name.textContent = project.displayName;
+              option.appendChild(name);
+              if (project.disambiguator) {
+                const meta = document.createElement("span");
+                meta.className = "qs-picker-meta";
+                meta.textContent = project.disambiguator;
+                option.appendChild(meta);
+              }
+              qsPickerList.appendChild(option);
+            }
+          }
+        }
+        qsPickerList.dataset.signature = signature;
+      }
+      if (qsPickerNote) {
+        if (picker === "model") {
+          qsPickerNote.hidden = !quickSession.modelsTruncated;
+          qsPickerNote.textContent = "\u4EC5\u663E\u793A\u6536\u85CF/\u9ED8\u8BA4\u77ED\u540D\u5355";
+        } else {
+          qsPickerNote.hidden = !quickSession.truncated;
+          qsPickerNote.textContent = "\u4EC5\u663E\u793A\u6700\u8FD1 100 \u4E2A\u9879\u76EE";
+        }
+      }
+    }
     function renderQuickSessionPanel(view) {
       if (!quickSessionPanel || quickSession.phase === "closed" || settingsOpen) return;
       const submitting = quickSession.phase === "submitting";
@@ -2760,57 +3082,15 @@
         qsSelected.textContent = formatQuickSessionProjectLabel(selectedProject);
         qsSelected.classList.toggle("is-empty", selectedProject == null);
       }
-      if (qsProjectSearch && qsProjectSearch.value !== quickSession.query) {
-        qsProjectSearch.value = quickSession.query;
+      const selectedModel = selectedQuickSessionModel(quickSession);
+      if (qsModelSelected) {
+        qsModelSelected.textContent = quickSession.modelsPhase === "loading" ? "\u52A0\u8F7D\u6A21\u578B\u2026" : formatQuickSessionModelLabel(selectedModel);
+        qsModelSelected.classList.toggle(
+          "is-empty",
+          selectedModel == null && quickSession.modelsPhase !== "loading"
+        );
       }
-      if (qsProjectSearch) qsProjectSearch.disabled = submitting || success;
-      if (qsProjectList) {
-        const sameQuery = qsProjectList.dataset.query === quickSession.query && qsProjectList.dataset.count === String(quickSession.projects.length);
-        const existingOptions = sameQuery ? Array.from(qsProjectList.querySelectorAll("[data-project-ref]")) : [];
-        if (existingOptions.length > 0) {
-          for (const option of existingOptions) {
-            option.setAttribute(
-              "aria-selected",
-              option.dataset.projectRef === quickSession.selectedProjectRef ? "true" : "false"
-            );
-          }
-        } else {
-          qsProjectList.replaceChildren();
-          const visible = filterQuickSessionProjects(quickSession.projects, quickSession.query);
-          if (visible.length === 0) {
-            const empty = document.createElement("div");
-            empty.className = "qs-project-empty";
-            empty.textContent = quickSession.phase === "loading" ? "\u6B63\u5728\u52A0\u8F7D\u9879\u76EE\u2026" : quickSession.projects.length === 0 ? "\u5F53\u524D\u6CA1\u6709\u53EF\u542F\u52A8\u7684\u9879\u76EE" : "\u6CA1\u6709\u5339\u914D\u7684\u9879\u76EE";
-            qsProjectList.appendChild(empty);
-          } else {
-            for (const project of visible) {
-              const option = document.createElement("button");
-              option.type = "button";
-              option.className = "qs-project-option";
-              option.dataset.projectRef = project.projectRef;
-              option.setAttribute("role", "option");
-              option.setAttribute(
-                "aria-selected",
-                project.projectRef === quickSession.selectedProjectRef ? "true" : "false"
-              );
-              option.disabled = submitting || success;
-              const name = document.createElement("span");
-              name.textContent = project.displayName;
-              option.appendChild(name);
-              if (project.disambiguator) {
-                const meta = document.createElement("span");
-                meta.className = "qs-project-meta";
-                meta.textContent = project.disambiguator;
-                option.appendChild(meta);
-              }
-              qsProjectList.appendChild(option);
-            }
-          }
-          qsProjectList.dataset.query = quickSession.query;
-          qsProjectList.dataset.count = String(quickSession.projects.length);
-        }
-      }
-      if (qsTruncated) qsTruncated.hidden = !quickSession.truncated;
+      renderQuickSessionPicker();
       if (qsMessage && qsMessage.value !== quickSession.draft) qsMessage.value = quickSession.draft;
       if (qsMessage) qsMessage.disabled = submitting || success;
       const used = countQuickSessionChars(quickSession.draft);
@@ -2826,8 +3106,9 @@
       if (qsSuccess) qsSuccess.hidden = !success;
       if (qsSuccessText && success && quickSession.success) {
         const project = selectedQuickSessionProject(quickSession);
+        const model = selectedQuickSessionModel(quickSession);
         const shortId = quickSession.success.sessionId.slice(0, 8);
-        qsSuccessText.textContent = `${project?.displayName ?? "\u9879\u76EE"} \u5DF2\u542F\u52A8 \xB7 ${shortId}`;
+        qsSuccessText.textContent = model ? `${project?.displayName ?? "\u9879\u76EE"} \xB7 ${model.name} \u5DF2\u542F\u52A8 \xB7 ${shortId}` : `${project?.displayName ?? "\u9879\u76EE"} \u5DF2\u542F\u52A8 \xB7 ${shortId}`;
       }
       if (qsEditActions) qsEditActions.hidden = success;
       if (btnQsSubmit) {
@@ -2836,6 +3117,9 @@
           phase: quickSession.phase === "error" ? "error" : "editing"
         });
         btnQsSubmit.textContent = submitting ? "\u542F\u52A8\u4E2D\u2026" : quickSession.phase === "error" ? "\u91CD\u8BD5" : "\u542F\u52A8";
+      }
+      if (shouldLoadQuickSessionModels(quickSession)) {
+        void loadQuickSessionModels();
       }
     }
     function childUpdatedText(updatedAt) {
@@ -3165,8 +3449,12 @@
     trayMoreMenu?.addEventListener("click", (event) => {
       event.stopPropagation();
     });
-    const onRootClick = () => {
+    const onRootClick = (event) => {
       if (trayMoreOpen) setTrayMoreOpen(false);
+      if (quickSession.openPicker === "none") return;
+      const target = event.target instanceof Element ? event.target : null;
+      if (target?.closest("#qs-picker, #qs-project-trigger, #qs-model-trigger")) return;
+      applyQuickSession({ type: "close_picker" });
     };
     root.addEventListener("click", onRootClick);
     btnMarkAll?.addEventListener("click", () => {
@@ -3232,14 +3520,39 @@
       }
       applyQuickSession({ type: "close" });
     });
-    qsProjectSearch?.addEventListener("input", () => {
-      applyQuickSession({ type: "set_query", query: qsProjectSearch.value });
+    qsProjectTrigger?.addEventListener("click", () => {
+      applyQuickSession({ type: "toggle_picker", picker: "project" });
+      if (quickSession.openPicker === "project") qsPickerSearch?.focus();
     });
-    qsProjectList?.addEventListener("click", (event) => {
-      const target = event.target instanceof Element ? event.target.closest("[data-project-ref]") : null;
-      const projectRef = target?.dataset.projectRef;
+    qsModelTrigger?.addEventListener("click", () => {
+      applyQuickSession({ type: "toggle_picker", picker: "model" });
+      if (quickSession.openPicker === "model") {
+        void loadQuickSessionModels({ retryError: true });
+        qsPickerSearch?.focus();
+      }
+    });
+    qsPickerSearch?.addEventListener("input", () => {
+      if (quickSession.openPicker === "model") {
+        applyQuickSession({ type: "set_model_query", query: qsPickerSearch.value });
+        return;
+      }
+      applyQuickSession({ type: "set_query", query: qsPickerSearch.value });
+    });
+    qsPickerList?.addEventListener("click", (event) => {
+      const target = event.target instanceof Element ? event.target.closest("[role='option']") : null;
+      if (!target) return;
+      if (quickSession.openPicker === "model") {
+        const provider = target.dataset.provider;
+        const modelId = target.dataset.modelId;
+        if (!provider || !modelId) return;
+        applyQuickSession({ type: "select_model", provider, modelId });
+        qsMessage?.focus();
+        return;
+      }
+      const projectRef = target.dataset.projectRef;
       if (!projectRef) return;
       applyQuickSession({ type: "select_project", projectRef });
+      qsMessage?.focus();
     });
     qsMessage?.addEventListener("compositionstart", () => {
       qsImeComposing = true;
@@ -3386,7 +3699,9 @@
       }
       if (event.key === "Escape") {
         event.preventDefault();
-        if (selectedVisibleActivityId && expandedActivityIds.has(selectedVisibleActivityId)) {
+        if (quickSession.openPicker !== "none") {
+          applyQuickSession({ type: "close_picker" });
+        } else if (selectedVisibleActivityId && expandedActivityIds.has(selectedVisibleActivityId)) {
           expandedActivityIds.delete(selectedVisibleActivityId);
           update(current);
           focusActivityRow(selectedVisibleActivityId);

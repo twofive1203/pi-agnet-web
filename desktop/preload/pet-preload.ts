@@ -57,11 +57,15 @@ export type SnailPetBridge = {
   rescanCustomPets: () => void;
   /** Fetch the current path-free project catalog (no cwd/token). */
   listQuickSessionProjects: () => Promise<unknown>;
-  /** Start one session; renderer supplies only projectRef + message + requestId. */
+  /** Fetch the path-free model catalog for one projectRef. */
+  listQuickSessionModels: (projectRef: string) => Promise<unknown>;
+  /** Start one session; renderer supplies only projectRef + message + requestId + optional model. */
   createQuickSession: (input: {
     projectRef: string;
     message: string;
     requestId: string;
+    provider?: string;
+    modelId?: string;
   }) => Promise<unknown>;
 };
 
@@ -133,6 +137,7 @@ const bridge: SnailPetBridge = {
   openCustomPetsDir: () => invoke(PET_IPC_CHANNELS.openCustomPetsDir),
   rescanCustomPets: () => send(PET_IPC_CHANNELS.rescanCustomPets),
   listQuickSessionProjects: () => invoke(PET_IPC_CHANNELS.listQuickSessionProjects),
+  listQuickSessionModels: (projectRef) => invoke(PET_IPC_CHANNELS.listQuickSessionModels, projectRef),
   createQuickSession: (input) => invoke(PET_IPC_CHANNELS.createQuickSession, input),
 };
 

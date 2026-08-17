@@ -122,7 +122,7 @@
               title="收起活动列表"
               aria-label="收起活动列表"
             >
-              ⌄
+              −
             </button>
           </div>
         </header>
@@ -254,23 +254,51 @@
         </section>
         <section id="quick-session-panel" class="quick-session-panel" hidden aria-label="快速会话">
           <p id="qs-status" class="qs-status" hidden></p>
-          <label class="qs-label" for="qs-project-search">项目</label>
-          <p id="qs-selected" class="qs-selected">未选择项目</p>
-          <input
-            id="qs-project-search"
-            class="qs-input"
-            type="search"
-            autocomplete="off"
-            spellcheck="false"
-            placeholder="搜索项目"
-          />
-          <div id="qs-project-list" class="qs-project-list" role="listbox" aria-label="可选项目"></div>
-          <p id="qs-truncated" class="qs-note" hidden>仅显示最近 100 个项目</p>
+          <div class="qs-toolbar">
+            <div class="qs-field">
+              <button
+                type="button"
+                id="qs-project-trigger"
+                class="qs-chip"
+                aria-expanded="false"
+                aria-haspopup="listbox"
+                aria-controls="qs-picker"
+              >
+                <span class="qs-chip-kicker">项目</span>
+                <span id="qs-selected" class="qs-chip-value">选择项目</span>
+              </button>
+            </div>
+            <div class="qs-field">
+              <button
+                type="button"
+                id="qs-model-trigger"
+                class="qs-chip"
+                aria-expanded="false"
+                aria-haspopup="listbox"
+                aria-controls="qs-picker"
+              >
+                <span class="qs-chip-kicker">模型</span>
+                <span id="qs-model-selected" class="qs-chip-value">默认模型</span>
+              </button>
+            </div>
+            <div id="qs-picker" class="qs-picker" hidden>
+              <input
+                id="qs-picker-search"
+                class="qs-input"
+                type="search"
+                autocomplete="off"
+                spellcheck="false"
+                placeholder="搜索"
+              />
+              <div id="qs-picker-list" class="qs-picker-list" role="listbox" aria-label="可选项"></div>
+              <p id="qs-picker-note" class="qs-note" hidden></p>
+            </div>
+          </div>
           <label class="qs-label" for="qs-message">首条消息</label>
           <textarea
             id="qs-message"
             class="qs-textarea"
-            rows="4"
+            rows="6"
             maxlength="8000"
             placeholder="交代一句任务，Ctrl+Enter 启动"
           ></textarea>

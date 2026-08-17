@@ -16,7 +16,7 @@ This is a **narrow write surface**, not a second Chat client and not an observer
 - observer tokens stay read-only;
 - a separate scoped `desktop-control` token lives only in Electron main;
 - renderer never receives raw cwd, access keys, control/observer tokens, or historical Prompt;
-- the first release sends only the first text message with WebUI default model/thinking/tool semantics.
+- the first-message composer can pick a project and an available model; thinking/tool presets stay on WebUI defaults.
 
 ## What this narrows
 
@@ -33,7 +33,7 @@ Unchanged observer ADR constraints:
 
 ```text
 Pet renderer
-  → narrow preload (list/create only)
+  → narrow preload (list projects/models + create)
   → Electron main (control token + access key)
   → /api/desktop-control/**
   → shared new-session starter
@@ -48,6 +48,7 @@ Pet renderer
 | --- | --- | --- |
 | `/api/desktop-control/session` | POST | Mint a 5-minute hashed control token with `quick_session` scope. |
 | `/api/desktop-control/projects` | GET | Bounded path-free project catalog. |
+| `/api/desktop-control/models` | GET | Bounded path-free model catalog for one `projectRef`. |
 | `/api/desktop-control/quick-sessions` | POST | Create one session and dispatch the first Prompt. |
 
 Gate: proven IPv4 loopback + Host `127.0.0.1` + Origin exact/absent + server-mode access key at mint. Proxy may skip browser cookie/HTTPS only for proven loopback; routes still enforce their own Host/remote/token checks. Control namespace is never public.
@@ -68,7 +69,7 @@ Project identity reuses `buildProjectKeyFromCwd()`. Public items contain only `p
 
 ### Session start
 
-Browser `/api/agent/new` and desktop create share `lib/new-agent-session.ts`. Desktop always uses configured default model or the first available model, default thinking, and `all` tools. Empty model list returns `model_unavailable` before session creation.
+Browser `/api/agent/new` and desktop create share `lib/new-agent-session.ts`. Desktop may send an explicit available `provider`/`modelId`; omitted or empty selection still uses the WebUI configured default, else the first available model. Thinking and tools stay at default/`all`. Unknown or empty model lists return `model_unavailable` before session creation.
 
 Idempotency is process/instance scoped: same `requestId` + body hash shares one in-flight/terminal outcome for 10 minutes. Different hash with the same id is a conflict. Pure precheck failures do not occupy the registry. Instance change invalidates tokens and forbids automatic replay.
 

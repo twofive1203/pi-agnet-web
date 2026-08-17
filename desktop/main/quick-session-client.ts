@@ -11,8 +11,11 @@ import {
 } from "../../lib/desktop-control-constants";
 import {
   DESKTOP_QUICK_SESSION_MAX_MESSAGE_CHARS,
+  DESKTOP_QUICK_SESSION_MODEL_LIST_LIMIT,
   DESKTOP_QUICK_SESSION_PROJECT_REF_PATTERN,
   DESKTOP_QUICK_SESSION_REQUEST_ID_PATTERN,
+  isDesktopQuickSessionModelId,
+  isDesktopQuickSessionProvider,
 } from "../../lib/desktop-quick-session-limits";
 import {
   buildDesktopOrigin,
@@ -61,6 +64,20 @@ export type DesktopQuickSessionStartResult = {
   sessionId: string;
   deepLink: string;
   duplicate: boolean;
+};
+
+export type DesktopQuickSessionModel = {
+  provider: string;
+  modelId: string;
+  name: string;
+  primaryCandidate: boolean;
+};
+
+export type DesktopQuickSessionModelCatalog = {
+  projectRef: string;
+  defaultModel: { provider: string; modelId: string } | null;
+  models: DesktopQuickSessionModel[];
+  truncated: boolean;
 };
 
 export type DesktopQuickSessionClientSuccess<T> = { ok: true; value: T };
@@ -171,6 +188,53 @@ function parseCatalog(payload: unknown): DesktopQuickSessionCatalog | null {
   return catalog;
 }
 
+function parseModelCatalog(payload: unknown): DesktopQuickSessionModelCatalog | null {
+  if (!payload || typeof payload !== "object") return null;
+  const record = payload as Record<string, unknown>;
+  if (typeof record.projectRef !== "string" || !DESKTOP_QUICK_SESSION_PROJECT_REF_PATTERN.test(record.projectRef)) {
+    return null;
+  }
+  if (!Array.isArray(record.models)) return null;
+  const models: DesktopQuickSessionModel[] = [];
+  for (const item of record.models) {
+    if (!item || typeof item !== "object") return null;
+    const row = item as Record<string, unknown>;
+    if (typeof row.provider !== "string" || !isDesktopQuickSessionProvider(row.provider)) return null;
+    if (typeof row.modelId !== "string" || !isDesktopQuickSessionModelId(row.modelId)) return null;
+    if (typeof row.name !== "string" || !row.name.trim()) return null;
+    models.push({
+      provider: row.provider,
+      modelId: row.modelId,
+      name: row.name.trim(),
+      primaryCandidate: row.primaryCandidate === true,
+    });
+    if (models.length > DESKTOP_QUICK_SESSION_MODEL_LIST_LIMIT) return null;
+  }
+  let defaultModel: { provider: string; modelId: string } | null = null;
+  if (record.defaultModel && typeof record.defaultModel === "object") {
+    const selected = record.defaultModel as Record<string, unknown>;
+    if (
+      typeof selected.provider !== "string"
+      || typeof selected.modelId !== "string"
+      || !isDesktopQuickSessionProvider(selected.provider)
+      || !isDesktopQuickSessionModelId(selected.modelId)
+    ) {
+      return null;
+    }
+    defaultModel = { provider: selected.provider, modelId: selected.modelId };
+  } else if (record.defaultModel != null) {
+    return null;
+  }
+  const catalog: DesktopQuickSessionModelCatalog = {
+    projectRef: record.projectRef,
+    defaultModel,
+    models,
+    truncated: record.truncated === true,
+  };
+  assertSafePayload(catalog);
+  return catalog;
+}
+
 function parseStartResult(payload: unknown): DesktopQuickSessionStartResult | null {
   if (!payload || typeof payload !== "object") return null;
   const record = payload as Record<string, unknown>;
@@ -189,7 +253,15 @@ export function sanitizeQuickSessionCreateInput(input: {
   projectRef?: unknown;
   message?: unknown;
   requestId?: unknown;
-}): DesktopQuickSessionClientFailure | { projectRef: string; message: string; requestId: string } {
+  provider?: unknown;
+  modelId?: unknown;
+}): DesktopQuickSessionClientFailure | {
+  projectRef: string;
+  message: string;
+  requestId: string;
+  provider?: string;
+  modelId?: string;
+} {
   if (typeof input.projectRef !== "string" || !DESKTOP_QUICK_SESSION_PROJECT_REF_PATTERN.test(input.projectRef.trim())) {
     return fail("bad_request");
   }
@@ -201,10 +273,26 @@ export function sanitizeQuickSessionCreateInput(input: {
   if ([...input.message].length > DESKTOP_QUICK_SESSION_MAX_MESSAGE_CHARS) {
     return fail("message_too_long");
   }
+  const hasProvider = input.provider !== undefined;
+  const hasModelId = input.modelId !== undefined;
+  if (hasProvider !== hasModelId) return fail("bad_request");
+  let provider: string | undefined;
+  let modelId: string | undefined;
+  if (hasProvider || hasModelId) {
+    if (typeof input.provider !== "string" || !isDesktopQuickSessionProvider(input.provider.trim())) {
+      return fail("bad_request");
+    }
+    if (typeof input.modelId !== "string" || !isDesktopQuickSessionModelId(input.modelId.trim())) {
+      return fail("bad_request");
+    }
+    provider = input.provider.trim();
+    modelId = input.modelId.trim();
+  }
   return {
     projectRef: input.projectRef.trim(),
     message: input.message,
     requestId: input.requestId.trim(),
+    ...(provider && modelId ? { provider, modelId } : {}),
   };
 }
 
@@ -287,10 +375,46 @@ export class DesktopQuickSessionClient {
     return catalog ? { ok: true, value: catalog } : fail("result_unknown");
   }
 
+  async listModels(
+    projectRef: unknown,
+  ): Promise<DesktopQuickSessionClientResult<DesktopQuickSessionModelCatalog>> {
+    if (this.stopped) return fail("disconnected");
+    if (!this.connected) return fail("disconnected");
+    if (!this.available) return fail("feature_unavailable");
+    if (typeof projectRef !== "string" || !DESKTOP_QUICK_SESSION_PROJECT_REF_PATTERN.test(projectRef.trim())) {
+      return fail("bad_request");
+    }
+
+    const authed = await this.ensureToken({ remint: true });
+    if (!authed.ok) return authed;
+    const pathname = `${DESKTOP_CONTROL_API_PREFIX}/models?projectRef=${encodeURIComponent(projectRef.trim())}`;
+    const listed = await this.requestJson("GET", pathname, {
+      headers: { [DESKTOP_CONTROL_TOKEN_HEADER]: authed.token },
+    });
+    if (!listed.ok) {
+      if (listed.code === "unauthorized") {
+        this.discardToken();
+        const retried = await this.ensureToken({ remint: true });
+        if (!retried.ok) return retried;
+        const again = await this.requestJson("GET", pathname, {
+          headers: { [DESKTOP_CONTROL_TOKEN_HEADER]: retried.token },
+        });
+        if (!again.ok) return again;
+        const catalog = parseModelCatalog(again.payload);
+        return catalog ? { ok: true, value: catalog } : fail("result_unknown");
+      }
+      return listed;
+    }
+    const catalog = parseModelCatalog(listed.payload);
+    return catalog ? { ok: true, value: catalog } : fail("result_unknown");
+  }
+
   async createSession(input: {
     projectRef: unknown;
     message: unknown;
     requestId: unknown;
+    provider?: unknown;
+    modelId?: unknown;
   }): Promise<DesktopQuickSessionClientResult<DesktopQuickSessionStartResult>> {
     if (this.stopped) return fail("disconnected");
     if (!this.connected) return fail("disconnected");

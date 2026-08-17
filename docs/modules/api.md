@@ -138,9 +138,10 @@ Narrow write API for the desktop pet first-message composer. **Not a public or c
 | --- | --- | --- |
 | `desktop-control/session/` | POST | Mint scoped control token. Origin exact loopback match or absent (Electron main). Server mode body: `{ accessKey }`. |
 | `desktop-control/projects/` | GET | Bounded path-free project catalog (`projectRef`, safe labels, recency, truncation). No cwd/firstMessage. Token required. |
-| `desktop-control/quick-sessions/` | POST | `{ projectRef, message, requestId }` creates one session via the shared new-session starter. Same requestId is idempotent inside one instance. Token required. |
+| `desktop-control/models/` | GET | Bounded path-free model catalog for `?projectRef=` (`provider`, `modelId`, display name, default, favorite short list). No cwd/thinking maps. Token required. |
+| `desktop-control/quick-sessions/` | POST | `{ projectRef, message, requestId, provider?, modelId? }` creates one session via the shared new-session starter. Same requestId is idempotent inside one instance. Token required. |
 
-Implementation: `lib/desktop-control-access.ts`, `lib/desktop-project-catalog.ts`, `lib/desktop-quick-session.ts`, `lib/new-agent-session.ts`. Smoke: `npm run test:desktop-quick-session`.
+Implementation: `lib/desktop-control-access.ts`, `lib/desktop-project-catalog.ts`, `lib/desktop-quick-session.ts`, `lib/desktop-quick-session-models.ts`, `lib/new-agent-session.ts`. Smoke: `npm run test:desktop-quick-session`.
 
 **Desktop client packaging** is separate from this API and from npm `spi`: Electron pet sources live under `desktop/`, pack contract in `forge.config.ts`, validation in `docs/operations/desktop-pet-validation.md`, smoke `npm run test:desktop-package`. The pet consumes these routes from main only (token never reaches the renderer).
 

@@ -102,6 +102,7 @@ select {
 .activity-filters[hidden],
 .project-list[hidden],
 .quick-session-panel[hidden],
+.qs-picker[hidden],
 .stale-flag[hidden],
 #btn-copy-cmd[hidden],
 #btn-clear-key[hidden] {
@@ -1313,6 +1314,12 @@ select {
   font-size: 13px;
 }
 
+.tray-btn-close {
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1;
+}
+
 .connection-banner {
   padding: 8px 10px;
   border: 1px solid rgba(243, 185, 95, 0.36);
@@ -1360,6 +1367,70 @@ select {
   text-transform: uppercase;
 }
 
+.qs-toolbar {
+  position: relative;
+  z-index: 4;
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  gap: 6px;
+}
+
+.qs-field {
+  min-width: 0;
+}
+
+.qs-chip {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+  min-height: 34px;
+  padding: 3px 7px;
+  border: 1px solid var(--pet-border);
+  border-radius: 7px;
+  background: rgba(0, 0, 0, 0.2);
+  color: var(--pet-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.qs-chip:hover {
+  background: var(--surface-hover);
+}
+
+.qs-chip[aria-expanded="true"] {
+  border-color: rgba(119, 219, 198, 0.45);
+  background: rgba(119, 219, 198, 0.12);
+}
+
+.qs-chip:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.qs-chip-kicker {
+  color: var(--pet-muted);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.qs-chip-value {
+  overflow: hidden;
+  width: 100%;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.qs-chip-value.is-empty {
+  color: var(--pet-muted);
+  font-weight: 400;
+}
+
 .qs-input,
 .qs-textarea {
   width: 100%;
@@ -1374,75 +1445,91 @@ select {
 
 .qs-textarea {
   resize: vertical;
-  flex: 0 0 auto;
-  min-height: 64px;
-  max-height: 96px;
+  flex: 1 1 auto;
+  min-height: 108px;
+  max-height: 220px;
 }
 
-.qs-project-list {
+.qs-picker {
+  position: absolute;
+  top: calc(100% + 3px);
+  z-index: 8;
   display: flex;
-  flex: 1 1 auto;
   flex-direction: column;
   gap: 4px;
-  min-height: 88px;
-  max-height: 132px;
-  overflow-y: auto;
+  min-width: 0;
+  max-height: 148px;
   padding: 4px;
+  overflow: hidden;
   border: 1px solid var(--pet-border);
   border-radius: 8px;
-  background: rgba(0, 0, 0, 0.16);
-}
-
-.qs-project-empty {
-  padding: 10px 8px;
-  color: var(--pet-muted);
+  background: rgba(18, 23, 31, 0.98);
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.42);
   font-size: 11px;
 }
 
-.qs-project-option {
+.qs-picker[data-align="project"] {
+  left: 0;
+  right: auto;
+  width: max(148px, calc(50% + 10px));
+}
+
+.qs-picker[data-align="model"] {
+  right: 0;
+  left: auto;
+  width: max(148px, calc(50% + 10px));
+}
+
+.qs-picker .qs-input {
+  padding: 4px 6px;
+  border-radius: 6px;
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.qs-picker-list {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+}
+
+.qs-picker-empty {
+  padding: 6px 6px;
+  color: var(--pet-muted);
+  font-size: 10px;
+}
+
+.qs-picker-option {
   display: flex;
   flex: 0 0 auto;
   align-items: baseline;
   justify-content: space-between;
-  gap: 8px;
+  gap: 6px;
   width: 100%;
-  min-height: 28px;
-  padding: 4px 8px;
+  min-height: 22px;
+  padding: 3px 6px;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: 6px;
   background: transparent;
   color: var(--pet-text);
+  font-size: 11px;
+  line-height: 1.25;
   text-align: left;
   cursor: pointer;
 }
 
-.qs-project-option[aria-selected="true"] {
+.qs-picker-option[aria-selected="true"] {
   border-color: rgba(119, 219, 198, 0.45);
   background: rgba(119, 219, 198, 0.16);
   box-shadow: inset 2px 0 0 var(--pet-accent);
 }
 
-.qs-project-meta {
+.qs-picker-meta {
   color: var(--pet-muted);
-  font-size: 10px;
-}
-
-.qs-selected {
-  margin: 0;
-  padding: 6px 8px;
-  border: 1px solid rgba(119, 219, 198, 0.28);
-  border-radius: 8px;
-  background: rgba(119, 219, 198, 0.1);
-  color: var(--pet-text);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.qs-selected.is-empty {
-  border-color: var(--pet-border);
-  background: rgba(255, 255, 255, 0.03);
-  color: var(--pet-muted);
-  font-weight: 400;
+  font-size: 9px;
 }
 
 .qs-count,

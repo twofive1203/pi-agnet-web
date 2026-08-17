@@ -38,7 +38,7 @@ Generated main/preload bundles (`main.js`, `pet-preload.js`, maps, `.build-stamp
 | Click pet body | Toggle Activity tray (pet icon stays put; tray grows down/right, or up/left near edges) |
 | Activity tray → **快速会话** | Open the in-tray composer (connected + capable servers only). Choose a known project, type the first message, Ctrl/Cmd+Enter to start. Full replies stay in WebUI. |
 | Activity tray → **⚙** | Manage the server access key, choose a built-in snail (星海/经典 CSS, 像素 spritesheet) or size, restore default position and medium size, and adjust always-on-top, click-through, login launch, notifications, and sound cues |
-| Activity tray → **⌄** | Collapse only the Activity tray; the pet stays visible |
+| Activity tray → **−** | Collapse only the Activity tray; the pet stays visible |
 | Pet chrome → **×** | Hide to system tray (process keeps observing) |
 | Tray → 显示桌宠 | Show window again |
 | Tray → 勿扰模式 | Toggle manual DND (silences notifications, task bubbles and sounds; tray unread/observation continue) |

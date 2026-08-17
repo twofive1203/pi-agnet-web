@@ -2992,6 +2992,7 @@ async function main() {
   assert.ok(preloadSrc.includes("contextBridge.exposeInMainWorld"));
   assert.ok(preloadSrc.includes("snailPet"));
   assert.ok(preloadSrc.includes("listQuickSessionProjects"));
+  assert.ok(preloadSrc.includes("listQuickSessionModels"));
   assert.ok(preloadSrc.includes("createQuickSession"));
   assert.equal(preloadSrc.includes("ipcRenderer.invoke(channel"), true);
   assert.equal(/exposeInMainWorld\([\s\S]*ipcRenderer/.test(preloadSrc), false);
@@ -3021,7 +3022,10 @@ async function main() {
   assert.ok(indexHtmlSrc.includes("connect-src 'none'"));
   assert.equal(/nodeIntegration|child_process/.test(indexHtmlSrc), false);
   assert.ok(petAppSrc.includes("listQuickSessionProjects"));
+  assert.ok(petAppSrc.includes("listQuickSessionModels"));
   assert.ok(petAppSrc.includes("createQuickSession"));
+  assert.ok(indexHtmlSrc.includes('id="qs-project-trigger"'));
+  assert.ok(indexHtmlSrc.includes('id="qs-model-trigger"'));
   assert.ok(petAppSrc.includes("isComposing"));
 
   // --- Static desktop tree: no service control ---
@@ -3750,6 +3754,7 @@ async function main() {
     assert.ok(PET_RENDERER_ALLOWED_CHANNELS.includes(PET_IPC_CHANNELS.openCustomPetsDir));
     assert.ok(PET_RENDERER_ALLOWED_CHANNELS.includes(PET_IPC_CHANNELS.rescanCustomPets));
     assert.ok(PET_RENDERER_ALLOWED_CHANNELS.includes(PET_IPC_CHANNELS.listQuickSessionProjects));
+    assert.ok(PET_RENDERER_ALLOWED_CHANNELS.includes(PET_IPC_CHANNELS.listQuickSessionModels));
     assert.ok(PET_RENDERER_ALLOWED_CHANNELS.includes(PET_IPC_CHANNELS.createQuickSession));
     assert.ok(!PET_RENDERER_ALLOWED_CHANNELS.includes(PET_IPC_CHANNELS.customPetsChanged));
     assert.ok(PET_MAIN_PUSH_CHANNELS.includes(PET_IPC_CHANNELS.customPetsChanged));

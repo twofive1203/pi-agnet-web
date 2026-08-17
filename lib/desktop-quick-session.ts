@@ -1,7 +1,8 @@
 /**
- * Desktop quick-session create path: bounded input, default model, and
- * instance-scoped requestId idempotency. The registry stores only hashes and
- * stable outcomes — never message, cwd, tokens, or provider text.
+ * Desktop quick-session create path: bounded input, optional explicit model
+ * (else WebUI default), and instance-scoped requestId idempotency. The
+ * registry stores only hashes and stable outcomes — never message, cwd,
+ * tokens, or provider text.
  */
 
 import { createHash, randomBytes } from "crypto";
@@ -11,10 +12,11 @@ import {
   type DesktopProjectCatalogDeps,
 } from "./desktop-project-catalog";
 import { getProcessInstanceId } from "./process-runtime";
+import { type ModelMetadata } from "./model-metadata";
 import {
-  selectDefaultNewSessionModel,
-  type ModelMetadata,
-} from "./model-metadata";
+  parseDesktopQuickSessionModelRef,
+  resolveDesktopQuickSessionModel,
+} from "./desktop-quick-session-models";
 import {
   startNewAgentSession,
   type NewAgentSessionRuntime,
@@ -67,6 +69,8 @@ export type DesktopQuickSessionCreateInput = {
   projectRef: unknown;
   message: unknown;
   requestId: unknown;
+  provider?: unknown;
+  modelId?: unknown;
 };
 
 export type DesktopQuickSessionCreateDeps = {
@@ -161,14 +165,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-const ALLOWED_CREATE_KEYS = new Set(["projectRef", "message", "requestId"]);
+const ALLOWED_CREATE_KEYS = new Set(["projectRef", "message", "requestId", "provider", "modelId"]);
 const SMUGGLED_KEYS = [
   "cwd",
   "path",
   "token",
   "accessKey",
-  "provider",
-  "modelId",
   "thinkingLevel",
   "toolPreset",
   "toolNames",
@@ -178,7 +180,14 @@ const SMUGGLED_KEYS = [
 
 export function parseDesktopQuickSessionCreateBody(
   value: unknown,
-): DesktopQuickSessionFailure | { ok: true; projectRef: string; message: string; requestId: string } {
+): DesktopQuickSessionFailure | {
+  ok: true;
+  projectRef: string;
+  message: string;
+  requestId: string;
+  provider: string | null;
+  modelId: string | null;
+} {
   if (!isRecord(value)) return fail("bad_request", 400);
   for (const key of Object.keys(value)) {
     if (!ALLOWED_CREATE_KEYS.has(key) || SMUGGLED_KEYS.includes(key)) {
@@ -189,6 +198,18 @@ export function parseDesktopQuickSessionCreateBody(
   const projectRef = typeof value.projectRef === "string" ? value.projectRef.trim() : "";
   const requestId = typeof value.requestId === "string" ? value.requestId.trim() : "";
   const message = typeof value.message === "string" ? value.message : "";
+  const hasProvider = Object.prototype.hasOwnProperty.call(value, "provider");
+  const hasModelId = Object.prototype.hasOwnProperty.call(value, "modelId");
+  if (hasProvider !== hasModelId) return fail("bad_request", 400);
+
+  let provider: string | null = null;
+  let modelId: string | null = null;
+  if (hasProvider || hasModelId) {
+    const parsedModel = parseDesktopQuickSessionModelRef(value.provider, value.modelId);
+    if (!parsedModel) return fail("bad_request", 400);
+    provider = parsedModel.provider;
+    modelId = parsedModel.modelId;
+  }
 
   if (!projectRef || !requestId || !DESKTOP_QUICK_SESSION_REQUEST_ID_PATTERN.test(requestId)) {
     return fail("bad_request", 400);
@@ -198,7 +219,7 @@ export function parseDesktopQuickSessionCreateBody(
     return fail("message_too_long", 400);
   }
 
-  return { ok: true, projectRef, message, requestId };
+  return { ok: true, projectRef, message, requestId, provider, modelId };
 }
 
 export async function createDesktopQuickSession(
@@ -217,7 +238,10 @@ export async function createDesktopQuickSession(
     deps.loadModelMetadata
     ?? (await import("./model-metadata")).loadModelMetadata;
   const metadata = await loadModels(resolved.cwd);
-  const selected = selectDefaultNewSessionModel(metadata);
+  const requested = parsed.provider && parsed.modelId
+    ? { provider: parsed.provider, modelId: parsed.modelId }
+    : null;
+  const selected = resolveDesktopQuickSessionModel(metadata, requested);
   if (!selected) return fail("model_unavailable", 422);
 
   const instanceId = deps.instanceId ?? getProcessInstanceId();

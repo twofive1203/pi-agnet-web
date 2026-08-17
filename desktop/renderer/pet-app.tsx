@@ -80,14 +80,18 @@ import {
   canSubmitQuickSession,
   countQuickSessionChars,
   createInitialQuickSessionState,
+  filterQuickSessionModels,
   filterQuickSessionProjects,
+  formatQuickSessionModelLabel,
   formatQuickSessionProjectLabel,
   QUICK_SESSION_MAX_MESSAGE_CHARS,
   quickSessionErrorText,
   reduceQuickSessionState,
+  selectedQuickSessionModel,
   selectedQuickSessionProject,
   type QuickSessionCatalog,
   type QuickSessionErrorCode,
+  type QuickSessionModelCatalog,
   type QuickSessionState,
 } from "./quick-session-state";
 
@@ -150,9 +154,13 @@ export function renderPetApp(root: Document = document): {
   const quickSessionPanel = root.getElementById("quick-session-panel");
   const qsStatus = root.getElementById("qs-status");
   const qsSelected = root.getElementById("qs-selected");
-  const qsProjectSearch = root.getElementById("qs-project-search") as HTMLInputElement | null;
-  const qsProjectList = root.getElementById("qs-project-list");
-  const qsTruncated = root.getElementById("qs-truncated");
+  const qsModelSelected = root.getElementById("qs-model-selected");
+  const qsProjectTrigger = root.getElementById("qs-project-trigger") as HTMLButtonElement | null;
+  const qsModelTrigger = root.getElementById("qs-model-trigger") as HTMLButtonElement | null;
+  const qsPicker = root.getElementById("qs-picker");
+  const qsPickerSearch = root.getElementById("qs-picker-search") as HTMLInputElement | null;
+  const qsPickerList = root.getElementById("qs-picker-list");
+  const qsPickerNote = root.getElementById("qs-picker-note");
   const qsMessage = root.getElementById("qs-message") as HTMLTextAreaElement | null;
   const qsCount = root.getElementById("qs-count");
   const qsError = root.getElementById("qs-error");
@@ -204,6 +212,7 @@ export function renderPetApp(root: Document = document): {
   let quickSession: QuickSessionState = createInitialQuickSessionState();
   let qsImeComposing = false;
   let qsSubmitInFlight = false;
+  let qsModelsInFlight: string | null = null;
   let trayMoreOpen = false;
   let idleBlinkTimer: ReturnType<typeof setTimeout> | null = null;
   let idleActTimer: ReturnType<typeof setTimeout> | null = null;
@@ -1288,6 +1297,57 @@ export function renderPetApp(root: Document = document): {
     };
   }
 
+  function parseQuickSessionModelCatalog(payload: unknown): QuickSessionModelCatalog | null {
+    if (!payload || typeof payload !== "object") return null;
+    const record = payload as Record<string, unknown>;
+    const source = record.catalog && typeof record.catalog === "object"
+      ? record.catalog as Record<string, unknown>
+      : record;
+    if (typeof source.projectRef !== "string" || !Array.isArray(source.models)) return null;
+    const models = source.models.flatMap((item) => {
+      if (!item || typeof item !== "object") return [];
+      const row = item as Record<string, unknown>;
+      if (typeof row.provider !== "string" || typeof row.modelId !== "string" || typeof row.name !== "string") {
+        return [];
+      }
+      return [{
+        provider: row.provider,
+        modelId: row.modelId,
+        name: row.name,
+        primaryCandidate: row.primaryCandidate === true,
+      }];
+    });
+    const rawDefault = source.defaultModel && typeof source.defaultModel === "object"
+      ? source.defaultModel as Record<string, unknown>
+      : null;
+    return {
+      projectRef: source.projectRef,
+      defaultModel:
+        rawDefault
+        && typeof rawDefault.provider === "string"
+        && typeof rawDefault.modelId === "string"
+          ? { provider: rawDefault.provider, modelId: rawDefault.modelId }
+          : null,
+      models,
+      truncated: source.truncated === true,
+    };
+  }
+
+  function shouldLoadQuickSessionModels(
+    state: QuickSessionState,
+    options?: { retryError?: boolean },
+  ): boolean {
+    return Boolean(
+      state.selectedProjectRef
+      && state.phase !== "closed"
+      && (
+        state.modelsPhase === "idle"
+        || (options?.retryError === true && state.modelsPhase === "error")
+        || state.modelsProjectRef !== state.selectedProjectRef
+      ),
+    );
+  }
+
   async function loadQuickSessionCatalog(): Promise<void> {
     applyQuickSession({ type: "open" });
     if (!bridge?.listQuickSessionProjects) {
@@ -1316,6 +1376,43 @@ export function renderPetApp(root: Document = document): {
     }
   }
 
+  async function loadQuickSessionModels(options?: { retryError?: boolean }): Promise<void> {
+    const projectRef = quickSession.selectedProjectRef;
+    if (!projectRef || !shouldLoadQuickSessionModels(quickSession, options)) return;
+    if (qsModelsInFlight === projectRef) return;
+    if (!bridge?.listQuickSessionModels) {
+      applyQuickSession({ type: "models_failed", projectRef, code: "feature_unavailable" });
+      return;
+    }
+    qsModelsInFlight = projectRef;
+    applyQuickSession({ type: "models_loading", projectRef });
+    try {
+      const payload = await bridge.listQuickSessionModels(projectRef);
+      if (quickSession.selectedProjectRef !== projectRef) return;
+      if (payload && typeof payload === "object" && (payload as { ok?: unknown }).ok === false) {
+        const code = (payload as { code?: unknown }).code;
+        applyQuickSession({
+          type: "models_failed",
+          projectRef,
+          code: typeof code === "string" ? code as QuickSessionErrorCode : "result_unknown",
+        });
+        return;
+      }
+      const catalog = parseQuickSessionModelCatalog(payload);
+      if (!catalog) {
+        applyQuickSession({ type: "models_failed", projectRef, code: "result_unknown" });
+        return;
+      }
+      applyQuickSession({ type: "models_loaded", catalog });
+    } catch {
+      if (quickSession.selectedProjectRef === projectRef) {
+        applyQuickSession({ type: "models_failed", projectRef, code: "result_unknown" });
+      }
+    } finally {
+      if (qsModelsInFlight === projectRef) qsModelsInFlight = null;
+    }
+  }
+
   async function submitQuickSession(): Promise<void> {
     if (qsSubmitInFlight) return;
     if (quickSession.phase !== "submitting") {
@@ -1334,6 +1431,12 @@ export function renderPetApp(root: Document = document): {
         projectRef: quickSession.selectedProjectRef,
         message: quickSession.draft,
         requestId: quickSession.requestId,
+        ...(quickSession.selectedProvider && quickSession.selectedModelId
+          ? {
+              provider: quickSession.selectedProvider,
+              modelId: quickSession.selectedModelId,
+            }
+          : {}),
       });
       if (payload && typeof payload === "object" && (payload as { ok?: unknown }).ok === false) {
         const code = (payload as { code?: unknown }).code;
@@ -1362,6 +1465,136 @@ export function renderPetApp(root: Document = document): {
     }
   }
 
+  function renderQuickSessionPicker(): void {
+    const picker = quickSession.openPicker;
+    const submitting = quickSession.phase === "submitting";
+    const success = quickSession.phase === "success";
+    const pickerOpen = picker !== "none" && !success;
+    if (qsPicker) {
+      qsPicker.hidden = !pickerOpen;
+      qsPicker.dataset.align = pickerOpen ? picker : "";
+    }
+    if (qsProjectTrigger) {
+      qsProjectTrigger.disabled = submitting || success;
+      qsProjectTrigger.setAttribute("aria-expanded", picker === "project" ? "true" : "false");
+    }
+    if (qsModelTrigger) {
+      qsModelTrigger.disabled = submitting || success || !quickSession.selectedProjectRef;
+      qsModelTrigger.setAttribute("aria-expanded", picker === "model" ? "true" : "false");
+    }
+    if (!qsPickerList || !pickerOpen) return;
+
+    const query = picker === "model" ? quickSession.modelQuery : quickSession.query;
+    if (qsPickerSearch && qsPickerSearch.value !== query) qsPickerSearch.value = query;
+    if (qsPickerSearch) {
+      qsPickerSearch.disabled = submitting;
+      qsPickerSearch.placeholder = picker === "model" ? "搜索模型" : "搜索项目";
+    }
+
+    const signature = picker === "model"
+      ? `model:${query}:${quickSession.models.length}:${quickSession.modelsPhase}`
+      : `project:${query}:${quickSession.projects.length}:${quickSession.phase}`;
+    const selectedKey = picker === "model"
+      ? `${quickSession.selectedProvider ?? ""}\0${quickSession.selectedModelId ?? ""}`
+      : quickSession.selectedProjectRef ?? "";
+    if (qsPickerList.dataset.signature === signature) {
+      for (const option of qsPickerList.querySelectorAll<HTMLElement>("[role='option']")) {
+        const key = picker === "model"
+          ? `${option.dataset.provider ?? ""}\0${option.dataset.modelId ?? ""}`
+          : option.dataset.projectRef ?? "";
+        option.setAttribute("aria-selected", key === selectedKey ? "true" : "false");
+      }
+    } else {
+      qsPickerList.replaceChildren();
+      if (picker === "model") {
+        const visible = filterQuickSessionModels(quickSession.models, query);
+        if (quickSession.modelsPhase === "loading" || visible.length === 0) {
+          const empty = document.createElement("div");
+          empty.className = "qs-picker-empty";
+          empty.textContent =
+            quickSession.modelsPhase === "loading"
+              ? "正在加载模型…"
+              : quickSession.modelsPhase === "error"
+                ? "模型列表加载失败"
+                : quickSession.models.length === 0
+                  ? "当前没有可用模型"
+                  : "没有匹配的模型";
+          qsPickerList.appendChild(empty);
+        } else {
+          for (const model of visible) {
+            const option = document.createElement("button");
+            option.type = "button";
+            option.className = "qs-picker-option";
+            option.dataset.provider = model.provider;
+            option.dataset.modelId = model.modelId;
+            option.setAttribute("role", "option");
+            option.setAttribute(
+              "aria-selected",
+              model.provider === quickSession.selectedProvider && model.modelId === quickSession.selectedModelId
+                ? "true"
+                : "false",
+            );
+            option.disabled = submitting;
+            const name = document.createElement("span");
+            name.textContent = model.name;
+            option.appendChild(name);
+            const meta = document.createElement("span");
+            meta.className = "qs-picker-meta";
+            meta.textContent = model.primaryCandidate ? `${model.provider} · 收藏` : model.provider;
+            option.appendChild(meta);
+            qsPickerList.appendChild(option);
+          }
+        }
+      } else {
+        const visible = filterQuickSessionProjects(quickSession.projects, query);
+        if (visible.length === 0) {
+          const empty = document.createElement("div");
+          empty.className = "qs-picker-empty";
+          empty.textContent =
+            quickSession.phase === "loading"
+              ? "正在加载项目…"
+              : quickSession.projects.length === 0
+                ? "当前没有可启动的项目"
+                : "没有匹配的项目";
+          qsPickerList.appendChild(empty);
+        } else {
+          for (const project of visible) {
+            const option = document.createElement("button");
+            option.type = "button";
+            option.className = "qs-picker-option";
+            option.dataset.projectRef = project.projectRef;
+            option.setAttribute("role", "option");
+            option.setAttribute(
+              "aria-selected",
+              project.projectRef === quickSession.selectedProjectRef ? "true" : "false",
+            );
+            option.disabled = submitting;
+            const name = document.createElement("span");
+            name.textContent = project.displayName;
+            option.appendChild(name);
+            if (project.disambiguator) {
+              const meta = document.createElement("span");
+              meta.className = "qs-picker-meta";
+              meta.textContent = project.disambiguator;
+              option.appendChild(meta);
+            }
+            qsPickerList.appendChild(option);
+          }
+        }
+      }
+      qsPickerList.dataset.signature = signature;
+    }
+    if (qsPickerNote) {
+      if (picker === "model") {
+        qsPickerNote.hidden = !quickSession.modelsTruncated;
+        qsPickerNote.textContent = "仅显示收藏/默认短名单";
+      } else {
+        qsPickerNote.hidden = !quickSession.truncated;
+        qsPickerNote.textContent = "仅显示最近 100 个项目";
+      }
+    }
+  }
+
   function renderQuickSessionPanel(view: DesktopActivityView): void {
     if (!quickSessionPanel || quickSession.phase === "closed" || settingsOpen) return;
     const submitting = quickSession.phase === "submitting";
@@ -1380,66 +1613,18 @@ export function renderPetApp(root: Document = document): {
       qsSelected.textContent = formatQuickSessionProjectLabel(selectedProject);
       qsSelected.classList.toggle("is-empty", selectedProject == null);
     }
-    if (qsProjectSearch && qsProjectSearch.value !== quickSession.query) {
-      qsProjectSearch.value = quickSession.query;
+    const selectedModel = selectedQuickSessionModel(quickSession);
+    if (qsModelSelected) {
+      qsModelSelected.textContent =
+        quickSession.modelsPhase === "loading"
+          ? "加载模型…"
+          : formatQuickSessionModelLabel(selectedModel);
+      qsModelSelected.classList.toggle(
+        "is-empty",
+        selectedModel == null && quickSession.modelsPhase !== "loading",
+      );
     }
-    if (qsProjectSearch) qsProjectSearch.disabled = submitting || success;
-    if (qsProjectList) {
-      const sameQuery =
-        qsProjectList.dataset.query === quickSession.query
-        && qsProjectList.dataset.count === String(quickSession.projects.length);
-      const existingOptions = sameQuery
-        ? Array.from(qsProjectList.querySelectorAll<HTMLElement>("[data-project-ref]"))
-        : [];
-      if (existingOptions.length > 0) {
-        for (const option of existingOptions) {
-          option.setAttribute(
-            "aria-selected",
-            option.dataset.projectRef === quickSession.selectedProjectRef ? "true" : "false",
-          );
-        }
-      } else {
-        qsProjectList.replaceChildren();
-        const visible = filterQuickSessionProjects(quickSession.projects, quickSession.query);
-        if (visible.length === 0) {
-          const empty = document.createElement("div");
-          empty.className = "qs-project-empty";
-          empty.textContent =
-            quickSession.phase === "loading"
-              ? "正在加载项目…"
-              : quickSession.projects.length === 0
-                ? "当前没有可启动的项目"
-                : "没有匹配的项目";
-          qsProjectList.appendChild(empty);
-        } else {
-          for (const project of visible) {
-            const option = document.createElement("button");
-            option.type = "button";
-            option.className = "qs-project-option";
-            option.dataset.projectRef = project.projectRef;
-            option.setAttribute("role", "option");
-            option.setAttribute(
-              "aria-selected",
-              project.projectRef === quickSession.selectedProjectRef ? "true" : "false",
-            );
-            option.disabled = submitting || success;
-            const name = document.createElement("span");
-            name.textContent = project.displayName;
-            option.appendChild(name);
-            if (project.disambiguator) {
-              const meta = document.createElement("span");
-              meta.className = "qs-project-meta";
-              meta.textContent = project.disambiguator;
-              option.appendChild(meta);
-            }
-            qsProjectList.appendChild(option);
-          }
-        }
-        qsProjectList.dataset.query = quickSession.query;
-        qsProjectList.dataset.count = String(quickSession.projects.length);
-      }
-    }
-    if (qsTruncated) qsTruncated.hidden = !quickSession.truncated;
+    renderQuickSessionPicker();
     if (qsMessage && qsMessage.value !== quickSession.draft) qsMessage.value = quickSession.draft;
     if (qsMessage) qsMessage.disabled = submitting || success;
     const used = countQuickSessionChars(quickSession.draft);
@@ -1455,8 +1640,11 @@ export function renderPetApp(root: Document = document): {
     if (qsSuccess) qsSuccess.hidden = !success;
     if (qsSuccessText && success && quickSession.success) {
       const project = selectedQuickSessionProject(quickSession);
+      const model = selectedQuickSessionModel(quickSession);
       const shortId = quickSession.success.sessionId.slice(0, 8);
-      qsSuccessText.textContent = `${project?.displayName ?? "项目"} 已启动 · ${shortId}`;
+      qsSuccessText.textContent = model
+        ? `${project?.displayName ?? "项目"} · ${model.name} 已启动 · ${shortId}`
+        : `${project?.displayName ?? "项目"} 已启动 · ${shortId}`;
     }
     if (qsEditActions) qsEditActions.hidden = success;
     if (btnQsSubmit) {
@@ -1465,6 +1653,9 @@ export function renderPetApp(root: Document = document): {
         phase: quickSession.phase === "error" ? "error" : "editing",
       });
       btnQsSubmit.textContent = submitting ? "启动中…" : quickSession.phase === "error" ? "重试" : "启动";
+    }
+    if (shouldLoadQuickSessionModels(quickSession)) {
+      void loadQuickSessionModels();
     }
   }
 
@@ -1872,8 +2063,12 @@ export function renderPetApp(root: Document = document): {
     event.stopPropagation();
   });
 
-  const onRootClick = () => {
+  const onRootClick = (event: Event) => {
     if (trayMoreOpen) setTrayMoreOpen(false);
+    if (quickSession.openPicker === "none") return;
+    const target = event.target instanceof Element ? event.target : null;
+    if (target?.closest("#qs-picker, #qs-project-trigger, #qs-model-trigger")) return;
+    applyQuickSession({ type: "close_picker" });
   };
   root.addEventListener("click", onRootClick);
 
@@ -1951,16 +2146,41 @@ export function renderPetApp(root: Document = document): {
     applyQuickSession({ type: "close" });
   });
 
-  qsProjectSearch?.addEventListener("input", () => {
-    applyQuickSession({ type: "set_query", query: qsProjectSearch.value });
+  qsProjectTrigger?.addEventListener("click", () => {
+    applyQuickSession({ type: "toggle_picker", picker: "project" });
+    if (quickSession.openPicker === "project") qsPickerSearch?.focus();
   });
-  qsProjectList?.addEventListener("click", (event) => {
+  qsModelTrigger?.addEventListener("click", () => {
+    applyQuickSession({ type: "toggle_picker", picker: "model" });
+    if (quickSession.openPicker === "model") {
+      void loadQuickSessionModels({ retryError: true });
+      qsPickerSearch?.focus();
+    }
+  });
+  qsPickerSearch?.addEventListener("input", () => {
+    if (quickSession.openPicker === "model") {
+      applyQuickSession({ type: "set_model_query", query: qsPickerSearch.value });
+      return;
+    }
+    applyQuickSession({ type: "set_query", query: qsPickerSearch.value });
+  });
+  qsPickerList?.addEventListener("click", (event) => {
     const target = event.target instanceof Element
-      ? event.target.closest<HTMLElement>("[data-project-ref]")
+      ? event.target.closest<HTMLElement>("[role='option']")
       : null;
-    const projectRef = target?.dataset.projectRef;
+    if (!target) return;
+    if (quickSession.openPicker === "model") {
+      const provider = target.dataset.provider;
+      const modelId = target.dataset.modelId;
+      if (!provider || !modelId) return;
+      applyQuickSession({ type: "select_model", provider, modelId });
+      qsMessage?.focus();
+      return;
+    }
+    const projectRef = target.dataset.projectRef;
     if (!projectRef) return;
     applyQuickSession({ type: "select_project", projectRef });
+    qsMessage?.focus();
   });
   qsMessage?.addEventListener("compositionstart", () => {
     qsImeComposing = true;
@@ -2143,7 +2363,9 @@ export function renderPetApp(root: Document = document): {
 
     if (event.key === "Escape") {
       event.preventDefault();
-      if (selectedVisibleActivityId && expandedActivityIds.has(selectedVisibleActivityId)) {
+      if (quickSession.openPicker !== "none") {
+        applyQuickSession({ type: "close_picker" });
+      } else if (selectedVisibleActivityId && expandedActivityIds.has(selectedVisibleActivityId)) {
         expandedActivityIds.delete(selectedVisibleActivityId);
         update(current);
         focusActivityRow(selectedVisibleActivityId);

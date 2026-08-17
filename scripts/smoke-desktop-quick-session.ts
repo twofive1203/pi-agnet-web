@@ -63,6 +63,12 @@ import {
   parseDesktopQuickSessionCreateBody,
   resetDesktopQuickSessionIdempotencyForTests,
 } from "../lib/desktop-quick-session";
+import {
+  assertDesktopQuickSessionModelCatalogSafe,
+  buildDesktopQuickSessionModelCatalog,
+  projectDesktopQuickSessionModels,
+  resolveDesktopQuickSessionModel,
+} from "../lib/desktop-quick-session-models";
 import { startNewAgentSession } from "../lib/new-agent-session";
 import { selectDefaultNewSessionModel } from "../lib/model-metadata";
 import { buildProjectKeyFromCwd } from "../lib/task-observer-agent";
@@ -74,10 +80,13 @@ import type { DesktopFetch } from "../desktop/main/observer-client";
 import {
   canSubmitQuickSession,
   createInitialQuickSessionState,
+  filterQuickSessionModels,
   filterQuickSessionProjects,
+  formatQuickSessionModelLabel,
   formatQuickSessionProjectLabel,
   newQuickSessionRequestId,
   reduceQuickSessionState,
+  selectedQuickSessionModel,
   selectedQuickSessionProject,
 } from "../desktop/renderer/quick-session-state";
 
@@ -116,8 +125,10 @@ async function main() {
   // --- Path policy: control is not anonymously public ---
   assert.equal(isPublicPath("/api/desktop-control/session"), false);
   assert.equal(isPublicPath("/api/desktop-control/projects"), false);
+  assert.equal(isPublicPath("/api/desktop-control/models"), false);
   assert.equal(isPublicPath("/api/desktop-control/quick-sessions"), false);
   assert.equal(isDesktopControlPath("/api/desktop-control/session"), true);
+  assert.equal(isDesktopControlPath("/api/desktop-control/models"), true);
   assert.equal(isDesktopControlPath(`${DESKTOP_CONTROL_API_PREFIX}/projects`), true);
   assert.equal(isDesktopControlPath("/api/desktop-observer/session"), false);
   assert.equal(isDesktopObserverPath("/api/desktop-control/session"), false);
@@ -736,6 +747,108 @@ async function main() {
   if (!noModel.ok) assert.equal(noModel.code, "model_unavailable");
   assert.equal(startCalls, 1);
 
+  const explicitModel = await createDesktopQuickSession(
+    {
+      projectRef: alphaRef,
+      message: "use first",
+      requestId: newDesktopQuickSessionRequestIdForTests(),
+      provider: "acme",
+      modelId: "first",
+    },
+    {
+      ...createDeps,
+      loadModelMetadata: async () => ({
+        models: {},
+        modelList: [
+          { id: "first", name: "First", provider: "acme", supportsImage: false, primaryCandidate: false },
+          { id: "kept", name: "Kept", provider: "openai", supportsImage: false, primaryCandidate: true },
+        ],
+        defaultModel: { provider: "openai", modelId: "kept" },
+        thinkingLevels: {},
+        thinkingLevelMaps: {},
+      }),
+      startSession: async (input: { cwd: string; command: Record<string, unknown> }) => {
+        startCalls += 1;
+        assert.equal(input.command.provider, "acme");
+        assert.equal(input.command.modelId, "first");
+        return { success: true as const, sessionId: "sess-explicit", data: { type: "prompt" } };
+      },
+    },
+  );
+  assert.equal(explicitModel.ok, true);
+  assert.equal(startCalls, 2);
+
+  const unknownModel = await createDesktopQuickSession(
+    {
+      projectRef: alphaRef,
+      message: "missing model",
+      requestId: newDesktopQuickSessionRequestIdForTests(),
+      provider: "openai",
+      modelId: "gone",
+    },
+    createDeps,
+  );
+  assert.equal(unknownModel.ok, false);
+  if (!unknownModel.ok) assert.equal(unknownModel.code, "model_unavailable");
+  assert.equal(startCalls, 2);
+
+  const halfModel = parseDesktopQuickSessionCreateBody({
+    projectRef: alphaRef,
+    message: "ok",
+    requestId: newDesktopQuickSessionRequestIdForTests(),
+    provider: "openai",
+  });
+  assert.equal(halfModel.ok, false);
+  if (!halfModel.ok) assert.equal(halfModel.code, "bad_request");
+
+  const projected = projectDesktopQuickSessionModels({
+    defaultModel: { provider: "openai", modelId: "kept" },
+    modelList: [
+      { id: "first", name: "First", provider: "acme", supportsImage: false, primaryCandidate: false },
+      { id: "kept", name: "Kept", provider: "openai", supportsImage: false, primaryCandidate: true },
+    ],
+  });
+  assert.equal(projected.models.length, 1);
+  assert.equal(projected.models[0]?.modelId, "kept");
+  assert.deepEqual(projected.defaultModel, { provider: "openai", modelId: "kept" });
+  assert.deepEqual(
+    resolveDesktopQuickSessionModel(
+      {
+        defaultModel: { provider: "openai", modelId: "kept" },
+        modelList: [
+          { id: "first", name: "First", provider: "acme", supportsImage: false, primaryCandidate: false },
+          { id: "kept", name: "Kept", provider: "openai", supportsImage: false, primaryCandidate: true },
+        ],
+      },
+      { provider: "acme", modelId: "first" },
+    ),
+    { provider: "acme", modelId: "first" },
+  );
+
+  const modelCatalog = await buildDesktopQuickSessionModelCatalog(alphaRef, {
+    catalog: catalogDeps,
+    loadModelMetadata: async (cwd) => {
+      assert.equal(cwd, "D:\\work\\alpha");
+      return {
+        models: {},
+        modelList: [
+          { id: "first", name: "First", provider: "acme", supportsImage: false, primaryCandidate: false },
+          { id: "kept", name: "Kept", provider: "openai", supportsImage: false, primaryCandidate: true },
+        ],
+        defaultModel: { provider: "openai", modelId: "kept" },
+        thinkingLevels: {},
+        thinkingLevelMaps: {},
+      };
+    },
+  });
+  assert.equal(modelCatalog.ok, true);
+  if (modelCatalog.ok) {
+    assert.equal(modelCatalog.catalog.projectRef, alphaRef);
+    assert.equal(modelCatalog.catalog.models.length, 1);
+    assert.equal(JSON.stringify(modelCatalog.catalog).includes("D:\\work\\alpha"), false);
+    assert.doesNotThrow(() => assertDesktopQuickSessionModelCatalogSafe(modelCatalog.catalog));
+  }
+
   const empty = parseDesktopQuickSessionCreateBody({
     projectRef: alphaRef,
     message: "   ",
@@ -813,6 +926,19 @@ async function main() {
         text: async () => "",
       };
     }
+    if (/\/desktop-control\/models\?/.test(url)) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          projectRef: alphaRef,
+          defaultModel: { provider: "openai", modelId: "kept" },
+          models: [{ provider: "openai", modelId: "kept", name: "Kept", primaryCandidate: true }],
+          truncated: false,
+        }),
+        text: async () => "",
+      };
+    }
     if (/\/desktop-control\/quick-sessions$/.test(url)) {
       return {
         ok: true,
@@ -842,10 +968,18 @@ async function main() {
     assert.equal(JSON.stringify(listed.value).includes("ctrl.token"), false);
   }
   assert.ok(calls.some((call) => call.body?.includes("saved-key")));
+  const models = await qsClient.listModels(alphaRef);
+  assert.equal(models.ok, true);
+  if (models.ok) {
+    assert.equal(models.value.models[0]?.modelId, "kept");
+    assert.equal(JSON.stringify(models.value).includes("saved-key"), false);
+  }
   const created = await qsClient.createSession({
     projectRef: alphaRef,
     message: "from pet",
     requestId,
+    provider: "openai",
+    modelId: "kept",
   });
   assert.equal(created.ok, true);
   if (created.ok) {
@@ -931,6 +1065,36 @@ async function main() {
   assert.equal(cancelled.draft, "");
   assert.equal(filterQuickSessionProjects(ui.projects, "aa11").length, 1);
   assert.equal(filterQuickSessionProjects(ui.projects, "").length, 2);
+  ui = reduceQuickSessionState(ui, { type: "toggle_picker", picker: "project" });
+  assert.equal(ui.openPicker, "project");
+  ui = reduceQuickSessionState(ui, { type: "close_picker" });
+  assert.equal(ui.openPicker, "none");
+  ui = reduceQuickSessionState(ui, { type: "toggle_picker", picker: "project" });
+  assert.equal(ui.openPicker, "project");
+  ui = reduceQuickSessionState(ui, {
+    type: "models_loaded",
+    catalog: {
+      projectRef: alphaRef!,
+      defaultModel: { provider: "openai", modelId: "kept" },
+      models: [
+        { provider: "openai", modelId: "kept", name: "Kept", primaryCandidate: true },
+        { provider: "acme", modelId: "first", name: "First", primaryCandidate: false },
+      ],
+      truncated: false,
+    },
+  });
+  assert.equal(ui.selectedModelId, "kept");
+  assert.equal(formatQuickSessionModelLabel(selectedQuickSessionModel(ui)), "Kept");
+  ui = reduceQuickSessionState(ui, { type: "select_model", provider: "acme", modelId: "first" });
+  assert.equal(ui.selectedModelId, "first");
+  assert.equal(ui.openPicker, "none");
+  assert.equal(filterQuickSessionModels(ui.models, "acme").length, 1);
+  const switched = reduceQuickSessionState(ui, {
+    type: "select_project",
+    projectRef: buildProjectKeyFromCwd("C:\\other\\alpha"),
+  });
+  assert.equal(switched.modelsPhase, "idle");
+  assert.equal(switched.selectedModelId, null);
   assert.ok(newQuickSessionRequestId());
 
   console.log("smoke-desktop-quick-session: ok");
