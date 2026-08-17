@@ -18,7 +18,7 @@
       aria-live="polite"
     >
       <!-- pet-stack stays fixed on screen; tray grows around it via data-tray-anchor. -->
-      <div class="pet-stack">
+      <div id="pet-stack" class="pet-stack">
         <div class="pet-chrome">
           <!-- Dragging happens on the pet body via click-vs-drag; no separate grip strip. -->
           <button
@@ -68,6 +68,17 @@
             <div id="pet-label" class="pet-label">空闲</div>
           </div>
         </button>
+        <div id="pet-intent-menu" class="pet-intent-menu" role="group" aria-label="桌宠快捷操作">
+          <button type="button" id="btn-pet-mark-all" class="pet-intent-btn">
+            全部已读
+          </button>
+          <button type="button" id="btn-pet-quick-session" class="pet-intent-btn" hidden>
+            快速会话
+          </button>
+          <button type="button" id="btn-pet-settings" class="pet-intent-btn">
+            设置
+          </button>
+        </div>
       </div>
 
       <section id="activity-tray" class="activity-tray" hidden aria-label="活动列表">

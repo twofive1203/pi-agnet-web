@@ -157,8 +157,72 @@ select {
   background: rgba(244, 124, 131, 0.24);
 }
 
+/* Compact list in the top-left pocket so it does not sit on the snail. */
+.pet-intent-menu {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 12;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 1px;
+  width: max-content;
+  max-width: calc(var(--pet-stack-width) - 26px);
+  padding: 3px;
+  border: 1px solid var(--pet-border);
+  border-radius: 10px;
+  background: rgba(16, 20, 27, 0.94);
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.32);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-2px);
+  transition: opacity 140ms ease, transform 140ms ease;
+  -webkit-app-region: no-drag;
+}
+
+.pet-stack:hover .pet-intent-menu,
+.pet-stack:focus-within .pet-intent-menu,
+.pet-intent-menu:focus-within {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+.pet-intent-menu[hidden] {
+  display: none !important;
+}
+
+.pet-intent-btn {
+  min-height: 20px;
+  padding: 3px 7px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--pet-text);
+  font-size: 10px;
+  line-height: 1.2;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.pet-intent-btn:hover {
+  background: var(--surface-hover);
+}
+
+.pet-intent-btn[hidden] {
+  display: none !important;
+}
+
+.pet-intent-btn:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
 .pet-close-btn:focus-visible,
 .tray-btn:focus-visible,
+.pet-intent-btn:focus-visible,
 .pet-option:focus-visible,
 .pet-scale-option:focus-visible,
 .activity-filter:focus-visible,

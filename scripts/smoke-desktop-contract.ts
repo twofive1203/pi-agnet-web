@@ -3149,6 +3149,10 @@ async function main() {
   assert.equal(html.includes("pet-drag-bar"), false);
   assert.ok(html.includes('id="btn-hide"'));
   assert.ok(html.includes("隐藏到托盘"));
+  assert.ok(html.includes('id="pet-intent-menu"'));
+  assert.ok(html.includes('id="btn-pet-mark-all"'));
+  assert.ok(html.includes('id="btn-pet-quick-session"'));
+  assert.ok(html.includes('id="btn-pet-settings"'));
   assert.ok(html.includes('id="pet-caption"'));
   assert.ok(html.includes('id="settings-panel"'));
   assert.ok(html.includes('id="auth-panel"'));
@@ -3189,6 +3193,8 @@ async function main() {
   assert.ok(css.includes(".activity-filter"));
   assert.ok(css.includes("align-self: stretch"));
   assert.ok(css.includes(".tray-counts[hidden]"));
+  assert.ok(css.includes(".pet-intent-menu"));
+  assert.ok(css.includes(".pet-stack:focus-within .pet-intent-menu"));
   for (const cue of [
     "thinking",
     "editing",
@@ -3284,6 +3290,7 @@ async function main() {
   assert.ok(rendererSource.includes("PET_DOUBLE_CLICK_INTERVAL_MS"));
   assert.ok(rendererSource.includes('addEventListener("lostpointercapture"'));
   assert.ok(rendererSource.includes('event.key === "p"'));
+  assert.ok(rendererSource.includes("markAllVisibleRead"));
   assert.ok(rendererSource.includes("PET_POKE_ANIMATION_MS"));
   assert.ok(rendererSource.includes("PET_FLAIL_ANIMATION_MS"));
   assert.ok(rendererSource.includes("reactionClass"));
@@ -3348,6 +3355,11 @@ async function main() {
   assert.ok(petAppSource.includes("!settingsOpen"));
   assert.ok(petAppSource.includes('trayTitle.textContent = settingsOpen ? "设置"'));
   assert.ok(petAppSource.includes("trayCounts.hidden = hideCounts"));
+  assert.ok(petAppSource.includes("悬停或聚焦显示快捷菜单"));
+  assert.ok(petAppSource.includes("markAllVisibleRead"));
+  assert.ok(petAppSource.includes("openSettingsPanel"));
+  assert.ok(petAppSource.includes("openQuickSessionPanel"));
+  assert.ok(petAppSource.includes("pendingTrayPanel"));
   assert.ok(petAppSource.includes("setInterval(refreshElapsedLabels, 1000)"));
   assert.ok(petAppSource.includes("clearElapsedTimer"));
   const markReadHandler = petAppSource.match(

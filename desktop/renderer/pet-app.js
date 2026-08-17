@@ -1871,6 +1871,9 @@
     const btnHide = root.getElementById("btn-hide");
     const btnHideTray = root.getElementById("btn-hide-tray");
     const btnSettings = root.getElementById("btn-settings");
+    const btnPetMarkAll = root.getElementById("btn-pet-mark-all");
+    const btnPetSettings = root.getElementById("btn-pet-settings");
+    const btnPetQuickSession = root.getElementById("btn-pet-quick-session");
     const btnQuickSession = root.getElementById("btn-quick-session");
     const quickSessionPanel = root.getElementById("quick-session-panel");
     const qsStatus = root.getElementById("qs-status");
@@ -1924,6 +1927,7 @@
     const TRANSITION_ACTION_MS = 620;
     let current = null;
     let settingsOpen = false;
+    let pendingTrayPanel = null;
     let quickSession = createInitialQuickSessionState();
     let qsImeComposing = false;
     let qsSubmitInFlight = false;
@@ -2613,7 +2617,12 @@
         petContextMeterLabel.textContent = contextMeter?.label ?? "";
       }
       if (tray) tray.hidden = !view.trayOpen;
-      if (!view.trayOpen) {
+      if (view.trayOpen && pendingTrayPanel === "settings") {
+        settingsOpen = true;
+        pendingTrayPanel = null;
+      } else if (view.trayOpen && pendingTrayPanel === "quick-session") {
+        pendingTrayPanel = null;
+      } else if (!view.trayOpen && pendingTrayPanel == null) {
         settingsOpen = false;
         if (quickSession.phase !== "closed") {
           quickSession = reduceQuickSessionState(quickSession, { type: "close" });
@@ -2645,6 +2654,15 @@
         btnQuickSession.disabled = !available && !composerOpen;
         btnQuickSession.setAttribute("aria-expanded", composerOpen ? "true" : "false");
       }
+      if (btnPetQuickSession) {
+        const available = view.quickSessionAvailable === true && view.connectionStatus === "connected";
+        btnPetQuickSession.hidden = !available && !composerOpen;
+        btnPetQuickSession.disabled = !available && !composerOpen;
+        btnPetQuickSession.setAttribute("aria-expanded", composerOpen ? "true" : "false");
+      }
+      if (btnPetSettings) {
+        btnPetSettings.setAttribute("aria-expanded", settingsOpen ? "true" : "false");
+      }
       renderQuickSessionPanel(view);
       if (petRoot) {
         petRoot.classList.toggle("is-collapsed", !view.trayOpen);
@@ -2664,12 +2682,12 @@
       if (petButton) {
         petButton.setAttribute("aria-expanded", view.trayOpen ? "true" : "false");
         const attentionJump = canJumpToPrimary(view);
-        const keyboardHint = "\u805A\u7126\u540E\uFF1AP \u8F7B\u6233 \xB7 Shift+P \u6446\u52A8";
+        const gestureHint = "\u60AC\u505C\u6216\u805A\u7126\u663E\u793A\u5FEB\u6377\u83DC\u5355 \xB7 P \u8F7B\u6233 \xB7 Shift+P \u6446\u52A8";
         petButton.setAttribute(
           "aria-label",
-          view.trayOpen ? `\u684C\u5BA0\uFF0C\u70B9\u51FB\u6536\u8D77\u6D3B\u52A8\u5217\u8868\uFF0C\u62D6\u52A8\u53EF\u79FB\u52A8\u3002${keyboardHint}` : attentionJump ? `\u684C\u5BA0\uFF0C\u70B9\u51FB\u76F4\u8FBE\u5F85\u5904\u7406\u4EFB\u52A1\uFF0C\u62D6\u52A8\u53EF\u79FB\u52A8\u3002${keyboardHint}` : `\u684C\u5BA0\uFF0C\u70B9\u51FB\u5C55\u5F00\u6D3B\u52A8\u5217\u8868\uFF0C\u62D6\u52A8\u53EF\u79FB\u52A8\u3002${keyboardHint}`
+          view.trayOpen ? `\u684C\u5BA0\uFF0C\u70B9\u51FB\u6536\u8D77\u6D3B\u52A8\u5217\u8868\uFF0C\u62D6\u52A8\u53EF\u79FB\u52A8\u3002${gestureHint}` : attentionJump ? `\u684C\u5BA0\uFF0C\u70B9\u51FB\u76F4\u8FBE\u5F85\u5904\u7406\u4EFB\u52A1\uFF0C\u62D6\u52A8\u53EF\u79FB\u52A8\u3002${gestureHint}` : `\u684C\u5BA0\uFF0C\u70B9\u51FB\u5C55\u5F00\u6D3B\u52A8\u5217\u8868\uFF0C\u62D6\u52A8\u53EF\u79FB\u52A8\u3002${gestureHint}`
         );
-        petButton.title = keyboardHint;
+        petButton.title = gestureHint;
       }
       if (trayCounts) {
         const hideCounts = settingsOpen || composerOpen;
@@ -3337,6 +3355,40 @@
       }
       bridge?.toggleTray();
     }
+    function markAllVisibleRead() {
+      const primary = current ? selectPrimaryActivity(current.projects) : null;
+      if (primary?.presentation === "ready" || primary?.presentation === "blocked") {
+        dismissActivityBubble(primary);
+      }
+      bridge?.markAllRead();
+    }
+    function openSettingsPanel() {
+      wakeIdleSleep();
+      setTrayMoreOpen(false);
+      if (quickSession.phase !== "closed") {
+        applyQuickSession({ type: "close" }, { render: false });
+      }
+      settingsOpen = true;
+      if (current?.trayOpen) {
+        pendingTrayPanel = null;
+        update(current);
+        return;
+      }
+      pendingTrayPanel = "settings";
+      bridge?.toggleTray();
+    }
+    function openQuickSessionPanel() {
+      wakeIdleSleep();
+      setTrayMoreOpen(false);
+      settingsOpen = false;
+      if (!current?.trayOpen) pendingTrayPanel = "quick-session";
+      if (quickSession.phase === "closed") {
+        void loadQuickSessionCatalog();
+      } else if (current) {
+        update(current);
+      }
+      if (!current?.trayOpen) bridge?.toggleTray();
+    }
     const endPetPointer = (target, pointerId, playDrop = true) => {
       if (petPointerId !== pointerId) return;
       const wasDragging = petDragging;
@@ -3467,11 +3519,7 @@
     root.addEventListener("click", onRootClick);
     btnMarkAll?.addEventListener("click", () => {
       setTrayMoreOpen(false);
-      const primary = current ? selectPrimaryActivity(current.projects) : null;
-      if (primary?.presentation === "ready" || primary?.presentation === "blocked") {
-        dismissActivityBubble(primary);
-      }
-      bridge?.markAllRead();
+      markAllVisibleRead();
     });
     btnRetry?.addEventListener("click", () => {
       setTrayMoreOpen(false);
@@ -3518,6 +3566,22 @@
       settingsOpen = !settingsOpen;
       if (current) update(current);
     });
+    btnPetSettings?.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (current?.trayOpen && settingsOpen) {
+        settingsOpen = false;
+        update(current);
+        return;
+      }
+      openSettingsPanel();
+    });
+    btnPetMarkAll?.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      wakeIdleSleep();
+      markAllVisibleRead();
+    });
     btnQuickSession?.addEventListener("click", () => {
       wakeIdleSleep();
       setTrayMoreOpen(false);
@@ -3527,6 +3591,15 @@
         return;
       }
       applyQuickSession({ type: "close" });
+    });
+    btnPetQuickSession?.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (current?.trayOpen && quickSession.phase !== "closed") {
+        applyQuickSession({ type: "close" });
+        return;
+      }
+      openQuickSessionPanel();
     });
     qsProjectTrigger?.addEventListener("click", () => {
       applyQuickSession({ type: "toggle_picker", picker: "project" });
