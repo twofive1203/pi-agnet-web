@@ -1481,6 +1481,222 @@
     }
   };
 
+  // lib/desktop-quick-session-limits.ts
+  var DESKTOP_QUICK_SESSION_MAX_MESSAGE_CHARS = 8e3;
+
+  // desktop/renderer/quick-session-state.ts
+  var QUICK_SESSION_MAX_MESSAGE_CHARS = DESKTOP_QUICK_SESSION_MAX_MESSAGE_CHARS;
+  function createInitialQuickSessionState() {
+    return {
+      phase: "closed",
+      projects: [],
+      truncated: false,
+      omitted: 0,
+      query: "",
+      selectedProjectRef: null,
+      draft: "",
+      requestId: null,
+      errorCode: null,
+      success: null
+    };
+  }
+  function newQuickSessionRequestId(random = Math.random) {
+    const hex = Array.from({ length: 32 }, () => Math.floor(random() * 16).toString(16)).join("");
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-8${hex.slice(17, 20)}-${hex.slice(20)}`;
+  }
+  function countQuickSessionChars(text) {
+    return [...text].length;
+  }
+  function canSubmitQuickSession(state) {
+    if (state.phase !== "editing" && state.phase !== "error") return false;
+    if (!state.selectedProjectRef) return false;
+    const trimmed = state.draft.trim();
+    if (!trimmed) return false;
+    return countQuickSessionChars(state.draft) <= QUICK_SESSION_MAX_MESSAGE_CHARS;
+  }
+  function filterQuickSessionProjects(projects, query) {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return [...projects];
+    return projects.filter((project) => {
+      const hay = `${project.displayName} ${project.disambiguator ?? ""}`.toLowerCase();
+      return hay.includes(needle);
+    });
+  }
+  function selectedQuickSessionProject(state) {
+    if (!state.selectedProjectRef) return null;
+    return state.projects.find((item) => item.projectRef === state.selectedProjectRef) ?? null;
+  }
+  function formatQuickSessionProjectLabel(project) {
+    if (!project) return "\u672A\u9009\u62E9\u9879\u76EE";
+    return project.disambiguator ? `${project.displayName} \xB7 ${project.disambiguator}` : project.displayName;
+  }
+  function quickSessionErrorText(code) {
+    switch (code) {
+      case "disconnected":
+        return "\u670D\u52A1\u672A\u8FDE\u63A5\uFF0C\u8349\u7A3F\u5DF2\u4FDD\u7559\u3002";
+      case "feature_unavailable":
+        return "\u5F53\u524D\u670D\u52A1\u4E0D\u652F\u6301\u5FEB\u901F\u4F1A\u8BDD\uFF0C\u8BF7\u5347\u7EA7\u8717\u725B\u6D3E\u670D\u52A1\u3002";
+      case "auth_required":
+      case "auth_invalid":
+      case "unauthorized":
+        return "\u8BBF\u95EE\u5BC6\u94A5\u65E0\u6548\uFF0C\u8BF7\u5728\u8BBE\u7F6E\u4E2D\u91CD\u65B0\u8FDE\u63A5\u3002";
+      case "project_unavailable":
+      case "project_unknown":
+      case "project_out_of_catalog":
+        return "\u9879\u76EE\u5DF2\u4E0D\u53EF\u7528\uFF0C\u8BF7\u91CD\u65B0\u9009\u62E9\u3002";
+      case "project_collision":
+        return "\u9879\u76EE\u5F15\u7528\u51B2\u7A81\uFF0C\u65E0\u6CD5\u542F\u52A8\u3002";
+      case "model_unavailable":
+        return "\u6CA1\u6709\u53EF\u7528\u7684\u9ED8\u8BA4\u6A21\u578B\uFF0C\u8BF7\u5148\u5728 WebUI \u914D\u7F6E\u6A21\u578B\u3002";
+      case "message_empty":
+        return "\u8BF7\u8F93\u5165\u9996\u6761\u6D88\u606F\u3002";
+      case "message_too_long":
+        return "\u6D88\u606F\u8D85\u51FA\u4E0A\u9650\u3002";
+      case "request_conflict":
+        return "\u8FD9\u6B21\u63D0\u4EA4\u5DF2\u5931\u6548\uFF0C\u8BF7\u4FEE\u6539\u540E\u91CD\u8BD5\u3002";
+      case "start_failed":
+        return "\u4F1A\u8BDD\u672A\u80FD\u542F\u52A8\uFF0C\u8349\u7A3F\u5DF2\u4FDD\u7559\u3002";
+      case "result_unknown":
+        return "\u7ED3\u679C\u4E0D\u786E\u5B9A\uFF0C\u91CD\u8BD5\u4E0D\u4F1A\u521B\u5EFA\u7B2C\u4E8C\u4E2A\u4F1A\u8BDD\u3002";
+      case "bad_request":
+        return "\u8BF7\u6C42\u65E0\u6548\uFF0C\u8BF7\u68C0\u67E5\u8F93\u5165\u540E\u91CD\u8BD5\u3002";
+      default:
+        return "\u542F\u52A8\u5931\u8D25\uFF0C\u8349\u7A3F\u5DF2\u4FDD\u7559\u3002";
+    }
+  }
+  function defaultSelectedRef(projects) {
+    return projects[0]?.projectRef ?? null;
+  }
+  function clearComposer(state) {
+    return {
+      ...state,
+      phase: "closed",
+      query: "",
+      draft: "",
+      requestId: null,
+      errorCode: null,
+      success: null
+    };
+  }
+  function reduceQuickSessionState(state, event) {
+    switch (event.type) {
+      case "open":
+        if (state.phase === "submitting") return state;
+        return {
+          ...state,
+          phase: "loading",
+          errorCode: null,
+          success: null,
+          requestId: null
+        };
+      case "catalog_loaded": {
+        const selected = event.catalog.projects.some((item) => item.projectRef === state.selectedProjectRef) ? state.selectedProjectRef : defaultSelectedRef(event.catalog.projects);
+        return {
+          ...state,
+          phase: "editing",
+          projects: event.catalog.projects,
+          truncated: event.catalog.truncated,
+          omitted: event.catalog.omitted,
+          selectedProjectRef: selected,
+          errorCode: event.catalog.projects.length === 0 ? "project_unknown" : null
+        };
+      }
+      case "catalog_failed":
+        return {
+          ...state,
+          phase: "error",
+          errorCode: event.code
+        };
+      case "set_query":
+        if (state.phase === "submitting") return state;
+        return { ...state, query: event.query };
+      case "select_project": {
+        if (state.phase === "submitting") return state;
+        if (!state.projects.some((item) => item.projectRef === event.projectRef)) return state;
+        const changed = state.selectedProjectRef !== event.projectRef;
+        return {
+          ...state,
+          selectedProjectRef: event.projectRef,
+          requestId: changed ? null : state.requestId,
+          errorCode: state.phase === "error" && changed ? null : state.errorCode,
+          phase: state.phase === "success" ? "editing" : state.phase,
+          success: changed ? null : state.success
+        };
+      }
+      case "set_draft":
+        if (state.phase === "submitting") return state;
+        return {
+          ...state,
+          draft: event.draft,
+          requestId: event.draft !== state.draft ? null : state.requestId,
+          errorCode: state.phase === "error" && event.draft !== state.draft ? null : state.errorCode,
+          phase: state.phase === "success" ? "editing" : state.phase,
+          success: event.draft !== state.draft ? null : state.success
+        };
+      case "submit": {
+        if (!canSubmitQuickSession(state)) return state;
+        return {
+          ...state,
+          phase: "submitting",
+          requestId: state.requestId ?? newQuickSessionRequestId(),
+          errorCode: null,
+          success: null
+        };
+      }
+      case "submit_success":
+        return {
+          ...state,
+          phase: "success",
+          draft: "",
+          requestId: null,
+          errorCode: null,
+          success: { sessionId: event.sessionId, deepLink: event.deepLink }
+        };
+      case "submit_error":
+        return {
+          ...state,
+          phase: "error",
+          errorCode: event.code
+        };
+      case "retry":
+        if (state.phase !== "error") return state;
+        if (state.errorCode === "result_unknown") {
+          return {
+            ...state,
+            phase: "submitting",
+            requestId: state.requestId ?? newQuickSessionRequestId()
+          };
+        }
+        if (!canSubmitQuickSession({ ...state, phase: "error" })) return state;
+        return {
+          ...state,
+          phase: "submitting",
+          requestId: newQuickSessionRequestId(),
+          errorCode: null
+        };
+      case "close":
+        if (state.phase === "closed") return state;
+        return {
+          ...state,
+          phase: "closed",
+          success: null
+        };
+      case "cancel":
+        return clearComposer(state);
+      case "start_another":
+        return {
+          ...state,
+          phase: "editing",
+          draft: "",
+          requestId: null,
+          errorCode: null,
+          success: null
+        };
+      default:
+        return state;
+    }
+  }
+
   // desktop/renderer/pet-app.tsx
   function isPetVisualState(value) {
     return value === "service_not_running" || value === "disconnected" || value === "needs_input" || value === "blocked" || value === "ready" || value === "retrying" || value === "running" || value === "idle";
@@ -1515,6 +1731,23 @@
     const btnHide = root.getElementById("btn-hide");
     const btnHideTray = root.getElementById("btn-hide-tray");
     const btnSettings = root.getElementById("btn-settings");
+    const btnQuickSession = root.getElementById("btn-quick-session");
+    const quickSessionPanel = root.getElementById("quick-session-panel");
+    const qsStatus = root.getElementById("qs-status");
+    const qsSelected = root.getElementById("qs-selected");
+    const qsProjectSearch = root.getElementById("qs-project-search");
+    const qsProjectList = root.getElementById("qs-project-list");
+    const qsTruncated = root.getElementById("qs-truncated");
+    const qsMessage = root.getElementById("qs-message");
+    const qsCount = root.getElementById("qs-count");
+    const qsError = root.getElementById("qs-error");
+    const qsSuccess = root.getElementById("qs-success");
+    const qsSuccessText = root.getElementById("qs-success-text");
+    const qsEditActions = root.getElementById("qs-edit-actions");
+    const btnQsCancel = root.getElementById("btn-qs-cancel");
+    const btnQsSubmit = root.getElementById("btn-qs-submit");
+    const btnQsOpen = root.getElementById("btn-qs-open");
+    const btnQsAnother = root.getElementById("btn-qs-another");
     const settingsPanel = root.getElementById("settings-panel");
     const petPicker = root.getElementById("pet-picker");
     const customPetOptions = root.getElementById("custom-pet-options");
@@ -1547,6 +1780,9 @@
     const TRANSITION_ACTION_MS = 620;
     let current = null;
     let settingsOpen = false;
+    let quickSession = createInitialQuickSessionState();
+    let qsImeComposing = false;
+    let qsSubmitInFlight = false;
     let trayMoreOpen = false;
     let idleBlinkTimer = null;
     let idleActTimer = null;
@@ -2234,14 +2470,34 @@
       if (tray) tray.hidden = !view.trayOpen;
       if (!view.trayOpen) {
         settingsOpen = false;
+        if (quickSession.phase !== "closed") {
+          quickSession = reduceQuickSessionState(quickSession, { type: "close" });
+        }
         setTrayMoreOpen(false);
       }
+      const previewQuick = view.quickSessionPreview;
+      if (!bridge && previewQuick && typeof previewQuick === "object") {
+        quickSession = {
+          ...createInitialQuickSessionState(),
+          ...previewQuick,
+          phase: typeof previewQuick.phase === "string" ? previewQuick.phase : "editing"
+        };
+      }
+      const composerOpen = quickSession.phase !== "closed";
       if (settingsPanel) settingsPanel.hidden = !settingsOpen;
-      if (activityFilters) activityFilters.hidden = settingsOpen;
-      if (projectList) projectList.hidden = settingsOpen;
+      if (quickSessionPanel) quickSessionPanel.hidden = !composerOpen || settingsOpen;
+      if (activityFilters) activityFilters.hidden = settingsOpen || composerOpen;
+      if (projectList) projectList.hidden = settingsOpen || composerOpen;
       if (btnSettings) {
         btnSettings.setAttribute("aria-expanded", settingsOpen ? "true" : "false");
       }
+      if (btnQuickSession) {
+        const available = view.quickSessionAvailable === true && view.connectionStatus === "connected";
+        btnQuickSession.hidden = !available && !composerOpen;
+        btnQuickSession.disabled = !available && !composerOpen;
+        btnQuickSession.setAttribute("aria-expanded", composerOpen ? "true" : "false");
+      }
+      renderQuickSessionPanel(view);
       if (petRoot) {
         petRoot.classList.toggle("is-collapsed", !view.trayOpen);
         petRoot.classList.toggle("is-expanded", view.trayOpen);
@@ -2391,6 +2647,196 @@
         return "\u5931\u8D25";
       }
       return "\u5DF2\u7ED3\u675F";
+    }
+    function applyQuickSession(event, options) {
+      const previous = quickSession;
+      quickSession = reduceQuickSessionState(quickSession, event);
+      if (quickSession !== previous && current && options?.render !== false) update(current);
+    }
+    function parseQuickSessionCatalog(payload) {
+      if (!payload || typeof payload !== "object") return null;
+      const record = payload;
+      const source = record.catalog && typeof record.catalog === "object" ? record.catalog : record;
+      if (!Array.isArray(source.projects)) return null;
+      const projects = source.projects.flatMap((item) => {
+        if (!item || typeof item !== "object") return [];
+        const row = item;
+        if (typeof row.projectRef !== "string" || typeof row.displayName !== "string") return [];
+        return [{
+          projectRef: row.projectRef,
+          displayName: row.displayName,
+          ...typeof row.disambiguator === "string" ? { disambiguator: row.disambiguator } : {},
+          latestModified: typeof row.latestModified === "string" ? row.latestModified : "",
+          archived: row.archived === true,
+          worktree: row.worktree === true
+        }];
+      });
+      return {
+        projects,
+        truncated: source.truncated === true,
+        omitted: typeof source.omitted === "number" ? source.omitted : 0
+      };
+    }
+    async function loadQuickSessionCatalog() {
+      applyQuickSession({ type: "open" });
+      if (!bridge?.listQuickSessionProjects) {
+        applyQuickSession({ type: "catalog_failed", code: "feature_unavailable" });
+        return;
+      }
+      try {
+        const payload = await bridge.listQuickSessionProjects();
+        if (payload && typeof payload === "object" && payload.ok === false) {
+          const code = payload.code;
+          applyQuickSession({
+            type: "catalog_failed",
+            code: typeof code === "string" ? code : "result_unknown"
+          });
+          return;
+        }
+        const catalog = parseQuickSessionCatalog(payload);
+        if (!catalog) {
+          applyQuickSession({ type: "catalog_failed", code: "result_unknown" });
+          return;
+        }
+        applyQuickSession({ type: "catalog_loaded", catalog });
+        qsMessage?.focus();
+      } catch {
+        applyQuickSession({ type: "catalog_failed", code: "result_unknown" });
+      }
+    }
+    async function submitQuickSession() {
+      if (qsSubmitInFlight) return;
+      if (quickSession.phase !== "submitting") {
+        applyQuickSession({ type: "submit" }, { render: true });
+      }
+      if (quickSession.phase !== "submitting" || !quickSession.requestId || !quickSession.selectedProjectRef) {
+        return;
+      }
+      qsSubmitInFlight = true;
+      try {
+        if (!bridge?.createQuickSession) {
+          applyQuickSession({ type: "submit_error", code: "feature_unavailable" });
+          return;
+        }
+        const payload = await bridge.createQuickSession({
+          projectRef: quickSession.selectedProjectRef,
+          message: quickSession.draft,
+          requestId: quickSession.requestId
+        });
+        if (payload && typeof payload === "object" && payload.ok === false) {
+          const code = payload.code;
+          applyQuickSession({
+            type: "submit_error",
+            code: typeof code === "string" ? code : "result_unknown"
+          });
+          return;
+        }
+        const result = payload && typeof payload === "object" ? payload.result ?? payload : null;
+        if (!result || typeof result.sessionId !== "string" || typeof result.deepLink !== "string") {
+          applyQuickSession({ type: "submit_error", code: "result_unknown" });
+          return;
+        }
+        applyQuickSession({
+          type: "submit_success",
+          sessionId: result.sessionId,
+          deepLink: result.deepLink
+        });
+      } catch {
+        applyQuickSession({ type: "submit_error", code: "result_unknown" });
+      } finally {
+        qsSubmitInFlight = false;
+      }
+    }
+    function renderQuickSessionPanel(view) {
+      if (!quickSessionPanel || quickSession.phase === "closed" || settingsOpen) return;
+      const submitting = quickSession.phase === "submitting";
+      const success = quickSession.phase === "success";
+      if (qsStatus) {
+        qsStatus.hidden = quickSession.phase !== "loading" && !(quickSession.phase === "editing" && quickSession.projects.length === 0);
+        qsStatus.textContent = quickSession.phase === "loading" ? "\u6B63\u5728\u52A0\u8F7D\u9879\u76EE\u2026" : view.connectionStatus !== "connected" ? "\u670D\u52A1\u672A\u8FDE\u63A5" : "\u5F53\u524D\u6CA1\u6709\u53EF\u542F\u52A8\u7684\u9879\u76EE";
+      }
+      const selectedProject = selectedQuickSessionProject(quickSession);
+      if (qsSelected) {
+        qsSelected.textContent = formatQuickSessionProjectLabel(selectedProject);
+        qsSelected.classList.toggle("is-empty", selectedProject == null);
+      }
+      if (qsProjectSearch && qsProjectSearch.value !== quickSession.query) {
+        qsProjectSearch.value = quickSession.query;
+      }
+      if (qsProjectSearch) qsProjectSearch.disabled = submitting || success;
+      if (qsProjectList) {
+        const sameQuery = qsProjectList.dataset.query === quickSession.query && qsProjectList.dataset.count === String(quickSession.projects.length);
+        const existingOptions = sameQuery ? Array.from(qsProjectList.querySelectorAll("[data-project-ref]")) : [];
+        if (existingOptions.length > 0) {
+          for (const option of existingOptions) {
+            option.setAttribute(
+              "aria-selected",
+              option.dataset.projectRef === quickSession.selectedProjectRef ? "true" : "false"
+            );
+          }
+        } else {
+          qsProjectList.replaceChildren();
+          const visible = filterQuickSessionProjects(quickSession.projects, quickSession.query);
+          if (visible.length === 0) {
+            const empty = document.createElement("div");
+            empty.className = "qs-project-empty";
+            empty.textContent = quickSession.phase === "loading" ? "\u6B63\u5728\u52A0\u8F7D\u9879\u76EE\u2026" : quickSession.projects.length === 0 ? "\u5F53\u524D\u6CA1\u6709\u53EF\u542F\u52A8\u7684\u9879\u76EE" : "\u6CA1\u6709\u5339\u914D\u7684\u9879\u76EE";
+            qsProjectList.appendChild(empty);
+          } else {
+            for (const project of visible) {
+              const option = document.createElement("button");
+              option.type = "button";
+              option.className = "qs-project-option";
+              option.dataset.projectRef = project.projectRef;
+              option.setAttribute("role", "option");
+              option.setAttribute(
+                "aria-selected",
+                project.projectRef === quickSession.selectedProjectRef ? "true" : "false"
+              );
+              option.disabled = submitting || success;
+              const name = document.createElement("span");
+              name.textContent = project.displayName;
+              option.appendChild(name);
+              if (project.disambiguator) {
+                const meta = document.createElement("span");
+                meta.className = "qs-project-meta";
+                meta.textContent = project.disambiguator;
+                option.appendChild(meta);
+              }
+              qsProjectList.appendChild(option);
+            }
+          }
+          qsProjectList.dataset.query = quickSession.query;
+          qsProjectList.dataset.count = String(quickSession.projects.length);
+        }
+      }
+      if (qsTruncated) qsTruncated.hidden = !quickSession.truncated;
+      if (qsMessage && qsMessage.value !== quickSession.draft) qsMessage.value = quickSession.draft;
+      if (qsMessage) qsMessage.disabled = submitting || success;
+      const used = countQuickSessionChars(quickSession.draft);
+      if (qsCount) {
+        qsCount.textContent = `${used} / ${QUICK_SESSION_MAX_MESSAGE_CHARS}`;
+        qsCount.classList.toggle("is-over", used > QUICK_SESSION_MAX_MESSAGE_CHARS);
+      }
+      if (qsError) {
+        const showError = quickSession.phase === "error" && quickSession.errorCode != null;
+        qsError.hidden = !showError;
+        qsError.textContent = showError ? quickSessionErrorText(quickSession.errorCode) : "";
+      }
+      if (qsSuccess) qsSuccess.hidden = !success;
+      if (qsSuccessText && success && quickSession.success) {
+        const project = selectedQuickSessionProject(quickSession);
+        const shortId = quickSession.success.sessionId.slice(0, 8);
+        qsSuccessText.textContent = `${project?.displayName ?? "\u9879\u76EE"} \u5DF2\u542F\u52A8 \xB7 ${shortId}`;
+      }
+      if (qsEditActions) qsEditActions.hidden = success;
+      if (btnQsSubmit) {
+        btnQsSubmit.disabled = submitting || !canSubmitQuickSession({
+          ...quickSession,
+          phase: quickSession.phase === "error" ? "error" : "editing"
+        });
+        btnQsSubmit.textContent = submitting ? "\u542F\u52A8\u4E2D\u2026" : quickSession.phase === "error" ? "\u91CD\u8BD5" : "\u542F\u52A8";
+      }
     }
     function childUpdatedText(updatedAt) {
       if (!updatedAt || !Number.isFinite(Date.parse(updatedAt))) return null;
@@ -2770,8 +3216,63 @@
     btnSettings?.addEventListener("click", () => {
       wakeIdleSleep();
       setTrayMoreOpen(false);
+      if (quickSession.phase !== "closed") {
+        applyQuickSession({ type: "close" });
+      }
       settingsOpen = !settingsOpen;
       if (current) update(current);
+    });
+    btnQuickSession?.addEventListener("click", () => {
+      wakeIdleSleep();
+      setTrayMoreOpen(false);
+      settingsOpen = false;
+      if (quickSession.phase === "closed") {
+        void loadQuickSessionCatalog();
+        return;
+      }
+      applyQuickSession({ type: "close" });
+    });
+    qsProjectSearch?.addEventListener("input", () => {
+      applyQuickSession({ type: "set_query", query: qsProjectSearch.value });
+    });
+    qsProjectList?.addEventListener("click", (event) => {
+      const target = event.target instanceof Element ? event.target.closest("[data-project-ref]") : null;
+      const projectRef = target?.dataset.projectRef;
+      if (!projectRef) return;
+      applyQuickSession({ type: "select_project", projectRef });
+    });
+    qsMessage?.addEventListener("compositionstart", () => {
+      qsImeComposing = true;
+    });
+    qsMessage?.addEventListener("compositionend", () => {
+      qsImeComposing = false;
+      applyQuickSession({ type: "set_draft", draft: qsMessage.value });
+    });
+    qsMessage?.addEventListener("input", () => {
+      applyQuickSession({ type: "set_draft", draft: qsMessage.value });
+    });
+    qsMessage?.addEventListener("keydown", (event) => {
+      if (qsImeComposing || event.isComposing || event.keyCode === 229) return;
+      if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+        event.preventDefault();
+        if (quickSession.phase === "error") applyQuickSession({ type: "retry" });
+        void submitQuickSession();
+      }
+    });
+    btnQsCancel?.addEventListener("click", () => {
+      applyQuickSession({ type: "cancel" });
+    });
+    btnQsSubmit?.addEventListener("click", () => {
+      if (quickSession.phase === "error") applyQuickSession({ type: "retry" });
+      void submitQuickSession();
+    });
+    btnQsOpen?.addEventListener("click", () => {
+      const href = quickSession.success?.deepLink;
+      if (href) void bridge?.openExternalUrl(href);
+    });
+    btnQsAnother?.addEventListener("click", () => {
+      applyQuickSession({ type: "start_another" });
+      qsMessage?.focus();
     });
     activityFilters?.addEventListener("click", (event) => {
       const target = event.target instanceof Element ? event.target.closest("[data-activity-filter]") : null;
@@ -2889,6 +3390,8 @@
           expandedActivityIds.delete(selectedVisibleActivityId);
           update(current);
           focusActivityRow(selectedVisibleActivityId);
+        } else if (quickSession.phase !== "closed") {
+          applyQuickSession({ type: "close" });
         } else if (settingsOpen) {
           settingsOpen = false;
           update(current);

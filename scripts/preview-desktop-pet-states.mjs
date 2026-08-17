@@ -69,6 +69,7 @@ function baseView(overrides = {}) {
     launchAtLogin: false,
     showContextMeter: true,
     dndEnabled: false,
+    quickSessionAvailable: true,
     notification: { needsInput: true, blocked: true, completion: "background-only" },
     reducedMotion: false,
     reset: false,
@@ -250,6 +251,98 @@ function cells() {
       settingsOpen: false,
       reducedMotion: true,
     }),
+  });
+  const qsProject = {
+    projectRef: "p_aaaaaaaaaaaaaaaa",
+    displayName: "alpha",
+    latestModified: "2026-08-17T12:00:00.000Z",
+    archived: false,
+    worktree: false,
+  };
+  const qsBase = {
+    state: "idle",
+    petId: "snail-default",
+    petScale: "medium",
+    trayOpen: true,
+    settingsOpen: false,
+    reducedMotion: false,
+  };
+  list.push({
+    id: "quick-session-editing",
+    title: "Quick session / editing",
+    view: {
+      ...viewForCell(qsBase),
+      quickSessionPreview: {
+        phase: "editing",
+        projects: [qsProject, { ...qsProject, projectRef: "p_bbbbbbbbbbbbbbbb", displayName: "alpha", disambiguator: "bb22" }],
+        truncated: false,
+        omitted: 0,
+        query: "",
+        selectedProjectRef: qsProject.projectRef,
+        draft: "检查当前测试失败原因",
+        requestId: null,
+        errorCode: null,
+        success: null,
+      },
+    },
+  });
+  list.push({
+    id: "quick-session-submitting",
+    title: "Quick session / submitting",
+    view: {
+      ...viewForCell({ ...qsBase, petScale: "small" }),
+      quickSessionPreview: {
+        phase: "submitting",
+        projects: [qsProject],
+        truncated: false,
+        omitted: 0,
+        query: "",
+        selectedProjectRef: qsProject.projectRef,
+        draft: "检查当前测试失败原因",
+        requestId: "11111111-1111-4111-8111-111111111111",
+        errorCode: null,
+        success: null,
+      },
+    },
+  });
+  list.push({
+    id: "quick-session-success",
+    title: "Quick session / success",
+    view: {
+      ...viewForCell({ ...qsBase, petScale: "large" }),
+      quickSessionPreview: {
+        phase: "success",
+        projects: [qsProject],
+        truncated: false,
+        omitted: 0,
+        query: "",
+        selectedProjectRef: qsProject.projectRef,
+        draft: "",
+        requestId: null,
+        errorCode: null,
+        success: { sessionId: "sess-preview", deepLink: "/?session=sess-preview" },
+      },
+    },
+  });
+  list.push({
+    id: "quick-session-empty",
+    title: "Quick session / empty",
+    view: {
+      ...viewForCell({ ...qsBase, reducedMotion: true }),
+      quickSessionAvailable: false,
+      quickSessionPreview: {
+        phase: "error",
+        projects: [],
+        truncated: false,
+        omitted: 0,
+        query: "",
+        selectedProjectRef: null,
+        draft: "草稿仍在",
+        requestId: null,
+        errorCode: "project_unknown",
+        success: null,
+      },
+    },
   });
   return list;
 }

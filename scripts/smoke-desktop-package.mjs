@@ -218,6 +218,12 @@ async function main() {
   // Desktop scripts must exist and not be the only publish surface
   assert.ok(rootPkg.scripts?.["test:desktop-package"], "test:desktop-package script required");
   assert.ok(rootPkg.scripts?.["test:desktop-observer"], "test:desktop-observer script required");
+  assert.ok(rootPkg.scripts?.["test:desktop-quick-session"], "test:desktop-quick-session script required");
+  assert.match(
+    String(rootPkg.scripts["test:desktop-observer"]),
+    /test:desktop-quick-session/,
+    "desktop observer aggregate must include quick-session smoke",
+  );
   assert.ok(rootPkg.scripts?.["desktop:preview"], "desktop:preview script required");
   assert.ok(rootPkg.scripts?.["desktop:package"], "desktop:package script required");
   assert.ok(rootPkg.scripts?.["desktop:make"], "desktop:make script required");
@@ -238,6 +244,7 @@ async function main() {
   const required = [
     "desktop/main/main.ts",
     "desktop/main/observer-client.ts",
+    "desktop/main/quick-session-client.ts",
     "desktop/main/connection-state.ts",
     "desktop/main/activity-store.ts",
     "desktop/main/notification-controller.ts",
@@ -250,6 +257,7 @@ async function main() {
     "desktop/renderer/pet-app.tsx",
     "desktop/renderer/pet-app.js",
     "desktop/renderer/pet-state.ts",
+    "desktop/renderer/quick-session-state.ts",
     "desktop/renderer/pet-assets.ts",
     "desktop/renderer/pet.css",
     "desktop/assets/pets/snail-default/manifest.json",

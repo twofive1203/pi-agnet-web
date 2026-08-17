@@ -21,6 +21,7 @@ import {
   isApiPath,
   isBrowserExtensionPairingPath,
   isClientIpAuthBypassed,
+  isDesktopControlPath,
   isDesktopObserverPath,
   isInsecureHttpAllowed,
   isLoopbackClientAddress,
@@ -86,9 +87,14 @@ function testPublicPaths(): void {
   assert(!isPublicPath(BROWSER_PAIR_API_PATH), "browser pair is not globally public");
   assert(!isPublicPath(BROWSER_UNPAIR_API_PATH), "browser unpair is not globally public");
   assert(!isPublicPath("/api/desktop-observer/protocol"), "desktop observer not globally public");
+  assert(!isPublicPath("/api/desktop-control/session"), "desktop control not globally public");
   assert(isDesktopObserverPath("/api/desktop-observer/protocol"), "desktop observer path classified");
   assert(isDesktopObserverPath("/api/desktop-observer/session"), "desktop observer session classified");
   assert(!isDesktopObserverPath("/api/sessions"), "sessions is not desktop observer");
+  assert(!isDesktopObserverPath("/api/desktop-control/session"), "control is not observer");
+  assert(isDesktopControlPath("/api/desktop-control/session"), "desktop control path classified");
+  assert(isDesktopControlPath("/api/desktop-control/projects"), "desktop control projects classified");
+  assert(!isDesktopControlPath("/api/desktop-observer/session"), "observer is not control");
   assert(isBrowserExtensionPairingPath(BROWSER_PAIR_API_PATH), "pair path classified");
   assert(isBrowserExtensionPairingPath(`${BROWSER_PAIR_API_PATH}/`), "pair slash classified");
   assert(isBrowserExtensionPairingPath(BROWSER_UNPAIR_API_PATH), "unpair path classified");
@@ -104,6 +110,10 @@ function testPublicPaths(): void {
   assert(
     proxySource.includes("isDesktopObserverPath"),
     "proxy must special-case desktop observer loopback attach",
+  );
+  assert(
+    proxySource.includes("isDesktopControlPath"),
+    "proxy must special-case desktop control loopback attach",
   );
   assert(
     proxySource.includes('action === "exchange"') || proxySource.includes("action === 'exchange'"),

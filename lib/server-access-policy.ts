@@ -46,6 +46,8 @@ export const BROWSER_PAIR_API_PATH = "/api/browser/pair";
 export const BROWSER_UNPAIR_API_PATH = "/api/browser/unpair";
 /** Desktop pet attach API prefix (loopback-only; not anonymously public). */
 export const DESKTOP_OBSERVER_API_PREFIX = "/api/desktop-observer";
+/** Desktop pet control API prefix (loopback-only; not anonymously public). */
+export const DESKTOP_CONTROL_API_PREFIX = "/api/desktop-control";
 
 /** Max access-key length accepted by login. */
 export const MAX_ACCESS_KEY_LENGTH = 512;
@@ -441,6 +443,19 @@ export function isDesktopObserverPath(pathname: string): boolean {
   return (
     pathname === DESKTOP_OBSERVER_API_PREFIX
     || pathname.startsWith(`${DESKTOP_OBSERVER_API_PREFIX}/`)
+  );
+}
+
+/**
+ * Desktop pet control routes. Never globally public and never a browser-cookie
+ * substitute: Proxy may skip the cookie/HTTPS gate only for a proven loopback
+ * TCP peer; handlers still enforce Host 127.0.0.1 + loopback remote + scoped
+ * control token, and session mint verifies the access key when server auth is on.
+ */
+export function isDesktopControlPath(pathname: string): boolean {
+  return (
+    pathname === DESKTOP_CONTROL_API_PREFIX
+    || pathname.startsWith(`${DESKTOP_CONTROL_API_PREFIX}/`)
   );
 }
 

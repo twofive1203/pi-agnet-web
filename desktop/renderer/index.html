@@ -96,6 +96,17 @@
             </div>
             <button
               type="button"
+              id="btn-quick-session"
+              class="tray-btn"
+              title="快速会话"
+              aria-label="快速会话"
+              aria-expanded="false"
+              hidden
+            >
+              快速会话
+            </button>
+            <button
+              type="button"
               id="btn-settings"
               class="tray-btn tray-btn-icon"
               title="桌宠设置"
@@ -239,6 +250,42 @@
               <input id="pref-dnd" type="checkbox" />
               <span>勿扰模式（暂停系统通知与状态气泡，状态仍实时更新）</span>
             </label>
+          </div>
+        </section>
+        <section id="quick-session-panel" class="quick-session-panel" hidden aria-label="快速会话">
+          <p id="qs-status" class="qs-status" hidden></p>
+          <label class="qs-label" for="qs-project-search">项目</label>
+          <p id="qs-selected" class="qs-selected">未选择项目</p>
+          <input
+            id="qs-project-search"
+            class="qs-input"
+            type="search"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="搜索项目"
+          />
+          <div id="qs-project-list" class="qs-project-list" role="listbox" aria-label="可选项目"></div>
+          <p id="qs-truncated" class="qs-note" hidden>仅显示最近 100 个项目</p>
+          <label class="qs-label" for="qs-message">首条消息</label>
+          <textarea
+            id="qs-message"
+            class="qs-textarea"
+            rows="4"
+            maxlength="8000"
+            placeholder="交代一句任务，Ctrl+Enter 启动"
+          ></textarea>
+          <div id="qs-count" class="qs-count" aria-live="polite"></div>
+          <p id="qs-error" class="qs-error" hidden></p>
+          <div id="qs-success" class="qs-success" hidden>
+            <p id="qs-success-text" class="qs-success-text"></p>
+            <div class="qs-actions">
+              <button type="button" id="btn-qs-open" class="tray-btn">打开会话</button>
+              <button type="button" id="btn-qs-another" class="tray-btn">再开一个</button>
+            </div>
+          </div>
+          <div id="qs-edit-actions" class="qs-actions">
+            <button type="button" id="btn-qs-cancel" class="tray-btn">取消</button>
+            <button type="button" id="btn-qs-submit" class="tray-btn qs-submit" disabled>启动</button>
           </div>
         </section>
         <div id="project-list" class="project-list" role="listbox" aria-label="任务活动"></div>

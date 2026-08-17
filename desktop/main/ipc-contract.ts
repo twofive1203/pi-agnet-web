@@ -37,6 +37,10 @@ export const PET_IPC_CHANNELS = {
   openCustomPetsDir: "pet:open-custom-pets-dir",
   /** Re-scan the custom pets folder (user added/removed pets on disk). */
   rescanCustomPets: "pet:rescan-custom-pets",
+  /** List path-free projects for the in-tray quick-session composer. */
+  listQuickSessionProjects: "pet:list-quick-session-projects",
+  /** Start one Agent session with the first text message. */
+  createQuickSession: "pet:create-quick-session",
 } as const;
 
 export type PetIpcChannel = (typeof PET_IPC_CHANNELS)[keyof typeof PET_IPC_CHANNELS];
@@ -62,6 +66,8 @@ export const PET_RENDERER_ALLOWED_CHANNELS: readonly string[] = [
   PET_IPC_CHANNELS.getCustomPets,
   PET_IPC_CHANNELS.openCustomPetsDir,
   PET_IPC_CHANNELS.rescanCustomPets,
+  PET_IPC_CHANNELS.listQuickSessionProjects,
+  PET_IPC_CHANNELS.createQuickSession,
 ];
 
 /** Channels main may push to renderer. */

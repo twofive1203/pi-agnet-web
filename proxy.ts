@@ -23,6 +23,7 @@ import {
   isApiPath,
   isBrowserExtensionPairingPath,
   isClientIpAuthBypassed,
+  isDesktopControlPath,
   isDesktopObserverPath,
   isLoopbackClientAddress,
   isPublicPath,
@@ -107,7 +108,7 @@ export async function proxy(request: NextRequest): Promise<NextResponse | Respon
   // browser session cookie or satisfy same-origin/HTTPS unlock UX. Proven loopback peers
   // skip the cookie/HTTPS gate here; route handlers still enforce Host 127.0.0.1 + loopback
   // remote, and session mint verifies the access key when server auth is on.
-  if (isDesktopObserverPath(pathname)) {
+  if (isDesktopObserverPath(pathname) || isDesktopControlPath(pathname)) {
     const remote = resolveSocketRemoteAddress();
     if (isLoopbackClientAddress(remote)) {
       return NextResponse.next();

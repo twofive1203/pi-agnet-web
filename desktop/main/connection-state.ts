@@ -45,6 +45,11 @@ export type DesktopConnectionState = {
   attempt: number;
   /** When true, the next successful snapshot is a notification baseline (no toasts). */
   resetNotificationBaseline: boolean;
+  /**
+   * Additive protocol capability. Missing/unknown on old servers stays false so
+   * observer attach still works while the quick-session entry stays hidden.
+   */
+  quickSessionAvailable: boolean;
   updatedAt: number;
 };
 
@@ -61,7 +66,12 @@ export type DesktopConnectionEvent =
       >;
       detail?: string;
     }
-  | { type: "connected"; instanceId: string; resetBaseline?: boolean }
+  | {
+      type: "connected";
+      instanceId: string;
+      resetBaseline?: boolean;
+      quickSessionAvailable?: boolean;
+    }
   | { type: "stream_lost"; detail?: string }
   | { type: "instance_changed"; instanceId: string }
   | { type: "token_rejected" }
@@ -90,6 +100,7 @@ export function createInitialConnectionState(input?: {
     detail: null,
     attempt: 0,
     resetNotificationBaseline: true,
+    quickSessionAvailable: false,
     updatedAt: input?.now ?? 0,
   };
 }
@@ -157,6 +168,7 @@ export function reduceConnectionState(
           reasonCode: "connection_refused",
           detail: null,
           instanceId: null,
+          quickSessionAvailable: false,
         },
         now,
       );
@@ -183,6 +195,7 @@ export function reduceConnectionState(
           reasonCode: "network_error",
           detail: clampDetail(event.detail),
           instanceId: null,
+          quickSessionAvailable: false,
         },
         now,
       );
@@ -195,6 +208,7 @@ export function reduceConnectionState(
           reasonCode: event.reasonCode,
           detail: clampDetail(event.detail),
           instanceId: null,
+          quickSessionAvailable: false,
         },
         now,
       );
@@ -216,6 +230,7 @@ export function reduceConnectionState(
           detail: null,
           attempt: 0,
           resetNotificationBaseline: resetBaseline,
+          quickSessionAvailable: event.quickSessionAvailable === true,
         },
         now,
       );
@@ -245,6 +260,7 @@ export function reduceConnectionState(
           reasonCode: "instance_changed",
           detail: null,
           resetNotificationBaseline: true,
+          quickSessionAvailable: false,
           attempt: state.attempt + 1,
         },
         now,
@@ -274,6 +290,7 @@ export function reduceConnectionState(
           instanceId: null,
           attempt: 0,
           resetNotificationBaseline: true,
+          quickSessionAvailable: false,
         },
         now,
       );

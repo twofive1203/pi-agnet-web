@@ -42,6 +42,7 @@ import { openValidatedDeepLink, rejectArbitraryRendererUrl } from "./deep-link-o
 import { PET_IPC_CHANNELS, type PetPrefsPatch } from "./ipc-contract";
 import { DesktopNotificationController } from "./notification-controller";
 import { DesktopObserverClient } from "./observer-client";
+import { DesktopQuickSessionClient } from "./quick-session-client";
 import { DesktopSoundCueController } from "./sound-policy";
 import {
   loadDesktopSettingsFile,
@@ -121,6 +122,7 @@ export type DesktopMainDeps = {
     decryptString: (blob: Buffer) => string;
   };
   createObserverClient?: (options: ConstructorParameters<typeof DesktopObserverClient>[0]) => DesktopObserverClient;
+  createQuickSessionClient?: (options: ConstructorParameters<typeof DesktopQuickSessionClient>[0]) => DesktopQuickSessionClient;
 };
 
 const nodeSettingsFs: SettingsFs = {
@@ -351,6 +353,7 @@ export async function startDesktopPetMain(deps: DesktopMainDeps): Promise<{
       detail: null,
       attempt: 0,
       resetNotificationBaseline: true,
+      quickSessionAvailable: false,
       updatedAt: Date.now(),
     } satisfies DesktopConnectionState);
     const view = buildActivityView({
@@ -375,7 +378,27 @@ export async function startDesktopPetMain(deps: DesktopMainDeps): Promise<{
     refreshTray(view);
   };
 
+  const quickSessionClient =
+    deps.createQuickSessionClient?.({
+      port: settings.port,
+      accessKey,
+    }) ??
+    new DesktopQuickSessionClient({
+      port: settings.port,
+      accessKey,
+    });
+
+  const syncQuickSessionConnection = (state: DesktopConnectionState) => {
+    quickSessionClient.setConnection({
+      connected: state.status === "connected",
+      quickSessionAvailable: state.quickSessionAvailable === true,
+      instanceId: state.instanceId,
+      port: state.port,
+    });
+  };
+
   const onConnectionState = (state: DesktopConnectionState) => {
+    syncQuickSessionConnection(state);
     if (state.status !== "connected") {
       stale = snapshot != null;
     }
@@ -438,6 +461,15 @@ export async function startDesktopPetMain(deps: DesktopMainDeps): Promise<{
       onSnapshot,
     });
   clientRef = client;
+  syncQuickSessionConnection(client.getState());
+
+  function isTrustedPetSender(event: { sender?: { id?: number; isDestroyed?: () => boolean } }): boolean {
+    const expected = petWindow?.webContentsId?.();
+    const senderId = event.sender?.id;
+    if (expected == null || senderId == null) return false;
+    if (event.sender?.isDestroyed?.()) return false;
+    return senderId === expected;
+  }
 
   function openActivityDeepLink(relativeHref: string): boolean {
     const result = openValidatedDeepLink({
@@ -646,6 +678,7 @@ export async function startDesktopPetMain(deps: DesktopMainDeps): Promise<{
       send: (channel, payload) => {
         if (!win.isDestroyed()) win.webContents.send(channel, payload);
       },
+      webContentsId: () => (win.isDestroyed() ? null : win.webContents.id),
       onClose: (handler) => {
         win.on("close", (event: unknown) => {
           handler(event as { preventDefault(): void });
@@ -882,6 +915,7 @@ export async function startDesktopPetMain(deps: DesktopMainDeps): Promise<{
       }
       accessKey = next;
       client.setAccessKey(next);
+      quickSessionClient.setAccessKey(next);
       const saved = saveDesktopAccessKey(userDataDir, next, accessKeyFs, accessKeyCodec);
       client.retry();
       pushState();
@@ -891,6 +925,7 @@ export async function startDesktopPetMain(deps: DesktopMainDeps): Promise<{
     ipcMain.handle(PET_IPC_CHANNELS.clearAccessKey, () => {
       accessKey = null;
       client.setAccessKey(null);
+      quickSessionClient.setAccessKey(null);
       clearDesktopAccessKey(userDataDir, accessKeyFs);
       client.retry();
       pushState();
@@ -931,6 +966,31 @@ export async function startDesktopPetMain(deps: DesktopMainDeps): Promise<{
         return { ok: false };
       }
     });
+
+    ipcMain.handle(PET_IPC_CHANNELS.listQuickSessionProjects, async (event) => {
+      if (!isTrustedPetSender(event)) {
+        return { ok: false, code: "unauthorized" };
+      }
+      const result = await quickSessionClient.listProjects();
+      if (!result.ok) return { ok: false, code: result.code };
+      assertRendererViewSafe(result.value);
+      return { ok: true, catalog: result.value };
+    });
+
+    ipcMain.handle(PET_IPC_CHANNELS.createQuickSession, async (event, payload: unknown) => {
+      if (!isTrustedPetSender(event)) {
+        return { ok: false, code: "unauthorized" };
+      }
+      const input = payload && typeof payload === "object" ? payload as Record<string, unknown> : {};
+      const result = await quickSessionClient.createSession({
+        projectRef: input.projectRef,
+        message: input.message,
+        requestId: input.requestId,
+      });
+      if (!result.ok) return { ok: false, code: result.code };
+      assertRendererViewSafe(result.value);
+      return { ok: true, result: result.value };
+    });
   }
 
   let stopped = false;
@@ -938,6 +998,7 @@ export async function startDesktopPetMain(deps: DesktopMainDeps): Promise<{
     if (stopped) return;
     stopped = true;
     client.quit();
+    quickSessionClient.quit();
     try {
       tray?.destroy();
     } catch {

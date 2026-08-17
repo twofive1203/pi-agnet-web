@@ -132,6 +132,8 @@ export type DesktopActivityView = {
   activeCount: number;
   /** Display-only custom pets root path (main-owned; never renderer-supplied). */
   customPetsRoot: string | null;
+  /** Safe boolean only — never a token, cwd, or raw capability list. */
+  quickSessionAvailable: boolean;
 };
 
 export type ActivityStoreSnapshotInput = {
@@ -427,6 +429,8 @@ export function buildActivityView(input: ActivityStoreSnapshotInput): DesktopAct
     attentionCount,
     activeCount,
     customPetsRoot: input.customPetsRoot ?? null,
+    quickSessionAvailable:
+      input.connection.status === "connected" && input.connection.quickSessionAvailable === true,
   };
 }
 

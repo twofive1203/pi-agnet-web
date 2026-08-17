@@ -10,6 +10,7 @@
  * - Token stays in main-process memory only (not settings, not renderer).
  */
 
+import { DESKTOP_PROTOCOL_CAPABILITY_QUICK_SESSION } from "../../lib/desktop-control-constants";
 import { DESKTOP_OBSERVER_PRODUCT } from "../../lib/desktop-observer-constants";
 import { TASK_OBSERVER_PROTOCOL_VERSION } from "../../lib/task-observer-types";
 import {
@@ -73,6 +74,7 @@ export type DesktopProtocolPayload = {
   compatible?: unknown;
   authRequired?: unknown;
   reasonCode?: unknown;
+  capabilities?: unknown;
 };
 
 export type DesktopSessionPayload = {
@@ -105,7 +107,13 @@ export type ObserverClientOptions = {
 };
 
 export type ProbeResult =
-  | { ok: true; instanceId: string; token: string; expiresAt: number }
+  | {
+      ok: true;
+      instanceId: string;
+      token: string;
+      expiresAt: number;
+      quickSessionAvailable: boolean;
+    }
   | { ok: false; event: DesktopConnectionEvent };
 
 /**
@@ -153,6 +161,7 @@ export function interpretProtocolPayload(
   type: "protocol_ok";
   instanceId: string;
   authRequired: boolean;
+  quickSessionAvailable: boolean;
 } {
   if (httpStatus === 0) return { type: "connection_refused" };
   // 401/403 on the pre-session probe almost always means server-mode access auth.
@@ -195,7 +204,14 @@ export function interpretProtocolPayload(
     type: "protocol_ok",
     instanceId: p.instanceId.trim(),
     authRequired,
+    // Old servers omit capabilities; observer still attaches, write entry stays off.
+    quickSessionAvailable: protocolHasQuickSessionCapability(p.capabilities),
   };
+}
+
+export function protocolHasQuickSessionCapability(capabilities: unknown): boolean {
+  if (!Array.isArray(capabilities)) return false;
+  return capabilities.some((item) => item === DESKTOP_PROTOCOL_CAPABILITY_QUICK_SESSION);
 }
 
 export function interpretSessionPayload(
@@ -482,6 +498,7 @@ export class DesktopObserverClient {
       type: "connected",
       instanceId: result.instanceId,
       resetBaseline,
+      quickSessionAvailable: result.quickSessionAvailable,
     });
     this.reconnectAttempt = 0;
 
@@ -587,6 +604,7 @@ export class DesktopObserverClient {
       instanceId: sessionResult.instanceId,
       token: sessionResult.token,
       expiresAt: sessionResult.expiresAt,
+      quickSessionAvailable: protocolResult.quickSessionAvailable,
     };
   }
 

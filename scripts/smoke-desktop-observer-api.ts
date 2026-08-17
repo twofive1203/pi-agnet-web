@@ -58,6 +58,7 @@ async function main() {
   assert.equal(protocol.mode, "local");
   assert.equal(protocol.compatible, true);
   assert.equal(protocol.reasonCode, null);
+  assert.deepEqual(protocol.capabilities, ["quick_session"]);
 
   const serverProtocol = buildDesktopObserverProtocolPayload({ PI_WEB_SERVER_MODE: "1" });
   assert.equal(serverProtocol.mode, "server");
@@ -228,6 +229,21 @@ async function main() {
           }),
         ),
       (error: unknown) => error instanceof DesktopObserverAccessError,
+    );
+
+    // Control-token header must never authenticate an observer route.
+    assert.throws(
+      () =>
+        assertDesktopObserverToken(
+          req("http://127.0.0.1:62666/api/desktop-observer/snapshot", {
+            headers: {
+              host: "127.0.0.1:62666",
+              "x-spi-desktop-control-token": issued.token,
+            },
+          }),
+        ),
+      (error: unknown) =>
+        error instanceof DesktopObserverAccessError && error.status === 401,
     );
   });
 

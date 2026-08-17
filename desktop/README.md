@@ -1,6 +1,6 @@
 # Windows Desktop Pet (SnailPiPet)
 
-Attach-only Electron companion for Snail Pi Web. Observes local tasks; never starts/stops `spi`.
+Attach-only Electron companion for Snail Pi Web. Observes local tasks and can start one first-message session from the Activity tray; never starts/stops `spi`. Older servers without the `quick_session` capability keep observation working and hide the composer.
 
 ## Prerequisites
 
@@ -16,7 +16,8 @@ Attach-only Electron companion for Snail Pi Web. Observes local tasks; never sta
 | `npm run desktop:dev` | Build if stale, then launch Electron |
 | `npm run desktop:preview` | Generate the static visual-state matrix under `desktop/.preview/` |
 | `npm run desktop:dev:rebuild` | Force rebuild, then launch |
-| `npm run test:desktop-observer` | Domain + API + connection + UI contract + package smokes |
+| `npm run test:desktop-observer` | Domain + API + quick-session + connection + UI contract + package smokes |
+| `npm run test:desktop-quick-session` | Control token, path-free catalog, idempotent start, main client, composer reducer |
 | `npm run test:desktop-package` | Pet-only packaging contract |
 
 ```bash
@@ -35,6 +36,7 @@ Generated main/preload bundles (`main.js`, `pet-preload.js`, maps, `.build-stamp
 | --- | --- |
 | Drag pet body | Move frameless window (body uses click-vs-drag threshold) |
 | Click pet body | Toggle Activity tray (pet icon stays put; tray grows down/right, or up/left near edges) |
+| Activity tray → **快速会话** | Open the in-tray composer (connected + capable servers only). Choose a known project, type the first message, Ctrl/Cmd+Enter to start. Full replies stay in WebUI. |
 | Activity tray → **⚙** | Manage the server access key, choose a built-in snail (星海/经典 CSS, 像素 spritesheet) or size, restore default position and medium size, and adjust always-on-top, click-through, login launch, notifications, and sound cues |
 | Activity tray → **⌄** | Collapse only the Activity tray; the pet stays visible |
 | Pet chrome → **×** | Hide to system tray (process keeps observing) |

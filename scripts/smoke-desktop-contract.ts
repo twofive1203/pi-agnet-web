@@ -2991,6 +2991,11 @@ async function main() {
   assert.equal(/getToken|observerToken|process\.pid/.test(preloadSrc), false);
   assert.ok(preloadSrc.includes("contextBridge.exposeInMainWorld"));
   assert.ok(preloadSrc.includes("snailPet"));
+  assert.ok(preloadSrc.includes("listQuickSessionProjects"));
+  assert.ok(preloadSrc.includes("createQuickSession"));
+  assert.equal(preloadSrc.includes("ipcRenderer.invoke(channel"), true);
+  assert.equal(/exposeInMainWorld\([\s\S]*ipcRenderer/.test(preloadSrc), false);
+  assert.equal(preloadSrc.includes("getAccessKey"), false);
 
   // DND travels the narrow existing bridge: panel checkbox -> setPrefs patch ->
   // main persist + tray rebuild. No new IPC channels.
@@ -3011,7 +3016,13 @@ async function main() {
     "utf8",
   );
   assert.ok(indexHtmlSrc.includes('id="pref-dnd"'));
+  assert.ok(indexHtmlSrc.includes('id="quick-session-panel"'));
+  assert.ok(indexHtmlSrc.includes('id="btn-quick-session"'));
+  assert.ok(indexHtmlSrc.includes("connect-src 'none'"));
   assert.equal(/nodeIntegration|child_process/.test(indexHtmlSrc), false);
+  assert.ok(petAppSrc.includes("listQuickSessionProjects"));
+  assert.ok(petAppSrc.includes("createQuickSession"));
+  assert.ok(petAppSrc.includes("isComposing"));
 
   // --- Static desktop tree: no service control ---
   const desktopRoot = path.join(process.cwd(), "desktop");
@@ -3738,6 +3749,8 @@ async function main() {
     assert.ok(PET_RENDERER_ALLOWED_CHANNELS.includes(PET_IPC_CHANNELS.getCustomPets));
     assert.ok(PET_RENDERER_ALLOWED_CHANNELS.includes(PET_IPC_CHANNELS.openCustomPetsDir));
     assert.ok(PET_RENDERER_ALLOWED_CHANNELS.includes(PET_IPC_CHANNELS.rescanCustomPets));
+    assert.ok(PET_RENDERER_ALLOWED_CHANNELS.includes(PET_IPC_CHANNELS.listQuickSessionProjects));
+    assert.ok(PET_RENDERER_ALLOWED_CHANNELS.includes(PET_IPC_CHANNELS.createQuickSession));
     assert.ok(!PET_RENDERER_ALLOWED_CHANNELS.includes(PET_IPC_CHANNELS.customPetsChanged));
     assert.ok(PET_MAIN_PUSH_CHANNELS.includes(PET_IPC_CHANNELS.customPetsChanged));
 
@@ -3750,7 +3763,21 @@ async function main() {
       customPetsRoot: "D:/home/.pi/agent/desktop-pets",
     });
     assert.equal(viewWithRoot.customPetsRoot, "D:/home/.pi/agent/desktop-pets");
+    assert.equal(viewWithRoot.quickSessionAvailable, false);
     assertRendererViewSafe(viewWithRoot);
+    const connectedQuick = reduceConnectionState(
+      connection,
+      { type: "connected", instanceId: "inst-u7", quickSessionAvailable: true },
+      Date.now(),
+    );
+    const viewQuick = buildActivityView({
+      snapshot,
+      connection: connectedQuick,
+      settings: createDefaultDesktopSettings(),
+      now: Date.now(),
+    });
+    assert.equal(viewQuick.quickSessionAvailable, true);
+    assertRendererViewSafe(viewQuick);
     assertRendererViewSafe({
       pets: [{ id: "turtle-sprite", manifest: customSpriteManifest("turtle-sprite", "Pixel Turtle"), sheetDataUrl: "data:image/png;base64,aGVsbG8=" }],
       root: "D:/home/.pi/agent/desktop-pets",

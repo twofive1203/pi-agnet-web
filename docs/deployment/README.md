@@ -226,7 +226,7 @@ git fetch upstream main
 
 ## Windows Desktop Pet (separate artifact)
 
-The desktop pet is an **attach-only** Electron companion. It is **not** part of the npm `@twofive/snail-pi-web` / `spi` package (`package.json#files` excludes `desktop/` and `forge.config.ts`).
+The desktop pet is an **attach-only** Electron companion (task observer + optional first-message initiator). It is **not** part of the npm `@twofive/snail-pi-web` / `spi` package (`package.json#files` excludes `desktop/` and `forge.config.ts`). Server and pet upgrade independently: an older server omits the `quick_session` capability and the composer stays hidden while observation continues.
 
 ### Independent startup
 

@@ -56,6 +56,8 @@ export type PetWindowHandle = {
   getBounds(): PetWindowBounds;
   setBounds(bounds: Partial<PetWindowBounds>): void;
   send(channel: string, payload: unknown): void;
+  /** Top-level pet renderer webContents id; used to reject foreign IPC senders. */
+  webContentsId?(): number | null;
   onClose(handler: (event: { preventDefault(): void }) => void): void;
   onMoved(handler: (bounds: PetWindowBounds) => void): void;
   onBlur(handler: () => void): void;

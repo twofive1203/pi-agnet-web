@@ -4,6 +4,7 @@
 - **Date:** 2026-08-12
 - **Scope:** Windows-first independent Electron companion and local multi-project task observation
 - **Requirements:** `docs/brainstorms/2026-08-12-desktop-pet-task-observer-requirements.md`
+- **Later narrowing:** `desktop-pet-quick-session.md` adds a user-initiated first-message start path. Attach-only observation, pet-only packaging, and snapshot privacy stay in force.
 
 ## Decision Summary
 
@@ -514,7 +515,7 @@ Auto-update remains outside v1.
 - Desktop installation stays small and independent of Next/pi/native runtime packaging.
 - Quitting or breaking the pet cannot terminate Agent/Automation/Quick Command execution.
 - Correct multi-turn identity, unread semantics and minimal privacy surface.
-- Existing WebUI and `spi` remain the sole execution/control surfaces.
+- Existing WebUI and `spi` remain the sole execution/control surfaces for continuous chat, configuration, and follow-ups. A later quick-session composer may create the first Prompt from the pet; it does not become a second WebUI.
 
 ### Costs
 

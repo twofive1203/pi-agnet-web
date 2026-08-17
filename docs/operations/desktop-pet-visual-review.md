@@ -77,6 +77,10 @@ Mark each row after visual inspection.
 | tray-running | Activity tray / running | **未执行** | |
 | settings-ready | Settings / ready | **未执行** | |
 | reduced-motion-running | Reduced motion / running | **未执行** | |
+| quick-session-editing | Quick session / editing | **未执行** | |
+| quick-session-submitting | Quick session / submitting | **未执行** | |
+| quick-session-success | Quick session / success | **未执行** | |
+| quick-session-empty | Quick session / empty | **未执行** | |
 
 ## Accessibility and clipping checks
 

@@ -46,6 +46,7 @@ npm run test:quick-commands
 | `test:desktop-connection` | Connection state machine + no process control (U6) |
 | `test:desktop-contract` | Tray/read/notification/window/renderer safety (U7) |
 | `test:desktop-package` | Pet-only forge/npm separation + source contracts (U8) |
+| `test:desktop-quick-session` | Control token isolation, path-free catalog, idempotent create, main client, composer reducer |
 | `desktop:preview` | Dev-only visual state matrix under `desktop/.preview/` (U3); not packaged |
 
 **Artifact scan:** `npm run desktop:make` writes `desktop/out`; set `DESKTOP_PACKAGE_OUT=desktop/out` and re-run `npm run test:desktop-package`. The smoke scans expanded resources, `app.asar` entries, and Squirrel `.nupkg` paths rather than only top-level filenames.
@@ -102,6 +103,11 @@ WebUI in the default browser is opened only from tray/activity/notification deep
 | AE11 | Priority Needs input > Blocked > Ready > Running; mark-read local only | Yes (`test:desktop-contract`) | UI click mark-read | **Partial** |
 | AE12 | Reduced motion static frames; pet selection/position persist | Yes (pet-state + settings) | OS reduced-motion setting | **Partial** — OS preference **未执行** |
 | AE13 | Unknown/incompatible/legacy-server diagnostics + Retry; current server mode requires a valid access key on loopback | Yes (connection/auth state machine) | Point pet at wrong port owner; test missing/invalid/valid access key | **Partial** |
+| QS1 | Connected + capable server: open composer, start one session, Activity shows Running | Partial (`test:desktop-quick-session`) | Live local/server mode | **未执行** |
+| QS2 | Timeout retry reuses requestId and does not create a second session | Yes (idempotency smoke) | Live timeout | **Partial** — live timeout **未执行** |
+| QS3 | Renderer catalog/success/error have no cwd/Prompt/token | Yes (catalog + contract privacy) | DevTools inspect | **Automated OK** |
+| QS4 | Deleted project after catalog load is rejected | Yes (resolver smoke) | Delete folder then submit | **Partial** — live delete **未执行** |
+| QS5 | Old server hides composer; observer still works | Yes (capability fallback) | Mix old `spi` + new pet | **Partial** — live mix **未执行** |
 
 ## Manual Windows matrix (release gate)
 
@@ -125,6 +131,12 @@ Run on clean Windows 10 and Windows 11 profiles when a signed or unsigned instal
 | Uninstall pet | Remove pet via Apps & Features | `spi` still runs; `~/.pi/agent` intact; sessions untouched | **未执行** |
 | Quit isolation | Running Agent/Automation while Quit pet | Tasks continue; no service stop | **未执行** |
 | Renderer isolation | DevTools (if enabled in debug builds) | No Node, no token in renderer | **未执行** (release builds should not expose unrestricted DevTools) |
+| Quick session local/server | Connected composer start in local mode and server-mode access key | One session; observer Running; key never in renderer | **未执行** |
+| Quick session IME | Chinese IME composition + Enter, then Ctrl+Enter | Composition Enter does not submit | **未执行** |
+| Quick session DPI / anchors | 100/150/200% and four tray anchors | Composer not clipped | **未执行** |
+| Quick session DND | Enable DND, open composer, submit | DND does not block explicit start; success toast still follows DND | **未执行** |
+| Quick session old server | New pet + old `spi` | Observer works; composer hidden | **未执行** |
+| Quick session quit isolation | Start session, quit pet | Session continues | **未执行** |
 
 ## Packaging commands (when Electron Forge is installed)
 

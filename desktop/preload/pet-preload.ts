@@ -55,6 +55,14 @@ export type SnailPetBridge = {
   openCustomPetsDir: () => Promise<unknown>;
   /** Ask main to rescan the custom pets folder. */
   rescanCustomPets: () => void;
+  /** Fetch the current path-free project catalog (no cwd/token). */
+  listQuickSessionProjects: () => Promise<unknown>;
+  /** Start one session; renderer supplies only projectRef + message + requestId. */
+  createQuickSession: (input: {
+    projectRef: string;
+    message: string;
+    requestId: string;
+  }) => Promise<unknown>;
 };
 
 function send(channel: string, ...args: unknown[]): void {
@@ -124,6 +132,8 @@ const bridge: SnailPetBridge = {
   },
   openCustomPetsDir: () => invoke(PET_IPC_CHANNELS.openCustomPetsDir),
   rescanCustomPets: () => send(PET_IPC_CHANNELS.rescanCustomPets),
+  listQuickSessionProjects: () => invoke(PET_IPC_CHANNELS.listQuickSessionProjects),
+  createQuickSession: (input) => invoke(PET_IPC_CHANNELS.createQuickSession, input),
 };
 
 contextBridge.exposeInMainWorld("snailPet", bridge);

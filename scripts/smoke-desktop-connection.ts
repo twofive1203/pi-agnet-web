@@ -24,6 +24,7 @@ import {
   interpretProtocolPayload,
   interpretSessionPayload,
   parseSseBlock,
+  protocolHasQuickSessionCapability,
   unwrapObserverSseData,
 } from "../desktop/main/observer-client";
 import {
@@ -180,6 +181,7 @@ async function main() {
   assert.equal(serverProto.type, "protocol_ok");
   if (serverProto.type === "protocol_ok") {
     assert.equal(serverProto.authRequired, true);
+    assert.equal(serverProto.quickSessionAvailable, false);
   }
 
   const authHttp = interpretProtocolPayload({}, 401);
@@ -214,6 +216,33 @@ async function main() {
     200,
   );
   assert.equal(okProto.type, "protocol_ok");
+  if (okProto.type === "protocol_ok") {
+    assert.equal(okProto.quickSessionAvailable, false);
+  }
+
+  const capableProto = interpretProtocolPayload(
+    {
+      product: DESKTOP_OBSERVER_PRODUCT,
+      protocolVersion: TASK_OBSERVER_PROTOCOL_VERSION,
+      mode: "local",
+      compatible: true,
+      instanceId: "i1",
+      capabilities: ["quick_session"],
+    },
+    200,
+  );
+  assert.equal(capableProto.type, "protocol_ok");
+  if (capableProto.type === "protocol_ok") {
+    assert.equal(capableProto.quickSessionAvailable, true);
+  }
+  const liveCapable = reduceConnectionState(
+    createInitialConnectionState({ now: 20 }),
+    { type: "connected", instanceId: "i1", quickSessionAvailable: true },
+    21,
+  );
+  assert.equal(liveCapable.quickSessionAvailable, true);
+  assert.equal(protocolHasQuickSessionCapability(undefined), false);
+  assert.equal(protocolHasQuickSessionCapability(["other"]), false);
 
   const session = interpretSessionPayload(
     { token: "tok", expiresAt: 123, instanceId: "i1" },
@@ -642,6 +671,18 @@ async function main() {
   assert.equal(loadDesktopAccessKey("/tmp/pet-test", memStore, encCodec), "secret-key");
   clearDesktopAccessKey("/tmp/pet-test", memStore);
   assert.equal(loadDesktopAccessKey("/tmp/pet-test", memStore, encCodec), null);
+
+  const observerClientSrc = readFileSync(
+    path.join(process.cwd(), "desktop", "main", "observer-client.ts"),
+    "utf8",
+  );
+  const quickClientSrc = readFileSync(
+    path.join(process.cwd(), "desktop", "main", "quick-session-client.ts"),
+    "utf8",
+  );
+  assert.ok(observerClientSrc.includes("quickSessionAvailable"));
+  assert.ok(quickClientSrc.includes("DESKTOP_CONTROL_TOKEN_HEADER"));
+  assert.equal(/child_process|spawn\(/.test(quickClientSrc), false);
 
   console.log("smoke-desktop-connection: ok");
 }

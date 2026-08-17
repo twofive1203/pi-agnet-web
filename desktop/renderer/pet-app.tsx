@@ -76,6 +76,20 @@ import {
   setCustomPetSheetDataUrl,
 } from "./pet-sheet-assets";
 import { PetSoundPlayer } from "./pet-sound";
+import {
+  canSubmitQuickSession,
+  countQuickSessionChars,
+  createInitialQuickSessionState,
+  filterQuickSessionProjects,
+  formatQuickSessionProjectLabel,
+  QUICK_SESSION_MAX_MESSAGE_CHARS,
+  quickSessionErrorText,
+  reduceQuickSessionState,
+  selectedQuickSessionProject,
+  type QuickSessionCatalog,
+  type QuickSessionErrorCode,
+  type QuickSessionState,
+} from "./quick-session-state";
 
 declare global {
   interface Window {
@@ -132,6 +146,23 @@ export function renderPetApp(root: Document = document): {
   const btnHide = root.getElementById("btn-hide");
   const btnHideTray = root.getElementById("btn-hide-tray");
   const btnSettings = root.getElementById("btn-settings");
+  const btnQuickSession = root.getElementById("btn-quick-session") as HTMLButtonElement | null;
+  const quickSessionPanel = root.getElementById("quick-session-panel");
+  const qsStatus = root.getElementById("qs-status");
+  const qsSelected = root.getElementById("qs-selected");
+  const qsProjectSearch = root.getElementById("qs-project-search") as HTMLInputElement | null;
+  const qsProjectList = root.getElementById("qs-project-list");
+  const qsTruncated = root.getElementById("qs-truncated");
+  const qsMessage = root.getElementById("qs-message") as HTMLTextAreaElement | null;
+  const qsCount = root.getElementById("qs-count");
+  const qsError = root.getElementById("qs-error");
+  const qsSuccess = root.getElementById("qs-success");
+  const qsSuccessText = root.getElementById("qs-success-text");
+  const qsEditActions = root.getElementById("qs-edit-actions");
+  const btnQsCancel = root.getElementById("btn-qs-cancel");
+  const btnQsSubmit = root.getElementById("btn-qs-submit") as HTMLButtonElement | null;
+  const btnQsOpen = root.getElementById("btn-qs-open");
+  const btnQsAnother = root.getElementById("btn-qs-another");
   const settingsPanel = root.getElementById("settings-panel");
   const petPicker = root.getElementById("pet-picker");
   const customPetOptions = root.getElementById("custom-pet-options");
@@ -170,6 +201,9 @@ export function renderPetApp(root: Document = document): {
 
   let current: DesktopActivityView | null = null;
   let settingsOpen = false;
+  let quickSession: QuickSessionState = createInitialQuickSessionState();
+  let qsImeComposing = false;
+  let qsSubmitInFlight = false;
   let trayMoreOpen = false;
   let idleBlinkTimer: ReturnType<typeof setTimeout> | null = null;
   let idleActTimer: ReturnType<typeof setTimeout> | null = null;
@@ -994,14 +1028,37 @@ export function renderPetApp(root: Document = document): {
     if (tray) tray.hidden = !view.trayOpen;
     if (!view.trayOpen) {
       settingsOpen = false;
+      if (quickSession.phase !== "closed") {
+        quickSession = reduceQuickSessionState(quickSession, { type: "close" });
+      }
       setTrayMoreOpen(false);
     }
+    const previewQuick = (view as unknown as { quickSessionPreview?: unknown }).quickSessionPreview;
+    if (!bridge && previewQuick && typeof previewQuick === "object") {
+      quickSession = {
+        ...createInitialQuickSessionState(),
+        ...(previewQuick as Partial<QuickSessionState>),
+        phase:
+          typeof (previewQuick as { phase?: unknown }).phase === "string"
+            ? (previewQuick as QuickSessionState).phase
+            : "editing",
+      };
+    }
+    const composerOpen = quickSession.phase !== "closed";
     if (settingsPanel) settingsPanel.hidden = !settingsOpen;
-    if (activityFilters) activityFilters.hidden = settingsOpen;
-    if (projectList) projectList.hidden = settingsOpen;
+    if (quickSessionPanel) quickSessionPanel.hidden = !composerOpen || settingsOpen;
+    if (activityFilters) activityFilters.hidden = settingsOpen || composerOpen;
+    if (projectList) projectList.hidden = settingsOpen || composerOpen;
     if (btnSettings) {
       btnSettings.setAttribute("aria-expanded", settingsOpen ? "true" : "false");
     }
+    if (btnQuickSession) {
+      const available = view.quickSessionAvailable === true && view.connectionStatus === "connected";
+      btnQuickSession.hidden = !available && !composerOpen;
+      btnQuickSession.disabled = !available && !composerOpen;
+      btnQuickSession.setAttribute("aria-expanded", composerOpen ? "true" : "false");
+    }
+    renderQuickSessionPanel(view);
     if (petRoot) {
       petRoot.classList.toggle("is-collapsed", !view.trayOpen);
       petRoot.classList.toggle("is-expanded", view.trayOpen);
@@ -1193,6 +1250,222 @@ export function renderPetApp(root: Document = document): {
       return "失败";
     }
     return "已结束";
+  }
+
+  function applyQuickSession(
+    event: Parameters<typeof reduceQuickSessionState>[1],
+    options?: { render?: boolean },
+  ): void {
+    const previous = quickSession;
+    quickSession = reduceQuickSessionState(quickSession, event);
+    if (quickSession !== previous && current && options?.render !== false) update(current);
+  }
+
+  function parseQuickSessionCatalog(payload: unknown): QuickSessionCatalog | null {
+    if (!payload || typeof payload !== "object") return null;
+    const record = payload as Record<string, unknown>;
+    const source = record.catalog && typeof record.catalog === "object"
+      ? record.catalog as Record<string, unknown>
+      : record;
+    if (!Array.isArray(source.projects)) return null;
+    const projects = source.projects.flatMap((item) => {
+      if (!item || typeof item !== "object") return [];
+      const row = item as Record<string, unknown>;
+      if (typeof row.projectRef !== "string" || typeof row.displayName !== "string") return [];
+      return [{
+        projectRef: row.projectRef,
+        displayName: row.displayName,
+        ...(typeof row.disambiguator === "string" ? { disambiguator: row.disambiguator } : {}),
+        latestModified: typeof row.latestModified === "string" ? row.latestModified : "",
+        archived: row.archived === true,
+        worktree: row.worktree === true,
+      }];
+    });
+    return {
+      projects,
+      truncated: source.truncated === true,
+      omitted: typeof source.omitted === "number" ? source.omitted : 0,
+    };
+  }
+
+  async function loadQuickSessionCatalog(): Promise<void> {
+    applyQuickSession({ type: "open" });
+    if (!bridge?.listQuickSessionProjects) {
+      applyQuickSession({ type: "catalog_failed", code: "feature_unavailable" });
+      return;
+    }
+    try {
+      const payload = await bridge.listQuickSessionProjects();
+      if (payload && typeof payload === "object" && (payload as { ok?: unknown }).ok === false) {
+        const code = (payload as { code?: unknown }).code;
+        applyQuickSession({
+          type: "catalog_failed",
+          code: typeof code === "string" ? code as QuickSessionErrorCode : "result_unknown",
+        });
+        return;
+      }
+      const catalog = parseQuickSessionCatalog(payload);
+      if (!catalog) {
+        applyQuickSession({ type: "catalog_failed", code: "result_unknown" });
+        return;
+      }
+      applyQuickSession({ type: "catalog_loaded", catalog });
+      qsMessage?.focus();
+    } catch {
+      applyQuickSession({ type: "catalog_failed", code: "result_unknown" });
+    }
+  }
+
+  async function submitQuickSession(): Promise<void> {
+    if (qsSubmitInFlight) return;
+    if (quickSession.phase !== "submitting") {
+      applyQuickSession({ type: "submit" }, { render: true });
+    }
+    if (quickSession.phase !== "submitting" || !quickSession.requestId || !quickSession.selectedProjectRef) {
+      return;
+    }
+    qsSubmitInFlight = true;
+    try {
+      if (!bridge?.createQuickSession) {
+        applyQuickSession({ type: "submit_error", code: "feature_unavailable" });
+        return;
+      }
+      const payload = await bridge.createQuickSession({
+        projectRef: quickSession.selectedProjectRef,
+        message: quickSession.draft,
+        requestId: quickSession.requestId,
+      });
+      if (payload && typeof payload === "object" && (payload as { ok?: unknown }).ok === false) {
+        const code = (payload as { code?: unknown }).code;
+        applyQuickSession({
+          type: "submit_error",
+          code: typeof code === "string" ? code as QuickSessionErrorCode : "result_unknown",
+        });
+        return;
+      }
+      const result = payload && typeof payload === "object"
+        ? ((payload as { result?: unknown }).result ?? payload) as Record<string, unknown>
+        : null;
+      if (!result || typeof result.sessionId !== "string" || typeof result.deepLink !== "string") {
+        applyQuickSession({ type: "submit_error", code: "result_unknown" });
+        return;
+      }
+      applyQuickSession({
+        type: "submit_success",
+        sessionId: result.sessionId,
+        deepLink: result.deepLink,
+      });
+    } catch {
+      applyQuickSession({ type: "submit_error", code: "result_unknown" });
+    } finally {
+      qsSubmitInFlight = false;
+    }
+  }
+
+  function renderQuickSessionPanel(view: DesktopActivityView): void {
+    if (!quickSessionPanel || quickSession.phase === "closed" || settingsOpen) return;
+    const submitting = quickSession.phase === "submitting";
+    const success = quickSession.phase === "success";
+    if (qsStatus) {
+      qsStatus.hidden = quickSession.phase !== "loading" && !(quickSession.phase === "editing" && quickSession.projects.length === 0);
+      qsStatus.textContent =
+        quickSession.phase === "loading"
+          ? "正在加载项目…"
+          : view.connectionStatus !== "connected"
+            ? "服务未连接"
+            : "当前没有可启动的项目";
+    }
+    const selectedProject = selectedQuickSessionProject(quickSession);
+    if (qsSelected) {
+      qsSelected.textContent = formatQuickSessionProjectLabel(selectedProject);
+      qsSelected.classList.toggle("is-empty", selectedProject == null);
+    }
+    if (qsProjectSearch && qsProjectSearch.value !== quickSession.query) {
+      qsProjectSearch.value = quickSession.query;
+    }
+    if (qsProjectSearch) qsProjectSearch.disabled = submitting || success;
+    if (qsProjectList) {
+      const sameQuery =
+        qsProjectList.dataset.query === quickSession.query
+        && qsProjectList.dataset.count === String(quickSession.projects.length);
+      const existingOptions = sameQuery
+        ? Array.from(qsProjectList.querySelectorAll<HTMLElement>("[data-project-ref]"))
+        : [];
+      if (existingOptions.length > 0) {
+        for (const option of existingOptions) {
+          option.setAttribute(
+            "aria-selected",
+            option.dataset.projectRef === quickSession.selectedProjectRef ? "true" : "false",
+          );
+        }
+      } else {
+        qsProjectList.replaceChildren();
+        const visible = filterQuickSessionProjects(quickSession.projects, quickSession.query);
+        if (visible.length === 0) {
+          const empty = document.createElement("div");
+          empty.className = "qs-project-empty";
+          empty.textContent =
+            quickSession.phase === "loading"
+              ? "正在加载项目…"
+              : quickSession.projects.length === 0
+                ? "当前没有可启动的项目"
+                : "没有匹配的项目";
+          qsProjectList.appendChild(empty);
+        } else {
+          for (const project of visible) {
+            const option = document.createElement("button");
+            option.type = "button";
+            option.className = "qs-project-option";
+            option.dataset.projectRef = project.projectRef;
+            option.setAttribute("role", "option");
+            option.setAttribute(
+              "aria-selected",
+              project.projectRef === quickSession.selectedProjectRef ? "true" : "false",
+            );
+            option.disabled = submitting || success;
+            const name = document.createElement("span");
+            name.textContent = project.displayName;
+            option.appendChild(name);
+            if (project.disambiguator) {
+              const meta = document.createElement("span");
+              meta.className = "qs-project-meta";
+              meta.textContent = project.disambiguator;
+              option.appendChild(meta);
+            }
+            qsProjectList.appendChild(option);
+          }
+        }
+        qsProjectList.dataset.query = quickSession.query;
+        qsProjectList.dataset.count = String(quickSession.projects.length);
+      }
+    }
+    if (qsTruncated) qsTruncated.hidden = !quickSession.truncated;
+    if (qsMessage && qsMessage.value !== quickSession.draft) qsMessage.value = quickSession.draft;
+    if (qsMessage) qsMessage.disabled = submitting || success;
+    const used = countQuickSessionChars(quickSession.draft);
+    if (qsCount) {
+      qsCount.textContent = `${used} / ${QUICK_SESSION_MAX_MESSAGE_CHARS}`;
+      qsCount.classList.toggle("is-over", used > QUICK_SESSION_MAX_MESSAGE_CHARS);
+    }
+    if (qsError) {
+      const showError = quickSession.phase === "error" && quickSession.errorCode != null;
+      qsError.hidden = !showError;
+      qsError.textContent = showError ? quickSessionErrorText(quickSession.errorCode) : "";
+    }
+    if (qsSuccess) qsSuccess.hidden = !success;
+    if (qsSuccessText && success && quickSession.success) {
+      const project = selectedQuickSessionProject(quickSession);
+      const shortId = quickSession.success.sessionId.slice(0, 8);
+      qsSuccessText.textContent = `${project?.displayName ?? "项目"} 已启动 · ${shortId}`;
+    }
+    if (qsEditActions) qsEditActions.hidden = success;
+    if (btnQsSubmit) {
+      btnQsSubmit.disabled = submitting || !canSubmitQuickSession({
+        ...quickSession,
+        phase: quickSession.phase === "error" ? "error" : "editing",
+      });
+      btnQsSubmit.textContent = submitting ? "启动中…" : quickSession.phase === "error" ? "重试" : "启动";
+    }
   }
 
   function childUpdatedText(updatedAt: string | undefined): string | null {
@@ -1660,8 +1933,67 @@ export function renderPetApp(root: Document = document): {
   btnSettings?.addEventListener("click", () => {
     wakeIdleSleep();
     setTrayMoreOpen(false);
+    if (quickSession.phase !== "closed") {
+      applyQuickSession({ type: "close" });
+    }
     settingsOpen = !settingsOpen;
     if (current) update(current);
+  });
+
+  btnQuickSession?.addEventListener("click", () => {
+    wakeIdleSleep();
+    setTrayMoreOpen(false);
+    settingsOpen = false;
+    if (quickSession.phase === "closed") {
+      void loadQuickSessionCatalog();
+      return;
+    }
+    applyQuickSession({ type: "close" });
+  });
+
+  qsProjectSearch?.addEventListener("input", () => {
+    applyQuickSession({ type: "set_query", query: qsProjectSearch.value });
+  });
+  qsProjectList?.addEventListener("click", (event) => {
+    const target = event.target instanceof Element
+      ? event.target.closest<HTMLElement>("[data-project-ref]")
+      : null;
+    const projectRef = target?.dataset.projectRef;
+    if (!projectRef) return;
+    applyQuickSession({ type: "select_project", projectRef });
+  });
+  qsMessage?.addEventListener("compositionstart", () => {
+    qsImeComposing = true;
+  });
+  qsMessage?.addEventListener("compositionend", () => {
+    qsImeComposing = false;
+    applyQuickSession({ type: "set_draft", draft: qsMessage.value });
+  });
+  qsMessage?.addEventListener("input", () => {
+    applyQuickSession({ type: "set_draft", draft: qsMessage.value });
+  });
+  qsMessage?.addEventListener("keydown", (event) => {
+    if (qsImeComposing || event.isComposing || event.keyCode === 229) return;
+    if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+      event.preventDefault();
+      if (quickSession.phase === "error") applyQuickSession({ type: "retry" });
+      void submitQuickSession();
+    }
+  });
+  btnQsCancel?.addEventListener("click", () => {
+    applyQuickSession({ type: "cancel" });
+  });
+  btnQsSubmit?.addEventListener("click", () => {
+    if (quickSession.phase === "error") applyQuickSession({ type: "retry" });
+    void submitQuickSession();
+  });
+  btnQsOpen?.addEventListener("click", () => {
+    const href = quickSession.success?.deepLink;
+    if (href) void bridge?.openExternalUrl(href);
+  });
+  btnQsAnother?.addEventListener("click", () => {
+    applyQuickSession({ type: "start_another" });
+    qsMessage?.focus();
   });
 
   activityFilters?.addEventListener("click", (event) => {
@@ -1815,6 +2147,8 @@ export function renderPetApp(root: Document = document): {
         expandedActivityIds.delete(selectedVisibleActivityId);
         update(current);
         focusActivityRow(selectedVisibleActivityId);
+      } else if (quickSession.phase !== "closed") {
+        applyQuickSession({ type: "close" });
       } else if (settingsOpen) {
         settingsOpen = false;
         update(current);

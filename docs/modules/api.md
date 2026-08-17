@@ -123,12 +123,24 @@ Attach-only desktop pet API. **Direct IPv4 loopback (`127.0.0.1`) only** — Hos
 
 | Route | Methods | Purpose |
 | --- | --- | --- |
-| `desktop-observer/protocol/` | GET | Loopback protocol/product/mode probe. Reports `authRequired:true` in server mode; always `compatible:true` for loopback-capable builds. No token. |
+| `desktop-observer/protocol/` | GET | Loopback protocol/product/mode probe. Reports `authRequired:true` in server mode; always `compatible:true` for loopback-capable builds. Additive `capabilities` may include `quick_session`. No token. |
 | `desktop-observer/session/` | POST | Mint short-lived observer token (`x-spi-desktop-observer-token`). Origin exact loopback match or absent (Electron main). Server mode body: `{ accessKey }`. |
 | `desktop-observer/snapshot/` | GET | Current bounded multi-source snapshot (`?reset=1` for baseline). Token required. `Cache-Control: no-store`. |
 | `desktop-observer/events/` | GET | Full-snapshot SSE + heartbeat comments. Initial event is always `reset`. Token expiry closes the stream. |
 
 Implementation: `lib/desktop-observer-access.ts`, `lib/task-observer-hub.ts`, adapters under `lib/task-observer-*.ts`. Activity `deepLink` values are allowlisted relative WebUI paths from `lib/desktop-deep-link.ts` (Agent `?session=`, SnFlow `inspector=snflow&task=`, Automation `panel=automation`, Quick Command `panel=quick-commands`).
+
+## Desktop control routes
+
+Narrow write API for the desktop pet first-message composer. **Not a public or cookie-trusted API.** Same proven-loopback Host/`127.0.0.1` gate as observer; server mode requires the access key at session mint. Control tokens (`x-spi-desktop-control-token`, 5-minute TTL, `quick_session` scope) are independent of observer tokens and never accepted on observer routes. Body budget for create is 32 KiB / 8,000 characters. Success means the session was created and the first Prompt dispatched; provider outcome stays on the observer.
+
+| Route | Methods | Purpose |
+| --- | --- | --- |
+| `desktop-control/session/` | POST | Mint scoped control token. Origin exact loopback match or absent (Electron main). Server mode body: `{ accessKey }`. |
+| `desktop-control/projects/` | GET | Bounded path-free project catalog (`projectRef`, safe labels, recency, truncation). No cwd/firstMessage. Token required. |
+| `desktop-control/quick-sessions/` | POST | `{ projectRef, message, requestId }` creates one session via the shared new-session starter. Same requestId is idempotent inside one instance. Token required. |
+
+Implementation: `lib/desktop-control-access.ts`, `lib/desktop-project-catalog.ts`, `lib/desktop-quick-session.ts`, `lib/new-agent-session.ts`. Smoke: `npm run test:desktop-quick-session`.
 
 **Desktop client packaging** is separate from this API and from npm `spi`: Electron pet sources live under `desktop/`, pack contract in `forge.config.ts`, validation in `docs/operations/desktop-pet-validation.md`, smoke `npm run test:desktop-package`. The pet consumes these routes from main only (token never reaches the renderer).
 

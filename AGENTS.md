@@ -30,7 +30,8 @@ npm run dev     # http://localhost:62666
 | `npm run test:desktop-connection` | Desktop attach-only connection state machine + probe client + settings smoke suite. |
 | `npm run test:desktop-contract` | Desktop pet Activity tray/read/notification/deep-link/tray/window contract smoke suite. |
 | `npm run test:desktop-package` | Pet-only packaging contract (forge/npm separation, no server runtime, validation doc gates). |
-| `npm run test:desktop-observer` | Combined task-observer domain + desktop-observer API + deep-link + connection + contract + package smokes. |
+| `npm run test:desktop-quick-session` | Desktop control token, path-free catalog, idempotent first-message start, main client, and composer reducer smokes. |
+| `npm run test:desktop-observer` | Combined task-observer domain + desktop-observer API + deep-link + connection + contract + package + quick-session smokes. |
 | `npm run desktop:build` | Bundle desktop pet main/preload JS for Electron (`scripts/build-desktop-pet.mjs`). |
 | `npm run desktop:preview` | Generate the local visual-state matrix under `desktop/.preview/` (not packaged). |
 | `npm run desktop:dev` | Build if needed and launch the pet under Electron (does not start `spi`). |
@@ -112,6 +113,7 @@ npm run dev     # http://localhost:62666
 | WebUI-owned SnFlow tasks/runs | `lib/workflow-store.ts`, `lib/workflow-chat-lifecycle.ts`, `lib/workflow-run-manager.ts`, `app/api/workflows/**`, `components/WorkflowPanel.tsx` | `docs/modules/api.md`, `docs/modules/library.md`, `docs/modules/frontend.md` |
 | Scheduled Agent Automation | `lib/automation-service.ts`, `lib/automation-scheduler.ts`, `lib/automation-runner.ts`, `app/api/automations/**`, `components/AutomationPanel.tsx`, `instrumentation.ts` | `docs/architecture/decisions/automation-scheduler.md`, `docs/modules/api.md`, `docs/modules/library.md`, `docs/modules/frontend.md` |
 | Chrome tab debugging (local bridge + extension) | `lib/browser-*.ts`, `app/api/browser/**`, `components/BrowserBindingPanel.tsx`, `extensions/chrome-tab-debug/` | `docs/modules/api.md`, `docs/modules/library.md`, `docs/modules/frontend.md`, `docs/operations/troubleshooting.md`, `extensions/chrome-tab-debug/README.md` |
+| Desktop pet observer + quick session | `lib/desktop-observer-*.ts`, `lib/desktop-control-*.ts`, `lib/desktop-project-catalog.ts`, `lib/desktop-quick-session.ts`, `app/api/desktop-observer/**`, `app/api/desktop-control/**`, `desktop/` | `docs/architecture/decisions/desktop-pet-task-observer.md`, `docs/architecture/decisions/desktop-pet-quick-session.md`, `docs/modules/api.md`, `docs/modules/library.md`, `docs/modules/frontend.md` |
 | Project quick commands (one-shot task runner + output dock) | `lib/quick-command-*.ts`, `app/api/quick-commands/**`, `hooks/useQuickCommands.ts`, `components/QuickCommand*.tsx` | `docs/modules/api.md`, `docs/modules/library.md`, `docs/modules/frontend.md`, `docs/brainstorms/2026-08-12-project-quick-commands-requirements.md` |
 
 ## Project Invariants
