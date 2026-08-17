@@ -3187,6 +3187,8 @@ async function main() {
   assert.ok(css.includes("background: transparent"));
   assert.ok(css.includes("prefers-reduced-motion: reduce"));
   assert.ok(css.includes(".activity-filter"));
+  assert.ok(css.includes("align-self: stretch"));
+  assert.ok(css.includes(".tray-counts[hidden]"));
   for (const cue of [
     "thinking",
     "editing",
@@ -3344,6 +3346,8 @@ async function main() {
   assert.ok(petAppSource.includes("soundPlayer.destroy"));
   assert.ok(petAppSource.includes("current?.trayOpen === true"));
   assert.ok(petAppSource.includes("!settingsOpen"));
+  assert.ok(petAppSource.includes('trayTitle.textContent = settingsOpen ? "设置"'));
+  assert.ok(petAppSource.includes("trayCounts.hidden = hideCounts"));
   assert.ok(petAppSource.includes("setInterval(refreshElapsedLabels, 1000)"));
   assert.ok(petAppSource.includes("clearElapsedTimer"));
   const markReadHandler = petAppSource.match(

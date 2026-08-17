@@ -135,6 +135,7 @@ export function renderPetApp(root: Document = document): {
   const petCaptionTitle = root.getElementById("pet-caption-title");
   const tray = root.getElementById("activity-tray");
   const projectList = root.getElementById("project-list");
+  const trayTitle = root.getElementById("tray-title");
   const trayCounts = root.getElementById("tray-counts");
   const banner = root.getElementById("connection-banner");
   const authPanel = root.getElementById("auth-panel");
@@ -1058,6 +1059,9 @@ export function renderPetApp(root: Document = document): {
     if (quickSessionPanel) quickSessionPanel.hidden = !composerOpen || settingsOpen;
     if (activityFilters) activityFilters.hidden = settingsOpen || composerOpen;
     if (projectList) projectList.hidden = settingsOpen || composerOpen;
+    if (trayTitle) {
+      trayTitle.textContent = settingsOpen ? "设置" : composerOpen ? "快速会话" : "活动";
+    }
     if (btnSettings) {
       btnSettings.setAttribute("aria-expanded", settingsOpen ? "true" : "false");
     }
@@ -1105,9 +1109,13 @@ export function renderPetApp(root: Document = document): {
     }
 
     if (trayCounts) {
-      const active = view.activeCount;
-      const attention = view.attentionCount;
-      trayCounts.textContent = `活动 ${active} · 关注 ${attention}`;
+      const hideCounts = settingsOpen || composerOpen;
+      trayCounts.hidden = hideCounts;
+      if (!hideCounts) {
+        const active = view.activeCount;
+        const attention = view.attentionCount;
+        trayCounts.textContent = `活动 ${active} · 关注 ${attention}`;
+      }
     }
 
     const filterCounts = countActivitiesByFilter(view.projects);

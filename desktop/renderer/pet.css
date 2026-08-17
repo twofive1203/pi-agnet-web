@@ -104,6 +104,7 @@ select {
 .quick-session-panel[hidden],
 .qs-picker[hidden],
 .stale-flag[hidden],
+.tray-counts[hidden],
 #btn-copy-cmd[hidden],
 #btn-clear-key[hidden] {
   display: none !important;
@@ -1159,7 +1160,10 @@ select {
   display: flex;
   flex: 1;
   flex-direction: column;
+  align-self: stretch;
   gap: 9px;
+  width: 100%;
+  min-width: 0;
   min-height: 0;
   padding: 12px;
   overflow: hidden;
@@ -1247,6 +1251,10 @@ select {
   -webkit-app-region: no-drag;
 }
 
+.tray-header > div {
+  min-width: 0;
+}
+
 .tray-counts {
   margin-left: 7px;
   color: var(--pet-muted);
@@ -1330,8 +1338,7 @@ select {
   line-height: 1.45;
 }
 
-.auth-panel,
-.settings-panel {
+.auth-panel {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -1341,17 +1348,16 @@ select {
   background: rgba(255, 255, 255, 0.035);
 }
 
-.settings-panel {
-  min-height: 0;
-  overflow-y: auto;
-}
-
+.settings-panel,
 .quick-session-panel {
   display: flex;
   flex: 1;
   flex-direction: column;
   gap: 8px;
+  width: 100%;
+  min-width: 0;
   min-height: 0;
+  overflow-x: hidden;
   overflow-y: auto;
   padding: 10px;
   border: 1px solid var(--pet-border);
@@ -1679,6 +1685,7 @@ select {
   color: var(--pet-muted);
   font-size: 11px;
   line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 
 .custom-pets-path {
@@ -1714,11 +1721,18 @@ select {
   display: flex;
   align-items: center;
   gap: 7px;
+  min-width: 0;
   min-height: 28px;
   padding: 4px 2px;
   border-radius: 6px;
   color: var(--pet-text);
   font-size: 11px;
+}
+
+.setting-toggle span,
+.setting-field span {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .setting-toggle {

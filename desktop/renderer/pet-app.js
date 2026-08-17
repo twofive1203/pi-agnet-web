@@ -1855,6 +1855,7 @@
     const petCaptionTitle = root.getElementById("pet-caption-title");
     const tray = root.getElementById("activity-tray");
     const projectList = root.getElementById("project-list");
+    const trayTitle = root.getElementById("tray-title");
     const trayCounts = root.getElementById("tray-counts");
     const banner = root.getElementById("connection-banner");
     const authPanel = root.getElementById("auth-panel");
@@ -2632,6 +2633,9 @@
       if (quickSessionPanel) quickSessionPanel.hidden = !composerOpen || settingsOpen;
       if (activityFilters) activityFilters.hidden = settingsOpen || composerOpen;
       if (projectList) projectList.hidden = settingsOpen || composerOpen;
+      if (trayTitle) {
+        trayTitle.textContent = settingsOpen ? "\u8BBE\u7F6E" : composerOpen ? "\u5FEB\u901F\u4F1A\u8BDD" : "\u6D3B\u52A8";
+      }
       if (btnSettings) {
         btnSettings.setAttribute("aria-expanded", settingsOpen ? "true" : "false");
       }
@@ -2668,9 +2672,13 @@
         petButton.title = keyboardHint;
       }
       if (trayCounts) {
-        const active = view.activeCount;
-        const attention = view.attentionCount;
-        trayCounts.textContent = `\u6D3B\u52A8 ${active} \xB7 \u5173\u6CE8 ${attention}`;
+        const hideCounts = settingsOpen || composerOpen;
+        trayCounts.hidden = hideCounts;
+        if (!hideCounts) {
+          const active = view.activeCount;
+          const attention = view.attentionCount;
+          trayCounts.textContent = `\u6D3B\u52A8 ${active} \xB7 \u5173\u6CE8 ${attention}`;
+        }
       }
       const filterCounts = countActivitiesByFilter(view.projects);
       activityFilters?.querySelectorAll("[data-activity-filter]").forEach((button) => {
