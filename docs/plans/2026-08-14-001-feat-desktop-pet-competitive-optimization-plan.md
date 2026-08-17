@@ -209,6 +209,8 @@ revised: 2026-08-14
 - 若开放 SVG，必须采用成熟 sanitizer + CSP 隔离并单独测试；不能只写“sanitize”即视为完成；
 - 导入界面展示来源/许可声明，禁止捆绑复制 Clawd 未授权美术或其他来源不明资产。
 
+**Delivery note (slice 1, 目录放置式):** 已完成无脚本 raster/spritesheet 自定义包的首个切片：用户将 `<pet-id>/manifest.json` + PNG/WebP 精灵图放入 `~/.pi/agent/desktop-pets/`（或 `SNAIL_PET_CUSTOM_PETS_DIR` / `PI_CODING_AGENT_DIR` 覆盖），main 在启动/刷新时扫描校验（`desktop/main/custom-pets.ts`，共享 manifest 契约 + 尺寸/帧数/单行连续/能力字段门禁，内置 id 冲突拒绝，最多 16 只），位图转为 data URL 经窄 IPC 推送（`pet:get-custom-pets` / `pet:custom-pets-changed` / `pet:open-custom-pets-dir` / `pet:rescan-custom-pets`）；renderer 逐条二次门禁（`validateCustomPetAsset`）后注册运行时 manifest/贴图、动态渲染设置面板宠物选项并显示目录路径。CSS 模式自定义包、ZIP/Codex atlas 导入、SVG/GIF/APNG 与 AI 生成仍按本计划后续分层，不在本切片内。
+
 ### U7 — 桌面健壮性、DND、迷你模式与 i18n（拆分交付）
 
 该单元不能作为一个大批次一次实现，应拆成独立小项：

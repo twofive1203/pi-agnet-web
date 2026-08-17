@@ -29,6 +29,14 @@ export const PET_IPC_CHANNELS = {
   clearAccessKey: "pet:clear-access-key",
   /** Main→renderer push: finite sound cue vocabulary (U4a). Renderer can never send this. */
   soundCue: "pet:sound-cue",
+  /** Renderer invoke: sanitized custom-pet assets discovered by main. */
+  getCustomPets: "pet:get-custom-pets",
+  /** Main→renderer push: custom-pet payload after a rescan. Renderer can never send this. */
+  customPetsChanged: "pet:custom-pets-changed",
+  /** Open the main-owned custom pets folder (path constructed in main only). */
+  openCustomPetsDir: "pet:open-custom-pets-dir",
+  /** Re-scan the custom pets folder (user added/removed pets on disk). */
+  rescanCustomPets: "pet:rescan-custom-pets",
 } as const;
 
 export type PetIpcChannel = (typeof PET_IPC_CHANNELS)[keyof typeof PET_IPC_CHANNELS];
@@ -51,12 +59,16 @@ export const PET_RENDERER_ALLOWED_CHANNELS: readonly string[] = [
   PET_IPC_CHANNELS.setReducedMotion,
   PET_IPC_CHANNELS.setAccessKey,
   PET_IPC_CHANNELS.clearAccessKey,
+  PET_IPC_CHANNELS.getCustomPets,
+  PET_IPC_CHANNELS.openCustomPetsDir,
+  PET_IPC_CHANNELS.rescanCustomPets,
 ];
 
 /** Channels main may push to renderer. */
 export const PET_MAIN_PUSH_CHANNELS: readonly string[] = [
   PET_IPC_CHANNELS.stateChanged,
   PET_IPC_CHANNELS.soundCue,
+  PET_IPC_CHANNELS.customPetsChanged,
 ];
 
 export type PetPrefsPatch = Partial<{

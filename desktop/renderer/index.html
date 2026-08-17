@@ -160,6 +160,14 @@
               <span class="pet-option-preview preview-sprite" aria-hidden="true">◉</span>
               <span>像素蜗牛</span>
             </button>
+            <div id="custom-pet-options" class="custom-pet-options" hidden></div>
+          </div>
+          <div class="settings-heading">自定义桌宠</div>
+          <div class="custom-pets-note">将自定义桌宠包放入下方目录（每只一个子目录，内含 manifest.json 与 PNG/WebP 精灵图），点击刷新后即可选择。首版仅支持序列帧（spritesheet）包。</div>
+          <div id="custom-pets-path" class="custom-pets-path"></div>
+          <div class="custom-pets-actions">
+            <button type="button" id="btn-open-custom-pets" class="tray-btn">打开目录</button>
+            <button type="button" id="btn-rescan-custom-pets" class="tray-btn">刷新列表</button>
           </div>
           <div class="settings-heading">尺寸</div>
           <div id="pet-scale-picker" class="pet-scale-picker" role="radiogroup" aria-label="桌宠尺寸">

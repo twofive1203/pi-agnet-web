@@ -149,6 +149,60 @@ export function getBuiltinPetManifest(petId: string): PetManifest {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Runtime custom pet manifests (U6 slice 1)
+//
+// Main scans the user folder, validates each document, and pushes sanitized
+// assets over the narrow bridge. The renderer re-validates here before any
+// id/manifest is trusted for class names or presentation.
+// ---------------------------------------------------------------------------
+
+const customPetManifests = new Map<string, PetManifest>();
+
+export function clearCustomPetManifests(): void {
+  customPetManifests.clear();
+}
+
+export function registerCustomPetManifest(manifest: PetManifest): void {
+  customPetManifests.set(manifest.id, manifest);
+}
+
+export function getCustomPetManifest(petId: string): PetManifest | null {
+  return customPetManifests.get(petId) ?? null;
+}
+
+/**
+ * Combined builtin + runtime custom resolution. Unknown ids fall back to the
+ * first builtin so a stale selectedPetId never renders blank.
+ */
+export function getPetManifest(petId: string): PetManifest {
+  const builtin = BUILTIN_PET_MANIFESTS.find((pet) => pet.id === petId);
+  if (builtin) return builtin;
+  return customPetManifests.get(petId) ?? BUILTIN_PET_MANIFESTS[0];
+}
+
+/**
+ * Renderer gate for a custom pet manifest document. Spritesheet-only: CSS
+ * custom manifests would render as the built-in snail anatomy and are
+ * rejected to avoid false expectations.
+ */
+export function resolveCustomPetManifest(petId: string, raw: unknown): PetManifest | null {
+  const validated = validatePetManifestDocument(raw, petId);
+  if (!validated.ok) return null;
+  if (validated.manifest.renderMode !== "spritesheet" || !validated.manifest.sheet) {
+    return null;
+  }
+  const manifest = validated.manifest;
+  return {
+    id: manifest.id,
+    name: manifest.name,
+    version: manifest.version,
+    renderMode: manifest.renderMode,
+    states: manifest.states,
+    sheet: manifest.sheet,
+  };
+}
+
 /**
  * Runtime load: accept a validated v2 document or fall back to CSS defaults.
  * Unknown ids, illegal versions, capability fields, or path traversal never throw.

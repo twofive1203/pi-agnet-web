@@ -44,6 +44,17 @@ export type SnailPetBridge = {
    * vocabulary; the renderer can never send cues or audio parameters back.
    */
   onSoundCue: (handler: (cue: SoundCueKind) => void) => () => void;
+  /** Fetch sanitized custom-pet assets (validated manifests + data-URL sheets). */
+  getCustomPets: () => Promise<unknown>;
+  /**
+   * Custom-pet payload push (U6 slice 1). Main pushes only after a rescan;
+   * the renderer re-validates every entry before use.
+   */
+  onCustomPetsChanged: (handler: (payload: unknown) => void) => () => void;
+  /** Open the main-owned custom pets folder (no renderer-supplied paths). */
+  openCustomPetsDir: () => Promise<unknown>;
+  /** Ask main to rescan the custom pets folder. */
+  rescanCustomPets: () => void;
 };
 
 function send(channel: string, ...args: unknown[]): void {
@@ -101,6 +112,18 @@ const bridge: SnailPetBridge = {
       ipcRenderer.removeAllListeners(PET_IPC_CHANNELS.soundCue);
     };
   },
+  getCustomPets: () => invoke(PET_IPC_CHANNELS.getCustomPets),
+  onCustomPetsChanged: (handler) => {
+    const listener = (_event: unknown, payload: unknown) => {
+      handler(payload);
+    };
+    ipcRenderer.on(PET_IPC_CHANNELS.customPetsChanged, listener);
+    return () => {
+      ipcRenderer.removeAllListeners(PET_IPC_CHANNELS.customPetsChanged);
+    };
+  },
+  openCustomPetsDir: () => invoke(PET_IPC_CHANNELS.openCustomPetsDir),
+  rescanCustomPets: () => send(PET_IPC_CHANNELS.rescanCustomPets),
 };
 
 contextBridge.exposeInMainWorld("snailPet", bridge);

@@ -15,7 +15,7 @@ import type {
 } from "../main/activity-store";
 import { resolvePetLayoutSpec } from "../main/window-manager";
 import type { SnailPetBridge } from "../preload/pet-preload";
-import { acceptStaticPetPreview } from "./pet-assets";
+import { acceptStaticPetPreview, validateCustomPetAsset } from "./pet-assets";
 import {
   connectionBannerText,
   countActivitiesByFilter,
@@ -29,7 +29,10 @@ import {
   formatActivityProgress,
   formatElapsed,
   formatSessionResources,
-  getBuiltinPetManifest,
+  getCustomPetManifest,
+  getPetManifest,
+  registerCustomPetManifest,
+  clearCustomPetManifests,
   moveActivitySelection,
   nextActDelayMs,
   nextBlinkDelayMs,
@@ -67,7 +70,11 @@ import {
   type PetVisualState,
 } from "./pet-state";
 import { buildSpriteSheetStyleText, resolveSpriteSheetStyle } from "./pet-sheet";
-import { PET_SHEET_DATA_URLS } from "./pet-sheet-assets";
+import {
+  clearCustomPetSheetDataUrls,
+  petSheetDataUrl,
+  setCustomPetSheetDataUrl,
+} from "./pet-sheet-assets";
 import { PetSoundPlayer } from "./pet-sound";
 
 declare global {
@@ -127,6 +134,10 @@ export function renderPetApp(root: Document = document): {
   const btnSettings = root.getElementById("btn-settings");
   const settingsPanel = root.getElementById("settings-panel");
   const petPicker = root.getElementById("pet-picker");
+  const customPetOptions = root.getElementById("custom-pet-options");
+  const customPetsPath = root.getElementById("custom-pets-path");
+  const btnOpenCustomPets = root.getElementById("btn-open-custom-pets");
+  const btnRescanCustomPets = root.getElementById("btn-rescan-custom-pets");
   const petScalePicker = root.getElementById("pet-scale-picker");
   const btnRestorePosition = root.getElementById("btn-restore-position");
   const prefAlwaysOnTop = root.getElementById("pref-always-on-top") as HTMLInputElement | null;
@@ -197,6 +208,9 @@ export function renderPetApp(root: Document = document): {
   const spriteStyleSheets = new Map<string, HTMLStyleElement>();
   const spriteVerified = new Set<string>();
   const spriteFailed = new Set<string>();
+  // U6 slice 1: custom pets registered from validated main payloads. Every
+  // rescan clears prior registrations so changed art/invalidation re-renders.
+  const registeredCustomPetIds = new Set<string>();
 
   // U4a: local synthesized cues only. Playback failure is silent by design and
   // never affects the tray, bubbles or observation.
@@ -694,7 +708,7 @@ export function renderPetApp(root: Document = document): {
 
   function ensureSpriteStylesheet(manifest: PetManifest): void {
     if (spriteStyleSheets.has(manifest.id)) return;
-    const text = buildSpriteSheetStyleText(manifest, PET_SHEET_DATA_URLS[manifest.id] ?? null);
+    const text = buildSpriteSheetStyleText(manifest, petSheetDataUrl(manifest.id));
     if (!text) return;
     const style = root.createElement("style");
     style.setAttribute("data-pet-sprite", manifest.id);
@@ -728,6 +742,100 @@ export function renderPetApp(root: Document = document): {
     img.src = url;
   }
 
+  // -------------------------------------------------------------------------
+  // Custom pets (U6 slice 1): folder drop-in payloads from main.
+  // -------------------------------------------------------------------------
+
+  function clearCustomPetRegistrations(): void {
+    for (const petId of registeredCustomPetIds) {
+      const style = spriteStyleSheets.get(petId);
+      style?.remove();
+      spriteStyleSheets.delete(petId);
+      spriteVerified.delete(petId);
+      spriteFailed.delete(petId);
+    }
+    registeredCustomPetIds.clear();
+    clearCustomPetManifests();
+    clearCustomPetSheetDataUrls();
+  }
+
+  /**
+   * Register one validated custom pet asset. Both gates must pass: the asset
+   * gate (id/manifest/sheet-data-URL) and the spritesheet manifest gate.
+   */
+  function registerCustomPetAsset(candidate: unknown): void {
+    if (!candidate || typeof candidate !== "object") return;
+    const id = (candidate as { id?: unknown }).id;
+    if (typeof id !== "string") return;
+    const gate = validateCustomPetAsset(candidate, id);
+    if (!gate.ok) return;
+    const manifest = gate.manifest;
+    if (manifest.renderMode !== "spritesheet" || !manifest.sheet) return;
+    registerCustomPetManifest({
+      id: manifest.id,
+      name: manifest.name,
+      version: manifest.version,
+      renderMode: manifest.renderMode,
+      states: manifest.states,
+      sheet: manifest.sheet,
+    });
+    setCustomPetSheetDataUrl(id, gate.sheetDataUrl);
+    registeredCustomPetIds.add(id);
+  }
+
+  function renderCustomPetOptions(): void {
+    if (!customPetOptions) return;
+    customPetOptions.replaceChildren();
+    for (const petId of registeredCustomPetIds) {
+      const manifest = getCustomPetManifest(petId);
+      if (!manifest) continue;
+      const btn = root.createElement("button");
+      btn.type = "button";
+      btn.className = "pet-option";
+      btn.setAttribute("role", "radio");
+      btn.dataset.petId = petId;
+      const preview = root.createElement("span");
+      preview.className = "pet-option-preview preview-custom";
+      preview.setAttribute("aria-hidden", "true");
+      preview.textContent = "◉";
+      const sheetUrl = petSheetDataUrl(petId);
+      if (sheetUrl && manifest.sheet) {
+        // Scale the whole sheet so the first cell fills the preview dot.
+        preview.style.backgroundImage = `url("${sheetUrl}")`;
+        preview.style.backgroundSize = `${manifest.sheet.columns * 100}% ${manifest.sheet.rows * 100}%`;
+      }
+      const label = root.createElement("span");
+      label.textContent = manifest.name;
+      btn.append(preview, label);
+      customPetOptions.appendChild(btn);
+    }
+    const empty = registeredCustomPetIds.size === 0;
+    customPetOptions.hidden = empty;
+  }
+
+  /**
+   * Main pushes custom-pet payloads on rescan; every entry is re-gated before
+   * it can influence ids, class names or images. The pets root is display-only.
+   */
+  function syncCustomPetsPayload(payload: unknown): void {
+    clearCustomPetRegistrations();
+    if (!payload || typeof payload !== "object") {
+      renderCustomPetOptions();
+      return;
+    }
+    const pets = (payload as { pets?: unknown }).pets;
+    if (Array.isArray(pets)) {
+      for (const candidate of pets) registerCustomPetAsset(candidate);
+    }
+    const rootPath = (payload as { root?: unknown }).root;
+    if (customPetsPath && typeof rootPath === "string" && rootPath.length <= 512) {
+      customPetsPath.textContent = rootPath;
+    }
+    renderCustomPetOptions();
+    // Re-apply the active pet in case the selected custom pet was just added.
+    if (current) update(current);
+  }
+
   function update(view: DesktopActivityView): void {
     const previousView = current;
     current = view;
@@ -753,12 +861,12 @@ export function renderPetApp(root: Document = document): {
     scheduleRunningCueUpdate(updateNow);
     const runningCue = runningCueState.active ? runningCueState.cue : "generic";
     const cueVisual = resolveRunningCueVisual(runningCue);
-    const manifest = getBuiltinPetManifest(view.selectedPetId);
+    const manifest = getPetManifest(view.selectedPetId);
     const motionReduced = view.reducedMotion || reducedMotion;
     const frame = resolvePetFrame(manifest, state, motionReduced);
     const displayGlyph = state === "running" ? cueVisual.glyph : frame.glyph || petStateGlyph(state);
     const displayLabel = state === "running" ? cueVisual.label : frame.label || petStateLabel(state);
-    const spriteImageUrl = PET_SHEET_DATA_URLS[manifest.id] ?? null;
+    const spriteImageUrl = petSheetDataUrl(manifest.id);
     const spriteStyle = resolveSpriteSheetStyle(manifest, state, spriteImageUrl);
     const spriteActive = spriteStyle != null && !spriteFailed.has(manifest.id);
     if (spriteActive && spriteImageUrl) {
@@ -1603,6 +1711,13 @@ export function renderPetApp(root: Document = document): {
     bridge?.restoreDefaultPosition();
   });
 
+  btnOpenCustomPets?.addEventListener("click", () => {
+    void bridge?.openCustomPetsDir();
+  });
+  btnRescanCustomPets?.addEventListener("click", () => {
+    bridge?.rescanCustomPets();
+  });
+
   prefAlwaysOnTop?.addEventListener("change", () => {
     bridge?.setPrefs({ alwaysOnTop: prefAlwaysOnTop.checked });
   });
@@ -1712,6 +1827,7 @@ export function renderPetApp(root: Document = document): {
 
   let unsubscribe: (() => void) | undefined;
   let unsubscribeSoundCue: (() => void) | undefined;
+  let unsubscribeCustomPets: (() => void) | undefined;
   if (bridge) {
     unsubscribe = bridge.onStateChanged((view) => {
       update(view as DesktopActivityView);
@@ -1720,8 +1836,15 @@ export function renderPetApp(root: Document = document): {
     unsubscribeSoundCue = bridge.onSoundCue((cue) => {
       soundPlayer.play(cue);
     });
+    // U6 slice 1: custom pets arrive as validated payloads (initial + rescan).
+    unsubscribeCustomPets = bridge.onCustomPetsChanged((payload) => {
+      syncCustomPetsPayload(payload);
+    });
     void bridge.getState().then((view) => {
       if (view) update(view as DesktopActivityView);
+    });
+    void bridge.getCustomPets().then((payload) => {
+      syncCustomPetsPayload(payload);
     });
   }
 
@@ -1753,8 +1876,10 @@ export function renderPetApp(root: Document = document): {
       root.removeEventListener("click", onRootClick);
       for (const style of spriteStyleSheets.values()) style.remove();
       spriteStyleSheets.clear();
+      clearCustomPetRegistrations();
       unsubscribe?.();
       unsubscribeSoundCue?.();
+      unsubscribeCustomPets?.();
       soundPlayer.destroy();
     },
   };

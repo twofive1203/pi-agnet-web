@@ -103,7 +103,10 @@ import {
 } from "../desktop/main/window-manager";
 import {
   acceptStaticPetPreview,
+  isCustomPetId,
+  isSafeCustomPetSheetDataUrl,
   isSafePetAssetPath,
+  validateCustomPetAsset,
   validatePackagedPetAssets,
   validatePetManifestDocument,
 } from "../desktop/renderer/pet-assets";
@@ -134,6 +137,7 @@ import {
   resolveActivityElapsedMs,
   resolveActivitySelection,
   resolveBuiltinPetManifest,
+  resolveCustomPetManifest,
   resolveIdleSleepStage,
   resolvePetFrame,
   resolvePetReaction,
@@ -173,6 +177,12 @@ import {
   type PetAudioContextLike,
 } from "../desktop/renderer/pet-sound";
 import { DESKTOP_PACKAGE_CONTRACT } from "../forge.config";
+import {
+  CUSTOM_PET_MAX_COUNT,
+  resolveCustomPetsRoot,
+  scanCustomPets,
+  type CustomPetsIo,
+} from "../desktop/main/custom-pets";
 import { buildAgentDeepLink } from "../lib/desktop-deep-link";
 import {
   buildAgentActivityId,
@@ -3421,6 +3431,331 @@ async function main() {
   // sortProjectGroups stable
   const groups = sortProjectGroups(view.projects);
   assert.equal(groups.length, view.projects.length);
+
+  // -------------------------------------------------------------------------
+  // Custom pets (U6 slice 1): folder drop-in scan, gates, and IPC contract
+  // -------------------------------------------------------------------------
+  {
+    function customSpriteManifest(id: string, name: string, src = "turtle.png") {
+      const states: Record<string, unknown> = {};
+      const required = [
+        "idle",
+        "running",
+        "retrying",
+        "needs_input",
+        "ready",
+        "blocked",
+        "disconnected",
+        "service_not_running",
+      ];
+      required.forEach((state, index) => {
+        states[state] = {
+          frame: "idle",
+          staticFrame: "idle",
+          label: "L",
+          glyph: "·",
+          firstFrame: index * 2,
+          frameCount: 2,
+          durationMs: 200,
+          staticFrameIndex: 0,
+        };
+      });
+      return {
+        id,
+        name,
+        version: 2,
+        renderMode: "spritesheet",
+        states,
+        sheet: { src, frameWidth: 32, frameHeight: 32, columns: 4, rows: 4 },
+      };
+    }
+
+    function customCssManifest(id: string, name: string) {
+      const states: Record<string, unknown> = {};
+      for (const state of [
+        "idle",
+        "running",
+        "retrying",
+        "needs_input",
+        "ready",
+        "blocked",
+        "disconnected",
+        "service_not_running",
+      ]) {
+        states[state] = { frame: "idle", staticFrame: "idle", label: "L", glyph: "·" };
+      }
+      return { id, name, version: 2, renderMode: "css", states };
+    }
+
+    type FakeEntry =
+      | { kind: "dir"; names: string[] }
+      | { kind: "text"; text: string }
+      | { kind: "bytes"; bytes: Uint8Array };
+
+    function fakeCustomPetsIo(entries: Record<string, FakeEntry>): CustomPetsIo {
+      return {
+        listDirs: (root) => {
+          const entry = entries[root];
+          if (!entry || entry.kind !== "dir") throw new Error("unreadable root");
+          return entry.names;
+        },
+        readText: (p) => {
+          const entry = entries[p];
+          if (!entry || entry.kind !== "text") throw new Error("no text");
+          return entry.text;
+        },
+        readBinary: (p) => {
+          const entry = entries[p];
+          if (!entry || entry.kind !== "bytes") throw new Error("no bytes");
+          return entry.bytes;
+        },
+        exists: (p) => p in entries,
+        size: (p) => {
+          const entry = entries[p];
+          if (!entry) throw new Error("no entry");
+          if (entry.kind === "text") return Buffer.byteLength(entry.text);
+          if (entry.kind === "bytes") return entry.bytes.length;
+          throw new Error("no size");
+        },
+        encodeBase64: (bytes) =>
+          Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString("base64"),
+        join: (...parts) => parts.join("/"),
+      };
+    }
+
+    // Root resolution: explicit override wins, then PI_CODING_AGENT_DIR, then home.
+    assert.equal(
+      resolveCustomPetsRoot({ env: { SNAIL_PET_CUSTOM_PETS_DIR: "D:/pets" }, homedir: "/home/u" }),
+      "D:/pets",
+    );
+    assert.equal(
+      resolveCustomPetsRoot({ env: { PI_CODING_AGENT_DIR: "/data/agent" }, homedir: "/home/u" }),
+      "/data/agent/desktop-pets",
+    );
+    assert.equal(
+      resolveCustomPetsRoot({ env: {}, homedir: "/home/u" }),
+      "/home/u/.pi/agent/desktop-pets",
+    );
+
+    const pngBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
+
+    // Happy path: one valid turtle spritesheet pet, PNG sheet, base64 round-trip.
+    const happyIo = fakeCustomPetsIo({
+      root: { kind: "dir", names: ["turtle-sprite"] },
+      "root/turtle-sprite/manifest.json": {
+        kind: "text",
+        text: JSON.stringify(customSpriteManifest("turtle-sprite", "Pixel Turtle")),
+      },
+      "root/turtle-sprite/turtle.png": { kind: "bytes", bytes: pngBytes },
+    });
+    const happy = scanCustomPets("root", happyIo);
+    assert.equal(happy.errors.length, 0);
+    assert.equal(happy.pets.length, 1);
+    assert.equal(happy.pets[0].id, "turtle-sprite");
+    assert.equal(happy.pets[0].manifest.name, "Pixel Turtle");
+    assert.ok(happy.pets[0].sheetDataUrl.startsWith("data:image/png;base64,"));
+    const roundTrip = Buffer.from(
+      happy.pets[0].sheetDataUrl.slice(happy.pets[0].sheetDataUrl.indexOf(",") + 1),
+      "base64",
+    );
+    assert.deepEqual(Uint8Array.from(roundTrip), pngBytes);
+
+    // WebP sheets carry the matching MIME.
+    const webpIo = fakeCustomPetsIo({
+      root: { kind: "dir", names: ["turtle-webp"] },
+      "root/turtle-webp/manifest.json": {
+        kind: "text",
+        text: JSON.stringify(customSpriteManifest("turtle-webp", "Turtle", "turtle.webp")),
+      },
+      "root/turtle-webp/turtle.webp": { kind: "bytes", bytes: new Uint8Array([1, 2, 3]) },
+    });
+    const webp = scanCustomPets("root", webpIo);
+    assert.equal(webp.pets.length, 1);
+    assert.ok(webp.pets[0].sheetDataUrl.startsWith("data:image/webp;base64,"));
+
+    // Names/labels containing absolute URLs are filtered before the renderer
+    // view gate could reject the whole payload.
+    const urlNameIo = fakeCustomPetsIo({
+      root: { kind: "dir", names: ["url-name"] },
+      "root/url-name/manifest.json": {
+        kind: "text",
+        text: JSON.stringify(customSpriteManifest("url-name", "See http://evil.example")),
+      },
+      "root/url-name/turtle.png": { kind: "bytes", bytes: pngBytes },
+    });
+    const urlName = scanCustomPets("root", urlNameIo);
+    assert.equal(urlName.pets.length, 0);
+    assert.equal(urlName.errors[0].reason, "unsafe_content");
+
+    // Rejection matrix: every bad candidate lands in errors, never in pets.
+    const bigSheet = new Uint8Array(257 * 1024);
+    const capabilityManifest = customSpriteManifest("capability", "Cap");
+    (capabilityManifest.states as Record<string, Record<string, unknown>>).idle.command = "calc.exe";
+    const rejectEntries: Record<string, FakeEntry> = {
+      root: { kind: "dir", names: ["Turtle!", "snail-default", "id-mismatch", "css-pet", "no-sheet", "big-sheet", "big-manifest", "bad-json", "traversal", "capability", "bad-type"] },
+      "root/Turtle!/manifest.json": { kind: "text", text: "{}" },
+      "root/snail-default/manifest.json": {
+        kind: "text",
+        text: JSON.stringify(customSpriteManifest("snail-default", "Nope")),
+      },
+      "root/snail-default/snail.png": { kind: "bytes", bytes: pngBytes },
+      "root/id-mismatch/manifest.json": {
+        kind: "text",
+        text: JSON.stringify(customSpriteManifest("other-id", "Mismatch")),
+      },
+      "root/css-pet/manifest.json": {
+        kind: "text",
+        text: JSON.stringify(customCssManifest("css-pet", "Css")),
+      },
+      "root/no-sheet/manifest.json": {
+        kind: "text",
+        text: JSON.stringify(customSpriteManifest("no-sheet", "NoSheet")),
+      },
+      "root/big-sheet/manifest.json": {
+        kind: "text",
+        text: JSON.stringify(customSpriteManifest("big-sheet", "Big")),
+      },
+      "root/big-sheet/turtle.png": { kind: "bytes", bytes: bigSheet },
+      "root/big-manifest/manifest.json": { kind: "text", text: "x".repeat(17 * 1024) },
+      "root/bad-json/manifest.json": { kind: "text", text: "{nope" },
+      "root/traversal/manifest.json": {
+        kind: "text",
+        text: JSON.stringify(customSpriteManifest("traversal", "Traversal", "../turtle.png")),
+      },
+      "root/traversal/turtle.png": { kind: "bytes", bytes: pngBytes },
+      "root/capability/manifest.json": {
+        kind: "text",
+        text: JSON.stringify(capabilityManifest),
+      },
+      "root/capability/turtle.png": { kind: "bytes", bytes: pngBytes },
+      "root/bad-type/manifest.json": {
+        kind: "text",
+        text: JSON.stringify(customSpriteManifest("bad-type", "Gif", "turtle.gif")),
+      },
+      "root/bad-type/turtle.gif": { kind: "bytes", bytes: pngBytes },
+    };
+    const rejected = scanCustomPets("root", fakeCustomPetsIo(rejectEntries));
+    assert.equal(rejected.pets.length, 0);
+    const reasonOf = (petId: string) =>
+      rejected.errors.find((e) => e.petId === petId)?.reason;
+    assert.equal(reasonOf("Turtle!"), "bad_id");
+    assert.equal(reasonOf("snail-default"), "builtin_id_collision");
+    assert.equal(reasonOf("id-mismatch"), "id");
+    assert.equal(reasonOf("css-pet"), "custom_render_mode");
+    assert.equal(reasonOf("no-sheet"), "sheet_missing");
+    assert.equal(reasonOf("big-sheet"), "sheet_size");
+    assert.equal(reasonOf("big-manifest"), "manifest_size");
+    assert.equal(reasonOf("bad-json"), "manifest_json");
+    assert.equal(reasonOf("traversal"), "sheet_src");
+    assert.equal(reasonOf("capability"), "capability:command");
+    // The shared manifest validator already rejects non-PNG/WebP sheet sources.
+    assert.equal(reasonOf("bad-type"), "sheet_src");
+
+    // Unreadable root is a single soft error, never a throw.
+    const unreadable = scanCustomPets("missing", fakeCustomPetsIo({}));
+    assert.equal(unreadable.pets.length, 0);
+    assert.equal(unreadable.errors[0].reason, "root_unreadable");
+
+    // Pet count cap: 17 valid folders → 16 accepted + one too_many_pets error.
+    const manyNames = Array.from({ length: CUSTOM_PET_MAX_COUNT + 1 }, (_v, i) => `pet-${i}`);
+    const manyEntries: Record<string, FakeEntry> = { root: { kind: "dir", names: manyNames } };
+    for (const name of manyNames) {
+      manyEntries[`root/${name}/manifest.json`] = {
+        kind: "text",
+        text: JSON.stringify(customSpriteManifest(name, "P")),
+      };
+      manyEntries[`root/${name}/turtle.png`] = { kind: "bytes", bytes: pngBytes };
+    }
+    const many = scanCustomPets("root", fakeCustomPetsIo(manyEntries));
+    assert.equal(many.pets.length, CUSTOM_PET_MAX_COUNT);
+    assert.equal(
+      many.errors.find((e) => e.reason === "too_many_pets")?.petId,
+      "pet-9",
+    );
+
+    // Renderer-side gates: id pattern, sheet data URLs, and the asset gate.
+    assert.equal(isCustomPetId("turtle-sprite"), true);
+    assert.equal(isCustomPetId("Turtle!"), false);
+    assert.equal(isCustomPetId("a".repeat(65)), false);
+    assert.equal(isCustomPetId("-bad"), false);
+    assert.equal(isSafeCustomPetSheetDataUrl("data:image/png;base64,aGVsbG8="), true);
+    assert.equal(isSafeCustomPetSheetDataUrl("data:image/webp;base64,aGVsbG8="), true);
+    assert.equal(isSafeCustomPetSheetDataUrl("data:image/gif;base64,aGVsbG8="), false);
+    assert.equal(isSafeCustomPetSheetDataUrl("https://evil/x.png"), false);
+    assert.equal(isSafeCustomPetSheetDataUrl("data:image/png;base64,!!!"), false);
+    assert.equal(isSafeCustomPetSheetDataUrl(`data:image/png;base64,${"A".repeat(400_000)}`), false);
+
+    const gateOk = validateCustomPetAsset(
+      {
+        id: "turtle-sprite",
+        manifest: customSpriteManifest("turtle-sprite", "Pixel Turtle"),
+        sheetDataUrl: "data:image/png;base64,aGVsbG8=",
+      },
+      "turtle-sprite",
+    );
+    assert.equal(gateOk.ok, true);
+    assert.equal(
+      validateCustomPetAsset(
+        {
+          id: "x",
+          manifest: customCssManifest("x", "Css"),
+          sheetDataUrl: "data:image/png;base64,AA==",
+        },
+        "x",
+      ).ok,
+      false,
+    );
+    assert.equal(
+      validateCustomPetAsset(
+        {
+          id: "turtle-sprite",
+          manifest: customSpriteManifest("turtle-sprite", "Pixel Turtle"),
+          sheetDataUrl: "https://evil/x.png",
+        },
+        "turtle-sprite",
+      ).ok,
+      false,
+    );
+
+    // pet-state runtime gate: spritesheet docs resolve; css/unknown ids do not.
+    assert.equal(
+      resolveCustomPetManifest(
+        "turtle-sprite",
+        customSpriteManifest("turtle-sprite", "Pixel Turtle"),
+      )?.renderMode,
+      "spritesheet",
+    );
+    assert.equal(
+      resolveCustomPetManifest(
+        "css-pet",
+        customCssManifest("css-pet", "Css"),
+      ),
+      null,
+    );
+    assert.equal(resolveCustomPetManifest("other", customSpriteManifest("evil", "Evil")), null);
+
+    // IPC contract: custom pets channels follow the renderer/push split.
+    assert.ok(PET_RENDERER_ALLOWED_CHANNELS.includes(PET_IPC_CHANNELS.getCustomPets));
+    assert.ok(PET_RENDERER_ALLOWED_CHANNELS.includes(PET_IPC_CHANNELS.openCustomPetsDir));
+    assert.ok(PET_RENDERER_ALLOWED_CHANNELS.includes(PET_IPC_CHANNELS.rescanCustomPets));
+    assert.ok(!PET_RENDERER_ALLOWED_CHANNELS.includes(PET_IPC_CHANNELS.customPetsChanged));
+    assert.ok(PET_MAIN_PUSH_CHANNELS.includes(PET_IPC_CHANNELS.customPetsChanged));
+
+    // View and custom-pet payloads stay renderer-safe (no tokens/absolute URLs).
+    const viewWithRoot = buildActivityView({
+      snapshot,
+      connection,
+      settings: createDefaultDesktopSettings(),
+      now: Date.now(),
+      customPetsRoot: "D:/home/.pi/agent/desktop-pets",
+    });
+    assert.equal(viewWithRoot.customPetsRoot, "D:/home/.pi/agent/desktop-pets");
+    assertRendererViewSafe(viewWithRoot);
+    assertRendererViewSafe({
+      pets: [{ id: "turtle-sprite", manifest: customSpriteManifest("turtle-sprite", "Pixel Turtle"), sheetDataUrl: "data:image/png;base64,aGVsbG8=" }],
+      root: "D:/home/.pi/agent/desktop-pets",
+    });
+  }
 
   console.log("smoke-desktop-contract: ok");
 }

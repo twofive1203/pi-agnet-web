@@ -15,3 +15,19 @@ const snailSpriteSheet = snailSpriteSheetRaw as unknown as string;
 export const PET_SHEET_DATA_URLS: Readonly<Record<string, string>> = {
   "snail-sprite": snailSpriteSheet,
 };
+
+/** Runtime custom-pet sheets, registered from validated main payloads (U6 slice 1). */
+const customPetSheetDataUrls = new Map<string, string>();
+
+export function setCustomPetSheetDataUrl(petId: string, dataUrl: string): void {
+  customPetSheetDataUrls.set(petId, dataUrl);
+}
+
+export function clearCustomPetSheetDataUrls(): void {
+  customPetSheetDataUrls.clear();
+}
+
+/** Combined builtin + runtime sheet lookup; null lets the caller fall back to CSS. */
+export function petSheetDataUrl(petId: string): string | null {
+  return PET_SHEET_DATA_URLS[petId] ?? customPetSheetDataUrls.get(petId) ?? null;
+}

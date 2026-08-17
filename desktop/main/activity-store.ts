@@ -130,6 +130,8 @@ export type DesktopActivityView = {
   diagnostics: TaskObserverDiagnostic[];
   attentionCount: number;
   activeCount: number;
+  /** Display-only custom pets root path (main-owned; never renderer-supplied). */
+  customPetsRoot: string | null;
 };
 
 export type ActivityStoreSnapshotInput = {
@@ -150,6 +152,8 @@ export type ActivityStoreSnapshotInput = {
   trayAnchor?: "top-left" | "top-right" | "bottom-left" | "bottom-right";
   /** Explicit observer baseline/reset marker from the connection envelope. */
   reset?: boolean;
+  /** Display-only custom pets root path (main-owned; never renderer-supplied). */
+  customPetsRoot?: string | null;
 };
 
 const PRESENTATION_RANK = new Map(
@@ -422,6 +426,7 @@ export function buildActivityView(input: ActivityStoreSnapshotInput): DesktopAct
     diagnostics,
     attentionCount,
     activeCount,
+    customPetsRoot: input.customPetsRoot ?? null,
   };
 }
 

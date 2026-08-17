@@ -9,6 +9,7 @@
  */
 
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 
 import {
@@ -31,6 +32,12 @@ import {
 } from "./access-key-store";
 import { applyLaunchAtLogin } from "./autostart";
 import type { DesktopConnectionState } from "./connection-state";
+import {
+  resolveCustomPetsRoot,
+  scanCustomPets,
+  type CustomPetScanResult,
+  type CustomPetsIo,
+} from "./custom-pets";
 import { openValidatedDeepLink, rejectArbitraryRendererUrl } from "./deep-link-opener";
 import { PET_IPC_CHANNELS, type PetPrefsPatch } from "./ipc-contract";
 import { DesktopNotificationController } from "./notification-controller";
@@ -104,6 +111,9 @@ export type DesktopMainDeps = {
   settingsFs?: SettingsFs;
   accessKeyFs?: AccessKeyFs;
   accessKeyCodec?: AccessKeyCodec;
+  /** Custom pets root override (tests); defaults to env/homedir resolution. */
+  customPetsDir?: string;
+  customPetsIo?: CustomPetsIo;
   /** Optional Electron safeStorage; used when accessKeyCodec is omitted. */
   safeStorage?: {
     isEncryptionAvailable: () => boolean;
@@ -118,6 +128,26 @@ const nodeSettingsFs: SettingsFs = {
   writeFile: (p, data, enc) => fs.writeFileSync(p, data, enc),
   mkdirp: (dir) => fs.mkdirSync(dir, { recursive: true }),
   exists: (p) => fs.existsSync(p),
+};
+
+const nodeCustomPetsIo: CustomPetsIo = {
+  listDirs: (root) => {
+    try {
+      return fs
+        .readdirSync(root, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name);
+    } catch {
+      return [];
+    }
+  },
+  readText: (p) => fs.readFileSync(p, "utf8"),
+  readBinary: (p) => fs.readFileSync(p),
+  exists: (p) => fs.existsSync(p),
+  size: (p) => fs.statSync(p).size,
+  encodeBase64: (bytes) =>
+    Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString("base64"),
+  join: (...parts) => path.join(...parts),
 };
 
 function parseSnapshotJson(json: string): import("../../lib/task-observer-types").TaskObserverSnapshot | null {
@@ -190,6 +220,17 @@ export async function startDesktopPetMain(deps: DesktopMainDeps): Promise<{
       : createMemoryAccessKeyCodec());
   let settings = loadDesktopSettingsFile(userDataDir, settingsFs);
   let accessKey = loadDesktopAccessKey(userDataDir, accessKeyFs, accessKeyCodec);
+
+  const customPetsDir =
+    deps.customPetsDir ??
+    path.resolve(
+      resolveCustomPetsRoot({
+        env: process.env as Record<string, string | undefined>,
+        homedir: os.homedir(),
+      }),
+    );
+  const customPetsIo = deps.customPetsIo ?? nodeCustomPetsIo;
+  let customPetsScan: CustomPetScanResult = scanCustomPets(customPetsDir, customPetsIo);
 
   applyLaunchAtLogin(app, settings.launchAtLogin);
 
@@ -322,6 +363,7 @@ export async function startDesktopPetMain(deps: DesktopMainDeps): Promise<{
       hasAccessKey: Boolean(accessKey),
       trayAnchor: windowState.trayExpanded ? windowState.trayAnchor : "top-left",
       reset: snapshotReset,
+      customPetsRoot: customPetsDir,
     });
     assertRendererViewSafe(view);
     return view;
@@ -853,6 +895,41 @@ export async function startDesktopPetMain(deps: DesktopMainDeps): Promise<{
       client.retry();
       pushState();
       return { ok: true };
+    });
+
+    ipcMain.handle(PET_IPC_CHANNELS.getCustomPets, () => {
+      const payload = {
+        pets: customPetsScan.pets,
+        root: customPetsDir,
+      };
+      // The payload is renderer-bound; keep the same no-token/no-absolute-URL gate.
+      assertRendererViewSafe(payload);
+      return payload;
+    });
+
+    ipcMain.on(PET_IPC_CHANNELS.rescanCustomPets, () => {
+      customPetsScan = scanCustomPets(customPetsDir, customPetsIo);
+      const payload = {
+        pets: customPetsScan.pets,
+        root: customPetsDir,
+      };
+      assertRendererViewSafe(payload);
+      sendPetWindowChannel(petWindow, PET_IPC_CHANNELS.customPetsChanged, payload);
+    });
+
+    ipcMain.handle(PET_IPC_CHANNELS.openCustomPetsDir, async () => {
+      // The folder path is constructed in main only; the renderer sends nothing.
+      try {
+        fs.mkdirSync(customPetsDir, { recursive: true });
+      } catch {
+        // ignore; openPath reports the real failure below
+      }
+      try {
+        const error = await shell.openPath(customPetsDir);
+        return { ok: error === "" };
+      } catch {
+        return { ok: false };
+      }
     });
   }
 

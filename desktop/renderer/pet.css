@@ -1432,6 +1432,47 @@ select {
   background: repeating-linear-gradient(45deg, #85e0d0 0 6px, #286275 6px 12px);
 }
 
+/* U6 slice 1: custom pets show their first sprite cell; backgroundSize is set
+   inline per pet so the whole sheet scales to one preview cell. */
+.preview-custom {
+  background-position: 0 0;
+  background-repeat: no-repeat;
+  overflow: hidden;
+}
+
+.custom-pet-options {
+  display: contents;
+}
+
+.custom-pet-options[hidden] {
+  display: none !important;
+}
+
+.custom-pets-note {
+  color: var(--pet-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.custom-pets-path {
+  margin-top: 6px;
+  padding: 5px 8px;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--pet-border);
+  border-radius: 8px;
+  background: var(--surface-raised);
+  color: var(--pet-text);
+  font-size: 11px;
+  line-height: 1.4;
+  user-select: text;
+}
+
+.custom-pets-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
 .settings-grid {
   display: grid;
   gap: 3px;

@@ -9,6 +9,16 @@
 export const BUILTIN_PET_IDS = ["snail-default", "snail-classic", "snail-sprite"] as const;
 export type BuiltinPetId = (typeof BUILTIN_PET_IDS)[number];
 
+/**
+ * Custom pet ids (folder drop-in) use the same safe pattern as settings
+ * selectedPetId: lowercase/digit start, only [a-z0-9_-], max 64 chars.
+ */
+export const CUSTOM_PET_ID_PATTERN = /^[a-z0-9][a-z0-9_-]{0,63}$/;
+
+export function isCustomPetId(value: string): boolean {
+  return CUSTOM_PET_ID_PATTERN.test(value);
+}
+
 export const PET_MANIFEST_VERSION = 2;
 export const PET_REQUIRED_STATES = [
   "idle",
@@ -59,7 +69,8 @@ export type PetManifestSheetV2 = {
 };
 
 export type PetManifestV2 = {
-  id: BuiltinPetId;
+  /** Builtin id or a validated custom pet id (folder name). */
+  id: string;
   name: string;
   version: typeof PET_MANIFEST_VERSION;
   renderMode: PetRenderMode;
@@ -204,14 +215,25 @@ function validateFrame(state: string, raw: unknown): PetManifestFrameV2 | string
   return frame;
 }
 
-export function validatePetManifestDocument(raw: unknown): PetManifestValidation {
+export function validatePetManifestDocument(
+  raw: unknown,
+  expectedId?: string,
+): PetManifestValidation {
   if (!isPlainObject(raw)) return { ok: false, reason: "not_object" };
   for (const key of Object.keys(raw)) {
     if (!ALLOWED_TOP_LEVEL.has(key)) return { ok: false, reason: `unknown_field:${key}` };
   }
   const forbidden = collectForbiddenPetCapabilityKeys(raw);
   if (forbidden.length > 0) return { ok: false, reason: `capability:${forbidden[0]}` };
-  if (typeof raw.id !== "string" || !isBuiltinPetId(raw.id)) return { ok: false, reason: "id" };
+  // With an expected id the document is a custom pet and must match its folder
+  // name exactly; without one it must be one of the builtin ids.
+  if (expectedId !== undefined) {
+    if (typeof raw.id !== "string" || raw.id !== expectedId || !isCustomPetId(raw.id)) {
+      return { ok: false, reason: "id" };
+    }
+  } else if (typeof raw.id !== "string" || !isBuiltinPetId(raw.id)) {
+    return { ok: false, reason: "id" };
+  }
   if (typeof raw.name !== "string" || raw.name.length === 0 || raw.name.length > 32) {
     return { ok: false, reason: "name" };
   }
@@ -313,6 +335,53 @@ export function validatePetManifestDocument(raw: unknown): PetManifestValidation
       states,
       ...(sheet ? { sheet } : {}),
     },
+  };
+}
+
+const CUSTOM_PET_SHEET_MAX_DATA_URL_CHARS = 360_000;
+
+/**
+ * Runtime custom-pet sheet gate: CSP-style data URLs only, bounded length, and
+ * a base64-only payload. Main owns the real byte limits; this is defense in
+ * depth for payloads crossing the preload bridge.
+ */
+export function isSafeCustomPetSheetDataUrl(value: string): boolean {
+  if (typeof value !== "string" || value.length === 0) return false;
+  if (value.length > CUSTOM_PET_SHEET_MAX_DATA_URL_CHARS) return false;
+  if (!value.startsWith("data:image/png;base64,") && !value.startsWith("data:image/webp;base64,")) {
+    return false;
+  }
+  const payload = value.slice(value.indexOf(",") + 1);
+  return /^[A-Za-z0-9+/=]+$/.test(payload);
+}
+
+export type CustomPetAssetGate =
+  | { ok: true; id: string; manifest: PetManifestV2; sheetDataUrl: string }
+  | { ok: false; reason: string };
+
+/**
+ * Renderer-side gate for one custom pet asset from main. Custom pets are
+ * spritesheet-only in the first slice; CSS manifests would render as the
+ * built-in snail anatomy and are rejected to avoid false expectations.
+ */
+export function validateCustomPetAsset(raw: unknown, expectedId: string): CustomPetAssetGate {
+  if (!isCustomPetId(expectedId)) return { ok: false, reason: "id" };
+  if (!isPlainObject(raw)) return { ok: false, reason: "not_object" };
+  const manifestRaw = (raw as Record<string, unknown>).manifest;
+  const validated = validatePetManifestDocument(manifestRaw, expectedId);
+  if (!validated.ok) return { ok: false, reason: validated.reason };
+  if (validated.manifest.renderMode !== "spritesheet" || !validated.manifest.sheet) {
+    return { ok: false, reason: "custom_render_mode" };
+  }
+  const sheetDataUrl = (raw as Record<string, unknown>).sheetDataUrl;
+  if (typeof sheetDataUrl !== "string" || !isSafeCustomPetSheetDataUrl(sheetDataUrl)) {
+    return { ok: false, reason: "sheet_data_url" };
+  }
+  return {
+    ok: true,
+    id: expectedId,
+    manifest: validated.manifest,
+    sheetDataUrl,
   };
 }
 

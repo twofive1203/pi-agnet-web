@@ -77,6 +77,10 @@
 
   // desktop/renderer/pet-assets.ts
   var BUILTIN_PET_IDS = ["snail-default", "snail-classic", "snail-sprite"];
+  var CUSTOM_PET_ID_PATTERN = /^[a-z0-9][a-z0-9_-]{0,63}$/;
+  function isCustomPetId(value) {
+    return CUSTOM_PET_ID_PATTERN.test(value);
+  }
   var PET_MANIFEST_VERSION = 2;
   var PET_REQUIRED_STATES = [
     "idle",
@@ -216,14 +220,20 @@
     }
     return frame;
   }
-  function validatePetManifestDocument(raw) {
+  function validatePetManifestDocument(raw, expectedId) {
     if (!isPlainObject(raw)) return { ok: false, reason: "not_object" };
     for (const key of Object.keys(raw)) {
       if (!ALLOWED_TOP_LEVEL.has(key)) return { ok: false, reason: `unknown_field:${key}` };
     }
     const forbidden = collectForbiddenPetCapabilityKeys(raw);
     if (forbidden.length > 0) return { ok: false, reason: `capability:${forbidden[0]}` };
-    if (typeof raw.id !== "string" || !isBuiltinPetId(raw.id)) return { ok: false, reason: "id" };
+    if (expectedId !== void 0) {
+      if (typeof raw.id !== "string" || raw.id !== expectedId || !isCustomPetId(raw.id)) {
+        return { ok: false, reason: "id" };
+      }
+    } else if (typeof raw.id !== "string" || !isBuiltinPetId(raw.id)) {
+      return { ok: false, reason: "id" };
+    }
     if (typeof raw.name !== "string" || raw.name.length === 0 || raw.name.length > 32) {
       return { ok: false, reason: "name" };
     }
@@ -302,6 +312,36 @@
         states,
         ...sheet ? { sheet } : {}
       }
+    };
+  }
+  var CUSTOM_PET_SHEET_MAX_DATA_URL_CHARS = 36e4;
+  function isSafeCustomPetSheetDataUrl(value) {
+    if (typeof value !== "string" || value.length === 0) return false;
+    if (value.length > CUSTOM_PET_SHEET_MAX_DATA_URL_CHARS) return false;
+    if (!value.startsWith("data:image/png;base64,") && !value.startsWith("data:image/webp;base64,")) {
+      return false;
+    }
+    const payload = value.slice(value.indexOf(",") + 1);
+    return /^[A-Za-z0-9+/=]+$/.test(payload);
+  }
+  function validateCustomPetAsset(raw, expectedId) {
+    if (!isCustomPetId(expectedId)) return { ok: false, reason: "id" };
+    if (!isPlainObject(raw)) return { ok: false, reason: "not_object" };
+    const manifestRaw = raw.manifest;
+    const validated = validatePetManifestDocument(manifestRaw, expectedId);
+    if (!validated.ok) return { ok: false, reason: validated.reason };
+    if (validated.manifest.renderMode !== "spritesheet" || !validated.manifest.sheet) {
+      return { ok: false, reason: "custom_render_mode" };
+    }
+    const sheetDataUrl = raw.sheetDataUrl;
+    if (typeof sheetDataUrl !== "string" || !isSafeCustomPetSheetDataUrl(sheetDataUrl)) {
+      return { ok: false, reason: "sheet_data_url" };
+    }
+    return {
+      ok: true,
+      id: expectedId,
+      manifest: validated.manifest,
+      sheetDataUrl
     };
   }
   function acceptStaticPetPreview(raw) {
@@ -635,8 +675,20 @@
     resolvePetManifestDocument(CSS_FALLBACK_MANIFESTS[1], manifest_default),
     resolvePetManifestDocument(CSS_FALLBACK_MANIFESTS[2], manifest_default3)
   ];
-  function getBuiltinPetManifest(petId) {
-    return BUILTIN_PET_MANIFESTS.find((pet) => pet.id === petId) ?? BUILTIN_PET_MANIFESTS[0];
+  var customPetManifests = /* @__PURE__ */ new Map();
+  function clearCustomPetManifests() {
+    customPetManifests.clear();
+  }
+  function registerCustomPetManifest(manifest) {
+    customPetManifests.set(manifest.id, manifest);
+  }
+  function getCustomPetManifest(petId) {
+    return customPetManifests.get(petId) ?? null;
+  }
+  function getPetManifest(petId) {
+    const builtin = BUILTIN_PET_MANIFESTS.find((pet) => pet.id === petId);
+    if (builtin) return builtin;
+    return customPetManifests.get(petId) ?? BUILTIN_PET_MANIFESTS[0];
   }
   function resolvePetFrame(manifest, state, reducedMotion) {
     const entry = manifest.states[state] ?? DEFAULT_FRAMES[state] ?? DEFAULT_FRAMES.idle;
@@ -1314,6 +1366,16 @@
   var PET_SHEET_DATA_URLS = {
     "snail-sprite": snailSpriteSheet
   };
+  var customPetSheetDataUrls = /* @__PURE__ */ new Map();
+  function setCustomPetSheetDataUrl(petId, dataUrl) {
+    customPetSheetDataUrls.set(petId, dataUrl);
+  }
+  function clearCustomPetSheetDataUrls() {
+    customPetSheetDataUrls.clear();
+  }
+  function petSheetDataUrl(petId) {
+    return PET_SHEET_DATA_URLS[petId] ?? customPetSheetDataUrls.get(petId) ?? null;
+  }
 
   // desktop/renderer/pet-sound.ts
   var SOUND_MASTER_GAIN = 0.06;
@@ -1455,6 +1517,10 @@
     const btnSettings = root.getElementById("btn-settings");
     const settingsPanel = root.getElementById("settings-panel");
     const petPicker = root.getElementById("pet-picker");
+    const customPetOptions = root.getElementById("custom-pet-options");
+    const customPetsPath = root.getElementById("custom-pets-path");
+    const btnOpenCustomPets = root.getElementById("btn-open-custom-pets");
+    const btnRescanCustomPets = root.getElementById("btn-rescan-custom-pets");
     const petScalePicker = root.getElementById("pet-scale-picker");
     const btnRestorePosition = root.getElementById("btn-restore-position");
     const prefAlwaysOnTop = root.getElementById("pref-always-on-top");
@@ -1513,6 +1579,7 @@
     const spriteStyleSheets = /* @__PURE__ */ new Map();
     const spriteVerified = /* @__PURE__ */ new Set();
     const spriteFailed = /* @__PURE__ */ new Set();
+    const registeredCustomPetIds = /* @__PURE__ */ new Set();
     const soundPlayer = new PetSoundPlayer();
     bridge?.setReducedMotion(reducedMotion);
     if (typeof window.matchMedia === "function") {
@@ -1915,7 +1982,7 @@
     }
     function ensureSpriteStylesheet(manifest) {
       if (spriteStyleSheets.has(manifest.id)) return;
-      const text = buildSpriteSheetStyleText(manifest, PET_SHEET_DATA_URLS[manifest.id] ?? null);
+      const text = buildSpriteSheetStyleText(manifest, petSheetDataUrl(manifest.id));
       if (!text) return;
       const style = root.createElement("style");
       style.setAttribute("data-pet-sprite", manifest.id);
@@ -1945,6 +2012,82 @@
       });
       img.src = url;
     }
+    function clearCustomPetRegistrations() {
+      for (const petId of registeredCustomPetIds) {
+        const style = spriteStyleSheets.get(petId);
+        style?.remove();
+        spriteStyleSheets.delete(petId);
+        spriteVerified.delete(petId);
+        spriteFailed.delete(petId);
+      }
+      registeredCustomPetIds.clear();
+      clearCustomPetManifests();
+      clearCustomPetSheetDataUrls();
+    }
+    function registerCustomPetAsset(candidate) {
+      if (!candidate || typeof candidate !== "object") return;
+      const id = candidate.id;
+      if (typeof id !== "string") return;
+      const gate = validateCustomPetAsset(candidate, id);
+      if (!gate.ok) return;
+      const manifest = gate.manifest;
+      if (manifest.renderMode !== "spritesheet" || !manifest.sheet) return;
+      registerCustomPetManifest({
+        id: manifest.id,
+        name: manifest.name,
+        version: manifest.version,
+        renderMode: manifest.renderMode,
+        states: manifest.states,
+        sheet: manifest.sheet
+      });
+      setCustomPetSheetDataUrl(id, gate.sheetDataUrl);
+      registeredCustomPetIds.add(id);
+    }
+    function renderCustomPetOptions() {
+      if (!customPetOptions) return;
+      customPetOptions.replaceChildren();
+      for (const petId of registeredCustomPetIds) {
+        const manifest = getCustomPetManifest(petId);
+        if (!manifest) continue;
+        const btn = root.createElement("button");
+        btn.type = "button";
+        btn.className = "pet-option";
+        btn.setAttribute("role", "radio");
+        btn.dataset.petId = petId;
+        const preview = root.createElement("span");
+        preview.className = "pet-option-preview preview-custom";
+        preview.setAttribute("aria-hidden", "true");
+        preview.textContent = "\u25C9";
+        const sheetUrl = petSheetDataUrl(petId);
+        if (sheetUrl && manifest.sheet) {
+          preview.style.backgroundImage = `url("${sheetUrl}")`;
+          preview.style.backgroundSize = `${manifest.sheet.columns * 100}% ${manifest.sheet.rows * 100}%`;
+        }
+        const label = root.createElement("span");
+        label.textContent = manifest.name;
+        btn.append(preview, label);
+        customPetOptions.appendChild(btn);
+      }
+      const empty = registeredCustomPetIds.size === 0;
+      customPetOptions.hidden = empty;
+    }
+    function syncCustomPetsPayload(payload) {
+      clearCustomPetRegistrations();
+      if (!payload || typeof payload !== "object") {
+        renderCustomPetOptions();
+        return;
+      }
+      const pets = payload.pets;
+      if (Array.isArray(pets)) {
+        for (const candidate of pets) registerCustomPetAsset(candidate);
+      }
+      const rootPath = payload.root;
+      if (customPetsPath && typeof rootPath === "string" && rootPath.length <= 512) {
+        customPetsPath.textContent = rootPath;
+      }
+      renderCustomPetOptions();
+      if (current) update(current);
+    }
     function update(view) {
       const previousView = current;
       current = view;
@@ -1968,12 +2111,12 @@
       scheduleRunningCueUpdate(updateNow);
       const runningCue = runningCueState.active ? runningCueState.cue : "generic";
       const cueVisual = resolveRunningCueVisual(runningCue);
-      const manifest = getBuiltinPetManifest(view.selectedPetId);
+      const manifest = getPetManifest(view.selectedPetId);
       const motionReduced = view.reducedMotion || reducedMotion;
       const frame = resolvePetFrame(manifest, state, motionReduced);
       const displayGlyph = state === "running" ? cueVisual.glyph : frame.glyph || petStateGlyph(state);
       const displayLabel = state === "running" ? cueVisual.label : frame.label || petStateLabel(state);
-      const spriteImageUrl = PET_SHEET_DATA_URLS[manifest.id] ?? null;
+      const spriteImageUrl = petSheetDataUrl(manifest.id);
       const spriteStyle = resolveSpriteSheetStyle(manifest, state, spriteImageUrl);
       const spriteActive = spriteStyle != null && !spriteFailed.has(manifest.id);
       if (spriteActive && spriteImageUrl) {
@@ -2662,6 +2805,12 @@
     btnRestorePosition?.addEventListener("click", () => {
       bridge?.restoreDefaultPosition();
     });
+    btnOpenCustomPets?.addEventListener("click", () => {
+      void bridge?.openCustomPetsDir();
+    });
+    btnRescanCustomPets?.addEventListener("click", () => {
+      bridge?.rescanCustomPets();
+    });
     prefAlwaysOnTop?.addEventListener("change", () => {
       bridge?.setPrefs({ alwaysOnTop: prefAlwaysOnTop.checked });
     });
@@ -2751,6 +2900,7 @@
     root.addEventListener("keydown", onKeyDown);
     let unsubscribe;
     let unsubscribeSoundCue;
+    let unsubscribeCustomPets;
     if (bridge) {
       unsubscribe = bridge.onStateChanged((view) => {
         update(view);
@@ -2758,8 +2908,14 @@
       unsubscribeSoundCue = bridge.onSoundCue((cue) => {
         soundPlayer.play(cue);
       });
+      unsubscribeCustomPets = bridge.onCustomPetsChanged((payload) => {
+        syncCustomPetsPayload(payload);
+      });
       void bridge.getState().then((view) => {
         if (view) update(view);
+      });
+      void bridge.getCustomPets().then((payload) => {
+        syncCustomPetsPayload(payload);
       });
     }
     return {
@@ -2790,8 +2946,10 @@
         root.removeEventListener("click", onRootClick);
         for (const style of spriteStyleSheets.values()) style.remove();
         spriteStyleSheets.clear();
+        clearCustomPetRegistrations();
         unsubscribe?.();
         unsubscribeSoundCue?.();
+        unsubscribeCustomPets?.();
         soundPlayer.destroy();
       }
     };
