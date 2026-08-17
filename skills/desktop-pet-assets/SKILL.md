@@ -97,7 +97,7 @@ clean dark outlines. Technical requirements — every one is mandatory:
 - Size and position IDENTICAL across all frames (no jitter/rescaling). Always faces RIGHT.
 - No text, letters, numbers, icons, or watermarks anywhere (the app overlays its own badges).
 Rows, top to bottom (one state per row, frames left to right):
-Row 1 idle (3 frames): calm standing, gentle breathing bob, slow head nod.
+Row 1 idle (3 frames): calm standing, gentle breathing bob, one blink (eyes briefly closed on one frame), slow head nod.
 Row 2 running (3 frames): alert and energetic, head up, quick small steps, tail wag.
 Row 3 retrying (2 frames): worried but active, leaning back slightly, one foot tapping.
 Row 4 needs_input (2 frames): head stretched up, big round eyes, waving one front leg (asking).
@@ -114,7 +114,8 @@ strips are usually reliable because each is one small image):
 
 Ask the AI for 8 PNG strips named after the states, each exactly
 `frameCount × 108` px wide × 92 px high (left-to-right animation frames, same pose
-direction as Route A). Then:
+direction as Route A). Include one blink frame (closed eyes) in `idle` — bitmap
+pets have no separate eye layer, so the eyes only move if the frames differ. Then:
 
 ```bash
 node scripts/desktop-custom-pet.mjs stitch "<pet-dir>" --frames "<strips-dir>" [--force]
