@@ -1780,6 +1780,13 @@
   function animationName(manifestId, state) {
     return `pet-sprite-${manifestId}-${state}`;
   }
+  function resolveSpriteStylesheetSource(input) {
+    if (!input.spriteImageUrl) return { kind: "none" };
+    if (input.format === "codex" || input.spriteImageUrl !== input.builtinDataUrl) {
+      return { kind: "profile", imageUrl: input.spriteImageUrl };
+    }
+    return { kind: "manifest", imageUrl: input.spriteImageUrl };
+  }
   function resolveSpriteSheetStyle(manifest, state, imageUrl) {
     if (manifest.renderMode !== "spritesheet" || !manifest.sheet) return null;
     if (!imageUrl) return null;
@@ -1901,7 +1908,9 @@
       backgroundSize,
       staticPosition,
       animatedPosition,
-      animation: `${name} ${totalMs}ms linear infinite`,
+      // step-end holds each keyframe until the next one. `linear` would tween
+      // background-position across neighboring cells and slide the atlas.
+      animation: `${name} ${totalMs}ms step-end infinite`,
       staticFrameIndex: staticIndex
     };
   }
@@ -1911,11 +1920,14 @@
     const lines = [`@keyframes ${name} {`];
     for (const frame of clip.frames) {
       const start = elapsed / total * 100;
-      elapsed += frame.durationMs;
-      const end = elapsed / total * 100;
       const pos = positionCss(spriteCellPosition(sheet, frame.cellIndex));
+      lines.push(`  ${formatKeyframePercent(start)} { background-position: ${pos}; }`);
+      elapsed += frame.durationMs;
+    }
+    const last = clip.frames[clip.frames.length - 1];
+    if (last) {
       lines.push(
-        `  ${formatKeyframePercent(start)}, ${formatKeyframePercent(end)} { background-position: ${pos}; }`
+        `  100% { background-position: ${positionCss(spriteCellPosition(sheet, last.cellIndex))}; }`
       );
     }
     lines.push("}");
@@ -3189,6 +3201,7 @@
         setCustomPetSheetUrl(petKey, url);
         spriteFailed.delete(petKey);
         spriteVerified.delete(petKey);
+        renderCustomPetOptions();
         if (current) update(current);
       }).catch(() => {
         if (seq !== assetLoadSeq) return;
@@ -3266,7 +3279,6 @@
         lookDirection,
         dragClip
       });
-      const needsLazySheet = profile.renderMode === "spritesheet" && profile.format !== "snail" || profile.format === "snail" && !petSheetDataUrl(manifest.id) && !petSheetUrl(profile.petKey);
       const builtinSheetUrl = petSheetDataUrl(manifest.id);
       if (profile.renderMode === "spritesheet" && !builtinSheetUrl && !petSheetUrl(profile.petKey)) {
         requestSelectedPetAsset(profile.petKey);
@@ -3278,9 +3290,17 @@
       const spriteStyle = profile.format === "codex" ? profileStyle : snailStyle ?? profileStyle;
       const spriteActive = spriteStyle != null && !spriteFailed.has(spriteFailedKey) && !spriteFailed.has(manifest.id);
       if (spriteImageUrl && !spriteFailed.has(spriteFailedKey) && !spriteFailed.has(manifest.id)) {
-        if (profile.format === "codex" || needsLazySheet) {
-          ensureProfileStylesheet(profile.cssToken, buildSpriteSheetStyleTextFromProfile(profile, spriteImageUrl));
-        } else {
+        const sheetSource = resolveSpriteStylesheetSource({
+          format: profile.format,
+          spriteImageUrl,
+          builtinDataUrl: builtinSheetUrl
+        });
+        if (sheetSource.kind === "profile") {
+          ensureProfileStylesheet(
+            profile.cssToken,
+            buildSpriteSheetStyleTextFromProfile(profile, sheetSource.imageUrl)
+          );
+        } else if (sheetSource.kind === "manifest") {
           ensureSpriteStylesheet(manifest);
         }
         const expected = profile.sheet ? expectedSheetPixelSize(profile.sheet) : void 0;

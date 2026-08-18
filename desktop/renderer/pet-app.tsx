@@ -82,6 +82,7 @@ import {
   expectedSheetPixelSize,
   resolveClipSheetStyle,
   resolveSpriteSheetStyle,
+  resolveSpriteStylesheetSource,
 } from "./pet-sheet";
 import {
   clearCustomPetSheetDataUrls,
@@ -996,6 +997,7 @@ export function renderPetApp(root: Document = document): {
       setCustomPetSheetUrl(petKey, url);
       spriteFailed.delete(petKey);
       spriteVerified.delete(petKey);
+      renderCustomPetOptions();
       if (current) update(current);
     }).catch(() => {
       if (seq !== assetLoadSeq) return;
@@ -1081,7 +1083,6 @@ export function renderPetApp(root: Document = document): {
       lookDirection,
       dragClip,
     });
-    const needsLazySheet = profile.renderMode === "spritesheet" && profile.format !== "snail" || (profile.format === "snail" && !petSheetDataUrl(manifest.id) && !petSheetUrl(profile.petKey));
     const builtinSheetUrl = petSheetDataUrl(manifest.id);
     if (profile.renderMode === "spritesheet" && !builtinSheetUrl && !petSheetUrl(profile.petKey)) {
       requestSelectedPetAsset(profile.petKey);
@@ -1101,9 +1102,17 @@ export function renderPetApp(root: Document = document): {
     // Verify whenever a bitmap URL exists. Do not gate verify on spriteActive —
     // custom/Codex sheets become ready only after this decode check runs.
     if (spriteImageUrl && !spriteFailed.has(spriteFailedKey) && !spriteFailed.has(manifest.id)) {
-      if (profile.format === "codex" || needsLazySheet) {
-        ensureProfileStylesheet(profile.cssToken, buildSpriteSheetStyleTextFromProfile(profile, spriteImageUrl));
-      } else {
+      const sheetSource = resolveSpriteStylesheetSource({
+        format: profile.format,
+        spriteImageUrl,
+        builtinDataUrl: builtinSheetUrl,
+      });
+      if (sheetSource.kind === "profile") {
+        ensureProfileStylesheet(
+          profile.cssToken,
+          buildSpriteSheetStyleTextFromProfile(profile, sheetSource.imageUrl),
+        );
+      } else if (sheetSource.kind === "manifest") {
         ensureSpriteStylesheet(manifest);
       }
       const expected = profile.sheet ? expectedSheetPixelSize(profile.sheet) : undefined;

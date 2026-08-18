@@ -61,6 +61,30 @@ export function animationName(manifestId: string, state: PetVisualState): string
   return `pet-sprite-${manifestId}-${state}`;
 }
 
+export type SpriteStylesheetSource =
+  | { kind: "profile"; imageUrl: string }
+  | { kind: "manifest"; imageUrl: string }
+  | { kind: "none" };
+
+/**
+ * Choose which injected stylesheet builder to use once a bitmap URL is known.
+ *
+ * Custom Snail packs and Codex atlases load as blob URLs keyed by petKey.
+ * The legacy manifest stylesheet only looks up builtin data URLs; using it
+ * after a lazy load marks the avatar as `pet-sprite` with no background-image.
+ */
+export function resolveSpriteStylesheetSource(input: {
+  format: "snail" | "codex";
+  spriteImageUrl: string | null;
+  builtinDataUrl: string | null;
+}): SpriteStylesheetSource {
+  if (!input.spriteImageUrl) return { kind: "none" };
+  if (input.format === "codex" || input.spriteImageUrl !== input.builtinDataUrl) {
+    return { kind: "profile", imageUrl: input.spriteImageUrl };
+  }
+  return { kind: "manifest", imageUrl: input.spriteImageUrl };
+}
+
 /**
  * Per-state sprite render plan. Returns null (→ CSS fallback) when the pet is
  * not a valid spritesheet descriptor or no bitmap URL is available.
@@ -213,7 +237,9 @@ export function resolveClipSheetStyle(
     backgroundSize,
     staticPosition,
     animatedPosition,
-    animation: `${name} ${totalMs}ms linear infinite`,
+    // step-end holds each keyframe until the next one. `linear` would tween
+    // background-position across neighboring cells and slide the atlas.
+    animation: `${name} ${totalMs}ms step-end infinite`,
     staticFrameIndex: staticIndex,
   };
 }
@@ -226,13 +252,18 @@ function buildUnevenKeyframes(
   const total = clip.frames.reduce((sum, frame) => sum + frame.durationMs, 0) || 1;
   let elapsed = 0;
   const lines = [`@keyframes ${name} {`];
+  // One keyframe per cell start. Shared `start, end` percentages collapse in CSS
+  // (later rule wins) and turn a hold into a linear slide between cells.
   for (const frame of clip.frames) {
     const start = (elapsed / total) * 100;
-    elapsed += frame.durationMs;
-    const end = (elapsed / total) * 100;
     const pos = positionCss(spriteCellPosition(sheet, frame.cellIndex));
+    lines.push(`  ${formatKeyframePercent(start)} { background-position: ${pos}; }`);
+    elapsed += frame.durationMs;
+  }
+  const last = clip.frames[clip.frames.length - 1];
+  if (last) {
     lines.push(
-      `  ${formatKeyframePercent(start)}, ${formatKeyframePercent(end)} { background-position: ${pos}; }`,
+      `  100% { background-position: ${positionCss(spriteCellPosition(sheet, last.cellIndex))}; }`,
     );
   }
   lines.push("}");

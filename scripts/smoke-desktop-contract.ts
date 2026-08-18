@@ -196,9 +196,11 @@ import {
   buildSpriteSheetStyleText,
   buildSpriteSheetStyleTextFromProfile,
   clipAnimationName,
+  isUniformClip,
   positionCss,
   resolveClipSheetStyle,
   resolveSpriteSheetStyle,
+  resolveSpriteStylesheetSource,
   spriteCellPosition,
   spriteSheetBackgroundSize,
 } from "../desktop/renderer/pet-sheet";
@@ -391,6 +393,28 @@ function assertNoServiceControl(source: string, file: string): void {
   assert.equal(/\b(?:spawn|fork|execFile)\s*\(/.test(source), false, `${file} must not spawn/execFile`);
   assert.equal(/\bprocess\.kill\b/.test(source), false, `${file} must not process.kill`);
   assert.equal(/\bservicePid\b\s*[:=]/.test(source), false, `${file} must not track servicePid`);
+}
+
+function extractCssKeyframes(css: string, name: string): string[] {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = css.match(new RegExp(`@keyframes\\s+${escaped}\\s*\\{([\\s\\S]*?)\\n\\}`));
+  if (!match) return [];
+  return match[1]
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.includes("{") && line.includes("%"));
+}
+
+function keyframeBlockHasOverlappingPercents(lines: string[]): boolean {
+  const percents: string[] = [];
+  for (const line of lines) {
+    const labels = line.match(/-?\d+(?:\.\d+)?%/g) ?? [];
+    for (const label of labels) {
+      if (percents.includes(label)) return true;
+      percents.push(label);
+    }
+  }
+  return false;
 }
 
 async function main() {
@@ -3985,6 +4009,71 @@ async function main() {
   assert.ok(clipStyle?.animation?.includes("steps("));
   assert.equal(clipAnimationName("codex-x", "look-4"), "pet-sprite-codex-x-look-4");
 
+  // Codex official rows dwell on the last cell, so they are uneven. Overlapping
+  // `start, end` percentages plus `linear` collapse in CSS and slide the atlas.
+  if (v2Meta.ok) {
+    const minato = profileFromCodexMetadata(v2Meta.metadata);
+    const minatoIdle = minato.clips.idle;
+    assert.equal(isUniformClip(minatoIdle), false);
+    const minatoIdleStyle = resolveClipSheetStyle(minato.sheet!, minatoIdle, minato.cssToken);
+    assert.ok(minatoIdleStyle?.animation);
+    assert.equal(
+      /\blinear\b/.test(minatoIdleStyle!.animation ?? ""),
+      false,
+      "Codex uneven clips must not interpolate background-position",
+    );
+    assert.ok(
+      minatoIdleStyle!.animation?.includes("step-end") ||
+        minatoIdleStyle!.animation?.includes("steps(1"),
+    );
+    const minatoCss = buildSpriteSheetStyleTextFromProfile(minato, "blob:minato");
+    const idleKeyframes = extractCssKeyframes(
+      minatoCss,
+      clipAnimationName(minato.cssToken, "idle"),
+    );
+    assert.ok(idleKeyframes.length >= minatoIdle.frames.length);
+    assert.equal(
+      keyframeBlockHasOverlappingPercents(idleKeyframes),
+      false,
+      "overlapping keyframe percents let CSS drop the hold and slide",
+    );
+  }
+
+  // Lazy custom Snail sheets are blob URLs, not builtin data URLs. Using the
+  // legacy manifest stylesheet after load paints pet-sprite with no bitmap.
+  assert.deepEqual(
+    resolveSpriteStylesheetSource({
+      format: "snail",
+      spriteImageUrl: "blob:bunny-cute",
+      builtinDataUrl: null,
+    }),
+    { kind: "profile", imageUrl: "blob:bunny-cute" },
+  );
+  assert.deepEqual(
+    resolveSpriteStylesheetSource({
+      format: "snail",
+      spriteImageUrl: "data:image/png;base64,AA==",
+      builtinDataUrl: "data:image/png;base64,AA==",
+    }),
+    { kind: "manifest", imageUrl: "data:image/png;base64,AA==" },
+  );
+  assert.deepEqual(
+    resolveSpriteStylesheetSource({
+      format: "codex",
+      spriteImageUrl: "blob:minato",
+      builtinDataUrl: null,
+    }),
+    { kind: "profile", imageUrl: "blob:minato" },
+  );
+  assert.deepEqual(
+    resolveSpriteStylesheetSource({
+      format: "snail",
+      spriteImageUrl: null,
+      builtinDataUrl: null,
+    }),
+    { kind: "none" },
+  );
+
   // --- Dual-root catalog + lazy asset load (U2) ---
   assert.equal(
     resolveCodexPetsRoot({ env: { CODEX_HOME: "D:/codex" }, homedir: "/home/u" }),
@@ -4253,6 +4342,8 @@ async function main() {
   assert.ok(petAppSource.includes("getPetAsset"));
   assert.ok(petAppSource.includes("createObjectURL"));
   assert.ok(petAppSource.includes("revokeOwnedSheetUrl"));
+  assert.ok(petAppSource.includes("resolveSpriteStylesheetSource"));
+  assert.equal(petAppSource.includes("profile.format === \"codex\" || needsLazySheet"), false);
   assert.ok(indexHtmlSrc.includes("data-pet-key=\"snail:snail-default\""));
   assert.ok(indexHtmlSrc.includes("pet-picker-filter"));
 
