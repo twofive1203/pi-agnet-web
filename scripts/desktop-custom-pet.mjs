@@ -3,11 +3,13 @@
  *
  * Assists the desktop-pet-assets skill (and users) with folder drop-in custom
  * pets: validate a pack against the real runtime contract, stitch per-state
- * frame strips into the grid spritesheet, and list installed packs.
+ * frame strips into the grid spritesheet, review obvious visual defects, and
+ * list installed packs.
  *
  * Usage:
  *   node scripts/desktop-custom-pet.mjs list [root]
  *   node scripts/desktop-custom-pet.mjs check <petDir>
+ *   node scripts/desktop-custom-pet.mjs review <petDir>
  *   node scripts/desktop-custom-pet.mjs stitch <petDir> --frames <framesDir> [--force]
  *   node scripts/desktop-custom-pet.mjs selftest
  *
@@ -15,7 +17,7 @@
  * non-interlaced, which covers the output of all mainstream image tools.
  */
 
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
@@ -199,6 +201,20 @@ function nodeCustomPetsIo() {
     encodeBase64: (bytes) =>
       Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString("base64"),
     join: (...parts) => path.join(...parts),
+    realpath: (p) => {
+      try {
+        return realpathSync(p);
+      } catch {
+        return p;
+      }
+    },
+    statMtimeMs: (p) => {
+      try {
+        return fs.statSync(p).mtimeMs;
+      } catch {
+        return 0;
+      }
+    },
   };
 }
 
@@ -297,6 +313,216 @@ async function cmdCheck(petDir) {
     );
   }
   for (const warning of warnings) console.log(`  warn: ${warning}`);
+}
+
+const REVIEW_ALPHA_ON = 24;
+const REVIEW_MASK_COLS = 12;
+const REVIEW_MASK_ROWS = 10;
+const REVIEW_MIN_OCCUPANCY = 0.10;
+const REVIEW_MAX_OCCUPANCY = 0.78;
+const REVIEW_EMPTY_OCCUPANCY = 0.02;
+const REVIEW_FROZEN_MASK = 0.028;
+const REVIEW_FROZEN_PIXEL = 0.008;
+const REVIEW_POSE_MASK = 0.07;
+const REVIEW_FOOT_JITTER_PX = 10;
+const REVIEW_SIZE_JITTER = 0.28;
+const REVIEW_STANDING = ["idle", "running", "ready", "blocked"];
+const REVIEW_LIMB_STATES = ["running", "retrying", "needs_input", "ready", "blocked"];
+
+function extractSheetCell(decoded, col, row, frameWidth, frameHeight) {
+  const rgba = Buffer.alloc(frameWidth * frameHeight * 4);
+  for (let y = 0; y < frameHeight; y++) {
+    const src = ((row * frameHeight + y) * decoded.width + col * frameWidth) * 4;
+    decoded.rgba.copy(rgba, y * frameWidth * 4, src, src + frameWidth * 4);
+  }
+  return rgba;
+}
+
+function analyzeSheetCell(rgba, frameWidth, frameHeight) {
+  let opaque = 0;
+  let sumX = 0;
+  let sumY = 0;
+  let minX = frameWidth;
+  let minY = frameHeight;
+  let maxX = -1;
+  let maxY = -1;
+  const mask = Buffer.alloc(REVIEW_MASK_COLS * REVIEW_MASK_ROWS);
+  const maskHits = new Uint16Array(REVIEW_MASK_COLS * REVIEW_MASK_ROWS);
+  const binW = frameWidth / REVIEW_MASK_COLS;
+  const binH = frameHeight / REVIEW_MASK_ROWS;
+  for (let y = 0; y < frameHeight; y++) {
+    for (let x = 0; x < frameWidth; x++) {
+      const a = rgba[(y * frameWidth + x) * 4 + 3];
+      if (a <= REVIEW_ALPHA_ON) continue;
+      opaque += 1;
+      sumX += x;
+      sumY += y;
+      if (x < minX) minX = x;
+      if (y < minY) minY = y;
+      if (x > maxX) maxX = x;
+      if (y > maxY) maxY = y;
+      const mx = Math.min(REVIEW_MASK_COLS - 1, Math.floor(x / binW));
+      const my = Math.min(REVIEW_MASK_ROWS - 1, Math.floor(y / binH));
+      maskHits[my * REVIEW_MASK_COLS + mx] += 1;
+    }
+  }
+  const binArea = binW * binH;
+  for (let i = 0; i < mask.length; i++) mask[i] = maskHits[i] >= binArea * 0.18 ? 1 : 0;
+  return {
+    occupancy: opaque / (frameWidth * frameHeight),
+    cx: opaque ? sumX / opaque : 0,
+    cy: opaque ? sumY / opaque : 0,
+    width: maxX >= minX ? maxX - minX + 1 : 0,
+    height: maxY >= minY ? maxY - minY + 1 : 0,
+    footY: maxY < 0 ? 0 : maxY,
+    mask,
+    rgba,
+  };
+}
+
+function maskDistance(a, b) {
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) diff += 1;
+  return diff / a.length;
+}
+
+function pixelDelta(a, b) {
+  const n = a.length;
+  if (n === 0) return 0;
+  let sum = 0;
+  for (let i = 0; i < n; i++) sum += Math.abs(a[i] - b[i]);
+  return sum / (n * 255);
+}
+
+function reviewDecodedSheet(manifest, decoded) {
+  const sheet = manifest.sheet;
+  const findings = [];
+  const notes = [];
+  const byState = {};
+  for (const state of Object.keys(manifest.states)) {
+    const frame = manifest.states[state];
+    const col0 = frame.firstFrame % sheet.columns;
+    const row = Math.floor(frame.firstFrame / sheet.columns);
+    const cells = [];
+    for (let i = 0; i < frame.frameCount; i++) {
+      const col = col0 + i;
+      const rgba = extractSheetCell(decoded, col, row, sheet.frameWidth, sheet.frameHeight);
+      const stats = analyzeSheetCell(rgba, sheet.frameWidth, sheet.frameHeight);
+      cells.push({ col, row, ...stats });
+      if (stats.occupancy < REVIEW_MIN_OCCUPANCY) {
+        findings.push(`${state} frame ${i} empty_or_tiny occupancy=${stats.occupancy.toFixed(3)}`);
+      } else if (stats.occupancy > REVIEW_MAX_OCCUPANCY) {
+        findings.push(`${state} frame ${i} flooded occupancy=${stats.occupancy.toFixed(3)}`);
+      }
+    }
+    for (let col = col0 + frame.frameCount; col < sheet.columns; col++) {
+      const rgba = extractSheetCell(decoded, col, row, sheet.frameWidth, sheet.frameHeight);
+      const stats = analyzeSheetCell(rgba, sheet.frameWidth, sheet.frameHeight);
+      if (stats.occupancy > REVIEW_EMPTY_OCCUPANCY) {
+        findings.push(`${state} reserved cell ${row * sheet.columns + col} leak occupancy=${stats.occupancy.toFixed(3)}`);
+      }
+    }
+    if (cells.length > 1) {
+      let maxMask = 0;
+      let maxPixel = 0;
+      for (let i = 1; i < cells.length; i++) {
+        maxMask = Math.max(maxMask, maskDistance(cells[0].mask, cells[i].mask));
+        maxPixel = Math.max(maxPixel, pixelDelta(cells[0].rgba, cells[i].rgba));
+        const maskJump = maskDistance(cells[0].mask, cells[i].mask);
+        const footJump = Math.abs(cells[i].footY - cells[0].footY);
+        const sizeJump = Math.max(
+          Math.abs(cells[i].width - cells[0].width) / Math.max(cells[0].width, 1),
+          Math.abs(cells[i].height - cells[0].height) / Math.max(cells[0].height, 1),
+        );
+        if (footJump > REVIEW_FOOT_JITTER_PX) {
+          findings.push(`${state} jitter feet ${footJump.toFixed(1)}px between frame 0 and ${i}`);
+        }
+        // A limb that leaves the body is wanted motion. Flag scale only when the
+        // silhouette stays the same but the character was redrawn larger/smaller.
+        if (sizeJump > REVIEW_SIZE_JITTER && maskJump < REVIEW_FROZEN_MASK) {
+          findings.push(`${state} jitter scale ${(sizeJump * 100).toFixed(0)}% between frame 0 and ${i}`);
+        }
+      }
+      const needsLimb = REVIEW_LIMB_STATES.includes(state);
+      const frozen = needsLimb
+        ? maxMask < REVIEW_FROZEN_MASK
+        : maxMask < REVIEW_FROZEN_MASK && maxPixel < REVIEW_FROZEN_PIXEL;
+      if (frozen) {
+        findings.push(
+          `${state} frozen_frames mask=${maxMask.toFixed(3)} pixel=${maxPixel.toFixed(3)} ` +
+            `(need ${needsLimb ? "a limb/pose change" : "a blink or body change"}, not a copied still)`,
+        );
+      }
+      notes.push(`${state} motion mask=${maxMask.toFixed(3)} pixel=${maxPixel.toFixed(3)}`);
+    }
+    byState[state] = cells;
+  }
+  for (let i = 0; i < REVIEW_STANDING.length; i++) {
+    for (let j = i + 1; j < REVIEW_STANDING.length; j++) {
+      const a = byState[REVIEW_STANDING[i]]?.[0];
+      const b = byState[REVIEW_STANDING[j]]?.[0];
+      if (!a || !b) continue;
+      const dist = maskDistance(a.mask, b.mask);
+      if (dist < REVIEW_POSE_MASK) {
+        findings.push(
+          `pose_too_similar ${REVIEW_STANDING[i]} vs ${REVIEW_STANDING[j]} mask=${dist.toFixed(3)} ` +
+            `(change the silhouette, not only the face)`,
+        );
+      }
+    }
+  }
+  return { findings, notes };
+}
+
+async function cmdReview(petDir) {
+  const { scanCustomPets } = await loadValidator();
+  const root = path.resolve(petDir);
+  const name = path.basename(root);
+  if (!existsSync(path.join(root, "manifest.json"))) {
+    fail(`${root} has no manifest.json`);
+    return;
+  }
+  const parent = path.dirname(root);
+  const result = scanCustomPets(parent, nodeCustomPetsIo());
+  const pet = result.pets.find((p) => p.id === name);
+  if (!pet) {
+    const errors = result.errors.filter((e) => e.petId === name);
+    if (errors.length === 0) fail(`pack folder "${name}" not found under ${parent}`);
+    for (const error of errors) fail(`contract rejects "${name}": ${error.reason}`);
+    return;
+  }
+  const sheet = pet.manifest.sheet;
+  const sheetPath = path.join(root, sheet.src);
+  if (!existsSync(sheetPath)) {
+    fail(`sheet missing: ${sheetPath}`);
+    return;
+  }
+  if (!/\.png$/i.test(sheet.src)) {
+    console.log(`REVIEW SKIP ${name}: pixel review is PNG-only (got ${sheet.src})`);
+    return;
+  }
+  let decoded;
+  try {
+    decoded = decodePng(readFileSync(sheetPath));
+  } catch (error) {
+    fail(`sheet is not a readable PNG: ${error.message}`);
+    return;
+  }
+  const expectedWidth = sheet.frameWidth * sheet.columns;
+  const expectedHeight = sheet.frameHeight * sheet.rows;
+  if (decoded.width !== expectedWidth || decoded.height !== expectedHeight) {
+    fail(`sheet dimensions ${decoded.width}x${decoded.height} != expected ${expectedWidth}x${expectedHeight}`);
+    return;
+  }
+  const { findings, notes } = reviewDecodedSheet(pet.manifest, decoded);
+  if (findings.length > 0) {
+    fail(`review ${name}: ${findings.length} issue(s)`);
+    for (const finding of findings) console.error(`  - ${finding}`);
+    for (const note of notes) console.error(`  note: ${note}`);
+    return;
+  }
+  console.log(`REVIEW PASS ${name}`);
+  for (const note of notes) console.log(`  ${note}`);
 }
 
 async function cmdStitch(petDir, framesDir, force) {
@@ -437,6 +663,8 @@ async function cmdSelfTest() {
     if (idle[3 * 108 * 4 + 3] !== 0) throw new Error("empty cell not transparent");
     if (process.exitCode !== 0) throw new Error("check reported failure");
 
+    await assertReviewSelfTest(tmp);
+
     // Decoder coverage: PNG scanline filters 1-4 (real image tools use these;
     // the stitcher must decode them, not just filter-0 output).
     for (const filter of [1, 2, 3, 4]) {
@@ -486,6 +714,134 @@ async function cmdSelfTest() {
   }
 }
 
+function paintBlob(rgba, width, height, { x0, y0, x1, y1, r, g, b, a = 255 }) {
+  for (let y = y0; y < y1; y++) {
+    for (let x = x0; x < x1; x++) {
+      if (x < 0 || y < 0 || x >= width || y >= height) continue;
+      const i = (y * width + x) * 4;
+      rgba[i] = r;
+      rgba[i + 1] = g;
+      rgba[i + 2] = b;
+      rgba[i + 3] = a;
+    }
+  }
+}
+
+function writeReviewFixtureSheet(filePath, kind) {
+  const width = 432;
+  const height = 736;
+  const rgba = Buffer.alloc(width * height * 4);
+  const frozenBody = [[28, 22, 80, 78]];
+  const poses = {
+    idle: {
+      0: [[28, 22, 80, 78]],
+      1: [[28, 22, 80, 78], [46, 36, 62, 44]],
+      2: [[28, 22, 80, 78]],
+    },
+    running: {
+      0: [[20, 28, 78, 80], [16, 58, 28, 80]],
+      1: [[20, 28, 78, 80], [70, 48, 86, 78]],
+      2: [[20, 28, 78, 80], [16, 58, 28, 80]],
+    },
+    retrying: {
+      0: [[36, 24, 86, 80]],
+      1: [[36, 24, 86, 80], [78, 52, 102, 80]],
+    },
+    needs_input: {
+      0: [[28, 24, 80, 80], [70, 8, 86, 26]],
+      1: [[28, 24, 80, 80], [78, 4, 100, 32]],
+    },
+    ready: {
+      0: [[32, 12, 86, 56], [22, 8, 36, 24], [82, 8, 98, 24]],
+      1: [[32, 12, 86, 56], [16, 2, 36, 22], [84, 2, 104, 22]],
+    },
+    blocked: {
+      0: [[38, 40, 74, 80]],
+      1: [[38, 40, 74, 80], [24, 54, 40, 80]],
+    },
+    disconnected: { 0: [[28, 22, 80, 78]] },
+    service_not_running: { 0: [[34, 48, 76, 82]] },
+  };
+  const states = [
+    { name: "idle", count: 3 },
+    { name: "running", count: 3 },
+    { name: "retrying", count: 2 },
+    { name: "needs_input", count: 2 },
+    { name: "ready", count: 2 },
+    { name: "blocked", count: 2 },
+    { name: "disconnected", count: 1 },
+    { name: "service_not_running", count: 1 },
+  ];
+  states.forEach((state, row) => {
+    for (let i = 0; i < state.count; i++) {
+      const originX = i * 108;
+      const originY = row * 92;
+      const blobs = kind === "varied" ? poses[state.name][i] : frozenBody;
+      blobs.forEach(([x0, y0, x1, y1], blobIndex) => {
+        paintBlob(rgba, width, height, {
+          x0: originX + x0,
+          y0: originY + y0,
+          x1: originX + x1,
+          y1: originY + y1,
+          r: blobIndex === 1 ? 20 : 40 + row * 12,
+          g: blobIndex === 1 ? 20 : 120,
+          b: blobIndex === 1 ? 20 : 80 + i * 20,
+        });
+      });
+    }
+  });
+  writeFileSync(filePath, encodePng(width, height, rgba));
+}
+
+function makeReviewManifest() {
+  const states = [
+    "idle", "running", "retrying", "needs_input",
+    "ready", "blocked", "disconnected", "service_not_running",
+  ];
+  const frameCounts = [3, 3, 2, 2, 2, 2, 1, 1];
+  const manifest = {
+    id: "review-sprite",
+    name: "Review Sprite",
+    version: 2,
+    renderMode: "spritesheet",
+    states: {},
+    sheet: { src: "review.png", frameWidth: 108, frameHeight: 92, columns: 4, rows: 8 },
+  };
+  states.forEach((state, i) => {
+    manifest.states[state] = {
+      frame: "idle",
+      staticFrame: "idle",
+      label: "L",
+      glyph: "·",
+      firstFrame: i * 4,
+      frameCount: frameCounts[i],
+      durationMs: 200,
+      staticFrameIndex: 0,
+    };
+  });
+  return manifest;
+}
+
+async function assertReviewSelfTest(tmp) {
+  const frozenDir = path.join(tmp, "review-sprite");
+  mkdirSync(frozenDir, { recursive: true });
+  writeFileSync(path.join(frozenDir, "manifest.json"), JSON.stringify(makeReviewManifest(), null, 2));
+  writeReviewFixtureSheet(path.join(frozenDir, "review.png"), "frozen");
+  process.exitCode = 0;
+  await cmdReview(frozenDir);
+  if (process.exitCode !== 1) throw new Error("frozen fixture should fail review");
+  process.exitCode = 0;
+
+  const variedDir = path.join(tmp, "review-ok");
+  const variedManifest = makeReviewManifest();
+  variedManifest.id = "review-ok";
+  mkdirSync(variedDir, { recursive: true });
+  writeFileSync(path.join(variedDir, "manifest.json"), JSON.stringify(variedManifest, null, 2));
+  writeReviewFixtureSheet(path.join(variedDir, "review.png"), "varied");
+  await cmdReview(variedDir);
+  if (process.exitCode !== 0) throw new Error("varied fixture should pass review");
+}
+
 function fsRecursiveRemove(dir) {
   try {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -515,6 +871,14 @@ async function main() {
     await cmdCheck(rest[0]);
     return;
   }
+  if (cmd === "review") {
+    if (!rest[0]) {
+      fail("usage: node scripts/desktop-custom-pet.mjs review <petDir>");
+      return;
+    }
+    await cmdReview(rest[0]);
+    return;
+  }
   if (cmd === "stitch") {
     const framesIndex = rest.indexOf("--frames");
     const framesDir = framesIndex >= 0 ? rest[framesIndex + 1] : null;
@@ -536,7 +900,8 @@ async function main() {
       "desktop custom pet pack helper",
       "  node scripts/desktop-custom-pet.mjs list [root]",
       "  node scripts/desktop-custom-pet.mjs check <petDir>",
-      "  node scripts/desktop-custom-pet.mjs stitch <petDir> --frames <framesDir> [--force]",
+      "  node scripts/desktop-custom-pet.mjs review <petDir>",
+      "  node scripts/desktop-custom-pet.mjs stitch <petDir> --frames <stripsDir> [--force]",
       "  node scripts/desktop-custom-pet.mjs selftest",
     ].join("\n"),
   );
