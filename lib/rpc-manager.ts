@@ -38,6 +38,11 @@ import type {
   TaskObserverSessionResources,
 } from "./task-observer-types";
 import type { SessionPerformanceSummary } from "./types";
+import { getBrowserBindingManager } from "./browser-binding-manager";
+import {
+  EMPTY_BROWSER_TOOL_AVAILABILITY,
+  filterActiveToolsForBrowserAvailability,
+} from "./browser-tool-availability";
 
 /** Agent lifecycle edges that should flush the desktop-observer hub immediately. */
 function isUrgentTaskObserverEvent(type: string): boolean {
@@ -94,18 +99,25 @@ function applyActiveTools(session: AgentSessionLike, names: string[]): void {
   }
 }
 
-function applyToolSelection(session: AgentSessionLike, selection?: ToolSelection): void {
-  if (selection?.preset) {
-    applyActiveTools(session, getToolNamesForPreset(session, selection.preset));
-    return;
+function browserToolAvailabilityForSession(sessionId?: string) {
+  if (!sessionId) return EMPTY_BROWSER_TOOL_AVAILABILITY;
+  try {
+    return getBrowserBindingManager().getToolAvailability(sessionId);
+  } catch {
+    return EMPTY_BROWSER_TOOL_AVAILABILITY;
   }
+}
 
-  if (selection?.names) {
-    applyActiveTools(session, selection.names);
-    return;
-  }
-
-  applyActiveTools(session, getToolNamesForPreset(session, "all"));
+function applyToolSelection(session: AgentSessionLike, selection?: ToolSelection, sessionId?: string): void {
+  const names = selection?.preset
+    ? getToolNamesForPreset(session, selection.preset)
+    : selection?.names
+      ? selection.names
+      : getToolNamesForPreset(session, "all");
+  applyActiveTools(
+    session,
+    filterActiveToolsForBrowserAvailability(names, browserToolAvailabilityForSession(sessionId)),
+  );
 }
 
 // ============================================================================
@@ -130,6 +142,8 @@ export class AgentSessionWrapper {
   private performanceRecorder: SessionPerformanceRecorder | null = null;
   private latestSessionPerformance: SessionPerformanceSummary | null = null;
   private taskObserver: AgentTaskObserver;
+  private toolSelection: ToolSelection | undefined;
+  private unsubscribeBrowserTools: (() => void) | null = null;
   private _alive = true;
 
   /** Idle retention after genuine settlement (ms). */
@@ -372,6 +386,28 @@ export class AgentSessionWrapper {
       recordSubagentDuration("handlerMs", handlerStartedAt);
     });
     this.scheduleIdleTeardownIfEligible();
+    this.subscribeBrowserToolAvailability();
+  }
+
+  setToolSelection(selection?: ToolSelection): void {
+    this.toolSelection = selection;
+    this.syncBrowserToolAvailability();
+  }
+
+  private subscribeBrowserToolAvailability(): void {
+    this.unsubscribeBrowserTools?.();
+    try {
+      this.unsubscribeBrowserTools = getBrowserBindingManager().onToolAvailabilityChange(() => {
+        if (this._alive) this.syncBrowserToolAvailability();
+      });
+    } catch {
+      this.unsubscribeBrowserTools = null;
+    }
+  }
+
+  private syncBrowserToolAvailability(): void {
+    if (!this._alive) return;
+    applyToolSelection(this.inner, this.toolSelection, this.inner.sessionId);
   }
 
   private deliverAgentEvent(event: AgentEvent): void {
@@ -541,6 +577,7 @@ export class AgentSessionWrapper {
         // Fire-and-forget HTTP response; lifecycle still arrives over SSE.
         // Extension slash commands (e.g. /brainstorm) return from prompt() without
         // agent_start/agent_end — emit prompt_settled so the browser can clear the spinner.
+        this.syncBrowserToolAvailability();
         try {
           this.taskObserver.beginUserPrompt();
           // New prompt must surface promptly as Running in the pet Activity tray.
@@ -728,9 +765,9 @@ export class AgentSessionWrapper {
       case "set_tools": {
         const preset = command.toolPreset;
         if (isToolPresetMode(preset)) {
-          applyToolSelection(this.inner, { preset });
+          this.setToolSelection({ preset });
         } else {
-          applyToolSelection(this.inner, { names: command.toolNames as string[] });
+          this.setToolSelection({ names: command.toolNames as string[] });
         }
         return null;
       }
@@ -794,6 +831,8 @@ export class AgentSessionWrapper {
 
     if (this.idleTimer) clearTimeout(this.idleTimer);
     this.unsubscribe?.();
+    this.unsubscribeBrowserTools?.();
+    this.unsubscribeBrowserTools = null;
     this.subagentProgressThrottler.clear();
     this.agentEventThrottler.clear();
     this.activeToolCallIds.clear();
@@ -1061,7 +1100,7 @@ export async function startRpcSession(
       wrapper.emitEvent({ type: "extension_error", extensionPath: error.path, event: "load", error: error.error });
     }
 
-    applyToolSelection(inner, toolSelection);
+    wrapper.setToolSelection(toolSelection);
 
     const realSessionId = inner.sessionId as string;
     const realSessionFile = inner.sessionFile as string | undefined;

@@ -802,6 +802,8 @@ async function checkContentScriptProductionPaths(): Promise<void> {
   );
 
   const code = readFileSync(join(EXT_DIR, "content.js"), "utf8");
+  assert(code.includes("function pruneDetachedRefs"), "content.js prunes detached refs");
+  assert(!code.includes("refs.clear()"), "content.js does not wipe refs on snapshot");
   vm.runInNewContext(code, sandbox, { filename: join(EXT_DIR, "content.js") });
   assert(contentListeners.length >= 1, "content.js registered onMessage listener");
 
@@ -1000,13 +1002,19 @@ async function checkContentScriptProductionPaths(): Promise<void> {
   const freshEditorRef = ((freshEditorFind.results || []) as Array<{ elementRef: string }>)[0]?.elementRef;
   assert(freshEditorRef, "fresh editor ref");
   const replacedSnapshot = await sendContent({ channel: "snail-pi-content", type: "snapshot", params: { format: "accessibility", maxNodes: 10 } });
-  assert(replacedSnapshot.contextId !== snap.contextId, "snapshot rotates ref context");
+  assert(replacedSnapshot.contextId === snap.contextId, "snapshot keeps document ref context");
   const refAfterSnapshot = await sendContent({
     channel: "snail-pi-content",
     type: "act",
     params: { action: "click", elementRef: freshEditorRef },
   });
-  assert(refAfterSnapshot.error === "STALE_ELEMENT_REF", "snapshot invalidates previous refs");
+  assert(refAfterSnapshot.ok === true, "find ref remains usable after snapshot");
+  const earlierFindAfterSnapshot = await sendContent({
+    channel: "snail-pi-content",
+    type: "act",
+    params: { action: "highlight", elementRef: benignRef },
+  });
+  assert(earlierFindAfterSnapshot.ok === true, "earlier find ref remains usable after later snapshots");
 
   // Cancel envelope aborts wait path in production content.js
   const waitReqId = "wait-req-1";

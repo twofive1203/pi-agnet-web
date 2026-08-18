@@ -4,7 +4,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -69,6 +69,14 @@ import {
 import { ensureBrowserBridgeStarted, getBrowserBridge, stopBrowserBridge } from "../lib/browser-bridge";
 import { getBrowserBindingManager } from "../lib/browser-binding-manager";
 import { listBrowserAudit, recordBrowserAudit, resetBrowserAuditForTests } from "../lib/browser-audit";
+import {
+  BROWSER_DEBUG_TOOL_NAMES,
+  BROWSER_DOM_TOOL_NAMES,
+  BROWSER_TAB_TOOL_NAME,
+  BROWSER_TOOL_NAMES,
+  allowedBrowserToolNames,
+  filterActiveToolsForBrowserAvailability,
+} from "../lib/browser-tool-availability";
 
 function assert(cond: unknown, msg: string): asserts cond {
   if (!cond) throw new Error(msg);
@@ -542,6 +550,71 @@ async function main(): Promise<void> {
     // Tool schemas must not declare a model-supplied sessionId field.
     assert(!/sessionId\s*:\s*Type\./.test(source), "no sessionId Type field in schemas");
     assert(!/sessionId\s*:\s*Type\.Optional/.test(source), "no optional sessionId param");
+    for (const name of BROWSER_TOOL_NAMES) {
+      assert(source.includes(`name: "${name}"`), `availability catalog includes defined tool ${name}`);
+    }
+  });
+
+  await check("browser tools stay hidden until a tab is bound", () => {
+    const allTools = ["read", ...BROWSER_TOOL_NAMES, "bash"];
+    assert(filterActiveToolsForBrowserAvailability(allTools, {
+      featureEnabled: false,
+      extensionConnected: true,
+      hasUsableBinding: true,
+      hasDebugCapability: true,
+    }).join(",") === "read,bash", "disabled feature exposes no browser tools");
+    assert(filterActiveToolsForBrowserAvailability(allTools, {
+      featureEnabled: true,
+      extensionConnected: false,
+      hasUsableBinding: true,
+      hasDebugCapability: true,
+    }).join(",") === "read,bash", "disconnected extension exposes no browser tools");
+    assert(
+      allowedBrowserToolNames({
+        featureEnabled: true,
+        extensionConnected: true,
+        hasUsableBinding: false,
+        hasDebugCapability: false,
+      }).join(",") === BROWSER_TAB_TOOL_NAME,
+      "connected but unbound keeps only browser_tabs",
+    );
+    assert(
+      filterActiveToolsForBrowserAvailability(allTools, {
+        featureEnabled: true,
+        extensionConnected: true,
+        hasUsableBinding: true,
+        hasDebugCapability: false,
+      }).join(",") === ["read", BROWSER_TAB_TOOL_NAME, ...BROWSER_DOM_TOOL_NAMES, "bash"].join(","),
+      "bound tab exposes DOM tools but not debug",
+    );
+    assert(
+      filterActiveToolsForBrowserAvailability(allTools, {
+        featureEnabled: true,
+        extensionConnected: true,
+        hasUsableBinding: true,
+        hasDebugCapability: true,
+      }).join(",") === allTools.join(","),
+      "debug-capable binding exposes console and network",
+    );
+    assert(BROWSER_DEBUG_TOOL_NAMES.includes("browser_console"), "console is a debug tool");
+
+    const manager = getBrowserBindingManager();
+    const unbound = manager.getToolAvailability("session-never-bound-for-tools");
+    assert(unbound.hasUsableBinding === false, "fresh session has no usable binding");
+    assert(
+      allowedBrowserToolNames(unbound).every((name) => name === BROWSER_TAB_TOOL_NAME || allowedBrowserToolNames(unbound).length === 0),
+      "unbound manager snapshot never exposes DOM tools",
+    );
+    let notified = 0;
+    const stop = manager.onToolAvailabilityChange(() => { notified += 1; });
+    manager.invalidateSession("session-never-bound-for-tools");
+    stop();
+    assert(notified >= 1, "binding manager notifies tool-availability listeners");
+
+    const rpcSource = readFileSync(join(process.cwd(), "lib", "rpc-manager.ts"), "utf8");
+    assert(rpcSource.includes("filterActiveToolsForBrowserAvailability"), "rpc filters browser tools before activation");
+    assert(rpcSource.includes("onToolAvailabilityChange"), "rpc resyncs tools when bindings change");
+    assert(rpcSource.includes("syncBrowserToolAvailability"), "rpc resyncs tools before prompt");
   });
 
   await check("bridge auth, origin, stale envelope, authenticated accept", async () => {

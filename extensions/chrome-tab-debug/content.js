@@ -34,6 +34,12 @@
   const expiredContexts = new Set();
   const documentId = `doc_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
   let contextId = Math.random().toString(36).slice(2, 10);
+
+  function pruneDetachedRefs() {
+    for (const [id, el] of refs) {
+      if (!el || !el.isConnected) refs.delete(id);
+    }
+  }
   if (typeof MutationObserver === "function") {
     const observer = new MutationObserver(() => { mutationVersion += 1; });
     observer.observe(document.documentElement, { subtree: true, childList: true, attributes: true, characterData: true });
@@ -99,8 +105,8 @@
       const expired = refContext ? expiredContexts.has(refContext) : false;
       return {
         error: expired ? "STALE_ELEMENT_REF" : "WRONG_ELEMENT_CONTEXT",
-        message: expired ? "elementRef was invalidated by a new snapshot" : "elementRef belongs to another document context",
-        details: { reason: expired ? "snapshot_replaced" : "wrong_context", contextId },
+        message: expired ? "elementRef belongs to an expired document context" : "elementRef belongs to another document context",
+        details: { reason: expired ? "document_changed" : "wrong_context", contextId },
       };
     }
     const el = refs.get(ref);
@@ -309,11 +315,9 @@
       if (resolved.error) return resolved;
       scope = resolved.el;
     }
-    refs.clear();
-    refSeq = 0;
-    expiredContexts.add(contextId);
-    while (expiredContexts.size > 8) expiredContexts.delete(expiredContexts.values().next().value);
-    contextId = Math.random().toString(36).slice(2, 10);
+    // Same-document snapshots must keep existing find/snapshot refs.
+    // Only navigation (new content-script document) or detach invalidates them.
+    pruneDetachedRefs();
     const format = params.format || "accessibility";
     const mode = params.mode === "interactive" ? "interactive" : "full";
     const maxDepth = Math.max(0, Math.min(MAX_DEPTH, Number(params.maxDepth) || MAX_DEPTH));

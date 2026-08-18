@@ -54,6 +54,11 @@ import { ensureBrowserBridgeStarted, getBrowserBridge, type BrowserBridge } from
 import { readBrowserBridgeState, unpairInstallation } from "./browser-pairing";
 import { recordBrowserAudit } from "./browser-audit";
 import { redactUrl, summarizeAuditParams } from "./browser-redaction";
+import {
+  bindingStateIsUsableForTools,
+  EMPTY_BROWSER_TOOL_AVAILABILITY,
+  type BrowserToolAvailability,
+} from "./browser-tool-availability";
 
 export type BrowserSessionStatus = {
   featureEnabled: boolean;
@@ -82,6 +87,7 @@ export class BrowserBindingManager {
   private store: BindingStore = createBindingStore();
   private bridgeListenersAttached = false;
   private rateWindow = new Map<string, { count: number; resetAt: number }>();
+  private toolAvailabilityListeners = new Set<() => void>();
 
   /** Idempotent bridge subscription (events + client request handler). */
   attachBridgeListeners(): void {
@@ -92,10 +98,12 @@ export class BrowserBindingManager {
       if (event.event === "extension.ready") {
         // Push reconciliation snapshot so extension clears stale session bindings after restart.
         void this.pushReconcile(event.clientId).catch(() => undefined);
+        this.notifyToolAvailability();
         return;
       }
       if (event.event === "extension.disconnected") {
         // Outstanding requests already fail via bridge.
+        this.notifyToolAvailability();
         return;
       }
       if (event.event === "debugger_detached" && event.bindingId) {
@@ -110,6 +118,7 @@ export class BrowserBindingManager {
             sessionId: event.sessionId,
             clientId: event.clientId,
           });
+          this.notifyToolAvailability();
         } catch {
           // ignore unknown binding
         }
@@ -184,6 +193,7 @@ export class BrowserBindingManager {
           } else {
             revokeBinding(this.store, event.bindingId);
           }
+          this.notifyToolAvailability();
         } catch {
           // ignore
         }
@@ -219,6 +229,30 @@ export class BrowserBindingManager {
       pendingRequest,
       bindings,
       primaryBindingId,
+    };
+  }
+
+  getToolAvailability(sessionId: string): BrowserToolAvailability {
+    try {
+      const status = this.getPublicStatus(sessionId);
+      const usable = status.bindings.filter((binding) => bindingStateIsUsableForTools(binding.state));
+      return {
+        featureEnabled: status.featureEnabled,
+        extensionConnected: status.bridge.connectedClients.length > 0,
+        hasUsableBinding: usable.length > 0,
+        hasDebugCapability: usable.some((binding) => (
+          binding.state === "active_debug" || binding.capabilities.includes("debug_readonly")
+        )),
+      };
+    } catch {
+      return { ...EMPTY_BROWSER_TOOL_AVAILABILITY };
+    }
+  }
+
+  onToolAvailabilityChange(listener: () => void): () => void {
+    this.toolAvailabilityListeners.add(listener);
+    return () => {
+      this.toolAvailabilityListeners.delete(listener);
     };
   }
 
@@ -338,6 +372,7 @@ export class BrowserBindingManager {
       clientId: input.clientId,
       params: { origin: binding.origin, url: redactUrl(binding.url) },
     });
+    this.notifyToolAvailability();
     return toBindingView(binding, primary);
   }
 
@@ -369,6 +404,7 @@ export class BrowserBindingManager {
       revokeSessionBindings(this.store, sessionId);
       recordBrowserAudit({ action: "binding.revoke_all", status: "ok", sessionId });
     }
+    this.notifyToolAvailability();
     return this.listBindings(sessionId);
   }
 
@@ -383,6 +419,7 @@ export class BrowserBindingManager {
       if (pending.sessionId === sessionId) this.store.pendingById.delete(id);
     }
     recordBrowserAudit({ action: "session.invalidate", status: "ok", sessionId });
+    this.notifyToolAvailability();
   }
 
   async enableDebug(sessionId: string, bindingId: string): Promise<BrowserBindingView> {
@@ -392,6 +429,7 @@ export class BrowserBindingManager {
     const updated = enableDebug(this.store, bindingId);
     const primary = getPrimaryBindingId(this.store, sessionId);
     recordBrowserAudit({ action: "binding.enable_debug", status: "ok", sessionId, bindingId });
+    this.notifyToolAvailability();
     return toBindingView(updated, primary);
   }
 
@@ -401,11 +439,13 @@ export class BrowserBindingManager {
     if (!response.ok) {
       // Still downgrade locally if extension failed after detach race.
       disableDebug(this.store, bindingId);
+      this.notifyToolAvailability();
       throw this.responseError(response);
     }
     const updated = disableDebug(this.store, bindingId);
     const primary = getPrimaryBindingId(this.store, sessionId);
     recordBrowserAudit({ action: "binding.disable_debug", status: "ok", sessionId, bindingId });
+    this.notifyToolAvailability();
     return toBindingView(updated, primary);
   }
 
@@ -825,6 +865,16 @@ export class BrowserBindingManager {
       String(response.error?.message ?? code).slice(0, 1_000),
       details,
     );
+  }
+
+  private notifyToolAvailability(): void {
+    for (const listener of this.toolAvailabilityListeners) {
+      try {
+        listener();
+      } catch {
+        // Session tool sync must not break binding mutations.
+      }
+    }
   }
 
   private consumeRateLimit(key: string, max: number, windowMs: number): void {
