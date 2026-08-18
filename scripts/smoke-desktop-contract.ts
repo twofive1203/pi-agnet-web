@@ -64,6 +64,7 @@ import {
   type SettingsFs,
 } from "../desktop/main/settings-persistence";
 import {
+  assertDesktopSettingsSafe,
   createDefaultDesktopSettings,
   normalizeDesktopSettings,
   parseDesktopSettingsJson,
@@ -106,10 +107,39 @@ import {
   isCustomPetId,
   isSafeCustomPetSheetDataUrl,
   isSafePetAssetPath,
+  decodeBase64PetBytes,
   validateCustomPetAsset,
   validatePackagedPetAssets,
   validatePetManifestDocument,
+  validateRendererCatalogEntry,
+  validateRendererPetAsset,
 } from "../desktop/renderer/pet-assets";
+import {
+  validateCodexPetDocument,
+  isCodexAtlasSize,
+  CODEX_PET_V1_HEIGHT,
+  CODEX_PET_V1_WIDTH,
+  CODEX_PET_V2_HEIGHT,
+  CODEX_PET_V2_WIDTH,
+} from "../desktop/renderer/codex-pet-assets";
+import {
+  buildPetKey,
+  DEFAULT_PET_KEY,
+  parsePetKey,
+  petCssToken,
+  resolvePetKey,
+} from "../desktop/renderer/pet-key";
+import {
+  assertNoLookRows,
+  clipTotalDurationMs,
+  lookCellIndex,
+  profileFromCodexMetadata,
+  profileFromSnailManifest,
+  quantizeCodexLookDirection,
+  resolveActivePetClip,
+  resolveCodexDragClip,
+  SNAIL_STATE_TO_CODEX_CLIP,
+} from "../desktop/renderer/pet-runtime-profile";
 import {
   connectionBannerText,
   countActivitiesByFilter,
@@ -164,7 +194,10 @@ import {
 import {
   animationName,
   buildSpriteSheetStyleText,
+  buildSpriteSheetStyleTextFromProfile,
+  clipAnimationName,
   positionCss,
+  resolveClipSheetStyle,
   resolveSpriteSheetStyle,
   spriteCellPosition,
   spriteSheetBackgroundSize,
@@ -180,9 +213,17 @@ import { DESKTOP_PACKAGE_CONTRACT } from "../forge.config";
 import {
   CUSTOM_PET_MAX_COUNT,
   resolveCustomPetsRoot,
+  sameRealPath,
   scanCustomPets,
   type CustomPetsIo,
 } from "../desktop/main/custom-pets";
+import {
+  readCatalogPetAsset,
+  resolveCodexPetsRoot,
+  scanPetCatalog,
+  toRendererCatalogPayload,
+  type PetCatalogIo,
+} from "../desktop/main/pet-catalog";
 import { buildAgentDeepLink } from "../lib/desktop-deep-link";
 import {
   buildAgentActivityId,
@@ -2849,6 +2890,7 @@ async function main() {
   assert.equal(migrated.showContextMeter, true);
   assert.equal(migrated.dndEnabled, false);
   assert.equal(migrated.selectedPetId, "snail-classic");
+  assert.equal(migrated.selectedPetKey, "snail:snail-classic");
   assert.deepEqual(migrated.windowPosition, { x: 120, y: 80 });
   assert.equal(
     updateDesktopSettings(createDefaultDesktopSettings(), { showContextMeter: false }).showContextMeter,
@@ -3144,6 +3186,8 @@ async function main() {
   const html = readFileSync(path.join(process.cwd(), "desktop", "renderer", "index.html"), "utf8");
   assert.ok(html.includes("Content-Security-Policy"));
   assert.ok(html.includes("default-src 'none'"));
+  assert.ok(html.includes("img-src 'self' data: blob:"));
+  assert.ok(html.includes("connect-src 'none'"));
   assert.equal(html.includes("nodeIntegration"), false);
   // Pet body owns click-vs-drag; no separate drag strip markup.
   assert.equal(html.includes("pet-drag-bar"), false);
@@ -3584,12 +3628,9 @@ async function main() {
     assert.equal(happy.pets.length, 1);
     assert.equal(happy.pets[0].id, "turtle-sprite");
     assert.equal(happy.pets[0].manifest.name, "Pixel Turtle");
-    assert.ok(happy.pets[0].sheetDataUrl.startsWith("data:image/png;base64,"));
-    const roundTrip = Buffer.from(
-      happy.pets[0].sheetDataUrl.slice(happy.pets[0].sheetDataUrl.indexOf(",") + 1),
-      "base64",
-    );
-    assert.deepEqual(Uint8Array.from(roundTrip), pngBytes);
+    assert.equal(happy.pets[0].sheetMime, "image/png");
+    assert.equal(happy.pets[0].sheetSize, pngBytes.length);
+    assert.equal("sheetDataUrl" in happy.pets[0], false);
 
     // WebP sheets carry the matching MIME.
     const webpIo = fakeCustomPetsIo({
@@ -3602,7 +3643,7 @@ async function main() {
     });
     const webp = scanCustomPets("root", webpIo);
     assert.equal(webp.pets.length, 1);
-    assert.ok(webp.pets[0].sheetDataUrl.startsWith("data:image/webp;base64,"));
+    assert.equal(webp.pets[0].sheetMime, "image/webp");
 
     // Names/labels containing absolute URLs are filtered before the renderer
     // view gate could reject the whole payload.
@@ -3769,6 +3810,8 @@ async function main() {
     assert.ok(PET_RENDERER_ALLOWED_CHANNELS.includes(PET_IPC_CHANNELS.getCustomPets));
     assert.ok(PET_RENDERER_ALLOWED_CHANNELS.includes(PET_IPC_CHANNELS.openCustomPetsDir));
     assert.ok(PET_RENDERER_ALLOWED_CHANNELS.includes(PET_IPC_CHANNELS.rescanCustomPets));
+    assert.ok(PET_RENDERER_ALLOWED_CHANNELS.includes(PET_IPC_CHANNELS.getPetAsset));
+    assert.ok(!PET_MAIN_PUSH_CHANNELS.includes(PET_IPC_CHANNELS.getPetAsset));
     assert.ok(PET_RENDERER_ALLOWED_CHANNELS.includes(PET_IPC_CHANNELS.listQuickSessionProjects));
     assert.ok(PET_RENDERER_ALLOWED_CHANNELS.includes(PET_IPC_CHANNELS.listQuickSessionModels));
     assert.ok(PET_RENDERER_ALLOWED_CHANNELS.includes(PET_IPC_CHANNELS.createQuickSession));
@@ -3804,6 +3847,414 @@ async function main() {
       root: "D:/home/.pi/agent/desktop-pets",
     });
   }
+
+  // --- Codex parser + namespaced keys + runtime profile (U1) ---
+  const v1Meta = validateCodexPetDocument({
+    id: "blue-whale",
+    displayName: "Blue",
+    spritesheetPath: "spritesheet.webp",
+  });
+  assert.equal(v1Meta.ok, true);
+  if (v1Meta.ok) {
+    assert.equal(v1Meta.metadata.spriteVersionNumber, 1);
+    const v1Profile = profileFromCodexMetadata(v1Meta.metadata);
+    assert.equal(v1Profile.petKey, "codex:blue-whale");
+    assert.equal(v1Profile.sheet?.expectedWidth, CODEX_PET_V1_WIDTH);
+    assert.equal(v1Profile.sheet?.expectedHeight, CODEX_PET_V1_HEIGHT);
+    assert.equal(v1Profile.capabilities.look, false);
+    assert.equal(assertNoLookRows(v1Profile), true);
+    assert.equal(isCodexAtlasSize(1, CODEX_PET_V1_WIDTH, CODEX_PET_V1_HEIGHT), true);
+  }
+  const v2Meta = validateCodexPetDocument({
+    id: "blue-whale-maid",
+    displayName: "蓝鲸女仆",
+    description: "kind is display-only",
+    spritesheetPath: "spritesheet.webp",
+    spriteVersionNumber: 2,
+    kind: "person",
+    command: "calc.exe",
+    url: "https://evil.example",
+  });
+  assert.equal(v2Meta.ok, true);
+  if (v2Meta.ok) {
+    assert.equal(v2Meta.metadata.spriteVersionNumber, 2);
+    assert.equal("kind" in v2Meta.metadata, false);
+    assert.equal("command" in v2Meta.metadata, false);
+    assert.equal("url" in v2Meta.metadata, false);
+    const v2Profile = profileFromCodexMetadata(v2Meta.metadata);
+    assert.equal(v2Profile.capabilities.look, true);
+    assert.equal(v2Profile.sheet?.expectedHeight, CODEX_PET_V2_HEIGHT);
+    assert.equal(isCodexAtlasSize(2, CODEX_PET_V2_WIDTH, CODEX_PET_V2_HEIGHT), true);
+    assert.equal(clipTotalDurationMs(v2Profile.clips.idle), 1100);
+    for (const state of Object.keys(SNAIL_STATE_TO_CODEX_CLIP)) {
+      const binding = SNAIL_STATE_TO_CODEX_CLIP[state as keyof typeof SNAIL_STATE_TO_CODEX_CLIP];
+      assert.ok(v2Profile.clips[binding.clipName], `missing clip for ${state}`);
+    }
+    assert.equal(lookCellIndex(0), 72);
+    assert.equal(lookCellIndex(7), 79);
+    assert.equal(lookCellIndex(8), 80);
+    assert.equal(lookCellIndex(15), 87);
+  }
+  assert.equal(validateCodexPetDocument({ id: "x", spritesheetPath: "https://evil/x.webp" }).ok, false);
+  assert.equal(validateCodexPetDocument({ id: "x", spritesheetPath: "../x.webp" }).ok, false);
+  assert.equal(validateCodexPetDocument({ id: "Bad Id", spritesheetPath: "spritesheet.webp" }).ok, false);
+  assert.equal(
+    validateCodexPetDocument({ id: "ok", spritesheetPath: "spritesheet.webp", spriteVersionNumber: 3 }).ok,
+    false,
+  );
+  assert.equal(validateCodexPetDocument({ id: "ok" }).ok, false);
+  assert.equal(validateCodexPetDocument({ id: "folder", spritesheetPath: "spritesheet.webp" }, "other").ok, false);
+  assert.equal(buildPetKey("snail", "turtle"), "snail:turtle");
+  assert.equal(buildPetKey("codex", "turtle"), "codex:turtle");
+  assert.notEqual(buildPetKey("snail", "turtle"), buildPetKey("codex", "turtle"));
+  assert.equal(parsePetKey("codex:turtle")?.format, "codex");
+  assert.equal(petCssToken("codex", "turtle"), "codex-turtle");
+  assert.equal(petCssToken("snail", "snail-default"), "snail-default");
+  assert.equal(resolvePetKey({ selectedPetId: "snail-classic" }), "snail:snail-classic");
+  assert.equal(resolvePetKey({ selectedPetKey: "codex:minato" }), "codex:minato");
+  assert.equal(resolvePetKey({ selectedPetId: "../evil" }), DEFAULT_PET_KEY);
+
+  assert.equal(quantizeCodexLookDirection(0, -100), 0);
+  assert.equal(quantizeCodexLookDirection(100, 0), 4);
+  assert.equal(quantizeCodexLookDirection(0, 100), 8);
+  assert.equal(quantizeCodexLookDirection(-100, 0), 12);
+  assert.equal(quantizeCodexLookDirection(Math.sin((157.5 * Math.PI) / 180) * 80, -Math.cos((157.5 * Math.PI) / 180) * 80), 7);
+  assert.equal(quantizeCodexLookDirection(0, 80), 8);
+  assert.equal(quantizeCodexLookDirection(Math.sin((337.5 * Math.PI) / 180) * 80, -Math.cos((337.5 * Math.PI) / 180) * 80), 15);
+  assert.equal(quantizeCodexLookDirection(0, -80), 0);
+  assert.equal(quantizeCodexLookDirection(2, -2), null);
+  assert.equal(quantizeCodexLookDirection(0, 0), null);
+  assert.equal(resolveCodexDragClip(8, 1, null), "running-right");
+  assert.equal(resolveCodexDragClip(-8, 1, null), "running-left");
+  assert.equal(resolveCodexDragClip(1, 8, "running-right"), "running-right");
+  assert.equal(resolveCodexDragClip(0, 0, null), null);
+
+  if (v2Meta.ok) {
+    const profile = profileFromCodexMetadata(v2Meta.metadata);
+    const look = resolveActivePetClip({
+      profile,
+      state: "idle",
+      reducedMotion: false,
+      lookDirection: 4,
+      dragClip: null,
+    });
+    assert.equal(look.clipName, "look-4");
+    const blocked = resolveActivePetClip({
+      profile,
+      state: "needs_input",
+      reducedMotion: false,
+      lookDirection: 4,
+      dragClip: "running-right",
+    });
+    assert.equal(blocked.clipName, "waiting");
+    const reduced = resolveActivePetClip({
+      profile,
+      state: "idle",
+      reducedMotion: true,
+      lookDirection: 4,
+      dragClip: "running-left",
+    });
+    assert.equal(reduced.clipName, "idle");
+    assert.equal(reduced.staticOnly, true);
+    const v1 = profileFromCodexMetadata({
+      id: "legacy",
+      displayName: "Legacy",
+      description: null,
+      spritesheetPath: "spritesheet.webp",
+      spriteVersionNumber: 1,
+    });
+    const v1Look = resolveActivePetClip({
+      profile: v1,
+      state: "idle",
+      reducedMotion: false,
+      lookDirection: 4,
+      dragClip: null,
+    });
+    assert.equal(v1Look.clipName, "idle");
+    assert.equal(v1.clips["look-0"], undefined);
+  }
+
+  const snailSprite = getBuiltinPetManifest("snail-sprite");
+  const snailProfile = profileFromSnailManifest(snailSprite);
+  assert.equal(snailProfile.format, "snail");
+  assert.equal(snailProfile.capabilities.look, false);
+  const snailCss = buildSpriteSheetStyleTextFromProfile(snailProfile, "data:image/png;base64,AA==");
+  assert.ok(snailCss.includes("[data-clip=\"idle\"]"));
+  const idleClip = snailProfile.clips.idle;
+  const clipStyle = resolveClipSheetStyle(snailProfile.sheet!, idleClip, snailProfile.cssToken);
+  assert.ok(clipStyle?.animation?.includes("steps("));
+  assert.equal(clipAnimationName("codex-x", "look-4"), "pet-sprite-codex-x-look-4");
+
+  // --- Dual-root catalog + lazy asset load (U2) ---
+  assert.equal(
+    resolveCodexPetsRoot({ env: { CODEX_HOME: "D:/codex" }, homedir: "/home/u" }),
+    "D:/codex/pets",
+  );
+  assert.equal(
+    resolveCodexPetsRoot({ env: {}, homedir: "/home/u" }),
+    "/home/u/.codex/pets",
+  );
+
+  type CatalogEntry =
+    | { kind: "dir"; names: string[] }
+    | { kind: "text"; text: string }
+    | { kind: "bytes"; bytes: Uint8Array; mtimeMs?: number };
+
+  function fakeCatalogIo(entries: Record<string, CatalogEntry>): PetCatalogIo {
+    return {
+      listDirs: (root) => {
+        const entry = entries[root];
+        if (!entry || entry.kind !== "dir") throw new Error("unreadable root");
+        return entry.names;
+      },
+      readText: (p) => {
+        const entry = entries[p];
+        if (!entry || entry.kind !== "text") throw new Error("no text");
+        return entry.text;
+      },
+      readBinary: (p) => {
+        const entry = entries[p];
+        if (!entry || entry.kind !== "bytes") throw new Error("no bytes");
+        return entry.bytes;
+      },
+      exists: (p) => p in entries,
+      size: (p) => {
+        const entry = entries[p];
+        if (!entry) throw new Error("no entry");
+        if (entry.kind === "text") return Buffer.byteLength(entry.text);
+        if (entry.kind === "bytes") return entry.bytes.length;
+        throw new Error("no size");
+      },
+      encodeBase64: (bytes) => Buffer.from(bytes).toString("base64"),
+      join: (...parts) => parts.join("/"),
+      realpath: (p) => p,
+      statMtimeMs: (p) => {
+        const entry = entries[p];
+        return entry && entry.kind === "bytes" ? (entry.mtimeMs ?? 1) : 1;
+      },
+    };
+  }
+
+  function snailPack(id: string, name: string) {
+    const states: Record<string, unknown> = {};
+    for (const [index, state] of [
+      "idle", "running", "retrying", "needs_input", "ready", "blocked", "disconnected", "service_not_running",
+    ].entries()) {
+      states[state] = {
+        frame: "idle",
+        staticFrame: "idle",
+        label: "L",
+        glyph: "·",
+        firstFrame: index * 4,
+        frameCount: 1,
+        durationMs: 200,
+        staticFrameIndex: 0,
+      };
+    }
+    return {
+      id,
+      name,
+      version: 2,
+      renderMode: "spritesheet",
+      states,
+      sheet: { src: "sheet.png", frameWidth: 32, frameHeight: 32, columns: 4, rows: 8 },
+    };
+  }
+
+  const snailPng = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]);
+  const catalogIo = fakeCatalogIo({
+    "/snail": { kind: "dir", names: ["turtle-sprite", "shared-id"] },
+    "/snail/turtle-sprite": { kind: "dir", names: [] },
+    "/snail/turtle-sprite/manifest.json": {
+      kind: "text",
+      text: JSON.stringify(snailPack("turtle-sprite", "Pixel Turtle")),
+    },
+    "/snail/turtle-sprite/sheet.png": { kind: "bytes", bytes: snailPng, mtimeMs: 10 },
+    "/snail/shared-id": { kind: "dir", names: [] },
+    "/snail/shared-id/pet.json": {
+      kind: "text",
+      text: JSON.stringify({
+        id: "shared-id",
+        displayName: "Shared Snail Root",
+        spritesheetPath: "spritesheet.webp",
+        spriteVersionNumber: 2,
+      }),
+    },
+    "/snail/shared-id/spritesheet.webp": { kind: "bytes", bytes: new Uint8Array([1, 2, 3, 4]), mtimeMs: 11 },
+    "/codex": { kind: "dir", names: ["shared-id", "minato"] },
+    "/codex/shared-id": { kind: "dir", names: [] },
+    "/codex/shared-id/pet.json": {
+      kind: "text",
+      text: JSON.stringify({
+        id: "shared-id",
+        displayName: "Shared Codex Home",
+        spritesheetPath: "spritesheet.webp",
+        spriteVersionNumber: 2,
+      }),
+    },
+    "/codex/shared-id/spritesheet.webp": { kind: "bytes", bytes: new Uint8Array(8), mtimeMs: 12 },
+    "/codex/minato": { kind: "dir", names: [] },
+    "/codex/minato/pet.json": {
+      kind: "text",
+      text: JSON.stringify({
+        id: "minato",
+        displayName: "Minato",
+        spritesheetPath: "spritesheet.webp",
+        spriteVersionNumber: 2,
+        kind: "person",
+      }),
+    },
+    "/codex/minato/spritesheet.webp": { kind: "bytes", bytes: new Uint8Array([9, 9, 9]), mtimeMs: 13 },
+  });
+  const catalog = scanPetCatalog({ snailRoot: "/snail", codexRoot: "/codex", io: catalogIo });
+  const catalogKeys = catalog.entries.map((entry) => entry.petKey).sort();
+  assert.deepEqual(catalogKeys, ["codex:minato", "codex:shared-id", "snail:turtle-sprite"]);
+  assert.equal(catalog.entries.find((entry) => entry.petKey === "codex:shared-id")?.source, "snail-custom");
+  assert.ok(catalog.diagnostics.some((item) => item.reason === "duplicate_codex_id"));
+  const payload = toRendererCatalogPayload(catalog);
+  assert.equal(JSON.stringify(payload).includes("base64"), false);
+  assert.equal(JSON.stringify(payload).includes("sheetPath"), false);
+  const loadedAsset = readCatalogPetAsset(catalog, "codex:minato", catalogIo);
+  assert.equal(loadedAsset.ok, true);
+  if (loadedAsset.ok) {
+    assert.deepEqual(loadedAsset.bytes, new Uint8Array([9, 9, 9]));
+    assert.equal(loadedAsset.mime, "image/webp");
+  }
+  const missingRoot = scanPetCatalog({
+    snailRoot: "/snail",
+    codexRoot: "/missing-codex",
+    io: fakeCatalogIo({
+      "/snail": { kind: "dir", names: [] },
+    }),
+  });
+  assert.equal(missingRoot.entries.length, 0);
+  assert.equal(missingRoot.diagnostics.some((item) => item.source === "codex-home"), false);
+
+  const escaped = scanPetCatalog({
+    snailRoot: "/snail",
+    codexRoot: "/codex",
+    io: {
+      ...catalogIo,
+      realpath: (p) => (p.includes("minato/spritesheet") ? "/outside/secret.webp" : p),
+    },
+  });
+  assert.equal(escaped.entries.some((entry) => entry.id === "minato"), false);
+  assert.ok(escaped.diagnostics.some((item) => item.reason === "symlink_escape"));
+
+  const changedIo = fakeCatalogIo({
+    "/codex": { kind: "dir", names: ["minato"] },
+    "/codex/minato": { kind: "dir", names: [] },
+    "/codex/minato/pet.json": {
+      kind: "text",
+      text: JSON.stringify({
+        id: "minato",
+        displayName: "Minato",
+        spritesheetPath: "spritesheet.webp",
+        spriteVersionNumber: 2,
+      }),
+    },
+    "/codex/minato/spritesheet.webp": { kind: "bytes", bytes: new Uint8Array([1]), mtimeMs: 99 },
+  });
+  const firstCatalog = scanPetCatalog({ snailRoot: "/empty", codexRoot: "/codex", io: {
+    ...changedIo,
+    exists: (p) => p === "/empty" ? false : changedIo.exists(p),
+    listDirs: (root) => (root === "/empty" ? [] : changedIo.listDirs(root)),
+  } });
+  assert.equal(readCatalogPetAsset(firstCatalog, "codex:minato", changedIo).ok, true);
+  const replacedIo = {
+    ...changedIo,
+    size: (p: string) => (p.endsWith("spritesheet.webp") ? 4 : changedIo.size(p)),
+    readBinary: (p: string) => (p.endsWith("spritesheet.webp") ? new Uint8Array([2, 2, 2, 2]) : changedIo.readBinary(p)),
+    statMtimeMs: (p: string) => (p.endsWith("spritesheet.webp") ? 1000 : changedIo.statMtimeMs(p)),
+  };
+  const stale = readCatalogPetAsset(firstCatalog, "codex:minato", replacedIo);
+  assert.equal(stale.ok, false);
+  if (!stale.ok) assert.equal(stale.reason, "changed");
+
+  const gated = validateRendererCatalogEntry(payload.pets.find((pet) => pet.petKey === "codex:minato"));
+  assert.equal(gated.ok, true);
+  if (gated.ok) {
+    assert.equal(gated.entry.capabilities.look, true);
+    assert.equal(gated.entry.snailManifest, null);
+  }
+  assert.equal(
+    validateRendererCatalogEntry({ ...payload.pets[0], petKey: "/etc/passwd" }).ok,
+    false,
+  );
+  if (loadedAsset.ok) {
+    const assetGate = validateRendererPetAsset({
+      ok: true,
+      petKey: loadedAsset.petKey,
+      mime: loadedAsset.mime,
+      bytes: loadedAsset.bytes,
+      fingerprint: loadedAsset.fingerprint,
+      expectedWidth: loadedAsset.expectedWidth,
+      expectedHeight: loadedAsset.expectedHeight,
+    });
+    assert.equal(assetGate.ok, true);
+    assert.equal(
+      validateRendererPetAsset({
+        ok: true,
+        petKey: loadedAsset.petKey,
+        mime: loadedAsset.mime,
+        bytes: loadedAsset.bytes,
+        fingerprint: loadedAsset.fingerprint,
+        expectedWidth: loadedAsset.expectedWidth,
+        expectedHeight: loadedAsset.expectedHeight,
+        sheetPath: "/secret.webp",
+      }).ok,
+      false,
+    );
+    const b64 = Buffer.from(loadedAsset.bytes).toString("base64");
+    const fromB64 = validateRendererPetAsset({
+      ok: true,
+      petKey: loadedAsset.petKey,
+      mime: loadedAsset.mime,
+      bytesBase64: b64,
+      fingerprint: loadedAsset.fingerprint,
+      expectedWidth: loadedAsset.expectedWidth,
+      expectedHeight: loadedAsset.expectedHeight,
+    });
+    assert.equal(fromB64.ok, true);
+    if (fromB64.ok) assert.deepEqual(fromB64.asset.bytes, loadedAsset.bytes);
+    assert.deepEqual(decodeBase64PetBytes(b64), loadedAsset.bytes);
+  }
+  assert.equal(
+    sameRealPath(
+      "C:\\Users\\a\\.codex\\pets\\minato\\spritesheet.webp",
+      "c:/Users/a/.codex/pets/minato/spritesheet.webp",
+      { ignoreCase: true },
+    ),
+    true,
+  );
+
+  const sameNameSettings = normalizeDesktopSettings({
+    selectedPetId: "shared-id",
+  });
+  assert.equal(sameNameSettings.selectedPetKey, "snail:shared-id");
+  const codexSelected = updateDesktopSettings(sameNameSettings, { selectedPetKey: "codex:shared-id" });
+  assert.equal(codexSelected.selectedPetKey, "codex:shared-id");
+  assert.equal(codexSelected.selectedPetId, "shared-id");
+  assertDesktopSettingsSafe(codexSelected);
+
+  const viewKey = buildActivityView({
+    snapshot,
+    connection,
+    settings: createDefaultDesktopSettings(),
+    now: Date.now(),
+  });
+  assert.equal(viewKey.selectedPetKey, DEFAULT_PET_KEY);
+  assertRendererViewSafe(viewKey);
+
+  const mainSrcNow = readFileSync(path.join(process.cwd(), "desktop", "main", "main.ts"), "utf8");
+  assert.ok(mainSrcNow.includes("getPetAsset"));
+  assert.ok(mainSrcNow.includes("scanPetCatalog"));
+  assert.equal(mainSrcNow.includes("sheetDataUrl"), false);
+  assert.ok(petAppSource.includes("getPetAsset"));
+  assert.ok(petAppSource.includes("createObjectURL"));
+  assert.ok(petAppSource.includes("revokeOwnedSheetUrl"));
+  assert.ok(indexHtmlSrc.includes("data-pet-key=\"snail:snail-default\""));
+  assert.ok(indexHtmlSrc.includes("pet-picker-filter"));
 
   console.log("smoke-desktop-contract: ok");
 }

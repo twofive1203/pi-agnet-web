@@ -1,10 +1,10 @@
 /**
  * Custom desktop pets (folder drop-in, U6 slice 1).
  *
- * Main-owned scan: enumerate <root>/<pet-id>/manifest.json + spritesheet,
- * validate with the shared manifest contract, and inline the bitmap as a
- * CSP-friendly data URL. The renderer never touches the filesystem and never
- * receives raw paths beyond the display-only pets root.
+ * Main-owned Snail-format scan: enumerate <root>/<pet-id>/manifest.json +
+ * spritesheet, validate with the shared manifest contract, and return
+ * renderer-safe metadata only. Bitmaps are loaded later by pet-catalog via
+ * namespaced keys. The renderer never touches the filesystem.
  *
  * Pure module: filesystem access is injectable so contract smokes run without
  * disk fixtures. Custom pets are spritesheet-only (PNG/WebP) in this slice;
@@ -22,11 +22,12 @@ import {
 
 export const CUSTOM_PET_MAX_COUNT = 16;
 
-/** Displayed/persisted shape handed to the renderer (never raw paths). */
+/** Renderer-safe Snail pack metadata (never raw paths or bitmap bytes). */
 export type CustomPetAsset = {
   id: string;
   manifest: PetManifestV2;
-  sheetDataUrl: string;
+  sheetMime: "image/png" | "image/webp";
+  sheetSize: number;
 };
 
 export type CustomPetScanError = {
@@ -49,7 +50,50 @@ export type CustomPetsIo = {
   size: (filePath: string) => number;
   encodeBase64: (bytes: Uint8Array) => string;
   join: (...parts: string[]) => string;
+  realpath?: (filePath: string) => string;
+  statMtimeMs?: (filePath: string) => number;
 };
+
+export function normalizeComparePath(value: string, ignoreCase = false): string {
+  const trimmed = value.replace(/\\/g, "/").replace(/\/+$/, "");
+  return ignoreCase ? trimmed.toLowerCase() : trimmed;
+}
+
+export function sameRealPath(
+  left: string,
+  right: string,
+  options?: { ignoreCase?: boolean },
+): boolean {
+  const ignoreCase = options?.ignoreCase ?? false;
+  return normalizeComparePath(left, ignoreCase) === normalizeComparePath(right, ignoreCase);
+}
+
+export function isContainedPath(
+  root: string,
+  candidate: string,
+  options?: { ignoreCase?: boolean },
+): boolean {
+  const ignoreCase = options?.ignoreCase ?? false;
+  const normalize = (value: string) => {
+    const trimmed = value.replace(/\\/g, "/").replace(/\/+$/, "");
+    return ignoreCase ? trimmed.toLowerCase() : trimmed;
+  };
+  const rootNorm = normalize(root);
+  const candidateNorm = normalize(candidate);
+  return candidateNorm === rootNorm || candidateNorm.startsWith(`${rootNorm}/`);
+}
+
+export function isStrictChildPath(
+  root: string,
+  candidate: string,
+  options?: { ignoreCase?: boolean },
+): boolean {
+  if (!isContainedPath(root, candidate, options)) return false;
+  const ignoreCase = options?.ignoreCase ?? false;
+  const left = ignoreCase ? root.toLowerCase() : root;
+  const right = ignoreCase ? candidate.toLowerCase() : candidate;
+  return left.replace(/\\/g, "/").replace(/\/+$/, "") !== right.replace(/\\/g, "/").replace(/\/+$/, "");
+}
 
 export function customPetSheetMime(sheetSrc: string): "image/png" | "image/webp" | null {
   if (/\.png$/i.test(sheetSrc)) return "image/png";
@@ -128,21 +172,11 @@ export function scanCustomPets(root: string, io: CustomPetsIo): CustomPetScanRes
         errors.push({ petId: name, reason: "sheet_size" });
         continue;
       }
-      let sheetBytes: Uint8Array;
-      try {
-        sheetBytes = io.readBinary(sheetPath);
-      } catch {
-        errors.push({ petId: name, reason: "sheet_read" });
-        continue;
-      }
-      if (sheetBytes.length <= 0 || sheetBytes.length > PET_ASSET_LIMITS.maxFileBytes) {
-        errors.push({ petId: name, reason: "sheet_size" });
-        continue;
-      }
       const pet: CustomPetAsset = {
         id: name,
         manifest,
-        sheetDataUrl: `data:${mime};base64,${io.encodeBase64(sheetBytes)}`,
+        sheetMime: mime,
+        sheetSize,
       };
       // The renderer view gate rejects non-loopback absolute URLs anywhere in a
       // payload; filter such content at scan time so one hostile name/label

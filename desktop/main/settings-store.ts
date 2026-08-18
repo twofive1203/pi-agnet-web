@@ -9,6 +9,7 @@ import {
   DESKTOP_DEFAULT_PORT,
   DESKTOP_START_COMMAND,
 } from "./connection-state";
+import { DEFAULT_PET_ID, DEFAULT_PET_KEY, petIdFromKey, resolvePetKey } from "../renderer/pet-key";
 
 export const DESKTOP_SETTINGS_VERSION = 1 as const;
 
@@ -29,6 +30,8 @@ export type DesktopPetSettings = {
   /** IPv4 loopback port only; origin is always http://127.0.0.1:<port>. */
   port: number;
   selectedPetId: string;
+  /** Namespaced selection (`snail:<id>` / `codex:<id>`). Source of truth. */
+  selectedPetKey: string;
   /** Collapsed/tray layout size token; missing v1 files migrate to medium. */
   petScale: DesktopPetScale;
   alwaysOnTop: boolean;
@@ -68,7 +71,8 @@ export type DesktopPetSettings = {
 export const DESKTOP_SETTINGS_DEFAULTS: DesktopPetSettings = {
   version: DESKTOP_SETTINGS_VERSION,
   port: DESKTOP_DEFAULT_PORT,
-  selectedPetId: "snail-default",
+  selectedPetId: DEFAULT_PET_ID,
+  selectedPetKey: DEFAULT_PET_KEY,
   petScale: "medium",
   alwaysOnTop: true,
   clickThrough: false,
@@ -93,10 +97,9 @@ export const DESKTOP_SETTINGS_DEFAULTS: DesktopPetSettings = {
 };
 
 const MAX_TRANSITION_LRU = 500;
-const PET_ID_PATTERN = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 
 export function createDefaultDesktopSettings(
-  overrides?: Partial<Pick<DesktopPetSettings, "port" | "selectedPetId">>,
+  overrides?: Partial<Pick<DesktopPetSettings, "port" | "selectedPetId" | "selectedPetKey">>,
 ): DesktopPetSettings {
   return normalizeDesktopSettings({
     ...DESKTOP_SETTINGS_DEFAULTS,
@@ -108,10 +111,11 @@ export function createDefaultDesktopSettings(
 export function normalizeDesktopSettings(input: unknown): DesktopPetSettings {
   const raw = isRecord(input) ? input : {};
   const port = clampPort(raw.port);
-  const selectedPetId =
-    typeof raw.selectedPetId === "string" && PET_ID_PATTERN.test(raw.selectedPetId)
-      ? raw.selectedPetId
-      : DESKTOP_SETTINGS_DEFAULTS.selectedPetId;
+  const selectedPetKey = resolvePetKey({
+    selectedPetKey: raw.selectedPetKey,
+    selectedPetId: raw.selectedPetId,
+  });
+  const selectedPetId = petIdFromKey(selectedPetKey);
 
   const notificationRaw = isRecord(raw.notification) ? raw.notification : {};
   const completion = normalizeCompletion(notificationRaw.completion);
@@ -124,6 +128,7 @@ export function normalizeDesktopSettings(input: unknown): DesktopPetSettings {
     version: DESKTOP_SETTINGS_VERSION,
     port,
     selectedPetId,
+    selectedPetKey,
     petScale,
     alwaysOnTop: raw.alwaysOnTop !== false,
     clickThrough: raw.clickThrough === true,
@@ -167,6 +172,7 @@ export function updateDesktopSettings(
   patch: Partial<{
     port: number;
     selectedPetId: string;
+    selectedPetKey: string;
     petScale: DesktopPetScale;
     alwaysOnTop: boolean;
     clickThrough: boolean;

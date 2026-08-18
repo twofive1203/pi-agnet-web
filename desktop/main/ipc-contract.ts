@@ -37,6 +37,8 @@ export const PET_IPC_CHANNELS = {
   openCustomPetsDir: "pet:open-custom-pets-dir",
   /** Re-scan the custom pets folder (user added/removed pets on disk). */
   rescanCustomPets: "pet:rescan-custom-pets",
+  /** Load the selected catalog pet bitmap by namespaced key (never a path). */
+  getPetAsset: "pet:get-pet-asset",
   /** List path-free projects for the in-tray quick-session composer. */
   listQuickSessionProjects: "pet:list-quick-session-projects",
   /** List path-free models for the selected project. */
@@ -68,6 +70,7 @@ export const PET_RENDERER_ALLOWED_CHANNELS: readonly string[] = [
   PET_IPC_CHANNELS.getCustomPets,
   PET_IPC_CHANNELS.openCustomPetsDir,
   PET_IPC_CHANNELS.rescanCustomPets,
+  PET_IPC_CHANNELS.getPetAsset,
   PET_IPC_CHANNELS.listQuickSessionProjects,
   PET_IPC_CHANNELS.listQuickSessionModels,
   PET_IPC_CHANNELS.createQuickSession,
@@ -82,6 +85,7 @@ export const PET_MAIN_PUSH_CHANNELS: readonly string[] = [
 
 export type PetPrefsPatch = Partial<{
   selectedPetId: string;
+  selectedPetKey: string;
   petScale: "small" | "medium" | "large";
   alwaysOnTop: boolean;
   clickThrough: boolean;

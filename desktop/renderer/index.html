@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'none'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self' data:; connect-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+      content="default-src 'none'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self' data:; connect-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
     />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>蜗牛派桌宠</title>
@@ -169,24 +169,28 @@
             </div>
           </div>
           <div class="settings-heading">角色</div>
+          <label class="pet-picker-filter-label" for="pet-picker-filter">筛选角色</label>
+          <input id="pet-picker-filter" class="pet-picker-filter" type="search" maxlength="40" placeholder="搜索名称" autocomplete="off" />
           <div id="pet-picker" class="pet-picker" role="radiogroup" aria-label="选择桌宠">
-            <button type="button" class="pet-option" data-pet-id="snail-default" role="radio">
+            <button type="button" class="pet-option" data-pet-id="snail-default" data-pet-key="snail:snail-default" role="radio">
               <span class="pet-option-preview preview-default" aria-hidden="true">◉</span>
               <span>星海蜗牛</span>
             </button>
-            <button type="button" class="pet-option" data-pet-id="snail-classic" role="radio">
+            <button type="button" class="pet-option" data-pet-id="snail-classic" data-pet-key="snail:snail-classic" role="radio">
               <span class="pet-option-preview preview-classic" aria-hidden="true">◉</span>
               <span>经典蜗牛</span>
             </button>
-            <button type="button" class="pet-option" data-pet-id="snail-sprite" role="radio">
+            <button type="button" class="pet-option" data-pet-id="snail-sprite" data-pet-key="snail:snail-sprite" role="radio">
               <span class="pet-option-preview preview-sprite" aria-hidden="true">◉</span>
               <span>像素蜗牛</span>
             </button>
             <div id="custom-pet-options" class="custom-pet-options" hidden></div>
           </div>
           <div class="settings-heading">自定义桌宠</div>
-          <div class="custom-pets-note">将自定义桌宠包放入下方目录（每只一个子目录，内含 manifest.json 与 PNG/WebP 精灵图），点击刷新后即可选择。首版仅支持序列帧（spritesheet）包。</div>
+          <div class="custom-pets-note">蜗牛派包：子目录内放 manifest.json + PNG/WebP。Codex 包：pet.json + spritesheet.webp，可放在同一目录或官方 hatch-pet 目录（%CODEX_HOME%/pets 或 ~/.codex/pets）。点击刷新后即可选择。ZIP 一键导入尚未支持，请先解压成目录。本地能加载不代表项目可再分发该角色。</div>
           <div id="custom-pets-path" class="custom-pets-path"></div>
+          <div id="codex-pets-path" class="custom-pets-path" hidden></div>
+          <div id="pet-catalog-diagnostics" class="pet-catalog-diagnostics" hidden></div>
           <div class="custom-pets-actions">
             <button type="button" id="btn-open-custom-pets" class="tray-btn">打开目录</button>
             <button type="button" id="btn-rescan-custom-pets" class="tray-btn">刷新列表</button>

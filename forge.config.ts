@@ -30,6 +30,7 @@ export const DESKTOP_FORBIDDEN_BUNDLE_PATHS = [
   "lib/quick-command-runner.ts",
   "instrumentation.ts",
   "ecosystem.config.cjs",
+  "codex-ui-resouce",
 ] as const;
 
 /** electron-packager ignore patterns (path relative to project root, leading /). */
@@ -77,6 +78,7 @@ export const DESKTOP_PACKAGER_IGNORE: Array<RegExp | string> = [
   /^\/\.git(\/|$)/,
   /^\/out(\/|$)/,
   /^\/coverage(\/|$)/,
+  /^\/codex-ui-resouce(\/|$)/,
   /\.(?:ts|tsx)$/,
   /\.map$/,
 ];

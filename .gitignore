@@ -76,3 +76,6 @@ handoff/
 scripts/snflow-task.ts
 # <<< snflow-managed <<<
 /.pi
+
+# Local Codex / third-party pet samples — not redistributable fixtures
+/codex-ui-resouce/

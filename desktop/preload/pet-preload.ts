@@ -55,6 +55,8 @@ export type SnailPetBridge = {
   openCustomPetsDir: () => Promise<unknown>;
   /** Ask main to rescan the custom pets folder. */
   rescanCustomPets: () => void;
+  /** Fetch one selected pet bitmap by namespaced catalog key. */
+  getPetAsset: (petKey: string) => Promise<unknown>;
   /** Fetch the current path-free project catalog (no cwd/token). */
   listQuickSessionProjects: () => Promise<unknown>;
   /** Fetch the path-free model catalog for one projectRef. */
@@ -136,6 +138,7 @@ const bridge: SnailPetBridge = {
   },
   openCustomPetsDir: () => invoke(PET_IPC_CHANNELS.openCustomPetsDir),
   rescanCustomPets: () => send(PET_IPC_CHANNELS.rescanCustomPets),
+  getPetAsset: (petKey) => invoke(PET_IPC_CHANNELS.getPetAsset, petKey),
   listQuickSessionProjects: () => invoke(PET_IPC_CHANNELS.listQuickSessionProjects),
   listQuickSessionModels: (projectRef) => invoke(PET_IPC_CHANNELS.listQuickSessionModels, projectRef),
   createQuickSession: (input) => invoke(PET_IPC_CHANNELS.createQuickSession, input),

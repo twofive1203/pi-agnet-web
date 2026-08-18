@@ -8,12 +8,18 @@
  */
 
 import type { PetManifest, PetVisualState } from "./pet-state";
+import type { PetRuntimeClip, PetRuntimeProfile, PetRuntimeSheet } from "./pet-runtime-profile";
 
 /** CSS render box of `.pet-avatar`; sprites are scaled to fill it. */
 export const PET_SPRITE_AVATAR_WIDTH = 108;
 export const PET_SPRITE_AVATAR_HEIGHT = 92;
 
-type SpriteSheet = NonNullable<PetManifest["sheet"]>;
+type SpriteSheet = {
+  frameWidth: number;
+  frameHeight: number;
+  columns: number;
+  rows: number;
+};
 
 export type SpriteCell = { x: number; y: number };
 
@@ -147,4 +153,143 @@ export function buildSpriteSheetStyleText(manifest: PetManifest, imageUrl: strin
     }
   }
   return lines.join("\n");
+}
+
+export function clipAnimationName(cssToken: string, clipName: string): string {
+  const safeClip = clipName.replace(/[^a-z0-9_-]/gi, "");
+  return `pet-sprite-${cssToken}-${safeClip}`;
+}
+
+export function isUniformClip(clip: PetRuntimeClip): boolean {
+  if (clip.frames.length <= 1) return true;
+  const first = clip.frames[0]?.durationMs;
+  if (first == null) return true;
+  return clip.frames.every((frame, index) => {
+    if (frame.durationMs !== first) return false;
+    if (index === 0) return true;
+    return frame.cellIndex === clip.frames[index - 1].cellIndex + 1;
+  });
+}
+
+function formatKeyframePercent(value: number): string {
+  const clamped = Math.min(100, Math.max(0, value));
+  return `${clamped.toFixed(4).replace(/\.?0+$/, "")}%`;
+}
+
+export function resolveClipSheetStyle(
+  sheet: PetRuntimeSheet | SpriteSheet,
+  clip: PetRuntimeClip,
+  cssToken: string,
+): SpriteSheetStyle | null {
+  if (clip.frames.length === 0) return null;
+  const staticIndex = Math.min(clip.staticFrameIndex, clip.frames.length - 1);
+  const staticCell = clip.frames[staticIndex]?.cellIndex;
+  if (staticCell == null) return null;
+  const backgroundSize = spriteSheetBackgroundSize(sheet);
+  const staticPosition = positionCss(spriteCellPosition(sheet, staticCell));
+  if (clip.frames.length <= 1) {
+    return {
+      backgroundSize,
+      staticPosition,
+      animatedPosition: null,
+      animation: null,
+      staticFrameIndex: staticIndex,
+    };
+  }
+  const name = clipAnimationName(cssToken, clip.name);
+  const firstCell = clip.frames[0].cellIndex;
+  const animatedPosition = positionCss(spriteCellPosition(sheet, firstCell));
+  const totalMs = clip.frames.reduce((sum, frame) => sum + frame.durationMs, 0);
+  if (isUniformClip(clip)) {
+    return {
+      backgroundSize,
+      staticPosition,
+      animatedPosition,
+      animation: `${name} ${totalMs}ms steps(${clip.frames.length}, end) infinite`,
+      staticFrameIndex: staticIndex,
+    };
+  }
+  return {
+    backgroundSize,
+    staticPosition,
+    animatedPosition,
+    animation: `${name} ${totalMs}ms linear infinite`,
+    staticFrameIndex: staticIndex,
+  };
+}
+
+function buildUnevenKeyframes(
+  name: string,
+  sheet: SpriteSheet,
+  clip: PetRuntimeClip,
+): string {
+  const total = clip.frames.reduce((sum, frame) => sum + frame.durationMs, 0) || 1;
+  let elapsed = 0;
+  const lines = [`@keyframes ${name} {`];
+  for (const frame of clip.frames) {
+    const start = (elapsed / total) * 100;
+    elapsed += frame.durationMs;
+    const end = (elapsed / total) * 100;
+    const pos = positionCss(spriteCellPosition(sheet, frame.cellIndex));
+    lines.push(
+      `  ${formatKeyframePercent(start)}, ${formatKeyframePercent(end)} { background-position: ${pos}; }`,
+    );
+  }
+  lines.push("}");
+  return lines.join("\n");
+}
+
+/**
+ * Profile-driven stylesheet. Selectors key off `data-clip` so decorative look
+ * / drag clips can change without rewriting the business `data-state`.
+ */
+export function buildSpriteSheetStyleTextFromProfile(
+  profile: PetRuntimeProfile,
+  imageUrl: string | null,
+): string {
+  if (profile.renderMode !== "spritesheet" || !profile.sheet || !imageUrl) return "";
+  const sheet = profile.sheet;
+  const token = profile.cssToken;
+  const lines: string[] = [];
+  lines.push(
+    `.pet-avatar.pet-sprite-${token} {`,
+    `  background-image: url("${imageUrl}");`,
+    `  background-size: ${spriteSheetBackgroundSize(sheet)};`,
+    "  background-repeat: no-repeat;",
+    "}",
+  );
+  for (const clip of Object.values(profile.clips)) {
+    const plan = resolveClipSheetStyle(sheet, clip, token);
+    if (!plan) continue;
+    const base = `.pet-avatar.pet-sprite-${token}[data-clip="${clip.name}"]`;
+    const animated = `${base}.is-animated`;
+    lines.push(`${base} { background-position: ${plan.staticPosition}; }`);
+    if (plan.animatedPosition && plan.animation) {
+      lines.push(
+        `${animated} { background-position: ${plan.animatedPosition}; animation: ${plan.animation}; }`,
+      );
+      const name = clipAnimationName(token, clip.name);
+      if (isUniformClip(clip) && clip.frames.length > 1) {
+        const toPosition = positionCss(
+          spriteCellPosition(sheet, clip.frames[0].cellIndex + clip.frames.length),
+        );
+        lines.push(
+          `@keyframes ${name} {`,
+          `  from { background-position: ${plan.animatedPosition}; }`,
+          `  to { background-position: ${toPosition}; }`,
+          "}",
+        );
+      } else if (clip.frames.length > 1) {
+        lines.push(buildUnevenKeyframes(name, sheet, clip));
+      }
+    }
+  }
+  return lines.join("\n");
+}
+
+export function expectedSheetPixelSize(sheet: SpriteSheet): { width: number; height: number } {
+  return {
+    width: sheet.frameWidth * sheet.columns,
+    height: sheet.frameHeight * sheet.rows,
+  };
 }

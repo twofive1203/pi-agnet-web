@@ -20,8 +20,16 @@ import {
   type BuiltinPetId,
   type PetManifestV2,
   type PetRenderMode,
+  type RendererPetCatalogEntry,
   validatePetManifestDocument,
 } from "./pet-assets";
+import { validateCodexPetDocument } from "./codex-pet-assets";
+import { buildPetKey, parsePetKey, petCssToken, resolvePetKey } from "./pet-key";
+import {
+  profileFromCodexMetadata,
+  profileFromSnailManifest,
+  type PetRuntimeProfile,
+} from "./pet-runtime-profile";
 
 export type PetVisualState = TaskObserverPresentationState;
 
@@ -176,10 +184,104 @@ export function getCustomPetManifest(petId: string): PetManifest | null {
  * first builtin so a stale selectedPetId never renders blank.
  */
 export function getPetManifest(petId: string): PetManifest {
+  const key = resolvePetKey({ selectedPetKey: petId, selectedPetId: petId });
+  const parsed = parsePetKey(key);
+  if (parsed?.format === "snail") {
+    const builtin = BUILTIN_PET_MANIFESTS.find((pet) => pet.id === parsed.id);
+    if (builtin) return builtin;
+  }
+  const catalog = catalogPets.get(key);
+  if (catalog) return catalog.manifest;
   const builtin = BUILTIN_PET_MANIFESTS.find((pet) => pet.id === petId);
   if (builtin) return builtin;
   return customPetManifests.get(petId) ?? BUILTIN_PET_MANIFESTS[0];
 }
+
+type CatalogPetRecord = {
+  entry: RendererPetCatalogEntry;
+  manifest: PetManifest;
+  profile: PetRuntimeProfile;
+};
+
+const catalogPets = new Map<string, CatalogPetRecord>();
+
+export function clearCatalogPets(): void {
+  catalogPets.clear();
+}
+
+export function registerCatalogPet(entry: RendererPetCatalogEntry): PetRuntimeProfile | null {
+  if (entry.format === "snail") {
+    if (!entry.snailManifest) return null;
+    const manifest: PetManifest = {
+      id: entry.cssToken,
+      name: entry.name,
+      version: entry.snailManifest.version,
+      renderMode: entry.snailManifest.renderMode,
+      states: entry.snailManifest.states,
+      sheet: entry.snailManifest.sheet,
+    };
+    const profile = profileFromSnailManifest(entry.snailManifest, entry.petKey);
+    catalogPets.set(entry.petKey, { entry, manifest, profile });
+    registerCustomPetManifest(manifest);
+    return profile;
+  }
+  const synthetic = validateCodexPetDocument(
+    {
+      id: entry.id,
+      displayName: entry.name,
+      description: entry.description ?? undefined,
+      spritesheetPath: "spritesheet.webp",
+      spriteVersionNumber: entry.spriteVersion ?? 2,
+    },
+    entry.id,
+  );
+  const profile = synthetic.ok
+    ? profileFromCodexMetadata(synthetic.metadata)
+    : profileFromCodexMetadata({
+        id: entry.id,
+        displayName: entry.name,
+        description: entry.description,
+        spritesheetPath: "spritesheet.webp",
+        spriteVersionNumber: entry.spriteVersion === 1 ? 1 : 2,
+      });
+  const spec = profile.sheet;
+  const manifest: PetManifest = {
+    id: entry.cssToken,
+    name: entry.name,
+    version: 2,
+    renderMode: "spritesheet",
+    states: { ...DEFAULT_FRAMES },
+    sheet: spec
+      ? {
+          src: "spritesheet.webp",
+          frameWidth: spec.frameWidth,
+          frameHeight: spec.frameHeight,
+          columns: spec.columns,
+          rows: spec.rows,
+        }
+      : undefined,
+  };
+  catalogPets.set(entry.petKey, { entry, manifest, profile });
+  return profile;
+}
+
+export function getCatalogPet(petKey: string): CatalogPetRecord | null {
+  return catalogPets.get(petKey) ?? null;
+}
+
+export function listCatalogPets(): CatalogPetRecord[] {
+  return [...catalogPets.values()];
+}
+
+export function getPetRuntimeProfile(petIdOrKey: string): PetRuntimeProfile {
+  const key = resolvePetKey({ selectedPetKey: petIdOrKey, selectedPetId: petIdOrKey });
+  const catalog = catalogPets.get(key);
+  if (catalog) return catalog.profile;
+  const manifest = getPetManifest(petIdOrKey);
+  return profileFromSnailManifest(manifest, buildPetKey("snail", manifest.id));
+}
+
+export { petCssToken, resolvePetKey };
 
 /**
  * Renderer gate for a custom pet manifest document. Spritesheet-only: CSS

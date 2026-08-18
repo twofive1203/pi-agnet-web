@@ -111,6 +111,7 @@ export type DesktopActivityView = {
   trayAnchor: "top-left" | "top-right" | "bottom-left" | "bottom-right";
   selectedActivityId: string | null;
   selectedPetId: string;
+  selectedPetKey: string;
   petScale: DesktopPetSettings["petScale"];
   alwaysOnTop: boolean;
   clickThrough: boolean;
@@ -410,6 +411,7 @@ export function buildActivityView(input: ActivityStoreSnapshotInput): DesktopAct
     trayAnchor: input.trayAnchor ?? "top-left",
     selectedActivityId: selectedExists ? selectedActivityId : null,
     selectedPetId: input.settings.selectedPetId,
+    selectedPetKey: input.settings.selectedPetKey,
     petScale: input.settings.petScale,
     alwaysOnTop: input.settings.alwaysOnTop,
     clickThrough: input.settings.clickThrough,

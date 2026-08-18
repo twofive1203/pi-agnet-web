@@ -180,7 +180,7 @@ node_modules/.bin/tsc --noEmit
 | WebUI SnFlow tasks | `<cwd>/.pi/snflows/tasks/<task-id>/` (archived: `<cwd>/.pi/snflows/archived/<task-id>/`; version/assets: `.pi/snflows/.version`, `.pi/extensions/snflow/`, `.pi/skills/snflow-dev/`, `.pi/agents/snflow-*.md`) |
 | Project quick commands | `<cwd>/.pi/quick-commands.json` (definitions); `~/.pi/agent/quick-command-trust.json` (executable digests only); runs are in-memory per process |
 | Automation tasks/runs/sessions | `~/.pi/agent/automations/` (`tasks.json`, locks, claims, runs, promotions, audit, sessions); default cwd `~/pi-automation-cwd` (canonical path persisted once) |
-| Custom desktop pets (folder drop-in) | `~/.pi/agent/desktop-pets/<pet-id>/` (`manifest.json` + PNG/WebP spritesheet; overrides `SNAIL_PET_CUSTOM_PETS_DIR`, `PI_CODING_AGENT_DIR/desktop-pets`) |
+| Custom desktop pets (folder drop-in) | `~/.pi/agent/desktop-pets/<pet-id>/` (Snail `manifest.json` + PNG/WebP, or Codex `pet.json` + `spritesheet.webp`; overrides `SNAIL_PET_CUSTOM_PETS_DIR`, `PI_CODING_AGENT_DIR/desktop-pets`). Codex hatch-pet output is also discovered from `${CODEX_HOME:-~/.codex}/pets` |
 
 ## Archive Rules
 

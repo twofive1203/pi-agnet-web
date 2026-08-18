@@ -176,6 +176,22 @@ Unsigned local builds are fine for engineering QA; SmartScreen may warn until si
 | SSE drop | Disconnected/reconnecting overlay; last snapshot stale; no false success |
 | Token expiry | Silent remint + baseline reset (no historical toast flood) |
 
+## Codex resource compatibility (2026-08-18)
+
+Automated coverage lives in `scripts/smoke-desktop-contract.ts` (parser, catalog, lazy read, settings key migration, CSP `blob:`, IPC allowlist). Local sample binaries under `codex-ui-resouce/` stay untracked and must not be packaged.
+
+| Case | Expected | Status |
+| --- | --- | --- |
+| Snail + Codex packs in the picker | Both formats listed, source badge visible, distinct keys | Automated catalog smoke |
+| Select Codex v2 | Running/Needs input/Ready/Blocked map to running/waiting/jumping/failed; Snail labels/glyphs unchanged | Automated profile mapping; visual playback 未执行 |
+| v2 look + reduced-motion | 16-dir quantization; reduced-motion stays on a static business frame | Automated; desktop size readability 未执行 |
+| Multiple 2–3 MB atlases | Catalog has no base64; only the selected bitmap is read | Automated |
+| Bad path / size / decode / deleted file | Reject or CSS-snail fallback, pet stays up | Automated hard errors; Electron decode 未执行 |
+| Upgrade `selectedPetId` | Becomes `snail:<id>`; same-id Codex does not steal it | Automated |
+| License boundary | Samples not in repo/package; local load ≠ redistribute | Documented + gitignore/forge ignore |
+
+Manual visual matrix (local v2 samples + synthetic v1, small/medium/large, look, drag, delete/rescan): **未执行**.
+
 ## Residual risks
 
 1. Forge package/make is wired locally, but signed installer CI is not; signing still depends on environment-provided certificate secrets.

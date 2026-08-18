@@ -34,10 +34,17 @@ import { applyLaunchAtLogin } from "./autostart";
 import type { DesktopConnectionState } from "./connection-state";
 import {
   resolveCustomPetsRoot,
-  scanCustomPets,
-  type CustomPetScanResult,
   type CustomPetsIo,
 } from "./custom-pets";
+import {
+  readCatalogPetAsset,
+  resolveCodexPetsRoot,
+  scanPetCatalog,
+  toRendererCatalogPayload,
+  type PetCatalogIo,
+  type PetCatalogState,
+} from "./pet-catalog";
+import { DEFAULT_PET_KEY, isBuiltinPetKey, isPetKey, petIdFromKey } from "../renderer/pet-key";
 import { openValidatedDeepLink, rejectArbitraryRendererUrl } from "./deep-link-opener";
 import { PET_IPC_CHANNELS, type PetPrefsPatch } from "./ipc-contract";
 import { DesktopNotificationController } from "./notification-controller";
@@ -115,6 +122,9 @@ export type DesktopMainDeps = {
   /** Custom pets root override (tests); defaults to env/homedir resolution. */
   customPetsDir?: string;
   customPetsIo?: CustomPetsIo;
+  /** Codex pets root override (tests); defaults to CODEX_HOME/pets. */
+  codexPetsDir?: string;
+  petCatalogIo?: PetCatalogIo;
   /** Optional Electron safeStorage; used when accessKeyCodec is omitted. */
   safeStorage?: {
     isEncryptionAvailable: () => boolean;
@@ -150,6 +160,8 @@ const nodeCustomPetsIo: CustomPetsIo = {
   encodeBase64: (bytes) =>
     Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString("base64"),
   join: (...parts) => path.join(...parts),
+  realpath: (p) => fs.realpathSync(p),
+  statMtimeMs: (p) => fs.statSync(p).mtimeMs,
 };
 
 function parseSnapshotJson(json: string): import("../../lib/task-observer-types").TaskObserverSnapshot | null {
@@ -232,7 +244,34 @@ export async function startDesktopPetMain(deps: DesktopMainDeps): Promise<{
       }),
     );
   const customPetsIo = deps.customPetsIo ?? nodeCustomPetsIo;
-  let customPetsScan: CustomPetScanResult = scanCustomPets(customPetsDir, customPetsIo);
+  const petCatalogIo: PetCatalogIo = deps.petCatalogIo ?? {
+    ...customPetsIo,
+    realpath: customPetsIo.realpath ?? ((p: string) => p),
+    statMtimeMs: customPetsIo.statMtimeMs ?? (() => 0),
+  };
+  const codexPetsDir =
+    deps.codexPetsDir ??
+    resolveCodexPetsRoot({
+      env: process.env as Record<string, string | undefined>,
+      homedir: os.homedir(),
+    });
+  const scanCatalog = (): PetCatalogState =>
+    scanPetCatalog({
+      snailRoot: customPetsDir,
+      codexRoot: codexPetsDir,
+      io: petCatalogIo,
+    });
+  let petCatalog = scanCatalog();
+  const catalogHasPet = (petKey: string): boolean =>
+    isBuiltinPetKey(petKey) || petCatalog.locators.has(petKey);
+  const ensureSelectedPetAvailable = (): void => {
+    if (catalogHasPet(settings.selectedPetKey)) return;
+    settings = updateDesktopSettings(settings, {
+      selectedPetKey: DEFAULT_PET_KEY,
+      selectedPetId: petIdFromKey(DEFAULT_PET_KEY),
+    });
+    persistSettings();
+  };
 
   applyLaunchAtLogin(app, settings.launchAtLogin);
 
@@ -321,6 +360,7 @@ export async function startDesktopPetMain(deps: DesktopMainDeps): Promise<{
       // ignore disk errors; in-memory state remains authoritative for the session
     }
   };
+  ensureSelectedPetAvailable();
 
   if (windowState.bounds) {
     const recoveredPosition = { x: windowState.bounds.x, y: windowState.bounds.y };
@@ -847,6 +887,7 @@ export async function startDesktopPetMain(deps: DesktopMainDeps): Promise<{
       const previousScale = settings.petScale;
       settings = updateDesktopSettings(settings, {
         selectedPetId: p.selectedPetId,
+        selectedPetKey: p.selectedPetKey,
         petScale: p.petScale,
         alwaysOnTop: p.alwaysOnTop,
         clickThrough: p.clickThrough,
@@ -933,23 +974,44 @@ export async function startDesktopPetMain(deps: DesktopMainDeps): Promise<{
     });
 
     ipcMain.handle(PET_IPC_CHANNELS.getCustomPets, () => {
-      const payload = {
-        pets: customPetsScan.pets,
-        root: customPetsDir,
-      };
+      const payload = toRendererCatalogPayload(petCatalog);
       // The payload is renderer-bound; keep the same no-token/no-absolute-URL gate.
       assertRendererViewSafe(payload);
       return payload;
     });
 
     ipcMain.on(PET_IPC_CHANNELS.rescanCustomPets, () => {
-      customPetsScan = scanCustomPets(customPetsDir, customPetsIo);
-      const payload = {
-        pets: customPetsScan.pets,
-        root: customPetsDir,
-      };
+      petCatalog = scanCatalog();
+      ensureSelectedPetAvailable();
+      const payload = toRendererCatalogPayload(petCatalog);
       assertRendererViewSafe(payload);
       sendPetWindowChannel(petWindow, PET_IPC_CHANNELS.customPetsChanged, payload);
+      pushState();
+    });
+
+    ipcMain.handle(PET_IPC_CHANNELS.getPetAsset, (_event, petKeyRaw: unknown) => {
+      if (typeof petKeyRaw !== "string" || !isPetKey(petKeyRaw)) {
+        return { ok: false, reason: "invalid_key" };
+      }
+      if (isBuiltinPetKey(petKeyRaw)) {
+        return { ok: false, reason: "not_found" };
+      }
+      const result = readCatalogPetAsset(petCatalog, petKeyRaw, petCatalogIo);
+      if (!result.ok) return result;
+      return {
+        ok: true,
+        petKey: result.petKey,
+        mime: result.mime,
+        // Base64 survives contextBridge realm cloning; raw TypedArrays often do not.
+        bytesBase64: Buffer.from(
+          result.bytes.buffer,
+          result.bytes.byteOffset,
+          result.bytes.byteLength,
+        ).toString("base64"),
+        fingerprint: result.fingerprint,
+        expectedWidth: result.expectedWidth,
+        expectedHeight: result.expectedHeight,
+      };
     });
 
     ipcMain.handle(PET_IPC_CHANNELS.openCustomPetsDir, async () => {

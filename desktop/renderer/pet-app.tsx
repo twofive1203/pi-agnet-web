@@ -15,7 +15,11 @@ import type {
 } from "../main/activity-store";
 import { resolvePetLayoutSpec } from "../main/window-manager";
 import type { SnailPetBridge } from "../preload/pet-preload";
-import { acceptStaticPetPreview, validateCustomPetAsset } from "./pet-assets";
+import {
+  acceptStaticPetPreview,
+  validateRendererCatalogEntry,
+  validateRendererPetAsset,
+} from "./pet-assets";
 import {
   connectionBannerText,
   countActivitiesByFilter,
@@ -29,10 +33,13 @@ import {
   formatActivityProgress,
   formatElapsed,
   formatSessionResources,
-  getCustomPetManifest,
   getPetManifest,
-  registerCustomPetManifest,
+  getPetRuntimeProfile,
+  registerCatalogPet,
+  clearCatalogPets,
   clearCustomPetManifests,
+  listCatalogPets,
+  resolvePetKey,
   moveActivitySelection,
   nextActDelayMs,
   nextBlinkDelayMs,
@@ -69,12 +76,30 @@ import {
   type PetTransitionAction,
   type PetVisualState,
 } from "./pet-state";
-import { buildSpriteSheetStyleText, resolveSpriteSheetStyle } from "./pet-sheet";
+import {
+  buildSpriteSheetStyleText,
+  buildSpriteSheetStyleTextFromProfile,
+  expectedSheetPixelSize,
+  resolveClipSheetStyle,
+  resolveSpriteSheetStyle,
+} from "./pet-sheet";
 import {
   clearCustomPetSheetDataUrls,
+  clearCustomPetSheetUrls,
   petSheetDataUrl,
-  setCustomPetSheetDataUrl,
+  petSheetUrl,
+  rememberOwnedBlobUrl,
+  revokeOwnedSheetUrl,
+  setCustomPetSheetUrl,
 } from "./pet-sheet-assets";
+import {
+  canApplyDragOverlay,
+  canApplyLookOverlay,
+  quantizeCodexLookDirection,
+  resolveActivePetClip,
+  resolveCodexDragClip,
+  type PetDragClipName,
+} from "./pet-runtime-profile";
 import { PetSoundPlayer } from "./pet-sound";
 import {
   canSubmitQuickSession,
@@ -177,8 +202,11 @@ export function renderPetApp(root: Document = document): {
   const btnQsAnother = root.getElementById("btn-qs-another");
   const settingsPanel = root.getElementById("settings-panel");
   const petPicker = root.getElementById("pet-picker");
+  const petPickerFilter = root.getElementById("pet-picker-filter") as HTMLInputElement | null;
   const customPetOptions = root.getElementById("custom-pet-options");
+  const catalogDiagnostics = root.getElementById("pet-catalog-diagnostics");
   const customPetsPath = root.getElementById("custom-pets-path");
+  const codexPetsPath = root.getElementById("codex-pets-path");
   const btnOpenCustomPets = root.getElementById("btn-open-custom-pets");
   const btnRescanCustomPets = root.getElementById("btn-rescan-custom-pets");
   const petScalePicker = root.getElementById("pet-scale-picker");
@@ -260,6 +288,12 @@ export function renderPetApp(root: Document = document): {
   // U6 slice 1: custom pets registered from validated main payloads. Every
   // rescan clears prior registrations so changed art/invalidation re-renders.
   const registeredCustomPetIds = new Set<string>();
+  let petPickerQuery = "";
+  let lookDirection: number | null = null;
+  let dragClip: PetDragClipName | null = null;
+  let assetLoadSeq = 0;
+  let loadedAssetKey: string | null = null;
+  let loadedBlobUrl: string | null = null;
 
   // U4a: local synthesized cues only. Playback failure is silent by design and
   // never affects the tray, bubbles or observation.
@@ -755,20 +789,39 @@ export function renderPetApp(root: Document = document): {
     schedulePokeCommit();
   }
 
+  function replaceSpriteStylesheet(token: string, text: string): void {
+    const existing = spriteStyleSheets.get(token);
+    if (existing?.textContent === text) return;
+    existing?.remove();
+    if (!text) {
+      spriteStyleSheets.delete(token);
+      return;
+    }
+    const style = root.createElement("style");
+    style.setAttribute("data-pet-sprite", token);
+    style.textContent = text;
+    root.head?.appendChild(style);
+    spriteStyleSheets.set(token, style);
+  }
+
   function ensureSpriteStylesheet(manifest: PetManifest): void {
     if (spriteStyleSheets.has(manifest.id)) return;
     const text = buildSpriteSheetStyleText(manifest, petSheetDataUrl(manifest.id));
     if (!text) return;
-    const style = root.createElement("style");
-    style.setAttribute("data-pet-sprite", manifest.id);
-    style.textContent = text;
-    root.head?.appendChild(style);
-    spriteStyleSheets.set(manifest.id, style);
+    replaceSpriteStylesheet(manifest.id, text);
+  }
+
+  function ensureProfileStylesheet(profileToken: string, text: string): void {
+    replaceSpriteStylesheet(profileToken, text);
   }
 
   // Inlined data URLs cannot fail to fetch, but a corrupt bitmap still can; a
   // decode rejection marks the pet failed so the renderer re-renders as CSS.
-  function verifySpriteImage(petId: string, url: string): void {
+  function verifySpriteImage(
+    petId: string,
+    url: string,
+    expected?: { width: number; height: number },
+  ): void {
     if (spriteVerified.has(petId) || spriteFailed.has(petId)) return;
     const img = root.createElement("img");
     img.addEventListener("error", () => {
@@ -776,12 +829,24 @@ export function renderPetApp(root: Document = document): {
       if (current) update(current);
     });
     img.addEventListener("load", () => {
+      if (
+        expected &&
+        (img.naturalWidth !== expected.width || img.naturalHeight !== expected.height)
+      ) {
+        spriteFailed.add(petId);
+        if (current) update(current);
+        return;
+      }
       if (typeof img.decode !== "function") {
         spriteVerified.add(petId);
+        if (current) update(current);
         return;
       }
       void img.decode().then(
-        () => spriteVerified.add(petId),
+        () => {
+          spriteVerified.add(petId);
+          if (current) update(current);
+        },
         () => {
           spriteFailed.add(petId);
           if (current) update(current);
@@ -803,85 +868,168 @@ export function renderPetApp(root: Document = document): {
       spriteVerified.delete(petId);
       spriteFailed.delete(petId);
     }
+    for (const record of listCatalogPets()) {
+      const token = record.profile.cssToken;
+      const style = spriteStyleSheets.get(token);
+      style?.remove();
+      spriteStyleSheets.delete(token);
+      spriteVerified.delete(record.entry.petKey);
+      spriteFailed.delete(record.entry.petKey);
+    }
     registeredCustomPetIds.clear();
+    clearCatalogPets();
     clearCustomPetManifests();
     clearCustomPetSheetDataUrls();
+    clearCustomPetSheetUrls();
+    loadedAssetKey = null;
+    loadedBlobUrl = null;
+    assetLoadSeq += 1;
   }
 
-  /**
-   * Register one validated custom pet asset. Both gates must pass: the asset
-   * gate (id/manifest/sheet-data-URL) and the spritesheet manifest gate.
-   */
-  function registerCustomPetAsset(candidate: unknown): void {
-    if (!candidate || typeof candidate !== "object") return;
-    const id = (candidate as { id?: unknown }).id;
-    if (typeof id !== "string") return;
-    const gate = validateCustomPetAsset(candidate, id);
+  function registerCatalogEntry(candidate: unknown): void {
+    const gate = validateRendererCatalogEntry(candidate);
     if (!gate.ok) return;
-    const manifest = gate.manifest;
-    if (manifest.renderMode !== "spritesheet" || !manifest.sheet) return;
-    registerCustomPetManifest({
-      id: manifest.id,
-      name: manifest.name,
-      version: manifest.version,
-      renderMode: manifest.renderMode,
-      states: manifest.states,
-      sheet: manifest.sheet,
-    });
-    setCustomPetSheetDataUrl(id, gate.sheetDataUrl);
-    registeredCustomPetIds.add(id);
+    const profile = registerCatalogPet(gate.entry);
+    if (!profile) return;
+    registeredCustomPetIds.add(profile.cssToken);
+  }
+
+  function renderCatalogDiagnostics(items: unknown): void {
+    if (!catalogDiagnostics) return;
+    catalogDiagnostics.replaceChildren();
+    if (!Array.isArray(items) || items.length === 0) {
+      catalogDiagnostics.hidden = true;
+      return;
+    }
+    const list = root.createElement("ul");
+    list.className = "pet-catalog-diagnostic-list";
+    for (const item of items.slice(0, 8)) {
+      if (!item || typeof item !== "object") continue;
+      const reason = (item as { reason?: unknown }).reason;
+      const petId = (item as { petId?: unknown }).petId;
+      if (typeof reason !== "string") continue;
+      const row = root.createElement("li");
+      row.textContent = typeof petId === "string" && petId ? `${petId}: ${reason}` : reason;
+      list.appendChild(row);
+    }
+    catalogDiagnostics.hidden = list.childElementCount === 0;
+    if (list.childElementCount > 0) catalogDiagnostics.appendChild(list);
   }
 
   function renderCustomPetOptions(): void {
     if (!customPetOptions) return;
     customPetOptions.replaceChildren();
-    for (const petId of registeredCustomPetIds) {
-      const manifest = getCustomPetManifest(petId);
-      if (!manifest) continue;
-      const btn = root.createElement("button");
-      btn.type = "button";
-      btn.className = "pet-option";
-      btn.setAttribute("role", "radio");
-      btn.dataset.petId = petId;
-      const preview = root.createElement("span");
-      preview.className = "pet-option-preview preview-custom";
-      preview.setAttribute("aria-hidden", "true");
-      preview.textContent = "◉";
-      const sheetUrl = petSheetDataUrl(petId);
-      if (sheetUrl && manifest.sheet) {
-        // Scale the whole sheet so the first cell fills the preview dot.
-        preview.style.backgroundImage = `url("${sheetUrl}")`;
-        preview.style.backgroundSize = `${manifest.sheet.columns * 100}% ${manifest.sheet.rows * 100}%`;
+    const query = petPickerQuery.trim().toLowerCase();
+    const groups: Array<{ source: "snail-custom" | "codex-home"; label: string }> = [
+      { source: "snail-custom", label: "蜗牛派自定义" },
+      { source: "codex-home", label: "Codex" },
+    ];
+    let rendered = 0;
+    for (const group of groups) {
+      const pets = listCatalogPets().filter((record) => {
+        if (record.entry.source !== group.source) return false;
+        if (!query) return true;
+        return (
+          record.entry.name.toLowerCase().includes(query) ||
+          record.entry.id.toLowerCase().includes(query)
+        );
+      });
+      if (pets.length === 0) continue;
+      const heading = root.createElement("div");
+      heading.className = "pet-option-group-label";
+      heading.textContent = group.label;
+      customPetOptions.appendChild(heading);
+      for (const record of pets) {
+        const btn = root.createElement("button");
+        btn.type = "button";
+        btn.className = "pet-option";
+        btn.setAttribute("role", "radio");
+        btn.dataset.petId = record.entry.id;
+        btn.dataset.petKey = record.entry.petKey;
+        const preview = root.createElement("span");
+        preview.className = `pet-option-preview preview-custom preview-${record.entry.format}`;
+        preview.setAttribute("aria-hidden", "true");
+        preview.textContent = record.entry.format === "codex" ? "◈" : "◉";
+        const sheetUrl = petSheetUrl(record.entry.petKey);
+        if (sheetUrl && record.manifest.sheet) {
+          preview.style.backgroundImage = `url("${sheetUrl}")`;
+          preview.style.backgroundSize = `${record.manifest.sheet.columns * 100}% ${record.manifest.sheet.rows * 100}%`;
+        }
+        const label = root.createElement("span");
+        label.className = "pet-option-copy";
+        const name = root.createElement("span");
+        name.textContent = record.entry.name;
+        const badge = root.createElement("span");
+        badge.className = "pet-option-badge";
+        badge.textContent = record.entry.format === "codex" ? "Codex" : "Snail";
+        label.append(name, badge);
+        btn.append(preview, label);
+        customPetOptions.appendChild(btn);
+        rendered += 1;
       }
-      const label = root.createElement("span");
-      label.textContent = manifest.name;
-      btn.append(preview, label);
-      customPetOptions.appendChild(btn);
     }
-    const empty = registeredCustomPetIds.size === 0;
-    customPetOptions.hidden = empty;
+    customPetOptions.hidden = rendered === 0;
+  }
+
+  function requestSelectedPetAsset(petKey: string): void {
+    if (!bridge?.getPetAsset) return;
+    if (loadedAssetKey === petKey && loadedBlobUrl) return;
+    if (spriteFailed.has(petKey)) return;
+    const seq = ++assetLoadSeq;
+    void bridge.getPetAsset(petKey).then((payload) => {
+      if (seq !== assetLoadSeq) return;
+      const gate = validateRendererPetAsset(payload);
+      if (!gate.ok) {
+        spriteFailed.add(petKey);
+        if (current) update(current);
+        return;
+      }
+      if (gate.asset.petKey !== petKey) return;
+      const bytes = new Uint8Array(gate.asset.bytes.byteLength);
+      bytes.set(gate.asset.bytes);
+      const blob = new Blob([bytes], { type: gate.asset.mime });
+      const url = URL.createObjectURL(blob);
+      rememberOwnedBlobUrl(url);
+      if (loadedBlobUrl && loadedBlobUrl !== url) revokeOwnedSheetUrl(loadedBlobUrl);
+      loadedBlobUrl = url;
+      loadedAssetKey = petKey;
+      setCustomPetSheetUrl(petKey, url);
+      spriteFailed.delete(petKey);
+      spriteVerified.delete(petKey);
+      if (current) update(current);
+    }).catch(() => {
+      if (seq !== assetLoadSeq) return;
+      spriteFailed.add(petKey);
+      if (current) update(current);
+    });
   }
 
   /**
-   * Main pushes custom-pet payloads on rescan; every entry is re-gated before
-   * it can influence ids, class names or images. The pets root is display-only.
+   * Main pushes catalog metadata on rescan; every entry is re-gated before
+   * it can influence ids, class names or images. Bitmaps load separately.
    */
   function syncCustomPetsPayload(payload: unknown): void {
     clearCustomPetRegistrations();
     if (!payload || typeof payload !== "object") {
       renderCustomPetOptions();
+      renderCatalogDiagnostics([]);
       return;
     }
     const pets = (payload as { pets?: unknown }).pets;
     if (Array.isArray(pets)) {
-      for (const candidate of pets) registerCustomPetAsset(candidate);
+      for (const candidate of pets) registerCatalogEntry(candidate);
     }
-    const rootPath = (payload as { root?: unknown }).root;
-    if (customPetsPath && typeof rootPath === "string" && rootPath.length <= 512) {
-      customPetsPath.textContent = rootPath;
+    const snailRoot = (payload as { snailRoot?: unknown }).snailRoot ?? (payload as { root?: unknown }).root;
+    if (customPetsPath && typeof snailRoot === "string" && snailRoot.length <= 512) {
+      customPetsPath.textContent = snailRoot;
     }
+    const codexRoot = (payload as { codexRoot?: unknown }).codexRoot;
+    if (codexPetsPath && typeof codexRoot === "string" && codexRoot.length <= 512) {
+      codexPetsPath.textContent = codexRoot;
+      codexPetsPath.hidden = false;
+    }
+    renderCatalogDiagnostics((payload as { diagnostics?: unknown }).diagnostics);
     renderCustomPetOptions();
-    // Re-apply the active pet in case the selected custom pet was just added.
     if (current) update(current);
   }
 
@@ -910,17 +1058,56 @@ export function renderPetApp(root: Document = document): {
     scheduleRunningCueUpdate(updateNow);
     const runningCue = runningCueState.active ? runningCueState.cue : "generic";
     const cueVisual = resolveRunningCueVisual(runningCue);
-    const manifest = getPetManifest(view.selectedPetId);
+    const selectedPetKey = resolvePetKey({
+      selectedPetKey: view.selectedPetKey,
+      selectedPetId: view.selectedPetId,
+    });
+    const profile = getPetRuntimeProfile(selectedPetKey);
+    const manifest = getPetManifest(selectedPetKey);
     const motionReduced = view.reducedMotion || reducedMotion;
+    if (!canApplyLookOverlay(state) || motionReduced || documentHidden) {
+      lookDirection = null;
+    }
+    if (state === "needs_input" || state === "blocked" || state === "ready" || state === "disconnected" || state === "service_not_running") {
+      dragClip = null;
+    }
     const frame = resolvePetFrame(manifest, state, motionReduced);
     const displayGlyph = state === "running" ? cueVisual.glyph : frame.glyph || petStateGlyph(state);
     const displayLabel = state === "running" ? cueVisual.label : frame.label || petStateLabel(state);
-    const spriteImageUrl = petSheetDataUrl(manifest.id);
-    const spriteStyle = resolveSpriteSheetStyle(manifest, state, spriteImageUrl);
-    const spriteActive = spriteStyle != null && !spriteFailed.has(manifest.id);
-    if (spriteActive && spriteImageUrl) {
-      ensureSpriteStylesheet(manifest);
-      verifySpriteImage(manifest.id, spriteImageUrl);
+    const activeClip = resolveActivePetClip({
+      profile,
+      state,
+      reducedMotion: motionReduced,
+      lookDirection,
+      dragClip,
+    });
+    const needsLazySheet = profile.renderMode === "spritesheet" && profile.format !== "snail" || (profile.format === "snail" && !petSheetDataUrl(manifest.id) && !petSheetUrl(profile.petKey));
+    const builtinSheetUrl = petSheetDataUrl(manifest.id);
+    if (profile.renderMode === "spritesheet" && !builtinSheetUrl && !petSheetUrl(profile.petKey)) {
+      requestSelectedPetAsset(profile.petKey);
+    }
+    const spriteImageUrl = petSheetUrl(profile.petKey) ?? builtinSheetUrl ?? petSheetDataUrl(profile.cssToken);
+    const spriteFailedKey = profile.petKey;
+    const profileStyle =
+      profile.renderMode === "spritesheet" && profile.sheet && activeClip.clip && spriteImageUrl
+        ? resolveClipSheetStyle(profile.sheet, activeClip.clip, profile.cssToken)
+        : null;
+    const snailStyle = resolveSpriteSheetStyle(manifest, state, spriteImageUrl);
+    const spriteStyle = profile.format === "codex" ? profileStyle : snailStyle ?? profileStyle;
+    const spriteActive =
+      spriteStyle != null &&
+      !spriteFailed.has(spriteFailedKey) &&
+      !spriteFailed.has(manifest.id);
+    // Verify whenever a bitmap URL exists. Do not gate verify on spriteActive —
+    // custom/Codex sheets become ready only after this decode check runs.
+    if (spriteImageUrl && !spriteFailed.has(spriteFailedKey) && !spriteFailed.has(manifest.id)) {
+      if (profile.format === "codex" || needsLazySheet) {
+        ensureProfileStylesheet(profile.cssToken, buildSpriteSheetStyleTextFromProfile(profile, spriteImageUrl));
+      } else {
+        ensureSpriteStylesheet(manifest);
+      }
+      const expected = profile.sheet ? expectedSheetPixelSize(profile.sheet) : undefined;
+      verifySpriteImage(spriteFailedKey, spriteImageUrl, expected);
     }
 
     if (petAvatar) {
@@ -934,10 +1121,13 @@ export function renderPetApp(root: Document = document): {
       } else if (motionReduced) {
         clearTransition();
       }
-      const spriteClass = spriteActive ? ` pet-sprite pet-sprite-${manifest.id}` : "";
+      const spriteClass = spriteActive ? ` pet-sprite pet-sprite-${profile.cssToken}` : "";
       const sleepClass = idleSleepState.stage !== "awake" ? ` pet-${idleSleepState.stage}` : "";
-      petAvatar.className = `pet-avatar${spriteClass} frame-${frame.frame}${frame.animated ? " is-animated" : ""}${transitionClass ? ` ${transitionClass}` : ""}${sleepClass}${reactionClass ? ` ${reactionClass}` : ""}`;
+      const animated =
+        spriteActive ? !motionReduced && !activeClip.staticOnly : frame.animated;
+      petAvatar.className = `pet-avatar${spriteClass} frame-${frame.frame}${animated ? " is-animated" : ""}${transitionClass ? ` ${transitionClass}` : ""}${sleepClass}${reactionClass ? ` ${reactionClass}` : ""}`;
       petAvatar.setAttribute("data-state", state);
+      petAvatar.setAttribute("data-clip", activeClip.clipName);
       if (state === "running") {
         petAvatar.setAttribute("data-running-cue", runningCue);
       } else {
@@ -945,14 +1135,14 @@ export function renderPetApp(root: Document = document): {
       }
       // Re-arm idle life only when the visual frame actually changes, so frequent
       // view updates never starve the blink/act timers.
-      const lifeKey = `${frame.frame}:${frame.animated ? "1" : "0"}`;
+      const lifeKey = `${frame.frame}:${animated ? "1" : "0"}:${activeClip.clipName}`;
       if (lifeKey !== idleLifeKey) {
         idleLifeKey = lifeKey;
         scheduleIdleBlink(petAvatar);
         scheduleIdleActs(petAvatar);
       }
     }
-    if (petRoot) petRoot.setAttribute("data-pet", manifest.id);
+    if (petRoot) petRoot.setAttribute("data-pet", profile.cssToken);
     if (petGlyph) petGlyph.textContent = displayGlyph;
     if (petLabel) petLabel.textContent = displayLabel;
 
@@ -1194,8 +1384,15 @@ export function renderPetApp(root: Document = document): {
     if (soundDndNote) {
       soundDndNote.hidden = !(view.dndEnabled === true && view.sound.masterEnabled === true);
     }
-    petPicker?.querySelectorAll<HTMLElement>("[data-pet-id]").forEach((option) => {
-      const selected = option.dataset.petId === view.selectedPetId;
+    const selectedKey = resolvePetKey({
+      selectedPetKey: view.selectedPetKey,
+      selectedPetId: view.selectedPetId,
+    });
+    petPicker?.querySelectorAll<HTMLElement>("[data-pet-id], [data-pet-key]").forEach((option) => {
+      const optionKey =
+        option.dataset.petKey ||
+        (option.dataset.petId ? resolvePetKey({ selectedPetId: option.dataset.petId }) : "");
+      const selected = optionKey === selectedKey;
       option.setAttribute("aria-checked", selected ? "true" : "false");
     });
     petScalePicker?.querySelectorAll<HTMLElement>("[data-pet-scale]").forEach((option) => {
@@ -1886,7 +2083,48 @@ export function renderPetApp(root: Document = document): {
     petAvatar.style.removeProperty("--head-tilt");
   };
 
+  const currentPetProfile = () => {
+    if (!current) return null;
+    return getPetRuntimeProfile(
+      resolvePetKey({
+        selectedPetKey: current.selectedPetKey,
+        selectedPetId: current.selectedPetId,
+      }),
+    );
+  };
+
+  const applyCodexLook = (event: PointerEvent) => {
+    const profile = currentPetProfile();
+    if (!profile?.capabilities.look || !current) return;
+    const motionReduced = reducedMotion || current.reducedMotion === true;
+    if (motionReduced || documentHidden || petDragging) {
+      if (lookDirection != null) {
+        lookDirection = null;
+        update(current);
+      }
+      return;
+    }
+    if (!canApplyLookOverlay(currentPresentation())) {
+      if (lookDirection != null) {
+        lookDirection = null;
+        update(current);
+      }
+      return;
+    }
+    if (!(petAvatar instanceof HTMLElement)) return;
+    const rect = petAvatar.getBoundingClientRect();
+    if (rect.width === 0) return;
+    const next = quantizeCodexLookDirection(
+      event.clientX - (rect.left + rect.width / 2),
+      event.clientY - (rect.top + rect.height / 2),
+    );
+    if (next === lookDirection) return;
+    lookDirection = next;
+    update(current);
+  };
+
   const applyEyeFollow = (event: PointerEvent) => {
+    applyCodexLook(event);
     if (!(petAvatar instanceof HTMLElement) || !(petButton instanceof HTMLElement)) return;
     if (!petAvatar.classList.contains("is-animated")) return;
     if (petAvatar.classList.contains("pet-sprite")) return;
@@ -1903,6 +2141,20 @@ export function renderPetApp(root: Document = document): {
     petAvatar.style.setProperty("--eye-shift-y", `${clamp(dy / 24, 1.3).toFixed(2)}px`);
     petAvatar.style.setProperty("--head-tilt", `${clamp(dx / 40, 4).toFixed(2)}deg`);
   };
+
+  const onWindowPointerMove = (event: PointerEvent) => {
+    if (petPointerId !== null) return;
+    applyCodexLook(event);
+  };
+  const onWindowPointerLeave = () => {
+    if (lookDirection == null || !current) return;
+    lookDirection = null;
+    update(current);
+  };
+  if (typeof window !== "undefined") {
+    window.addEventListener("pointermove", onWindowPointerMove);
+    window.addEventListener("pointerleave", onWindowPointerLeave);
+  }
 
   // Whether a single pet activation should jump straight to the top-priority
   // attention task instead of toggling the tray (P1 quick path).
@@ -1980,6 +2232,10 @@ export function renderPetApp(root: Document = document): {
     const wasDragging = petDragging;
     petPointerId = null;
     petDragging = false;
+    if (dragClip) {
+      dragClip = null;
+      if (current) update(current);
+    }
     try {
       if (target.hasPointerCapture?.(pointerId)) {
         target.releasePointerCapture(pointerId);
@@ -2059,6 +2315,15 @@ export function renderPetApp(root: Document = document): {
     petLastScreenY = event.screenY;
     if (dx !== 0 || dy !== 0) {
       bridge?.moveBy(dx, dy);
+      const profile = currentPetProfile();
+      if (profile?.capabilities.directionalRun && current && canApplyDragOverlay(current.presentation)) {
+        const nextDrag = resolveCodexDragClip(dx, dy, dragClip);
+        if (nextDrag !== dragClip) {
+          dragClip = nextDrag;
+          lookDirection = null;
+          update(current);
+        }
+      }
     }
   });
 
@@ -2085,9 +2350,11 @@ export function renderPetApp(root: Document = document): {
     if (petPointerId !== event.pointerId) return;
     petPointerId = null;
     petDragging = false;
+    dragClip = null;
     petButton.classList.remove("is-dragging");
     petAvatar?.classList.remove("is-pressed", "is-dragging");
     cancelClickSequence();
+    if (current) update(current);
   });
 
   petButton?.addEventListener("pointerleave", () => {
@@ -2332,11 +2599,37 @@ export function renderPetApp(root: Document = document): {
 
   petPicker?.addEventListener("click", (event) => {
     const target = event.target instanceof Element
-      ? event.target.closest<HTMLElement>("[data-pet-id]")
+      ? event.target.closest<HTMLElement>("[data-pet-key], [data-pet-id]")
       : null;
+    const selectedPetKey = target?.dataset.petKey;
     const selectedPetId = target?.dataset.petId;
+    if (selectedPetKey) {
+      bridge?.setPrefs({ selectedPetKey });
+      return;
+    }
     if (!selectedPetId) return;
     bridge?.setPrefs({ selectedPetId });
+  });
+  petPickerFilter?.addEventListener("input", () => {
+    petPickerQuery = petPickerFilter.value ?? "";
+    const query = petPickerQuery.trim().toLowerCase();
+    petPicker?.querySelectorAll<HTMLElement>(":scope > .pet-option").forEach((option) => {
+      const label = option.textContent?.toLowerCase() ?? "";
+      option.hidden = Boolean(query) && !label.includes(query);
+    });
+    renderCustomPetOptions();
+    if (current) {
+      const selectedKey = resolvePetKey({
+        selectedPetKey: current.selectedPetKey,
+        selectedPetId: current.selectedPetId,
+      });
+      petPicker?.querySelectorAll<HTMLElement>("[data-pet-id], [data-pet-key]").forEach((option) => {
+        const optionKey =
+          option.dataset.petKey ||
+          (option.dataset.petId ? resolvePetKey({ selectedPetId: option.dataset.petId }) : "");
+        option.setAttribute("aria-checked", optionKey === selectedKey ? "true" : "false");
+      });
+    }
   });
 
   petScalePicker?.addEventListener("click", (event) => {
@@ -2516,6 +2809,10 @@ export function renderPetApp(root: Document = document): {
       clearIdleAct(petAvatar instanceof HTMLElement ? petAvatar : null);
       if (typeof document !== "undefined") {
         document.removeEventListener("visibilitychange", onVisibilityChange);
+      }
+      if (typeof window !== "undefined") {
+        window.removeEventListener("pointermove", onWindowPointerMove);
+        window.removeEventListener("pointerleave", onWindowPointerLeave);
       }
       root.removeEventListener("keydown", onKeyDown);
       root.removeEventListener("click", onRootClick);

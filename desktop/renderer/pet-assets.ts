@@ -436,6 +436,215 @@ export function validatePackagedPetAssets(
  * Preview-only static view gate. Rejects observer/token/path-like payloads.
  * Does not read disk or contact the service.
  */
+export type RendererPetCatalogEntry = {
+  petKey: string;
+  format: "snail" | "codex";
+  source: "snail-custom" | "codex-home";
+  id: string;
+  name: string;
+  description: string | null;
+  cssToken: string;
+  spriteVersion: 1 | 2 | null;
+  capabilities: { look: boolean; directionalRun: boolean; waving: boolean };
+  snailManifest: PetManifestV2 | null;
+};
+
+export type RendererPetCatalogEntryGate =
+  | { ok: true; entry: RendererPetCatalogEntry }
+  | { ok: false; reason: string };
+
+const CATALOG_SOURCES = new Set(["snail-custom", "codex-home"]);
+const PET_KEY_RE = /^(snail|codex):[a-z0-9][a-z0-9_-]{0,63}$/;
+const CSS_TOKEN_RE = /^[a-z0-9][a-z0-9_-]{0,79}$/;
+
+/**
+ * Renderer re-validation of one catalog row. Paths and unknown capability
+ * surfaces never survive this gate.
+ */
+export function validateRendererCatalogEntry(raw: unknown): RendererPetCatalogEntryGate {
+  if (!isPlainObject(raw)) return { ok: false, reason: "not_object" };
+  const petKey = raw.petKey;
+  const format = raw.format;
+  const source = raw.source;
+  const id = raw.id;
+  const name = raw.name;
+  const cssToken = raw.cssToken;
+  if (typeof petKey !== "string" || !PET_KEY_RE.test(petKey)) return { ok: false, reason: "petKey" };
+  if (format !== "snail" && format !== "codex") return { ok: false, reason: "format" };
+  if (typeof source !== "string" || !CATALOG_SOURCES.has(source)) return { ok: false, reason: "source" };
+  if (typeof id !== "string" || !isCustomPetId(id)) return { ok: false, reason: "id" };
+  if (!petKey.startsWith(`${format}:`) || petKey.slice(format.length + 1) !== id) {
+    return { ok: false, reason: "petKey" };
+  }
+  if (typeof name !== "string" || name.length === 0 || name.length > 64) {
+    return { ok: false, reason: "name" };
+  }
+  if (/https?:\/\//i.test(name)) return { ok: false, reason: "unsafe_content" };
+  let description: string | null = null;
+  if (raw.description != null) {
+    if (typeof raw.description !== "string" || raw.description.length > 200) {
+      return { ok: false, reason: "description" };
+    }
+    if (/https?:\/\//i.test(raw.description)) return { ok: false, reason: "unsafe_content" };
+    description = raw.description;
+  }
+  if (typeof cssToken !== "string" || !CSS_TOKEN_RE.test(cssToken)) {
+    return { ok: false, reason: "cssToken" };
+  }
+  let spriteVersion: 1 | 2 | null = null;
+  if (format === "codex") {
+    if (raw.spriteVersion !== 1 && raw.spriteVersion !== 2) return { ok: false, reason: "sprite_version" };
+    spriteVersion = raw.spriteVersion;
+  } else if (raw.spriteVersion != null) {
+    return { ok: false, reason: "sprite_version" };
+  }
+  const capabilitiesRaw = isPlainObject(raw.capabilities) ? raw.capabilities : {};
+  const capabilities = {
+    look: capabilitiesRaw.look === true,
+    directionalRun: capabilitiesRaw.directionalRun === true,
+    waving: capabilitiesRaw.waving === true,
+  };
+  let snailManifest: PetManifestV2 | null = null;
+  if (format === "snail") {
+    const validated = validatePetManifestDocument(raw.snailManifest, id);
+    if (!validated.ok) return { ok: false, reason: validated.reason };
+    if (validated.manifest.renderMode !== "spritesheet" || !validated.manifest.sheet) {
+      return { ok: false, reason: "custom_render_mode" };
+    }
+    snailManifest = validated.manifest;
+  } else if (raw.snailManifest != null) {
+    return { ok: false, reason: "snail_manifest_not_allowed" };
+  }
+  return {
+    ok: true,
+    entry: {
+      petKey,
+      format,
+      source: source as RendererPetCatalogEntry["source"],
+      id,
+      name,
+      description,
+      cssToken,
+      spriteVersion,
+      capabilities,
+      snailManifest,
+    },
+  };
+}
+
+export type RendererPetAssetPayload = {
+  petKey: string;
+  mime: "image/png" | "image/webp";
+  bytes: Uint8Array;
+  fingerprint: string;
+  expectedWidth: number;
+  expectedHeight: number;
+};
+
+export type RendererPetAssetGate =
+  | { ok: true; asset: RendererPetAssetPayload }
+  | { ok: false; reason: string };
+
+const CUSTOM_PET_SHEET_MAX_BYTES = 6 * 1024 * 1024;
+
+export function decodeBase64PetBytes(value: string, maxBytes = CUSTOM_PET_SHEET_MAX_BYTES): Uint8Array | null {
+  if (typeof value !== "string" || value.length === 0) return null;
+  if (value.length > Math.ceil((maxBytes * 4) / 3) + 16) return null;
+  if (!/^[A-Za-z0-9+/]+=*$/.test(value)) return null;
+  try {
+    if (typeof Buffer !== "undefined") {
+      const buf = Buffer.from(value, "base64");
+      if (buf.length === 0 || buf.length > maxBytes) return null;
+      return Uint8Array.from(buf);
+    }
+    const binary = atob(value);
+    if (binary.length === 0 || binary.length > maxBytes) return null;
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+    return bytes;
+  } catch {
+    return null;
+  }
+}
+
+export function readBoundedPetAssetBytes(raw: unknown, maxBytes = CUSTOM_PET_SHEET_MAX_BYTES): Uint8Array | null {
+  if (raw instanceof Uint8Array) return raw.byteLength <= maxBytes ? raw : null;
+  if (ArrayBuffer.isView(raw)) {
+    if (raw.byteLength > maxBytes) return null;
+    return new Uint8Array(raw.buffer, raw.byteOffset, raw.byteLength);
+  }
+  if (Array.isArray(raw)) {
+    if (raw.length === 0 || raw.length > maxBytes) return null;
+    const bytes = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i += 1) {
+      const value = raw[i];
+      if (typeof value !== "number" || !Number.isInteger(value) || value < 0 || value > 255) {
+        return null;
+      }
+      bytes[i] = value;
+    }
+    return bytes;
+  }
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    const typed = raw as { type?: unknown; data?: unknown; length?: unknown };
+    if (typed.type === "Buffer" && Array.isArray(typed.data)) {
+      return readBoundedPetAssetBytes(typed.data, maxBytes);
+    }
+    if (typeof typed.length === "number" && typed.length > 0 && typed.length <= maxBytes) {
+      try {
+        const copy = Uint8Array.from(raw as ArrayLike<number>);
+        return copy.length > 0 && copy.length <= maxBytes ? copy : null;
+      } catch {
+        return null;
+      }
+    }
+  }
+  return null;
+}
+
+export function validateRendererPetAsset(raw: unknown): RendererPetAssetGate {
+  if (!isPlainObject(raw)) return { ok: false, reason: "not_object" };
+  if (raw.ok === false) return { ok: false, reason: typeof raw.reason === "string" ? raw.reason : "read_failed" };
+  const petKey = raw.petKey;
+  if (typeof petKey !== "string" || !PET_KEY_RE.test(petKey)) return { ok: false, reason: "petKey" };
+  const mime = raw.mime;
+  if (mime !== "image/png" && mime !== "image/webp") return { ok: false, reason: "mime" };
+  const bytes =
+    typeof raw.bytesBase64 === "string"
+      ? decodeBase64PetBytes(raw.bytesBase64)
+      : readBoundedPetAssetBytes(raw.bytes);
+  if (!bytes || bytes.length === 0) return { ok: false, reason: "bytes" };
+  if (typeof raw.fingerprint !== "string" || raw.fingerprint.length === 0 || raw.fingerprint.length > 80) {
+    return { ok: false, reason: "fingerprint" };
+  }
+  if (
+    typeof raw.expectedWidth !== "number" ||
+    typeof raw.expectedHeight !== "number" ||
+    !Number.isInteger(raw.expectedWidth) ||
+    !Number.isInteger(raw.expectedHeight) ||
+    raw.expectedWidth <= 0 ||
+    raw.expectedHeight <= 0 ||
+    raw.expectedWidth > 4096 ||
+    raw.expectedHeight > 4096
+  ) {
+    return { ok: false, reason: "dimensions" };
+  }
+  if (typeof raw.path === "string" || typeof raw.sheetPath === "string" || typeof raw.folderPath === "string") {
+    return { ok: false, reason: "path" };
+  }
+  return {
+    ok: true,
+    asset: {
+      petKey,
+      mime,
+      bytes,
+      fingerprint: raw.fingerprint,
+      expectedWidth: raw.expectedWidth,
+      expectedHeight: raw.expectedHeight,
+    },
+  };
+}
+
 export function acceptStaticPetPreview(raw: unknown): Record<string, unknown> | null {
   if (!isPlainObject(raw)) return null;
   let json: string;

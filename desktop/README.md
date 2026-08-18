@@ -50,11 +50,11 @@ Default first-run position: primary work-area bottom-right. Saved `(0,0)` is tre
 
 Running activity durations refresh locally once per second only while the Activity tray is visible; this does not poll the service or rebuild the activity snapshot.
 
-## Custom pets (folder drop-in, U6 slice 1)
+## Custom pets
 
-Users can add their own desktop pets without rebuilding. Only script-free **spritesheet** packs (PNG/WebP) are supported in this slice; CSS-mode custom manifests are rejected because they would render as the built-in snail anatomy.
+Two local formats are first-class. Built-in snails stay in the package; user packs are never bundled.
 
-### Layout
+### Snail native (`manifest.json`)
 
 ```text
 ~/.pi/agent/desktop-pets/
@@ -65,8 +65,28 @@ Users can add their own desktop pets without rebuilding. Only script-free **spri
 
 - `<pet-id>` must match `manifest.json#id` exactly and the pattern `[a-z0-9][a-z0-9_-]{0,63}`; built-in ids (`snail-default` etc.) are rejected.
 - The manifest follows the same v2 contract as `desktop/assets/pets/snail-sprite/manifest.json`: 8 required states, single-row contiguous frame runs, ≤16×16 cells, ≤2048×2048 sheet, ≤256 KB bitmap, ≤16 KB manifest. Invalid packs are skipped and reported; they never crash the pet.
-- The root resolves as `SNAIL_PET_CUSTOM_PETS_DIR`, then `<PI_CODING_AGENT_DIR>/desktop-pets`, then `~/.pi/agent/desktop-pets`.
-- Settings panel → 角色 shows discovered pets under the built-ins; **打开目录** opens the folder, **刷新列表** rescans. The rescan payload is re-validated in the renderer; any failure falls back to the CSS snail.
+- The Snail root resolves as `SNAIL_PET_CUSTOM_PETS_DIR`, then `<PI_CODING_AGENT_DIR>/desktop-pets`, then `~/.pi/agent/desktop-pets`.
+- To generate a pack, use the repo skill `skills/desktop-pet-assets` (hero key + per-state strips, not a one-shot grid). From the project root, `node scripts/desktop-custom-pet.mjs check <petDir>` is the runtime contract; `review <petDir>` is an extra quality gate for empty cells, frozen frames, and look-alike standing poses. `review` cannot judge “does this look like a turtle” — open the sheet.
+
+### Codex compatible (`pet.json`)
+
+```text
+${CODEX_HOME:-~/.codex}/pets/<pet-id>/
+  pet.json
+  spritesheet.webp
+```
+
+The same folder also works under the Snail custom root. Official `hatch-pet` output can be used as-is.
+
+- v1: omit `spriteVersionNumber` or set it to `1` (8×9, 1536×1872, 192×208 cells).
+- v2: `spriteVersionNumber: 2` (8×11, 1536×2288). The last two rows are 16 clockwise look directions.
+- Known fields only: `id`, `displayName`, `description`, `spritesheetPath`, `spriteVersionNumber`. Extra display metadata such as `kind` is ignored. Command/URL-like keys never become capabilities.
+- Atlas hard cap is 6 MiB (local v2 samples are 2.3–2.7 MiB). Catalog scan sends metadata only; the selected bitmap is loaded on demand as a Blob URL.
+- Selection keys are namespaced (`snail:<id>` / `codex:<id>`). A Snail pack and a Codex pack with the same folder id can both exist. Older `selectedPetId` values migrate to `snail:<id>`.
+- v2 look-at-pointer and drag left/right are decorative overlays. Snail Pi business states, glyphs, bubbles, and notifications do not change.
+- ZIP one-click import is not in this slice: unzip the pack first. Local load is not redistribution permission — third-party characters must not be added to the installer or built-in set.
+
+Settings panel → 角色 lists built-ins, then Snail custom, then Codex. **打开目录** opens the Snail custom folder; **刷新列表** rescans both roots. Failures fall back to the CSS snail.
 
 ## Sound cues (U4a)
 

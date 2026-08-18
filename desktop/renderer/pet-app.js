@@ -1,80 +1,5 @@
 "use strict";
 (() => {
-  // desktop/main/settings-store.ts
-  var DESKTOP_PET_SCALE_FACTORS = {
-    small: 0.85,
-    medium: 1,
-    large: 1.2
-  };
-
-  // desktop/main/window-manager.ts
-  var PET_LAYOUT_BASE = {
-    rootPad: 6,
-    chromeHeight: 18,
-    stackGap: 6,
-    surfaceSize: 112,
-    /** chrome 18 + gap 6 + surface 112 */
-    stackWidth: 112,
-    stackHeight: 136,
-    /** Collapsed chrome + avatar + root padding/gap — must fit without clipping. */
-    collapsedWidth: 140,
-    collapsedHeight: 160,
-    trayWidth: 360,
-    trayHeight: 480
-  };
-  var PET_WINDOW_DEFAULTS = {
-    width: PET_LAYOUT_BASE.trayWidth,
-    height: PET_LAYOUT_BASE.trayHeight,
-    petOnlyWidth: PET_LAYOUT_BASE.collapsedWidth,
-    petOnlyHeight: PET_LAYOUT_BASE.collapsedHeight,
-    trayWidth: PET_LAYOUT_BASE.trayWidth,
-    trayHeight: PET_LAYOUT_BASE.trayHeight
-  };
-  var PET_LAYOUT = {
-    rootPad: PET_LAYOUT_BASE.rootPad,
-    stackWidth: PET_LAYOUT_BASE.stackWidth,
-    stackHeight: PET_LAYOUT_BASE.stackHeight
-  };
-  function scaleLayoutPx(value, factor) {
-    return Math.max(1, Math.round(value * factor));
-  }
-  function resolvePetLayoutSpec(scale = "medium") {
-    const factor = DESKTOP_PET_SCALE_FACTORS[scale] ?? DESKTOP_PET_SCALE_FACTORS.medium;
-    const rootPad = scaleLayoutPx(PET_LAYOUT_BASE.rootPad, factor);
-    const chromeHeight = scaleLayoutPx(PET_LAYOUT_BASE.chromeHeight, factor);
-    const stackGap = scaleLayoutPx(PET_LAYOUT_BASE.stackGap, factor);
-    const surfaceSize = scaleLayoutPx(PET_LAYOUT_BASE.surfaceSize, factor);
-    const stackWidth = surfaceSize;
-    const stackHeight = chromeHeight + stackGap + surfaceSize;
-    return {
-      scale,
-      factor,
-      rootPad,
-      chromeHeight,
-      surfaceSize,
-      stackWidth,
-      stackHeight,
-      clickTargetWidth: surfaceSize,
-      clickTargetHeight: surfaceSize,
-      collapsedWidth: Math.max(
-        scaleLayoutPx(PET_LAYOUT_BASE.collapsedWidth, factor),
-        rootPad * 2 + stackWidth
-      ),
-      collapsedHeight: Math.max(
-        scaleLayoutPx(PET_LAYOUT_BASE.collapsedHeight, factor),
-        rootPad * 2 + stackHeight
-      ),
-      trayWidth: Math.max(
-        scaleLayoutPx(PET_LAYOUT_BASE.trayWidth, factor),
-        rootPad * 2 + stackWidth
-      ),
-      trayHeight: Math.max(
-        scaleLayoutPx(PET_LAYOUT_BASE.trayHeight, factor),
-        rootPad * 2 + stackHeight
-      )
-    };
-  }
-
   // desktop/renderer/pet-assets.ts
   var BUILTIN_PET_IDS = ["snail-default", "snail-classic", "snail-sprite"];
   var CUSTOM_PET_ID_PATTERN = /^[a-z0-9][a-z0-9_-]{0,63}$/;
@@ -314,34 +239,161 @@
       }
     };
   }
-  var CUSTOM_PET_SHEET_MAX_DATA_URL_CHARS = 36e4;
-  function isSafeCustomPetSheetDataUrl(value) {
-    if (typeof value !== "string" || value.length === 0) return false;
-    if (value.length > CUSTOM_PET_SHEET_MAX_DATA_URL_CHARS) return false;
-    if (!value.startsWith("data:image/png;base64,") && !value.startsWith("data:image/webp;base64,")) {
-      return false;
-    }
-    const payload = value.slice(value.indexOf(",") + 1);
-    return /^[A-Za-z0-9+/=]+$/.test(payload);
-  }
-  function validateCustomPetAsset(raw, expectedId) {
-    if (!isCustomPetId(expectedId)) return { ok: false, reason: "id" };
+  var CATALOG_SOURCES = /* @__PURE__ */ new Set(["snail-custom", "codex-home"]);
+  var PET_KEY_RE = /^(snail|codex):[a-z0-9][a-z0-9_-]{0,63}$/;
+  var CSS_TOKEN_RE = /^[a-z0-9][a-z0-9_-]{0,79}$/;
+  function validateRendererCatalogEntry(raw) {
     if (!isPlainObject(raw)) return { ok: false, reason: "not_object" };
-    const manifestRaw = raw.manifest;
-    const validated = validatePetManifestDocument(manifestRaw, expectedId);
-    if (!validated.ok) return { ok: false, reason: validated.reason };
-    if (validated.manifest.renderMode !== "spritesheet" || !validated.manifest.sheet) {
-      return { ok: false, reason: "custom_render_mode" };
+    const petKey = raw.petKey;
+    const format = raw.format;
+    const source = raw.source;
+    const id = raw.id;
+    const name = raw.name;
+    const cssToken = raw.cssToken;
+    if (typeof petKey !== "string" || !PET_KEY_RE.test(petKey)) return { ok: false, reason: "petKey" };
+    if (format !== "snail" && format !== "codex") return { ok: false, reason: "format" };
+    if (typeof source !== "string" || !CATALOG_SOURCES.has(source)) return { ok: false, reason: "source" };
+    if (typeof id !== "string" || !isCustomPetId(id)) return { ok: false, reason: "id" };
+    if (!petKey.startsWith(`${format}:`) || petKey.slice(format.length + 1) !== id) {
+      return { ok: false, reason: "petKey" };
     }
-    const sheetDataUrl = raw.sheetDataUrl;
-    if (typeof sheetDataUrl !== "string" || !isSafeCustomPetSheetDataUrl(sheetDataUrl)) {
-      return { ok: false, reason: "sheet_data_url" };
+    if (typeof name !== "string" || name.length === 0 || name.length > 64) {
+      return { ok: false, reason: "name" };
+    }
+    if (/https?:\/\//i.test(name)) return { ok: false, reason: "unsafe_content" };
+    let description = null;
+    if (raw.description != null) {
+      if (typeof raw.description !== "string" || raw.description.length > 200) {
+        return { ok: false, reason: "description" };
+      }
+      if (/https?:\/\//i.test(raw.description)) return { ok: false, reason: "unsafe_content" };
+      description = raw.description;
+    }
+    if (typeof cssToken !== "string" || !CSS_TOKEN_RE.test(cssToken)) {
+      return { ok: false, reason: "cssToken" };
+    }
+    let spriteVersion = null;
+    if (format === "codex") {
+      if (raw.spriteVersion !== 1 && raw.spriteVersion !== 2) return { ok: false, reason: "sprite_version" };
+      spriteVersion = raw.spriteVersion;
+    } else if (raw.spriteVersion != null) {
+      return { ok: false, reason: "sprite_version" };
+    }
+    const capabilitiesRaw = isPlainObject(raw.capabilities) ? raw.capabilities : {};
+    const capabilities = {
+      look: capabilitiesRaw.look === true,
+      directionalRun: capabilitiesRaw.directionalRun === true,
+      waving: capabilitiesRaw.waving === true
+    };
+    let snailManifest = null;
+    if (format === "snail") {
+      const validated = validatePetManifestDocument(raw.snailManifest, id);
+      if (!validated.ok) return { ok: false, reason: validated.reason };
+      if (validated.manifest.renderMode !== "spritesheet" || !validated.manifest.sheet) {
+        return { ok: false, reason: "custom_render_mode" };
+      }
+      snailManifest = validated.manifest;
+    } else if (raw.snailManifest != null) {
+      return { ok: false, reason: "snail_manifest_not_allowed" };
     }
     return {
       ok: true,
-      id: expectedId,
-      manifest: validated.manifest,
-      sheetDataUrl
+      entry: {
+        petKey,
+        format,
+        source,
+        id,
+        name,
+        description,
+        cssToken,
+        spriteVersion,
+        capabilities,
+        snailManifest
+      }
+    };
+  }
+  var CUSTOM_PET_SHEET_MAX_BYTES = 6 * 1024 * 1024;
+  function decodeBase64PetBytes(value, maxBytes = CUSTOM_PET_SHEET_MAX_BYTES) {
+    if (typeof value !== "string" || value.length === 0) return null;
+    if (value.length > Math.ceil(maxBytes * 4 / 3) + 16) return null;
+    if (!/^[A-Za-z0-9+/]+=*$/.test(value)) return null;
+    try {
+      if (typeof Buffer !== "undefined") {
+        const buf = Buffer.from(value, "base64");
+        if (buf.length === 0 || buf.length > maxBytes) return null;
+        return Uint8Array.from(buf);
+      }
+      const binary = atob(value);
+      if (binary.length === 0 || binary.length > maxBytes) return null;
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+      return bytes;
+    } catch {
+      return null;
+    }
+  }
+  function readBoundedPetAssetBytes(raw, maxBytes = CUSTOM_PET_SHEET_MAX_BYTES) {
+    if (raw instanceof Uint8Array) return raw.byteLength <= maxBytes ? raw : null;
+    if (ArrayBuffer.isView(raw)) {
+      if (raw.byteLength > maxBytes) return null;
+      return new Uint8Array(raw.buffer, raw.byteOffset, raw.byteLength);
+    }
+    if (Array.isArray(raw)) {
+      if (raw.length === 0 || raw.length > maxBytes) return null;
+      const bytes = new Uint8Array(raw.length);
+      for (let i = 0; i < raw.length; i += 1) {
+        const value = raw[i];
+        if (typeof value !== "number" || !Number.isInteger(value) || value < 0 || value > 255) {
+          return null;
+        }
+        bytes[i] = value;
+      }
+      return bytes;
+    }
+    if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+      const typed = raw;
+      if (typed.type === "Buffer" && Array.isArray(typed.data)) {
+        return readBoundedPetAssetBytes(typed.data, maxBytes);
+      }
+      if (typeof typed.length === "number" && typed.length > 0 && typed.length <= maxBytes) {
+        try {
+          const copy = Uint8Array.from(raw);
+          return copy.length > 0 && copy.length <= maxBytes ? copy : null;
+        } catch {
+          return null;
+        }
+      }
+    }
+    return null;
+  }
+  function validateRendererPetAsset(raw) {
+    if (!isPlainObject(raw)) return { ok: false, reason: "not_object" };
+    if (raw.ok === false) return { ok: false, reason: typeof raw.reason === "string" ? raw.reason : "read_failed" };
+    const petKey = raw.petKey;
+    if (typeof petKey !== "string" || !PET_KEY_RE.test(petKey)) return { ok: false, reason: "petKey" };
+    const mime = raw.mime;
+    if (mime !== "image/png" && mime !== "image/webp") return { ok: false, reason: "mime" };
+    const bytes = typeof raw.bytesBase64 === "string" ? decodeBase64PetBytes(raw.bytesBase64) : readBoundedPetAssetBytes(raw.bytes);
+    if (!bytes || bytes.length === 0) return { ok: false, reason: "bytes" };
+    if (typeof raw.fingerprint !== "string" || raw.fingerprint.length === 0 || raw.fingerprint.length > 80) {
+      return { ok: false, reason: "fingerprint" };
+    }
+    if (typeof raw.expectedWidth !== "number" || typeof raw.expectedHeight !== "number" || !Number.isInteger(raw.expectedWidth) || !Number.isInteger(raw.expectedHeight) || raw.expectedWidth <= 0 || raw.expectedHeight <= 0 || raw.expectedWidth > 4096 || raw.expectedHeight > 4096) {
+      return { ok: false, reason: "dimensions" };
+    }
+    if (typeof raw.path === "string" || typeof raw.sheetPath === "string" || typeof raw.folderPath === "string") {
+      return { ok: false, reason: "path" };
+    }
+    return {
+      ok: true,
+      asset: {
+        petKey,
+        mime,
+        bytes,
+        fingerprint: raw.fingerprint,
+        expectedWidth: raw.expectedWidth,
+        expectedHeight: raw.expectedHeight
+      }
     };
   }
   function acceptStaticPetPreview(raw) {
@@ -361,6 +413,117 @@
     if (!Array.isArray(raw.projects)) return null;
     if (Object.hasOwn(raw, "__proto__") || Object.hasOwn(raw, "constructor")) return null;
     return raw;
+  }
+
+  // desktop/renderer/pet-key.ts
+  var DEFAULT_PET_KEY = "snail:snail-default";
+  var PET_KEY_PATTERN = /^(snail|codex):[a-z0-9][a-z0-9_-]{0,63}$/;
+  function isPetKey(value) {
+    return PET_KEY_PATTERN.test(value);
+  }
+  function buildPetKey(format, id) {
+    return `${format}:${id}`;
+  }
+  function parsePetKey(value) {
+    if (typeof value !== "string" || !PET_KEY_PATTERN.test(value)) return null;
+    const sep = value.indexOf(":");
+    return {
+      format: value.slice(0, sep),
+      id: value.slice(sep + 1)
+    };
+  }
+  function petCssToken(format, id) {
+    if (format === "snail" && isBuiltinPetId(id)) return id;
+    const raw = `${format}-${id}`;
+    const safe = raw.replace(/[^a-z0-9_-]/g, "");
+    return safe.slice(0, 80) || `${format}-pet`;
+  }
+  function resolvePetKey(input) {
+    if (typeof input.selectedPetKey === "string" && isPetKey(input.selectedPetKey)) {
+      return input.selectedPetKey;
+    }
+    if (typeof input.selectedPetId === "string") {
+      if (isPetKey(input.selectedPetId)) return input.selectedPetId;
+      if (isBuiltinPetId(input.selectedPetId) || isCustomPetId(input.selectedPetId)) {
+        return buildPetKey("snail", input.selectedPetId);
+      }
+    }
+    return DEFAULT_PET_KEY;
+  }
+
+  // desktop/main/settings-store.ts
+  var DESKTOP_PET_SCALE_FACTORS = {
+    small: 0.85,
+    medium: 1,
+    large: 1.2
+  };
+
+  // desktop/main/window-manager.ts
+  var PET_LAYOUT_BASE = {
+    rootPad: 6,
+    chromeHeight: 18,
+    stackGap: 6,
+    surfaceSize: 112,
+    /** chrome 18 + gap 6 + surface 112 */
+    stackWidth: 112,
+    stackHeight: 136,
+    /** Collapsed chrome + avatar + root padding/gap — must fit without clipping. */
+    collapsedWidth: 140,
+    collapsedHeight: 160,
+    trayWidth: 360,
+    trayHeight: 480
+  };
+  var PET_WINDOW_DEFAULTS = {
+    width: PET_LAYOUT_BASE.trayWidth,
+    height: PET_LAYOUT_BASE.trayHeight,
+    petOnlyWidth: PET_LAYOUT_BASE.collapsedWidth,
+    petOnlyHeight: PET_LAYOUT_BASE.collapsedHeight,
+    trayWidth: PET_LAYOUT_BASE.trayWidth,
+    trayHeight: PET_LAYOUT_BASE.trayHeight
+  };
+  var PET_LAYOUT = {
+    rootPad: PET_LAYOUT_BASE.rootPad,
+    stackWidth: PET_LAYOUT_BASE.stackWidth,
+    stackHeight: PET_LAYOUT_BASE.stackHeight
+  };
+  function scaleLayoutPx(value, factor) {
+    return Math.max(1, Math.round(value * factor));
+  }
+  function resolvePetLayoutSpec(scale = "medium") {
+    const factor = DESKTOP_PET_SCALE_FACTORS[scale] ?? DESKTOP_PET_SCALE_FACTORS.medium;
+    const rootPad = scaleLayoutPx(PET_LAYOUT_BASE.rootPad, factor);
+    const chromeHeight = scaleLayoutPx(PET_LAYOUT_BASE.chromeHeight, factor);
+    const stackGap = scaleLayoutPx(PET_LAYOUT_BASE.stackGap, factor);
+    const surfaceSize = scaleLayoutPx(PET_LAYOUT_BASE.surfaceSize, factor);
+    const stackWidth = surfaceSize;
+    const stackHeight = chromeHeight + stackGap + surfaceSize;
+    return {
+      scale,
+      factor,
+      rootPad,
+      chromeHeight,
+      surfaceSize,
+      stackWidth,
+      stackHeight,
+      clickTargetWidth: surfaceSize,
+      clickTargetHeight: surfaceSize,
+      collapsedWidth: Math.max(
+        scaleLayoutPx(PET_LAYOUT_BASE.collapsedWidth, factor),
+        rootPad * 2 + stackWidth
+      ),
+      collapsedHeight: Math.max(
+        scaleLayoutPx(PET_LAYOUT_BASE.collapsedHeight, factor),
+        rootPad * 2 + stackHeight
+      ),
+      trayWidth: Math.max(
+        scaleLayoutPx(PET_LAYOUT_BASE.trayWidth, factor),
+        rootPad * 2 + stackWidth
+      ),
+      trayHeight: Math.max(
+        scaleLayoutPx(PET_LAYOUT_BASE.trayHeight, factor),
+        rootPad * 2 + stackHeight
+      )
+    };
   }
 
   // desktop/main/dnd-policy.ts
@@ -591,6 +754,266 @@
     "idle"
   ];
 
+  // desktop/renderer/codex-pet-assets.ts
+  var CODEX_PET_CELL_WIDTH = 192;
+  var CODEX_PET_CELL_HEIGHT = 208;
+  var CODEX_PET_COLUMNS = 8;
+  var CODEX_PET_V1_ROWS = 9;
+  var CODEX_PET_V2_ROWS = 11;
+  var CODEX_PET_V1_WIDTH = CODEX_PET_CELL_WIDTH * CODEX_PET_COLUMNS;
+  var CODEX_PET_V1_HEIGHT = CODEX_PET_CELL_HEIGHT * CODEX_PET_V1_ROWS;
+  var CODEX_PET_V2_WIDTH = CODEX_PET_CELL_WIDTH * CODEX_PET_COLUMNS;
+  var CODEX_PET_V2_HEIGHT = CODEX_PET_CELL_HEIGHT * CODEX_PET_V2_ROWS;
+  var CODEX_PET_MAX_FILE_BYTES = 6 * 1024 * 1024;
+  var CODEX_PET_MAX_MANIFEST_BYTES = 16 * 1024;
+  var CODEX_PET_MAX_NAME_CHARS = 64;
+  var CODEX_PET_MAX_DESCRIPTION_CHARS = 200;
+  var PROJECTED_KEYS = /* @__PURE__ */ new Set([
+    "id",
+    "displayName",
+    "description",
+    "spritesheetPath",
+    "spriteVersionNumber"
+  ]);
+  function isPlainObject2(value) {
+    return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+  }
+  function isSafeRelativeSheetPath(value) {
+    if (!isSafePetAssetPath(value)) return false;
+    return /\.(?:png|webp)$/i.test(value);
+  }
+  function readSpriteVersion(raw) {
+    if (raw === void 0 || raw === 1) return 1;
+    if (raw === 2) return 2;
+    return null;
+  }
+  function validateCodexPetDocument(raw, expectedId) {
+    if (!isPlainObject2(raw)) return { ok: false, reason: "not_object" };
+    const id = raw.id;
+    if (typeof id !== "string" || !isCustomPetId(id)) return { ok: false, reason: "id" };
+    if (expectedId !== void 0 && id !== expectedId) return { ok: false, reason: "id" };
+    const version = readSpriteVersion(raw.spriteVersionNumber);
+    if (version == null) return { ok: false, reason: "sprite_version" };
+    const spritesheetPath = raw.spritesheetPath;
+    if (typeof spritesheetPath !== "string" || spritesheetPath.length === 0) {
+      return { ok: false, reason: "spritesheet_missing" };
+    }
+    if (!isSafeRelativeSheetPath(spritesheetPath)) {
+      return { ok: false, reason: "spritesheet_path" };
+    }
+    let displayName = id;
+    if (raw.displayName !== void 0) {
+      if (typeof raw.displayName !== "string" || raw.displayName.length === 0) {
+        return { ok: false, reason: "displayName" };
+      }
+      if (raw.displayName.length > CODEX_PET_MAX_NAME_CHARS) {
+        return { ok: false, reason: "displayName" };
+      }
+      displayName = raw.displayName;
+    }
+    let description = null;
+    if (raw.description !== void 0) {
+      if (typeof raw.description !== "string") return { ok: false, reason: "description" };
+      if (raw.description.length > CODEX_PET_MAX_DESCRIPTION_CHARS) {
+        return { ok: false, reason: "description" };
+      }
+      description = raw.description;
+    }
+    collectForbiddenPetCapabilityKeys(raw);
+    const metadata = {
+      id,
+      displayName,
+      description,
+      spritesheetPath,
+      spriteVersionNumber: version
+    };
+    for (const key of Object.keys(metadata)) {
+      if (!PROJECTED_KEYS.has(key)) {
+        return { ok: false, reason: "projection" };
+      }
+    }
+    return { ok: true, metadata };
+  }
+  function codexAtlasSpec(version) {
+    const rows = version === 2 ? CODEX_PET_V2_ROWS : CODEX_PET_V1_ROWS;
+    const height = version === 2 ? CODEX_PET_V2_HEIGHT : CODEX_PET_V1_HEIGHT;
+    return {
+      columns: CODEX_PET_COLUMNS,
+      rows,
+      frameWidth: CODEX_PET_CELL_WIDTH,
+      frameHeight: CODEX_PET_CELL_HEIGHT,
+      width: CODEX_PET_V1_WIDTH,
+      height
+    };
+  }
+
+  // desktop/renderer/pet-runtime-profile.ts
+  var CODEX_STANDARD_ROWS = [
+    { name: "idle", used: 6, durations: [280, 110, 110, 140, 140, 320] },
+    { name: "running-right", used: 8, durations: [120, 120, 120, 120, 120, 120, 120, 220] },
+    { name: "running-left", used: 8, durations: [120, 120, 120, 120, 120, 120, 120, 220] },
+    { name: "waving", used: 4, durations: [140, 140, 140, 280] },
+    { name: "jumping", used: 5, durations: [140, 140, 140, 140, 280] },
+    { name: "failed", used: 8, durations: [140, 140, 140, 140, 140, 140, 140, 240] },
+    { name: "waiting", used: 6, durations: [150, 150, 150, 150, 150, 260] },
+    { name: "running", used: 6, durations: [120, 120, 120, 120, 120, 220] },
+    { name: "review", used: 6, durations: [150, 150, 150, 150, 150, 280] }
+  ];
+  var CODEX_LOOK_DIRECTION_COUNT = 16;
+  var CODEX_LOOK_DEADZONE_PX = 28;
+  var SNAIL_STATE_TO_CODEX_CLIP = {
+    idle: { clipName: "idle", staticOnly: false },
+    running: { clipName: "running", staticOnly: false },
+    retrying: { clipName: "review", staticOnly: false },
+    needs_input: { clipName: "waiting", staticOnly: false },
+    ready: { clipName: "jumping", staticOnly: false },
+    blocked: { clipName: "failed", staticOnly: false },
+    disconnected: { clipName: "failed", staticOnly: true },
+    service_not_running: { clipName: "idle", staticOnly: true }
+  };
+  function clipFromRow(name, row, used, durations) {
+    const frames = durations.slice(0, used).map((durationMs, index) => ({
+      cellIndex: row * CODEX_PET_COLUMNS + index,
+      durationMs
+    }));
+    return { name, frames, staticFrameIndex: 0 };
+  }
+  function lookClip(direction) {
+    const row = direction < 8 ? 9 : 10;
+    const col = direction % 8;
+    return {
+      name: `look-${direction}`,
+      frames: [{ cellIndex: row * CODEX_PET_COLUMNS + col, durationMs: 1e3 }],
+      staticFrameIndex: 0
+    };
+  }
+  function profileFromCodexMetadata(metadata, source = "codex-home") {
+    void source;
+    const spec = codexAtlasSpec(metadata.spriteVersionNumber);
+    const clips = {};
+    for (const [row, def] of CODEX_STANDARD_ROWS.entries()) {
+      clips[def.name] = clipFromRow(def.name, row, def.used, def.durations);
+    }
+    const look = metadata.spriteVersionNumber === 2;
+    if (look) {
+      for (let direction = 0; direction < CODEX_LOOK_DIRECTION_COUNT; direction += 1) {
+        clips[`look-${direction}`] = lookClip(direction);
+      }
+    }
+    return {
+      petKey: buildPetKey("codex", metadata.id),
+      cssToken: petCssToken("codex", metadata.id),
+      format: "codex",
+      name: metadata.displayName,
+      renderMode: "spritesheet",
+      spriteVersion: metadata.spriteVersionNumber,
+      sheet: {
+        frameWidth: spec.frameWidth,
+        frameHeight: spec.frameHeight,
+        columns: spec.columns,
+        rows: spec.rows,
+        expectedWidth: spec.width,
+        expectedHeight: spec.height
+      },
+      clips,
+      stateClips: { ...SNAIL_STATE_TO_CODEX_CLIP },
+      capabilities: {
+        look,
+        directionalRun: true,
+        waving: true
+      }
+    };
+  }
+  function profileFromSnailManifest(manifest, petKey = buildPetKey("snail", manifest.id)) {
+    const clips = {};
+    const stateClips = {};
+    const sheet = manifest.sheet ? {
+      frameWidth: manifest.sheet.frameWidth,
+      frameHeight: manifest.sheet.frameHeight,
+      columns: manifest.sheet.columns,
+      rows: manifest.sheet.rows,
+      expectedWidth: manifest.sheet.frameWidth * manifest.sheet.columns,
+      expectedHeight: manifest.sheet.frameHeight * manifest.sheet.rows
+    } : null;
+    for (const state of PET_REQUIRED_STATES) {
+      const entry = manifest.states[state];
+      const firstFrame = entry.firstFrame ?? 0;
+      const frameCount = Math.max(1, entry.frameCount ?? 1);
+      const durationMs = entry.durationMs ?? 240;
+      const frames = [];
+      for (let i = 0; i < frameCount; i += 1) {
+        frames.push({ cellIndex: firstFrame + i, durationMs });
+      }
+      clips[state] = {
+        name: state,
+        frames,
+        staticFrameIndex: entry.staticFrameIndex ?? 0
+      };
+      stateClips[state] = {
+        clipName: state,
+        staticOnly: state === "disconnected" || state === "service_not_running"
+      };
+    }
+    return {
+      petKey,
+      cssToken: petCssToken("snail", manifest.id),
+      format: "snail",
+      name: manifest.name,
+      renderMode: manifest.renderMode,
+      spriteVersion: null,
+      sheet,
+      clips,
+      stateClips,
+      capabilities: {
+        look: false,
+        directionalRun: false,
+        waving: false
+      }
+    };
+  }
+  function canApplyLookOverlay(state) {
+    return state === "idle";
+  }
+  function canApplyDragOverlay(state) {
+    return state === "idle" || state === "running" || state === "retrying";
+  }
+  function resolveActivePetClip(input) {
+    const binding = input.profile.stateClips[input.state] ?? input.profile.stateClips.idle;
+    const fallback = {
+      clipName: binding.clipName,
+      staticOnly: binding.staticOnly || input.reducedMotion,
+      clip: input.profile.clips[binding.clipName] ?? null
+    };
+    if (input.reducedMotion) return fallback;
+    if (canApplyDragOverlay(input.state) && input.dragClip && input.profile.capabilities.directionalRun && input.profile.clips[input.dragClip]) {
+      return {
+        clipName: input.dragClip,
+        staticOnly: false,
+        clip: input.profile.clips[input.dragClip]
+      };
+    }
+    if (canApplyLookOverlay(input.state) && input.lookDirection != null && input.profile.capabilities.look) {
+      const lookName = `look-${input.lookDirection}`;
+      const look = input.profile.clips[lookName];
+      if (look) {
+        return { clipName: lookName, staticOnly: true, clip: look };
+      }
+    }
+    return fallback;
+  }
+  function quantizeCodexLookDirection(dx, dy, deadzonePx = CODEX_LOOK_DEADZONE_PX) {
+    if (!Number.isFinite(dx) || !Number.isFinite(dy)) return null;
+    const magnitude = Math.hypot(dx, dy);
+    if (magnitude === 0 || magnitude < deadzonePx) return null;
+    const deg = (Math.atan2(dx, -dy) * 180 / Math.PI + 360) % 360;
+    return Math.round(deg / 22.5) % CODEX_LOOK_DIRECTION_COUNT;
+  }
+  function resolveCodexDragClip(dx, dy, last) {
+    if (!Number.isFinite(dx) || !Number.isFinite(dy)) return last;
+    if (Math.abs(dx) <= Math.abs(dy) || Math.abs(dx) < 0.5) return last;
+    return dx > 0 ? "running-right" : "running-left";
+  }
+
   // desktop/renderer/pet-state.ts
   var PET_STATE_ORDER = TASK_OBSERVER_PRESENTATION_PRIORITY;
   var DEFAULT_FRAMES = {
@@ -682,13 +1105,83 @@
   function registerCustomPetManifest(manifest) {
     customPetManifests.set(manifest.id, manifest);
   }
-  function getCustomPetManifest(petId) {
-    return customPetManifests.get(petId) ?? null;
-  }
   function getPetManifest(petId) {
+    const key = resolvePetKey({ selectedPetKey: petId, selectedPetId: petId });
+    const parsed = parsePetKey(key);
+    if (parsed?.format === "snail") {
+      const builtin2 = BUILTIN_PET_MANIFESTS.find((pet) => pet.id === parsed.id);
+      if (builtin2) return builtin2;
+    }
+    const catalog = catalogPets.get(key);
+    if (catalog) return catalog.manifest;
     const builtin = BUILTIN_PET_MANIFESTS.find((pet) => pet.id === petId);
     if (builtin) return builtin;
     return customPetManifests.get(petId) ?? BUILTIN_PET_MANIFESTS[0];
+  }
+  var catalogPets = /* @__PURE__ */ new Map();
+  function clearCatalogPets() {
+    catalogPets.clear();
+  }
+  function registerCatalogPet(entry) {
+    if (entry.format === "snail") {
+      if (!entry.snailManifest) return null;
+      const manifest2 = {
+        id: entry.cssToken,
+        name: entry.name,
+        version: entry.snailManifest.version,
+        renderMode: entry.snailManifest.renderMode,
+        states: entry.snailManifest.states,
+        sheet: entry.snailManifest.sheet
+      };
+      const profile2 = profileFromSnailManifest(entry.snailManifest, entry.petKey);
+      catalogPets.set(entry.petKey, { entry, manifest: manifest2, profile: profile2 });
+      registerCustomPetManifest(manifest2);
+      return profile2;
+    }
+    const synthetic = validateCodexPetDocument(
+      {
+        id: entry.id,
+        displayName: entry.name,
+        description: entry.description ?? void 0,
+        spritesheetPath: "spritesheet.webp",
+        spriteVersionNumber: entry.spriteVersion ?? 2
+      },
+      entry.id
+    );
+    const profile = synthetic.ok ? profileFromCodexMetadata(synthetic.metadata) : profileFromCodexMetadata({
+      id: entry.id,
+      displayName: entry.name,
+      description: entry.description,
+      spritesheetPath: "spritesheet.webp",
+      spriteVersionNumber: entry.spriteVersion === 1 ? 1 : 2
+    });
+    const spec = profile.sheet;
+    const manifest = {
+      id: entry.cssToken,
+      name: entry.name,
+      version: 2,
+      renderMode: "spritesheet",
+      states: { ...DEFAULT_FRAMES },
+      sheet: spec ? {
+        src: "spritesheet.webp",
+        frameWidth: spec.frameWidth,
+        frameHeight: spec.frameHeight,
+        columns: spec.columns,
+        rows: spec.rows
+      } : void 0
+    };
+    catalogPets.set(entry.petKey, { entry, manifest, profile });
+    return profile;
+  }
+  function listCatalogPets() {
+    return [...catalogPets.values()];
+  }
+  function getPetRuntimeProfile(petIdOrKey) {
+    const key = resolvePetKey({ selectedPetKey: petIdOrKey, selectedPetId: petIdOrKey });
+    const catalog = catalogPets.get(key);
+    if (catalog) return catalog.profile;
+    const manifest = getPetManifest(petIdOrKey);
+    return profileFromSnailManifest(manifest, buildPetKey("snail", manifest.id));
   }
   function resolvePetFrame(manifest, state, reducedMotion) {
     const entry = manifest.states[state] ?? DEFAULT_FRAMES[state] ?? DEFAULT_FRAMES.idle;
@@ -1357,6 +1850,123 @@
     }
     return lines.join("\n");
   }
+  function clipAnimationName(cssToken, clipName) {
+    const safeClip = clipName.replace(/[^a-z0-9_-]/gi, "");
+    return `pet-sprite-${cssToken}-${safeClip}`;
+  }
+  function isUniformClip(clip) {
+    if (clip.frames.length <= 1) return true;
+    const first = clip.frames[0]?.durationMs;
+    if (first == null) return true;
+    return clip.frames.every((frame, index) => {
+      if (frame.durationMs !== first) return false;
+      if (index === 0) return true;
+      return frame.cellIndex === clip.frames[index - 1].cellIndex + 1;
+    });
+  }
+  function formatKeyframePercent(value) {
+    const clamped = Math.min(100, Math.max(0, value));
+    return `${clamped.toFixed(4).replace(/\.?0+$/, "")}%`;
+  }
+  function resolveClipSheetStyle(sheet, clip, cssToken) {
+    if (clip.frames.length === 0) return null;
+    const staticIndex = Math.min(clip.staticFrameIndex, clip.frames.length - 1);
+    const staticCell = clip.frames[staticIndex]?.cellIndex;
+    if (staticCell == null) return null;
+    const backgroundSize = spriteSheetBackgroundSize(sheet);
+    const staticPosition = positionCss(spriteCellPosition(sheet, staticCell));
+    if (clip.frames.length <= 1) {
+      return {
+        backgroundSize,
+        staticPosition,
+        animatedPosition: null,
+        animation: null,
+        staticFrameIndex: staticIndex
+      };
+    }
+    const name = clipAnimationName(cssToken, clip.name);
+    const firstCell = clip.frames[0].cellIndex;
+    const animatedPosition = positionCss(spriteCellPosition(sheet, firstCell));
+    const totalMs = clip.frames.reduce((sum, frame) => sum + frame.durationMs, 0);
+    if (isUniformClip(clip)) {
+      return {
+        backgroundSize,
+        staticPosition,
+        animatedPosition,
+        animation: `${name} ${totalMs}ms steps(${clip.frames.length}, end) infinite`,
+        staticFrameIndex: staticIndex
+      };
+    }
+    return {
+      backgroundSize,
+      staticPosition,
+      animatedPosition,
+      animation: `${name} ${totalMs}ms linear infinite`,
+      staticFrameIndex: staticIndex
+    };
+  }
+  function buildUnevenKeyframes(name, sheet, clip) {
+    const total = clip.frames.reduce((sum, frame) => sum + frame.durationMs, 0) || 1;
+    let elapsed = 0;
+    const lines = [`@keyframes ${name} {`];
+    for (const frame of clip.frames) {
+      const start = elapsed / total * 100;
+      elapsed += frame.durationMs;
+      const end = elapsed / total * 100;
+      const pos = positionCss(spriteCellPosition(sheet, frame.cellIndex));
+      lines.push(
+        `  ${formatKeyframePercent(start)}, ${formatKeyframePercent(end)} { background-position: ${pos}; }`
+      );
+    }
+    lines.push("}");
+    return lines.join("\n");
+  }
+  function buildSpriteSheetStyleTextFromProfile(profile, imageUrl) {
+    if (profile.renderMode !== "spritesheet" || !profile.sheet || !imageUrl) return "";
+    const sheet = profile.sheet;
+    const token = profile.cssToken;
+    const lines = [];
+    lines.push(
+      `.pet-avatar.pet-sprite-${token} {`,
+      `  background-image: url("${imageUrl}");`,
+      `  background-size: ${spriteSheetBackgroundSize(sheet)};`,
+      "  background-repeat: no-repeat;",
+      "}"
+    );
+    for (const clip of Object.values(profile.clips)) {
+      const plan = resolveClipSheetStyle(sheet, clip, token);
+      if (!plan) continue;
+      const base = `.pet-avatar.pet-sprite-${token}[data-clip="${clip.name}"]`;
+      const animated = `${base}.is-animated`;
+      lines.push(`${base} { background-position: ${plan.staticPosition}; }`);
+      if (plan.animatedPosition && plan.animation) {
+        lines.push(
+          `${animated} { background-position: ${plan.animatedPosition}; animation: ${plan.animation}; }`
+        );
+        const name = clipAnimationName(token, clip.name);
+        if (isUniformClip(clip) && clip.frames.length > 1) {
+          const toPosition = positionCss(
+            spriteCellPosition(sheet, clip.frames[0].cellIndex + clip.frames.length)
+          );
+          lines.push(
+            `@keyframes ${name} {`,
+            `  from { background-position: ${plan.animatedPosition}; }`,
+            `  to { background-position: ${toPosition}; }`,
+            "}"
+          );
+        } else if (clip.frames.length > 1) {
+          lines.push(buildUnevenKeyframes(name, sheet, clip));
+        }
+      }
+    }
+    return lines.join("\n");
+  }
+  function expectedSheetPixelSize(sheet) {
+    return {
+      width: sheet.frameWidth * sheet.columns,
+      height: sheet.frameHeight * sheet.rows
+    };
+  }
 
   // desktop/assets/pets/snail-sprite/snail.png
   var snail_default = "data:image/png;base64,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";
@@ -1367,14 +1977,36 @@
     "snail-sprite": snailSpriteSheet
   };
   var customPetSheetDataUrls = /* @__PURE__ */ new Map();
-  function setCustomPetSheetDataUrl(petId, dataUrl) {
-    customPetSheetDataUrls.set(petId, dataUrl);
-  }
   function clearCustomPetSheetDataUrls() {
     customPetSheetDataUrls.clear();
   }
   function petSheetDataUrl(petId) {
     return PET_SHEET_DATA_URLS[petId] ?? customPetSheetDataUrls.get(petId) ?? null;
+  }
+  var customPetSheetUrls = /* @__PURE__ */ new Map();
+  var ownedBlobUrls = /* @__PURE__ */ new Set();
+  function setCustomPetSheetUrl(petKey, url) {
+    customPetSheetUrls.set(petKey, url);
+  }
+  function revokeOwnedSheetUrl(url) {
+    if (!url || !ownedBlobUrls.has(url)) return;
+    ownedBlobUrls.delete(url);
+    try {
+      URL.revokeObjectURL(url);
+    } catch {
+    }
+  }
+  function rememberOwnedBlobUrl(url) {
+    ownedBlobUrls.add(url);
+  }
+  function clearCustomPetSheetUrls() {
+    for (const url of customPetSheetUrls.values()) {
+      revokeOwnedSheetUrl(url);
+    }
+    customPetSheetUrls.clear();
+  }
+  function petSheetUrl(petIdOrKey) {
+    return customPetSheetUrls.get(petIdOrKey) ?? PET_SHEET_DATA_URLS[petIdOrKey] ?? customPetSheetDataUrls.get(petIdOrKey) ?? null;
   }
 
   // desktop/renderer/pet-sound.ts
@@ -1897,8 +2529,11 @@
     const btnQsAnother = root.getElementById("btn-qs-another");
     const settingsPanel = root.getElementById("settings-panel");
     const petPicker = root.getElementById("pet-picker");
+    const petPickerFilter = root.getElementById("pet-picker-filter");
     const customPetOptions = root.getElementById("custom-pet-options");
+    const catalogDiagnostics = root.getElementById("pet-catalog-diagnostics");
     const customPetsPath = root.getElementById("custom-pets-path");
+    const codexPetsPath = root.getElementById("codex-pets-path");
     const btnOpenCustomPets = root.getElementById("btn-open-custom-pets");
     const btnRescanCustomPets = root.getElementById("btn-rescan-custom-pets");
     const petScalePicker = root.getElementById("pet-scale-picker");
@@ -1965,6 +2600,12 @@
     const spriteVerified = /* @__PURE__ */ new Set();
     const spriteFailed = /* @__PURE__ */ new Set();
     const registeredCustomPetIds = /* @__PURE__ */ new Set();
+    let petPickerQuery = "";
+    let lookDirection = null;
+    let dragClip = null;
+    let assetLoadSeq = 0;
+    let loadedAssetKey = null;
+    let loadedBlobUrl = null;
     const soundPlayer = new PetSoundPlayer();
     bridge?.setReducedMotion(reducedMotion);
     if (typeof window.matchMedia === "function") {
@@ -2365,17 +3006,30 @@
       if (outcome.singleClick) activatePet();
       schedulePokeCommit();
     }
+    function replaceSpriteStylesheet(token, text) {
+      const existing = spriteStyleSheets.get(token);
+      if (existing?.textContent === text) return;
+      existing?.remove();
+      if (!text) {
+        spriteStyleSheets.delete(token);
+        return;
+      }
+      const style = root.createElement("style");
+      style.setAttribute("data-pet-sprite", token);
+      style.textContent = text;
+      root.head?.appendChild(style);
+      spriteStyleSheets.set(token, style);
+    }
     function ensureSpriteStylesheet(manifest) {
       if (spriteStyleSheets.has(manifest.id)) return;
       const text = buildSpriteSheetStyleText(manifest, petSheetDataUrl(manifest.id));
       if (!text) return;
-      const style = root.createElement("style");
-      style.setAttribute("data-pet-sprite", manifest.id);
-      style.textContent = text;
-      root.head?.appendChild(style);
-      spriteStyleSheets.set(manifest.id, style);
+      replaceSpriteStylesheet(manifest.id, text);
     }
-    function verifySpriteImage(petId, url) {
+    function ensureProfileStylesheet(profileToken, text) {
+      replaceSpriteStylesheet(profileToken, text);
+    }
+    function verifySpriteImage(petId, url, expected) {
       if (spriteVerified.has(petId) || spriteFailed.has(petId)) return;
       const img = root.createElement("img");
       img.addEventListener("error", () => {
@@ -2383,12 +3037,21 @@
         if (current) update(current);
       });
       img.addEventListener("load", () => {
+        if (expected && (img.naturalWidth !== expected.width || img.naturalHeight !== expected.height)) {
+          spriteFailed.add(petId);
+          if (current) update(current);
+          return;
+        }
         if (typeof img.decode !== "function") {
           spriteVerified.add(petId);
+          if (current) update(current);
           return;
         }
         void img.decode().then(
-          () => spriteVerified.add(petId),
+          () => {
+            spriteVerified.add(petId);
+            if (current) update(current);
+          },
           () => {
             spriteFailed.add(petId);
             if (current) update(current);
@@ -2405,71 +3068,155 @@
         spriteVerified.delete(petId);
         spriteFailed.delete(petId);
       }
+      for (const record of listCatalogPets()) {
+        const token = record.profile.cssToken;
+        const style = spriteStyleSheets.get(token);
+        style?.remove();
+        spriteStyleSheets.delete(token);
+        spriteVerified.delete(record.entry.petKey);
+        spriteFailed.delete(record.entry.petKey);
+      }
       registeredCustomPetIds.clear();
+      clearCatalogPets();
       clearCustomPetManifests();
       clearCustomPetSheetDataUrls();
+      clearCustomPetSheetUrls();
+      loadedAssetKey = null;
+      loadedBlobUrl = null;
+      assetLoadSeq += 1;
     }
-    function registerCustomPetAsset(candidate) {
-      if (!candidate || typeof candidate !== "object") return;
-      const id = candidate.id;
-      if (typeof id !== "string") return;
-      const gate = validateCustomPetAsset(candidate, id);
+    function registerCatalogEntry(candidate) {
+      const gate = validateRendererCatalogEntry(candidate);
       if (!gate.ok) return;
-      const manifest = gate.manifest;
-      if (manifest.renderMode !== "spritesheet" || !manifest.sheet) return;
-      registerCustomPetManifest({
-        id: manifest.id,
-        name: manifest.name,
-        version: manifest.version,
-        renderMode: manifest.renderMode,
-        states: manifest.states,
-        sheet: manifest.sheet
-      });
-      setCustomPetSheetDataUrl(id, gate.sheetDataUrl);
-      registeredCustomPetIds.add(id);
+      const profile = registerCatalogPet(gate.entry);
+      if (!profile) return;
+      registeredCustomPetIds.add(profile.cssToken);
+    }
+    function renderCatalogDiagnostics(items) {
+      if (!catalogDiagnostics) return;
+      catalogDiagnostics.replaceChildren();
+      if (!Array.isArray(items) || items.length === 0) {
+        catalogDiagnostics.hidden = true;
+        return;
+      }
+      const list = root.createElement("ul");
+      list.className = "pet-catalog-diagnostic-list";
+      for (const item of items.slice(0, 8)) {
+        if (!item || typeof item !== "object") continue;
+        const reason = item.reason;
+        const petId = item.petId;
+        if (typeof reason !== "string") continue;
+        const row = root.createElement("li");
+        row.textContent = typeof petId === "string" && petId ? `${petId}: ${reason}` : reason;
+        list.appendChild(row);
+      }
+      catalogDiagnostics.hidden = list.childElementCount === 0;
+      if (list.childElementCount > 0) catalogDiagnostics.appendChild(list);
     }
     function renderCustomPetOptions() {
       if (!customPetOptions) return;
       customPetOptions.replaceChildren();
-      for (const petId of registeredCustomPetIds) {
-        const manifest = getCustomPetManifest(petId);
-        if (!manifest) continue;
-        const btn = root.createElement("button");
-        btn.type = "button";
-        btn.className = "pet-option";
-        btn.setAttribute("role", "radio");
-        btn.dataset.petId = petId;
-        const preview = root.createElement("span");
-        preview.className = "pet-option-preview preview-custom";
-        preview.setAttribute("aria-hidden", "true");
-        preview.textContent = "\u25C9";
-        const sheetUrl = petSheetDataUrl(petId);
-        if (sheetUrl && manifest.sheet) {
-          preview.style.backgroundImage = `url("${sheetUrl}")`;
-          preview.style.backgroundSize = `${manifest.sheet.columns * 100}% ${manifest.sheet.rows * 100}%`;
+      const query = petPickerQuery.trim().toLowerCase();
+      const groups = [
+        { source: "snail-custom", label: "\u8717\u725B\u6D3E\u81EA\u5B9A\u4E49" },
+        { source: "codex-home", label: "Codex" }
+      ];
+      let rendered = 0;
+      for (const group of groups) {
+        const pets = listCatalogPets().filter((record) => {
+          if (record.entry.source !== group.source) return false;
+          if (!query) return true;
+          return record.entry.name.toLowerCase().includes(query) || record.entry.id.toLowerCase().includes(query);
+        });
+        if (pets.length === 0) continue;
+        const heading = root.createElement("div");
+        heading.className = "pet-option-group-label";
+        heading.textContent = group.label;
+        customPetOptions.appendChild(heading);
+        for (const record of pets) {
+          const btn = root.createElement("button");
+          btn.type = "button";
+          btn.className = "pet-option";
+          btn.setAttribute("role", "radio");
+          btn.dataset.petId = record.entry.id;
+          btn.dataset.petKey = record.entry.petKey;
+          const preview = root.createElement("span");
+          preview.className = `pet-option-preview preview-custom preview-${record.entry.format}`;
+          preview.setAttribute("aria-hidden", "true");
+          preview.textContent = record.entry.format === "codex" ? "\u25C8" : "\u25C9";
+          const sheetUrl = petSheetUrl(record.entry.petKey);
+          if (sheetUrl && record.manifest.sheet) {
+            preview.style.backgroundImage = `url("${sheetUrl}")`;
+            preview.style.backgroundSize = `${record.manifest.sheet.columns * 100}% ${record.manifest.sheet.rows * 100}%`;
+          }
+          const label = root.createElement("span");
+          label.className = "pet-option-copy";
+          const name = root.createElement("span");
+          name.textContent = record.entry.name;
+          const badge = root.createElement("span");
+          badge.className = "pet-option-badge";
+          badge.textContent = record.entry.format === "codex" ? "Codex" : "Snail";
+          label.append(name, badge);
+          btn.append(preview, label);
+          customPetOptions.appendChild(btn);
+          rendered += 1;
         }
-        const label = root.createElement("span");
-        label.textContent = manifest.name;
-        btn.append(preview, label);
-        customPetOptions.appendChild(btn);
       }
-      const empty = registeredCustomPetIds.size === 0;
-      customPetOptions.hidden = empty;
+      customPetOptions.hidden = rendered === 0;
+    }
+    function requestSelectedPetAsset(petKey) {
+      if (!bridge?.getPetAsset) return;
+      if (loadedAssetKey === petKey && loadedBlobUrl) return;
+      if (spriteFailed.has(petKey)) return;
+      const seq = ++assetLoadSeq;
+      void bridge.getPetAsset(petKey).then((payload) => {
+        if (seq !== assetLoadSeq) return;
+        const gate = validateRendererPetAsset(payload);
+        if (!gate.ok) {
+          spriteFailed.add(petKey);
+          if (current) update(current);
+          return;
+        }
+        if (gate.asset.petKey !== petKey) return;
+        const bytes = new Uint8Array(gate.asset.bytes.byteLength);
+        bytes.set(gate.asset.bytes);
+        const blob = new Blob([bytes], { type: gate.asset.mime });
+        const url = URL.createObjectURL(blob);
+        rememberOwnedBlobUrl(url);
+        if (loadedBlobUrl && loadedBlobUrl !== url) revokeOwnedSheetUrl(loadedBlobUrl);
+        loadedBlobUrl = url;
+        loadedAssetKey = petKey;
+        setCustomPetSheetUrl(petKey, url);
+        spriteFailed.delete(petKey);
+        spriteVerified.delete(petKey);
+        if (current) update(current);
+      }).catch(() => {
+        if (seq !== assetLoadSeq) return;
+        spriteFailed.add(petKey);
+        if (current) update(current);
+      });
     }
     function syncCustomPetsPayload(payload) {
       clearCustomPetRegistrations();
       if (!payload || typeof payload !== "object") {
         renderCustomPetOptions();
+        renderCatalogDiagnostics([]);
         return;
       }
       const pets = payload.pets;
       if (Array.isArray(pets)) {
-        for (const candidate of pets) registerCustomPetAsset(candidate);
+        for (const candidate of pets) registerCatalogEntry(candidate);
       }
-      const rootPath = payload.root;
-      if (customPetsPath && typeof rootPath === "string" && rootPath.length <= 512) {
-        customPetsPath.textContent = rootPath;
+      const snailRoot = payload.snailRoot ?? payload.root;
+      if (customPetsPath && typeof snailRoot === "string" && snailRoot.length <= 512) {
+        customPetsPath.textContent = snailRoot;
       }
+      const codexRoot = payload.codexRoot;
+      if (codexPetsPath && typeof codexRoot === "string" && codexRoot.length <= 512) {
+        codexPetsPath.textContent = codexRoot;
+        codexPetsPath.hidden = false;
+      }
+      renderCatalogDiagnostics(payload.diagnostics);
       renderCustomPetOptions();
       if (current) update(current);
     }
@@ -2496,17 +3243,48 @@
       scheduleRunningCueUpdate(updateNow);
       const runningCue = runningCueState.active ? runningCueState.cue : "generic";
       const cueVisual = resolveRunningCueVisual(runningCue);
-      const manifest = getPetManifest(view.selectedPetId);
+      const selectedPetKey = resolvePetKey({
+        selectedPetKey: view.selectedPetKey,
+        selectedPetId: view.selectedPetId
+      });
+      const profile = getPetRuntimeProfile(selectedPetKey);
+      const manifest = getPetManifest(selectedPetKey);
       const motionReduced = view.reducedMotion || reducedMotion;
+      if (!canApplyLookOverlay(state) || motionReduced || documentHidden) {
+        lookDirection = null;
+      }
+      if (state === "needs_input" || state === "blocked" || state === "ready" || state === "disconnected" || state === "service_not_running") {
+        dragClip = null;
+      }
       const frame = resolvePetFrame(manifest, state, motionReduced);
       const displayGlyph = state === "running" ? cueVisual.glyph : frame.glyph || petStateGlyph(state);
       const displayLabel = state === "running" ? cueVisual.label : frame.label || petStateLabel(state);
-      const spriteImageUrl = petSheetDataUrl(manifest.id);
-      const spriteStyle = resolveSpriteSheetStyle(manifest, state, spriteImageUrl);
-      const spriteActive = spriteStyle != null && !spriteFailed.has(manifest.id);
-      if (spriteActive && spriteImageUrl) {
-        ensureSpriteStylesheet(manifest);
-        verifySpriteImage(manifest.id, spriteImageUrl);
+      const activeClip = resolveActivePetClip({
+        profile,
+        state,
+        reducedMotion: motionReduced,
+        lookDirection,
+        dragClip
+      });
+      const needsLazySheet = profile.renderMode === "spritesheet" && profile.format !== "snail" || profile.format === "snail" && !petSheetDataUrl(manifest.id) && !petSheetUrl(profile.petKey);
+      const builtinSheetUrl = petSheetDataUrl(manifest.id);
+      if (profile.renderMode === "spritesheet" && !builtinSheetUrl && !petSheetUrl(profile.petKey)) {
+        requestSelectedPetAsset(profile.petKey);
+      }
+      const spriteImageUrl = petSheetUrl(profile.petKey) ?? builtinSheetUrl ?? petSheetDataUrl(profile.cssToken);
+      const spriteFailedKey = profile.petKey;
+      const profileStyle = profile.renderMode === "spritesheet" && profile.sheet && activeClip.clip && spriteImageUrl ? resolveClipSheetStyle(profile.sheet, activeClip.clip, profile.cssToken) : null;
+      const snailStyle = resolveSpriteSheetStyle(manifest, state, spriteImageUrl);
+      const spriteStyle = profile.format === "codex" ? profileStyle : snailStyle ?? profileStyle;
+      const spriteActive = spriteStyle != null && !spriteFailed.has(spriteFailedKey) && !spriteFailed.has(manifest.id);
+      if (spriteImageUrl && !spriteFailed.has(spriteFailedKey) && !spriteFailed.has(manifest.id)) {
+        if (profile.format === "codex" || needsLazySheet) {
+          ensureProfileStylesheet(profile.cssToken, buildSpriteSheetStyleTextFromProfile(profile, spriteImageUrl));
+        } else {
+          ensureSpriteStylesheet(manifest);
+        }
+        const expected = profile.sheet ? expectedSheetPixelSize(profile.sheet) : void 0;
+        verifySpriteImage(spriteFailedKey, spriteImageUrl, expected);
       }
       if (petAvatar) {
         const transitionAction = resolvePetTransitionAction(
@@ -2519,23 +3297,25 @@
         } else if (motionReduced) {
           clearTransition();
         }
-        const spriteClass = spriteActive ? ` pet-sprite pet-sprite-${manifest.id}` : "";
+        const spriteClass = spriteActive ? ` pet-sprite pet-sprite-${profile.cssToken}` : "";
         const sleepClass = idleSleepState.stage !== "awake" ? ` pet-${idleSleepState.stage}` : "";
-        petAvatar.className = `pet-avatar${spriteClass} frame-${frame.frame}${frame.animated ? " is-animated" : ""}${transitionClass ? ` ${transitionClass}` : ""}${sleepClass}${reactionClass ? ` ${reactionClass}` : ""}`;
+        const animated = spriteActive ? !motionReduced && !activeClip.staticOnly : frame.animated;
+        petAvatar.className = `pet-avatar${spriteClass} frame-${frame.frame}${animated ? " is-animated" : ""}${transitionClass ? ` ${transitionClass}` : ""}${sleepClass}${reactionClass ? ` ${reactionClass}` : ""}`;
         petAvatar.setAttribute("data-state", state);
+        petAvatar.setAttribute("data-clip", activeClip.clipName);
         if (state === "running") {
           petAvatar.setAttribute("data-running-cue", runningCue);
         } else {
           petAvatar.removeAttribute("data-running-cue");
         }
-        const lifeKey = `${frame.frame}:${frame.animated ? "1" : "0"}`;
+        const lifeKey = `${frame.frame}:${animated ? "1" : "0"}:${activeClip.clipName}`;
         if (lifeKey !== idleLifeKey) {
           idleLifeKey = lifeKey;
           scheduleIdleBlink(petAvatar);
           scheduleIdleActs(petAvatar);
         }
       }
-      if (petRoot) petRoot.setAttribute("data-pet", manifest.id);
+      if (petRoot) petRoot.setAttribute("data-pet", profile.cssToken);
       if (petGlyph) petGlyph.textContent = displayGlyph;
       if (petLabel) petLabel.textContent = displayLabel;
       const activityDrivesState = primary?.presentation === state;
@@ -2749,8 +3529,13 @@
       if (soundDndNote) {
         soundDndNote.hidden = !(view.dndEnabled === true && view.sound.masterEnabled === true);
       }
-      petPicker?.querySelectorAll("[data-pet-id]").forEach((option) => {
-        const selected = option.dataset.petId === view.selectedPetId;
+      const selectedKey = resolvePetKey({
+        selectedPetKey: view.selectedPetKey,
+        selectedPetId: view.selectedPetId
+      });
+      petPicker?.querySelectorAll("[data-pet-id], [data-pet-key]").forEach((option) => {
+        const optionKey = option.dataset.petKey || (option.dataset.petId ? resolvePetKey({ selectedPetId: option.dataset.petId }) : "");
+        const selected = optionKey === selectedKey;
         option.setAttribute("aria-checked", selected ? "true" : "false");
       });
       petScalePicker?.querySelectorAll("[data-pet-scale]").forEach((option) => {
@@ -3318,7 +4103,46 @@
       petAvatar.style.removeProperty("--eye-shift-y");
       petAvatar.style.removeProperty("--head-tilt");
     };
+    const currentPetProfile = () => {
+      if (!current) return null;
+      return getPetRuntimeProfile(
+        resolvePetKey({
+          selectedPetKey: current.selectedPetKey,
+          selectedPetId: current.selectedPetId
+        })
+      );
+    };
+    const applyCodexLook = (event) => {
+      const profile = currentPetProfile();
+      if (!profile?.capabilities.look || !current) return;
+      const motionReduced = reducedMotion || current.reducedMotion === true;
+      if (motionReduced || documentHidden || petDragging) {
+        if (lookDirection != null) {
+          lookDirection = null;
+          update(current);
+        }
+        return;
+      }
+      if (!canApplyLookOverlay(currentPresentation())) {
+        if (lookDirection != null) {
+          lookDirection = null;
+          update(current);
+        }
+        return;
+      }
+      if (!(petAvatar instanceof HTMLElement)) return;
+      const rect = petAvatar.getBoundingClientRect();
+      if (rect.width === 0) return;
+      const next = quantizeCodexLookDirection(
+        event.clientX - (rect.left + rect.width / 2),
+        event.clientY - (rect.top + rect.height / 2)
+      );
+      if (next === lookDirection) return;
+      lookDirection = next;
+      update(current);
+    };
     const applyEyeFollow = (event) => {
+      applyCodexLook(event);
       if (!(petAvatar instanceof HTMLElement) || !(petButton instanceof HTMLElement)) return;
       if (!petAvatar.classList.contains("is-animated")) return;
       if (petAvatar.classList.contains("pet-sprite")) return;
@@ -3334,6 +4158,19 @@
       petAvatar.style.setProperty("--eye-shift-y", `${clamp(dy / 24, 1.3).toFixed(2)}px`);
       petAvatar.style.setProperty("--head-tilt", `${clamp(dx / 40, 4).toFixed(2)}deg`);
     };
+    const onWindowPointerMove = (event) => {
+      if (petPointerId !== null) return;
+      applyCodexLook(event);
+    };
+    const onWindowPointerLeave = () => {
+      if (lookDirection == null || !current) return;
+      lookDirection = null;
+      update(current);
+    };
+    if (typeof window !== "undefined") {
+      window.addEventListener("pointermove", onWindowPointerMove);
+      window.addEventListener("pointerleave", onWindowPointerLeave);
+    }
     function canJumpToPrimary(view) {
       if (!view || view.trayOpen) return false;
       const primary = selectPrimaryActivity(view.projects);
@@ -3394,6 +4231,10 @@
       const wasDragging = petDragging;
       petPointerId = null;
       petDragging = false;
+      if (dragClip) {
+        dragClip = null;
+        if (current) update(current);
+      }
       try {
         if (target.hasPointerCapture?.(pointerId)) {
           target.releasePointerCapture(pointerId);
@@ -3457,6 +4298,15 @@
       petLastScreenY = event.screenY;
       if (dx !== 0 || dy !== 0) {
         bridge?.moveBy(dx, dy);
+        const profile = currentPetProfile();
+        if (profile?.capabilities.directionalRun && current && canApplyDragOverlay(current.presentation)) {
+          const nextDrag = resolveCodexDragClip(dx, dy, dragClip);
+          if (nextDrag !== dragClip) {
+            dragClip = nextDrag;
+            lookDirection = null;
+            update(current);
+          }
+        }
       }
     });
     petButton?.addEventListener("pointerup", (event) => {
@@ -3476,9 +4326,11 @@
       if (petPointerId !== event.pointerId) return;
       petPointerId = null;
       petDragging = false;
+      dragClip = null;
       petButton.classList.remove("is-dragging");
       petAvatar?.classList.remove("is-pressed", "is-dragging");
       cancelClickSequence();
+      if (current) update(current);
     });
     petButton?.addEventListener("pointerleave", () => {
       if (petPointerId === null) resetEyeFollow();
@@ -3686,10 +4538,34 @@
       }
     });
     petPicker?.addEventListener("click", (event) => {
-      const target = event.target instanceof Element ? event.target.closest("[data-pet-id]") : null;
+      const target = event.target instanceof Element ? event.target.closest("[data-pet-key], [data-pet-id]") : null;
+      const selectedPetKey = target?.dataset.petKey;
       const selectedPetId = target?.dataset.petId;
+      if (selectedPetKey) {
+        bridge?.setPrefs({ selectedPetKey });
+        return;
+      }
       if (!selectedPetId) return;
       bridge?.setPrefs({ selectedPetId });
+    });
+    petPickerFilter?.addEventListener("input", () => {
+      petPickerQuery = petPickerFilter.value ?? "";
+      const query = petPickerQuery.trim().toLowerCase();
+      petPicker?.querySelectorAll(":scope > .pet-option").forEach((option) => {
+        const label = option.textContent?.toLowerCase() ?? "";
+        option.hidden = Boolean(query) && !label.includes(query);
+      });
+      renderCustomPetOptions();
+      if (current) {
+        const selectedKey = resolvePetKey({
+          selectedPetKey: current.selectedPetKey,
+          selectedPetId: current.selectedPetId
+        });
+        petPicker?.querySelectorAll("[data-pet-id], [data-pet-key]").forEach((option) => {
+          const optionKey = option.dataset.petKey || (option.dataset.petId ? resolvePetKey({ selectedPetId: option.dataset.petId }) : "");
+          option.setAttribute("aria-checked", optionKey === selectedKey ? "true" : "false");
+        });
+      }
     });
     petScalePicker?.addEventListener("click", (event) => {
       const target = event.target instanceof Element ? event.target.closest("[data-pet-scale]") : null;
@@ -3840,6 +4716,10 @@
         clearIdleAct(petAvatar instanceof HTMLElement ? petAvatar : null);
         if (typeof document !== "undefined") {
           document.removeEventListener("visibilitychange", onVisibilityChange);
+        }
+        if (typeof window !== "undefined") {
+          window.removeEventListener("pointermove", onWindowPointerMove);
+          window.removeEventListener("pointerleave", onWindowPointerLeave);
         }
         root.removeEventListener("keydown", onKeyDown);
         root.removeEventListener("click", onRootClick);
