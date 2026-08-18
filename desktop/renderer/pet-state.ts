@@ -755,9 +755,8 @@ function petBubbleMode(signal: PetBubbleSignal): PetBubbleMode {
   if (signal.presentation === "ready") {
     return signal.unread ? "persistent" : null;
   }
-  if (signal.presentation === "running" || signal.presentation === "retrying") {
-    return "transient";
-  }
+  // Running/retrying already have the glyph and foot label. A transient task
+  // caption repeated the same status and covered the hover intent chips.
   return null;
 }
 

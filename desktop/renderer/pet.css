@@ -8,10 +8,11 @@
   --pet-scale: 1;
   --pet-root-pad: calc(6px * var(--pet-scale));
   --pet-stack-gap: calc(6px * var(--pet-scale));
-  --pet-stack-width: calc(112px * var(--pet-scale));
+  --pet-stack-width: calc(136px * var(--pet-scale));
   --pet-chrome-height: calc(18px * var(--pet-scale));
   --pet-surface-size: calc(112px * var(--pet-scale));
   --pet-bubble-reserve: calc(40px * var(--pet-scale));
+  --pet-intent-gutter: calc(24px * var(--pet-scale));
   --ink: #2b313c;
   --paper: #fff7ea;
   --paper-2: #fffdf8;
@@ -231,6 +232,7 @@ select {
   gap: var(--pet-stack-gap);
   width: var(--pet-stack-width);
   padding-top: var(--pet-bubble-reserve);
+  padding-left: var(--pet-intent-gutter);
 }
 
 .activity-tray[hidden],
@@ -259,7 +261,7 @@ select {
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  width: var(--pet-stack-width);
+  width: var(--pet-surface-size);
   height: var(--pet-chrome-height);
   opacity: 0.18;
   transition: opacity 160ms ease;
@@ -303,7 +305,7 @@ select {
 /* Floating speech-chip stack; no dark menu plate over the snail. */
 .pet-intent-menu {
   position: absolute;
-  top: var(--pet-bubble-reserve);
+  top: 0;
   left: 0;
   z-index: 12;
   display: flex;
@@ -311,7 +313,7 @@ select {
   align-items: stretch;
   gap: 4px;
   width: max-content;
-  max-width: calc(var(--pet-stack-width) - 26px);
+  max-width: 88px;
   padding: 0;
   border: 0;
   border-radius: 0;
@@ -338,7 +340,7 @@ select {
 
 .pet-intent-btn {
   min-height: 22px;
-  padding: 3px 9px;
+  padding: 3px 7px;
   border: 2px solid var(--ink);
   border-radius: 999px;
   background: var(--paper);
@@ -433,6 +435,15 @@ select {
   box-shadow: var(--bubble-shadow);
   pointer-events: none;
   animation: pet-caption-in 160ms cubic-bezier(0.3, 1.4, 0.6, 1) both;
+  transition: opacity 140ms ease, visibility 140ms ease;
+}
+
+.pet-stack:hover .pet-caption,
+.pet-stack:focus-within .pet-caption,
+.pet-stack:hover .pet-label,
+.pet-stack:focus-within .pet-label {
+  opacity: 0;
+  visibility: hidden;
 }
 
 .pet-caption[data-bubble-mode="transient"] {
@@ -693,6 +704,7 @@ select {
   white-space: nowrap;
   box-shadow: 0 2px 0 var(--ink);
   pointer-events: none;
+  transition: opacity 140ms ease, visibility 140ms ease;
 }
 
 .pet-context-meter {
@@ -2162,6 +2174,13 @@ select {
   margin: 0 2px 4px;
   color: var(--pet-muted);
   font-size: 10px;
+}
+
+.settings-hint {
+  margin: 8px 2px 2px;
+  color: var(--pet-muted);
+  font-size: 11px;
+  line-height: 1.45;
 }
 
 .setting-field {

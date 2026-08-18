@@ -977,19 +977,17 @@ async function main() {
     reset: false,
   };
   bubble = reducePetBubbleState(bubble, { type: "snapshot", signal: runningSignal, now: 100 });
-  assert.equal(bubble.visible, true);
-  assert.equal(bubble.mode, "transient");
-  const runningExpiresAt = bubble.expiresAt;
-  assert.ok(runningExpiresAt != null && runningExpiresAt > 100);
-  bubble = reducePetBubbleState(bubble, { type: "tick", now: runningExpiresAt! });
+  assert.equal(bubble.visible, false, "running uses glyph/label instead of a task caption");
+  assert.equal(bubble.mode, null);
+  assert.equal(bubble.expiresAt, null);
+  bubble = reducePetBubbleState(bubble, { type: "tick", now: 4600 });
   assert.equal(bubble.visible, false);
-  // Same transition replay and elapsed-only revision change must not re-trigger.
   bubble = reducePetBubbleState(bubble, {
     type: "snapshot",
     signal: { ...runningSignal, revision: 11 },
-    now: runningExpiresAt! + 1,
+    now: 4601,
   });
-  assert.equal(bubble.visible, false);
+  assert.equal(bubble.visible, false, "running revision changes still do not open a caption");
 
   bubble = reducePetBubbleState(bubble, {
     type: "snapshot",
@@ -1001,8 +999,8 @@ async function main() {
     },
     now: 5000,
   });
-  assert.equal(bubble.visible, true);
-  assert.equal(bubble.mode, "transient");
+  assert.equal(bubble.visible, false, "retrying uses glyph/label instead of a task caption");
+  assert.equal(bubble.mode, null);
 
   const needsSignal = {
     ...runningSignal,
@@ -1767,7 +1765,7 @@ async function main() {
   assert.equal(dndDiagBubble.visible, true, "disconnected stays visible under DND");
   assert.equal(dndDiagBubble.mode, "persistent");
 
-  // Transient running bubbles are proactive and suppressed under DND.
+  // Running never opens a task caption, with or without DND.
   let dndRunBubble = createInitialPetBubbleState();
   dndRunBubble = reducePetBubbleState(dndRunBubble, {
     type: "snapshot",
@@ -1782,7 +1780,7 @@ async function main() {
     },
     now: 1000,
   });
-  assert.equal(dndRunBubble.visible, false, "running bubble suppressed under DND");
+  assert.equal(dndRunBubble.visible, false, "running does not open a caption under DND");
   dndRunBubble = reducePetBubbleState(dndRunBubble, {
     type: "snapshot",
     signal: {
@@ -1796,7 +1794,7 @@ async function main() {
     },
     now: 2000,
   });
-  assert.equal(dndRunBubble.visible, false, "suppressed running bubble never replays");
+  assert.equal(dndRunBubble.visible, false, "running still has no caption after DND off");
 
   // --- Sound cues (U4a): defaults, migration, gating, DND, cooldown, dedupe ---
   // Fresh install never beeps; per-event switches default on (preserved when master off).
@@ -2984,6 +2982,8 @@ async function main() {
   assert.equal(mediumSpec.collapsedHeight, PET_WINDOW_DEFAULTS.petOnlyHeight);
   assert.equal(mediumSpec.trayWidth, PET_WINDOW_DEFAULTS.trayWidth);
   assert.equal(mediumSpec.stackHeight, PET_LAYOUT.stackHeight);
+  assert.equal(mediumSpec.intentGutter, 24);
+  assert.equal(mediumSpec.stackWidth, mediumSpec.surfaceSize + mediumSpec.intentGutter);
   assert.ok(smallSpec.collapsedWidth < mediumSpec.collapsedWidth);
   assert.ok(largeSpec.collapsedWidth > mediumSpec.collapsedWidth);
   assert.ok(smallSpec.collapsedWidth >= smallSpec.rootPad * 2 + smallSpec.stackWidth);
@@ -3311,6 +3311,11 @@ async function main() {
   assert.ok(css.includes(".tray-counts[hidden]"));
   assert.ok(css.includes(".pet-intent-menu"));
   assert.ok(css.includes(".pet-stack:focus-within .pet-intent-menu"));
+  assert.ok(css.includes(".pet-stack:hover .pet-caption"));
+  assert.ok(css.includes(".pet-stack:focus-within .pet-label"));
+  assert.ok(css.includes(".settings-hint"));
+  assert.ok(css.includes("--pet-intent-gutter"));
+  assert.ok(css.includes("padding-left: var(--pet-intent-gutter)"));
   // Comic-bubble chrome: cream paper + ink outline, not a dark admin overlay.
   assert.ok(css.includes("--bubble-paper"));
   assert.ok(css.includes('data-bubble-theme="peach"'));
@@ -3321,6 +3326,8 @@ async function main() {
   assert.ok(css.includes(".bubble-theme-picker"));
   assert.ok(css.includes(".settings-card"));
   assert.ok(html.includes("settings-card"));
+  assert.ok(html.includes("settings-hint"));
+  assert.ok(html.includes("悬停角色打开快捷菜单"));
   assert.ok(html.includes('id="bubble-theme-picker"'));
   for (const cue of [
     "thinking",
@@ -3485,7 +3492,10 @@ async function main() {
   assert.ok(petAppSource.includes("!settingsOpen"));
   assert.ok(petAppSource.includes('trayTitle.textContent = settingsOpen ? "设置"'));
   assert.ok(petAppSource.includes("trayCounts.hidden = hideCounts"));
-  assert.ok(petAppSource.includes("悬停打开活动列表"));
+  assert.ok(petAppSource.includes("悬停打开快捷菜单"));
+  assert.ok(petAppSource.includes("--pet-intent-gutter"));
+  assert.equal(petAppSource.includes("petButton.title"), false);
+  assert.ok(petAppSource.includes('removeAttribute("title")'));
   assert.ok(petAppSource.includes("markAllVisibleRead"));
   assert.ok(petAppSource.includes("openSettingsPanel"));
   assert.ok(petAppSource.includes("openQuickSessionPanel"));
@@ -3975,6 +3985,10 @@ async function main() {
     assert.equal(clipTotalDurationMs(v2Profile.clips.idle), 1100);
     assert.equal(SNAIL_STATE_TO_CODEX_CLIP.ready.clipName, "waving");
     assert.notEqual(SNAIL_STATE_TO_CODEX_CLIP.ready.clipName, "jumping");
+    assert.equal(SNAIL_STATE_TO_CODEX_CLIP.retrying.clipName, "running");
+    assert.notEqual(SNAIL_STATE_TO_CODEX_CLIP.retrying.clipName, "review");
+    assert.equal(v2Profile.clips.failed.staticFrameIndex, v2Profile.clips.failed.frames.length - 1);
+    assert.equal(v2Profile.clips.idle.staticFrameIndex, 0);
     for (const state of Object.keys(SNAIL_STATE_TO_CODEX_CLIP)) {
       const binding = SNAIL_STATE_TO_CODEX_CLIP[state as keyof typeof SNAIL_STATE_TO_CODEX_CLIP];
       assert.ok(v2Profile.clips[binding.clipName], `missing clip for ${state}`);
@@ -4056,6 +4070,34 @@ async function main() {
       dragClip: "running-right",
     });
     assert.equal(ready.clipName, "waving");
+    const retrying = resolveActivePetClip({
+      profile,
+      state: "retrying",
+      reducedMotion: false,
+      lookDirection: 4,
+      dragClip: null,
+    });
+    assert.equal(retrying.clipName, "running");
+    const disconnected = resolveActivePetClip({
+      profile,
+      state: "disconnected",
+      reducedMotion: false,
+      lookDirection: 4,
+      dragClip: null,
+    });
+    assert.equal(disconnected.clipName, "failed");
+    assert.equal(disconnected.staticOnly, true);
+    assert.equal(disconnected.clip?.staticFrameIndex, 7);
+    const blockedStill = resolveClipSheetStyle(
+      profile.sheet!,
+      profile.clips.failed,
+      profile.cssToken,
+    );
+    assert.ok(blockedStill);
+    assert.equal(
+      blockedStill!.staticPosition,
+      positionCss(spriteCellPosition(profile.sheet!, profile.clips.failed.frames[7]!.cellIndex)),
+    );
     const blocked = resolveActivePetClip({
       profile,
       state: "needs_input",

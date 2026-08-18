@@ -89,7 +89,9 @@ export const CODEX_LOOK_DEADZONE_PX = 28;
 export const SNAIL_STATE_TO_CODEX_CLIP: Record<PetRequiredState, PetStateClipBinding> = {
   idle: { clipName: "idle", staticOnly: false },
   running: { clipName: "running", staticOnly: false },
-  retrying: { clipName: "review", staticOnly: false },
+  // Retrying is still work. `review` is Codex's completed/inspect pose and must
+  // not be reused here; the ↻ glyph already distinguishes retry from running.
+  retrying: { clipName: "running", staticOnly: false },
   needs_input: { clipName: "waiting", staticOnly: false },
   // `jumping` is a hop/attack cycle. Looping it as Ready looks like jumping in
   // place (hatch-pet combat poses especially). Wave is the looping "I finished"
@@ -114,7 +116,14 @@ function clipFromRow(
     cellIndex: row * CODEX_PET_COLUMNS + index,
     durationMs,
   }));
-  return { name, frames, staticFrameIndex: 0 };
+  // `failed` is a sag/deflate reaction. Frame 0 is often still mid-action
+  // (combat pets still holding a charge). Reduced-motion and disconnected
+  // freeze on the settled last pose instead of that start frame.
+  return {
+    name,
+    frames,
+    staticFrameIndex: name === "failed" ? Math.max(0, frames.length - 1) : 0,
+  };
 }
 
 function lookClip(direction: number): PetRuntimeClip {

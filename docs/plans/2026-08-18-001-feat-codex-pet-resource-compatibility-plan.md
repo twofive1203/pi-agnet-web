@@ -104,11 +104,11 @@ origin: docs/brainstorms/2026-08-18-codex-pet-resource-compatibility-requirement
 | --- | --- | --- |
 | `idle` | `idle` | 空闲主循环 |
 | `running` | `running` | 非方向性工作动画 |
-| `retrying` | `review` | 表达重新检查/再尝试，保留 `↻` 状态提示 |
+| `retrying` | `running` | 重试仍是干活；`review` 是 Codex 完成后的审视姿态，不占用。`↻` 区分重试与运行 |
 | `needs_input` | `waiting` | 等待批准、回答或输入 |
 | `ready` | `waving` | 完成庆祝（循环挥手）。`jumping` 是起跳/攻击循环，作为 Ready 主循环会读成原地起跳，因此不再用作持久完成姿态；一次性庆祝仍由彩纸承担。 |
 | `blocked` | `failed` | 失败/受阻 |
-| `disconnected` | `failed` 静态或低动效 | 由 `⚠/未连接` 覆盖精确语义 |
+| `disconnected` | `failed` 静态末帧 | 冻在 sag 结束姿势，避免战斗角色还举着招式；由 `⚠/未连接` 覆盖精确语义 |
 | `service_not_running` | `idle` 静态并降级显示 | 由 `⏻/未启动` 覆盖精确语义 |
 
 - **额外动作是能力增强，不改变业务状态。** v2 look rows 用于空闲指针注视；`running-right/left` 可用于拖动方向；`waving` 可保留给后续问候/交互反应。

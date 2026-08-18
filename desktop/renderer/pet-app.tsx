@@ -1362,6 +1362,7 @@ export function renderPetApp(root: Document = document): {
       petRoot.style.setProperty("--pet-chrome-height", `${spec.chromeHeight}px`);
       petRoot.style.setProperty("--pet-surface-size", `${spec.surfaceSize}px`);
       petRoot.style.setProperty("--pet-bubble-reserve", `${spec.bubbleReserve}px`);
+      petRoot.style.setProperty("--pet-intent-gutter", `${spec.intentGutter}px`);
     }
     if (petButton) {
       petButton.setAttribute("aria-expanded", view.trayOpen ? "true" : "false");
@@ -1372,7 +1373,7 @@ export function renderPetApp(root: Document = document): {
         reducedMotion: motionReduced,
         canJumpPrimary: attentionJump,
       });
-      const gestureHint = "悬停打开活动列表 · P 互动 · Shift+P 摆动";
+      const gestureHint = "悬停打开快捷菜单 · P 互动 · Shift+P 摆动";
       const bodyHint =
         bodyAction === "close-tray"
           ? "点击收起活动列表"
@@ -1385,7 +1386,8 @@ export function renderPetApp(root: Document = document): {
         "aria-label",
         `桌宠，${bodyHint}，拖动可移动。${gestureHint}`,
       );
-      petButton.title = gestureHint;
+      // Native title tooltips clip over the sprite in the frameless window.
+      petButton.removeAttribute("title");
     }
 
     if (trayCounts) {

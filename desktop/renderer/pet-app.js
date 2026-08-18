@@ -469,11 +469,14 @@
     surfaceSize: 112,
     /** Empty band above the sprite so the speech balloon does not cover the face. */
     bubbleReserve: 40,
+    /** Small left shift so hover chips sit beside the sprite instead of on the face. */
+    intentGutter: 24,
+    /** intent 24 + surface 112 */
+    stackWidth: 136,
     /** chrome 18 + gap 6 + surface 112 + bubble 40 */
-    stackWidth: 112,
     stackHeight: 176,
-    /** Collapsed chrome + bubble band + avatar + root padding — must fit without clipping. */
-    collapsedWidth: 140,
+    /** Collapsed chrome + small left shift + avatar + root padding — must fit without clipping. */
+    collapsedWidth: 148,
     collapsedHeight: 196,
     trayWidth: 360,
     trayHeight: 480
@@ -501,7 +504,8 @@
     const stackGap = scaleLayoutPx(PET_LAYOUT_BASE.stackGap, factor);
     const surfaceSize = scaleLayoutPx(PET_LAYOUT_BASE.surfaceSize, factor);
     const bubbleReserve = scaleLayoutPx(PET_LAYOUT_BASE.bubbleReserve, factor);
-    const stackWidth = surfaceSize;
+    const intentGutter = scaleLayoutPx(PET_LAYOUT_BASE.intentGutter, factor);
+    const stackWidth = surfaceSize + intentGutter;
     const stackHeight = chromeHeight + stackGap + surfaceSize + bubbleReserve;
     return {
       scale,
@@ -510,6 +514,7 @@
       chromeHeight,
       surfaceSize,
       bubbleReserve,
+      intentGutter,
       stackWidth,
       stackHeight,
       clickTargetWidth: surfaceSize,
@@ -871,7 +876,9 @@
   var SNAIL_STATE_TO_CODEX_CLIP = {
     idle: { clipName: "idle", staticOnly: false },
     running: { clipName: "running", staticOnly: false },
-    retrying: { clipName: "review", staticOnly: false },
+    // Retrying is still work. `review` is Codex's completed/inspect pose and must
+    // not be reused here; the ↻ glyph already distinguishes retry from running.
+    retrying: { clipName: "running", staticOnly: false },
     needs_input: { clipName: "waiting", staticOnly: false },
     // `jumping` is a hop/attack cycle. Looping it as Ready looks like jumping in
     // place (hatch-pet combat poses especially). Wave is the looping "I finished"
@@ -889,7 +896,11 @@
       cellIndex: row * CODEX_PET_COLUMNS + index,
       durationMs
     }));
-    return { name, frames, staticFrameIndex: 0 };
+    return {
+      name,
+      frames,
+      staticFrameIndex: name === "failed" ? Math.max(0, frames.length - 1) : 0
+    };
   }
   function lookClip(direction) {
     const row = direction < 8 ? 9 : 10;
@@ -1475,9 +1486,6 @@
     }
     if (signal.presentation === "ready") {
       return signal.unread ? "persistent" : null;
-    }
-    if (signal.presentation === "running" || signal.presentation === "retrying") {
-      return "transient";
     }
     return null;
   }
@@ -3548,6 +3556,7 @@
         petRoot.style.setProperty("--pet-chrome-height", `${spec.chromeHeight}px`);
         petRoot.style.setProperty("--pet-surface-size", `${spec.surfaceSize}px`);
         petRoot.style.setProperty("--pet-bubble-reserve", `${spec.bubbleReserve}px`);
+        petRoot.style.setProperty("--pet-intent-gutter", `${spec.intentGutter}px`);
       }
       if (petButton) {
         petButton.setAttribute("aria-expanded", view.trayOpen ? "true" : "false");
@@ -3558,13 +3567,13 @@
           reducedMotion: motionReduced,
           canJumpPrimary: attentionJump
         });
-        const gestureHint = "\u60AC\u505C\u6253\u5F00\u6D3B\u52A8\u5217\u8868 \xB7 P \u4E92\u52A8 \xB7 Shift+P \u6446\u52A8";
+        const gestureHint = "\u60AC\u505C\u6253\u5F00\u5FEB\u6377\u83DC\u5355 \xB7 P \u4E92\u52A8 \xB7 Shift+P \u6446\u52A8";
         const bodyHint = bodyAction === "close-tray" ? "\u70B9\u51FB\u6536\u8D77\u6D3B\u52A8\u5217\u8868" : bodyAction === "jump-primary" ? "\u70B9\u51FB\u76F4\u8FBE\u5F85\u5904\u7406\u4EFB\u52A1" : bodyAction === "interact" ? "\u70B9\u51FB\u4E92\u52A8" : "\u70B9\u51FB\u5C55\u5F00\u6D3B\u52A8\u5217\u8868";
         petButton.setAttribute(
           "aria-label",
           `\u684C\u5BA0\uFF0C${bodyHint}\uFF0C\u62D6\u52A8\u53EF\u79FB\u52A8\u3002${gestureHint}`
         );
-        petButton.title = gestureHint;
+        petButton.removeAttribute("title");
       }
       if (trayCounts) {
         const hideCounts = settingsOpen || composerOpen;
