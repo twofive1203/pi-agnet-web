@@ -1191,16 +1191,14 @@ export function connectionBannerText(input: {
 }
 
 // ---------------------------------------------------------------------------
-// Fun click reactions (U4b): poke (double-click) and flail (quad-click)
-//
-// Renderer-local decorative feedback. Only the idle presentation allows a
-// reaction; every attention/terminal/running/connection state preempts it.
-// The first click of a sequence always performs the normal single-click action
-// (toggle tray / attention直达) immediately, and later clicks in the same
-// sequence never re-toggle the tray.
+// Fun click reactions (U4b/U4c): idle/running/retrying single-click interacts;
+// a second click in the same burst upgrades to flail. Attention, terminal and
+// connection states never spend the body click on a greeting.
 // ---------------------------------------------------------------------------
 
 export type PetReaction = "poke" | "flail";
+
+export type PetBodyClickAction = "close-tray" | "jump-primary" | "interact" | "open-tray";
 
 /** Maximum gap between consecutive clicks that still extends a click sequence. */
 export const PET_DOUBLE_CLICK_INTERVAL_MS = 320;
@@ -1231,38 +1229,56 @@ export type PetClickSequenceEvent =
 
 export type PetClickSequenceOutcome = {
   state: PetClickSequenceState;
-  /** Perform the normal single-click activation (toggle tray / attention直达). */
+  /** First click of a burst: caller maps this to interact or tray/jump. */
   singleClick: boolean;
-  /** Start this reaction now (committed poke, or flail). */
+  /** Start this reaction now (flail upgrade, or a leftover poke commit). */
   startReaction: PetReaction | null;
-  /** Cancel this pending reaction (flail supersedes poke). */
+  /** Cancel this pending reaction (flail supersedes a deferred poke). */
   cancelReaction: PetReaction | null;
 };
 
 /**
- * Map a click count + elapsed window to a reaction. flail wins over poke so a
- * recognized quadruple click cancels the deferred poke before it ever plays.
+ * Map extra clicks in an interact burst to a reaction. The first click is the
+ * greeting (wave / poke); a second click inside the burst upgrades to flail.
  */
 export function resolvePetReaction(
   clickCount: number,
   elapsedMs: number,
 ): PetReaction | null {
-  if (clickCount >= 4 && elapsedMs <= PET_QUAD_CLICK_WINDOW_MS) return "flail";
-  if (clickCount === 2 && elapsedMs <= PET_DOUBLE_CLICK_INTERVAL_MS) return "poke";
+  if (clickCount >= 2 && elapsedMs <= PET_QUAD_CLICK_WINDOW_MS) return "flail";
   return null;
 }
 
-/**
- * Fun reactions are decorative and only ever play in idle. Attention, terminal,
- * running and connection states are business states that must preempt them, and
- * reduced motion never plays displacement reactions.
- */
-export function shouldAllowPetReaction(
+/** Decorative greetings stay off attention, terminal, and connection states. */
+export function canPlayPetInteract(
   presentation: PetVisualState,
   reducedMotion: boolean,
 ): boolean {
   if (reducedMotion) return false;
-  return presentation === "idle";
+  return presentation === "idle" || presentation === "running" || presentation === "retrying";
+}
+
+export function shouldAllowPetReaction(
+  presentation: PetVisualState,
+  reducedMotion: boolean,
+): boolean {
+  return canPlayPetInteract(presentation, reducedMotion);
+}
+
+/**
+ * Body-click routing. Tray toggle stays on the hover 「活动」 entry and on the
+ * pet itself when the tray is already open or the click is a work/attention hit.
+ */
+export function resolvePetBodyClick(input: {
+  trayOpen: boolean;
+  presentation: PetVisualState;
+  reducedMotion: boolean;
+  canJumpPrimary: boolean;
+}): PetBodyClickAction {
+  if (input.trayOpen) return "close-tray";
+  if (input.canJumpPrimary) return "jump-primary";
+  if (canPlayPetInteract(input.presentation, input.reducedMotion)) return "interact";
+  return "open-tray";
 }
 
 function noClickOutcome(state: PetClickSequenceState): PetClickSequenceOutcome {

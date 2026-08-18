@@ -131,6 +131,7 @@ import {
 } from "../desktop/renderer/pet-key";
 import {
   assertNoLookRows,
+  canApplyWaveOverlay,
   clipTotalDurationMs,
   lookCellIndex,
   profileFromCodexMetadata,
@@ -170,6 +171,7 @@ import {
   resolveCustomPetManifest,
   resolveIdleSleepStage,
   resolvePetFrame,
+  resolvePetBodyClick,
   resolvePetReaction,
   resolvePrimaryContextMeter,
   resolvePetTransitionAction,
@@ -177,6 +179,7 @@ import {
   resolveRunningCueVisual,
   runningCueNextUpdateAt,
   selectPrimaryActivity,
+  canPlayPetInteract,
   shouldAllowPetReaction,
   shouldCelebrateCompletion,
   shouldRunIdleLife,
@@ -1286,34 +1289,87 @@ async function main() {
   assert.ok(PET_POKE_ANIMATION_MS >= 300 && PET_POKE_ANIMATION_MS <= 500);
   assert.ok(PET_FLAIL_ANIMATION_MS >= 600 && PET_FLAIL_ANIMATION_MS <= 900);
 
-  assert.equal(resolvePetReaction(2, PET_DOUBLE_CLICK_INTERVAL_MS), "poke");
-  assert.equal(resolvePetReaction(2, PET_DOUBLE_CLICK_INTERVAL_MS + 1), null);
+  assert.equal(resolvePetReaction(2, PET_DOUBLE_CLICK_INTERVAL_MS), "flail");
+  assert.equal(resolvePetReaction(2, PET_QUAD_CLICK_WINDOW_MS), "flail");
+  assert.equal(resolvePetReaction(2, PET_QUAD_CLICK_WINDOW_MS + 1), null);
   assert.equal(resolvePetReaction(4, PET_QUAD_CLICK_WINDOW_MS), "flail");
-  assert.equal(resolvePetReaction(4, PET_QUAD_CLICK_WINDOW_MS + 1), null);
-  assert.equal(resolvePetReaction(3, PET_QUAD_CLICK_WINDOW_MS), null);
-  assert.equal(resolvePetReaction(5, PET_QUAD_CLICK_WINDOW_MS), "flail");
   assert.equal(resolvePetReaction(1, 0), null);
 
-  // Only idle allows a reaction; reduced motion never does.
+  assert.equal(canPlayPetInteract("idle", false), true);
+  assert.equal(canPlayPetInteract("running", false), true);
+  assert.equal(canPlayPetInteract("retrying", false), true);
   assert.equal(shouldAllowPetReaction("idle", false), true);
   for (const presentation of [
     "needs_input",
     "blocked",
     "ready",
-    "retrying",
-    "running",
     "disconnected",
     "service_not_running",
   ] as const) {
     assert.equal(
       shouldAllowPetReaction(presentation, false),
       false,
-      `${presentation} must not allow reactions`,
+      `${presentation} must not spend the body click on a greeting`,
     );
   }
   assert.equal(shouldAllowPetReaction("idle", true), false, "reduced motion disables reactions");
 
-  // Single click keeps the existing immediate activation (toggle tray / 直达).
+  assert.equal(
+    resolvePetBodyClick({
+      trayOpen: true,
+      presentation: "idle",
+      reducedMotion: false,
+      canJumpPrimary: false,
+    }),
+    "close-tray",
+  );
+  assert.equal(
+    resolvePetBodyClick({
+      trayOpen: false,
+      presentation: "needs_input",
+      reducedMotion: false,
+      canJumpPrimary: true,
+    }),
+    "jump-primary",
+  );
+  assert.equal(
+    resolvePetBodyClick({
+      trayOpen: false,
+      presentation: "idle",
+      reducedMotion: false,
+      canJumpPrimary: false,
+    }),
+    "interact",
+  );
+  assert.equal(
+    resolvePetBodyClick({
+      trayOpen: false,
+      presentation: "running",
+      reducedMotion: false,
+      canJumpPrimary: false,
+    }),
+    "interact",
+  );
+  assert.equal(
+    resolvePetBodyClick({
+      trayOpen: false,
+      presentation: "ready",
+      reducedMotion: false,
+      canJumpPrimary: false,
+    }),
+    "open-tray",
+  );
+  assert.equal(
+    resolvePetBodyClick({
+      trayOpen: false,
+      presentation: "idle",
+      reducedMotion: true,
+      canJumpPrimary: false,
+    }),
+    "open-tray",
+  );
+
+  // First click is the greeting; the caller maps singleClick to interact.
   let clickSeq = createInitialPetClickSequenceState();
   let clickOut = reducePetClickSequence(clickSeq, { type: "click", now: 1000 });
   assert.equal(clickOut.singleClick, true);
@@ -1321,47 +1377,27 @@ async function main() {
   assert.equal(clickOut.cancelReaction, null);
   clickSeq = clickOut.state;
 
-  // Double click: the second click does not re-toggle and defers a single poke.
+  // Second click upgrades to flail and must not re-toggle the tray.
   clickOut = reducePetClickSequence(clickSeq, { type: "click", now: 1200 });
-  assert.equal(clickOut.singleClick, false, "double-click second click must not re-toggle");
-  assert.equal(clickOut.startReaction, null);
-  assert.equal(clickOut.state.pendingReaction, "poke");
+  assert.equal(clickOut.singleClick, false, "second click must not re-toggle");
+  assert.equal(clickOut.startReaction, "flail");
   clickSeq = clickOut.state;
-
-  // Committing the deferred poke fires it exactly once.
-  clickOut = reducePetClickSequence(clickSeq, { type: "commit", now: 1600 });
-  assert.equal(clickOut.startReaction, "poke");
-  assert.equal(clickOut.singleClick, false);
-  clickSeq = clickOut.state;
-  assert.equal(clickSeq.committedReaction, "poke");
+  assert.equal(clickSeq.committedReaction, "flail");
 
   // A late click (past the double interval) starts a fresh single-click sequence.
   clickOut = reducePetClickSequence(clickSeq, { type: "click", now: 5000 });
   assert.equal(clickOut.singleClick, true, "timeout restarts the sequence");
   clickSeq = clickOut.state;
 
-  // Quad click: flail supersedes the deferred poke and cancels it.
+  // A rapid follow-up after flail is inert: no re-toggle, no re-fire.
   clickSeq = createInitialPetClickSequenceState();
   clickSeq = reducePetClickSequence(clickSeq, { type: "click", now: 100 }).state;
   clickOut = reducePetClickSequence(clickSeq, { type: "click", now: 300 });
-  assert.equal(clickOut.state.pendingReaction, "poke");
+  assert.equal(clickOut.startReaction, "flail");
   clickSeq = clickOut.state;
   clickOut = reducePetClickSequence(clickSeq, { type: "click", now: 500 });
-  assert.equal(clickOut.state.pendingReaction, "poke", "third click still waits for a quad");
-  assert.equal(clickOut.startReaction, null);
-  clickSeq = clickOut.state;
-  clickOut = reducePetClickSequence(clickSeq, { type: "click", now: 700 });
-  assert.equal(clickOut.startReaction, "flail");
-  assert.equal(clickOut.cancelReaction, "poke", "flail cancels the not-yet-played poke");
-  assert.equal(clickOut.singleClick, false);
-  clickSeq = clickOut.state;
-  assert.equal(clickSeq.committedReaction, "flail");
-
-  // A rapid 5th click inside the same sequence is inert: no re-toggle, no re-fire.
-  clickOut = reducePetClickSequence(clickSeq, { type: "click", now: 800 });
   assert.equal(clickOut.singleClick, false, "post-flail rapid click must not re-toggle the tray");
   assert.equal(clickOut.startReaction, null);
-  assert.equal(clickOut.cancelReaction, null);
   clickSeq = clickOut.state;
 
   // Drag / pointercancel / lost capture / hidden / preempt / destroy all cancel.
@@ -3218,6 +3254,7 @@ async function main() {
   assert.ok(html.includes('id="btn-hide"'));
   assert.ok(html.includes("隐藏到托盘"));
   assert.ok(html.includes('id="pet-intent-menu"'));
+  assert.ok(html.includes('id="btn-pet-activity"'));
   assert.ok(html.includes('id="btn-pet-mark-all"'));
   assert.ok(html.includes('id="btn-pet-quick-session"'));
   assert.ok(html.includes('id="btn-pet-settings"'));
@@ -3349,13 +3386,15 @@ async function main() {
   assert.ok(rendererSource.includes('data-idle-sleep'));
   assert.ok(rendererSource.includes("PET_IDLE_POINTER_WAKE_THROTTLE_MS"));
   assert.equal(rendererSource.includes("powerMonitor"), false, "U3 must not use powerMonitor");
-  // U4b: poke/flail are renderer-local and never enter the observer/8-state contract.
+  // U4b/U4c: greetings stay renderer-local and never enter the observer/8-state contract.
   assert.ok(rendererSource.includes("reducePetClickSequence"));
   assert.ok(rendererSource.includes("shouldAllowPetReaction"));
+  assert.ok(rendererSource.includes("resolvePetBodyClick"));
+  assert.ok(rendererSource.includes("playInteract"));
+  assert.ok(rendererSource.includes("toggleActivityFromMenu"));
   assert.ok(rendererSource.includes("cancelClickSequence"));
   assert.ok(rendererSource.includes("handlePetClick"));
   assert.ok(rendererSource.includes("playReaction"));
-  assert.ok(rendererSource.includes("PET_DOUBLE_CLICK_INTERVAL_MS"));
   assert.ok(rendererSource.includes('addEventListener("lostpointercapture"'));
   assert.ok(rendererSource.includes('event.key === "p"'));
   assert.ok(rendererSource.includes("markAllVisibleRead"));
@@ -3423,7 +3462,7 @@ async function main() {
   assert.ok(petAppSource.includes("!settingsOpen"));
   assert.ok(petAppSource.includes('trayTitle.textContent = settingsOpen ? "设置"'));
   assert.ok(petAppSource.includes("trayCounts.hidden = hideCounts"));
-  assert.ok(petAppSource.includes("悬停或聚焦显示快捷菜单"));
+  assert.ok(petAppSource.includes("悬停打开活动列表"));
   assert.ok(petAppSource.includes("markAllVisibleRead"));
   assert.ok(petAppSource.includes("openSettingsPanel"));
   assert.ok(petAppSource.includes("openQuickSessionPanel"));
@@ -3963,6 +4002,26 @@ async function main() {
       dragClip: null,
     });
     assert.equal(look.clipName, "look-4");
+    assert.equal(canApplyWaveOverlay("idle"), true);
+    assert.equal(canApplyWaveOverlay("needs_input"), false);
+    const wave = resolveActivePetClip({
+      profile,
+      state: "idle",
+      reducedMotion: false,
+      lookDirection: 4,
+      dragClip: null,
+      waveActive: true,
+    });
+    assert.equal(wave.clipName, "waving");
+    const waveBlocked = resolveActivePetClip({
+      profile,
+      state: "needs_input",
+      reducedMotion: false,
+      lookDirection: 4,
+      dragClip: null,
+      waveActive: true,
+    });
+    assert.equal(waveBlocked.clipName, "waiting");
     const blocked = resolveActivePetClip({
       profile,
       state: "needs_input",

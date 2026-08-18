@@ -241,6 +241,11 @@ export function canApplyDragOverlay(state: PetRequiredState): boolean {
   return state === "idle" || state === "running" || state === "retrying";
 }
 
+/** Greeting wave is decorative and never covers attention / terminal / connection. */
+export function canApplyWaveOverlay(state: PetRequiredState): boolean {
+  return state === "idle" || state === "running" || state === "retrying";
+}
+
 export type PetDragClipName = "running-right" | "running-left";
 
 export type ActivePetClip = {
@@ -255,6 +260,7 @@ export function resolveActivePetClip(input: {
   reducedMotion: boolean;
   lookDirection: number | null;
   dragClip: PetDragClipName | null;
+  waveActive?: boolean;
 }): ActivePetClip {
   const binding = input.profile.stateClips[input.state] ?? input.profile.stateClips.idle;
   const fallback: ActivePetClip = {
@@ -274,6 +280,19 @@ export function resolveActivePetClip(input: {
       clipName: input.dragClip,
       staticOnly: false,
       clip: input.profile.clips[input.dragClip],
+    };
+  }
+
+  if (
+    input.waveActive &&
+    canApplyWaveOverlay(input.state) &&
+    input.profile.capabilities.waving &&
+    input.profile.clips.waving
+  ) {
+    return {
+      clipName: "waving",
+      staticOnly: false,
+      clip: input.profile.clips.waving,
     };
   }
 

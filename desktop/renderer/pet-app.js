@@ -871,6 +871,9 @@
     disconnected: { clipName: "failed", staticOnly: true },
     service_not_running: { clipName: "idle", staticOnly: true }
   };
+  function clipTotalDurationMs(clip) {
+    return clip.frames.reduce((sum, frame) => sum + frame.durationMs, 0);
+  }
   function clipFromRow(name, row, used, durations) {
     const frames = durations.slice(0, used).map((durationMs, index) => ({
       cellIndex: row * CODEX_PET_COLUMNS + index,
@@ -977,6 +980,9 @@
   function canApplyDragOverlay(state) {
     return state === "idle" || state === "running" || state === "retrying";
   }
+  function canApplyWaveOverlay(state) {
+    return state === "idle" || state === "running" || state === "retrying";
+  }
   function resolveActivePetClip(input) {
     const binding = input.profile.stateClips[input.state] ?? input.profile.stateClips.idle;
     const fallback = {
@@ -990,6 +996,13 @@
         clipName: input.dragClip,
         staticOnly: false,
         clip: input.profile.clips[input.dragClip]
+      };
+    }
+    if (input.waveActive && canApplyWaveOverlay(input.state) && input.profile.capabilities.waving && input.profile.clips.waving) {
+      return {
+        clipName: "waving",
+        staticOnly: false,
+        clip: input.profile.clips.waving
       };
     }
     if (canApplyLookOverlay(input.state) && input.lookDirection != null && input.profile.capabilities.look) {
@@ -1682,13 +1695,21 @@
     return { clickTimes: [], pendingReaction: null, committedReaction: null };
   }
   function resolvePetReaction(clickCount, elapsedMs) {
-    if (clickCount >= 4 && elapsedMs <= PET_QUAD_CLICK_WINDOW_MS) return "flail";
-    if (clickCount === 2 && elapsedMs <= PET_DOUBLE_CLICK_INTERVAL_MS) return "poke";
+    if (clickCount >= 2 && elapsedMs <= PET_QUAD_CLICK_WINDOW_MS) return "flail";
     return null;
   }
-  function shouldAllowPetReaction(presentation, reducedMotion) {
+  function canPlayPetInteract(presentation, reducedMotion) {
     if (reducedMotion) return false;
-    return presentation === "idle";
+    return presentation === "idle" || presentation === "running" || presentation === "retrying";
+  }
+  function shouldAllowPetReaction(presentation, reducedMotion) {
+    return canPlayPetInteract(presentation, reducedMotion);
+  }
+  function resolvePetBodyClick(input) {
+    if (input.trayOpen) return "close-tray";
+    if (input.canJumpPrimary) return "jump-primary";
+    if (canPlayPetInteract(input.presentation, input.reducedMotion)) return "interact";
+    return "open-tray";
   }
   function noClickOutcome(state) {
     return { state, singleClick: false, startReaction: null, cancelReaction: null };
@@ -2516,6 +2537,7 @@
     const btnHideTray = root.getElementById("btn-hide-tray");
     const btnSettings = root.getElementById("btn-settings");
     const btnPetMarkAll = root.getElementById("btn-pet-mark-all");
+    const btnPetActivity = root.getElementById("btn-pet-activity");
     const btnPetSettings = root.getElementById("btn-pet-settings");
     const btnPetQuickSession = root.getElementById("btn-pet-quick-session");
     const btnQuickSession = root.getElementById("btn-quick-session");
@@ -2604,7 +2626,6 @@
     let sleepPresentation = "idle";
     let elapsedTimer = null;
     let clickSequenceState = createInitialPetClickSequenceState();
-    let pokeCommitTimer = null;
     let reactionClass = null;
     let reactionTimer = null;
     let reducedMotion = typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -2615,6 +2636,8 @@
     let petPickerQuery = "";
     let lookDirection = null;
     let dragClip = null;
+    let waveActive = false;
+    let waveTimer = null;
     let assetLoadSeq = 0;
     let loadedAssetKey = null;
     let loadedBlobUrl = null;
@@ -2977,33 +3000,50 @@
         clearReaction();
       }, reaction === "flail" ? PET_FLAIL_ANIMATION_MS : PET_POKE_ANIMATION_MS);
     }
+    function clearWave() {
+      if (waveTimer) {
+        clearTimeout(waveTimer);
+        waveTimer = null;
+      }
+      waveActive = false;
+    }
+    function startWave(durationMs) {
+      clearWave();
+      const ms = Math.max(1, Math.floor(durationMs));
+      waveActive = true;
+      waveTimer = setTimeout(() => {
+        waveTimer = null;
+        waveActive = false;
+        if (current) update(current);
+      }, ms);
+      if (current) update(current);
+    }
+    function playInteract() {
+      wakeIdleSleep();
+      const presentation = currentPresentation();
+      const profile = currentPetProfile();
+      if (profile?.capabilities.waving && profile.clips.waving && canApplyWaveOverlay(presentation)) {
+        clearReaction();
+        startWave(clipTotalDurationMs(profile.clips.waving));
+        return;
+      }
+      clearWave();
+      playReaction("poke");
+    }
     function cancelClickSequence() {
       clickSequenceState = createInitialPetClickSequenceState();
-      if (pokeCommitTimer) {
-        clearTimeout(pokeCommitTimer);
-        pokeCommitTimer = null;
-      }
       clearReaction();
-    }
-    function schedulePokeCommit() {
-      if (pokeCommitTimer) {
-        clearTimeout(pokeCommitTimer);
-        pokeCommitTimer = null;
-      }
-      if (clickSequenceState.pendingReaction !== "poke") return;
-      pokeCommitTimer = setTimeout(() => {
-        pokeCommitTimer = null;
-        const outcome = reducePetClickSequence(clickSequenceState, {
-          type: "commit",
-          now: Date.now()
-        });
-        clickSequenceState = outcome.state;
-        if (outcome.startReaction) playReaction(outcome.startReaction);
-      }, PET_DOUBLE_CLICK_INTERVAL_MS);
+      clearWave();
     }
     function handlePetClick() {
       const motionReduced = reducedMotion || current?.reducedMotion === true;
-      if (!shouldAllowPetReaction(currentPresentation(), motionReduced)) {
+      const action = resolvePetBodyClick({
+        trayOpen: current?.trayOpen === true,
+        presentation: currentPresentation(),
+        reducedMotion: motionReduced,
+        canJumpPrimary: canJumpToPrimary(current)
+      });
+      if (action !== "interact") {
         cancelClickSequence();
         activatePet();
         return;
@@ -3013,10 +3053,18 @@
         now: Date.now()
       });
       clickSequenceState = outcome.state;
-      if (outcome.cancelReaction) clearReaction();
-      if (outcome.startReaction) playReaction(outcome.startReaction);
-      if (outcome.singleClick) activatePet();
-      schedulePokeCommit();
+      if (outcome.cancelReaction) {
+        clearReaction();
+        clearWave();
+      }
+      if (outcome.startReaction === "flail") {
+        clearWave();
+        playReaction("flail");
+        return;
+      }
+      if (outcome.singleClick || outcome.startReaction === "poke") {
+        playInteract();
+      }
     }
     function replaceSpriteStylesheet(token, text) {
       const existing = spriteStyleSheets.get(token);
@@ -3269,6 +3317,9 @@
       if (state === "needs_input" || state === "blocked" || state === "ready" || state === "disconnected" || state === "service_not_running") {
         dragClip = null;
       }
+      if (motionReduced || documentHidden || !canApplyWaveOverlay(state)) {
+        if (waveActive) clearWave();
+      }
       const frame = resolvePetFrame(manifest, state, motionReduced);
       const displayGlyph = state === "running" ? cueVisual.glyph : frame.glyph || petStateGlyph(state);
       const displayLabel = state === "running" ? cueVisual.label : frame.label || petStateLabel(state);
@@ -3277,7 +3328,8 @@
         state,
         reducedMotion: motionReduced,
         lookDirection,
-        dragClip
+        dragClip,
+        waveActive
       });
       const builtinSheetUrl = petSheetDataUrl(manifest.id);
       if (profile.renderMode === "spritesheet" && !builtinSheetUrl && !petSheetUrl(profile.petKey)) {
@@ -3463,6 +3515,10 @@
       if (btnPetSettings) {
         btnPetSettings.setAttribute("aria-expanded", settingsOpen ? "true" : "false");
       }
+      if (btnPetActivity) {
+        const activityExpanded = view.trayOpen && !settingsOpen && quickSession.phase === "closed";
+        btnPetActivity.setAttribute("aria-expanded", activityExpanded ? "true" : "false");
+      }
       renderQuickSessionPanel(view);
       if (petRoot) {
         petRoot.classList.toggle("is-collapsed", !view.trayOpen);
@@ -3482,10 +3538,17 @@
       if (petButton) {
         petButton.setAttribute("aria-expanded", view.trayOpen ? "true" : "false");
         const attentionJump = canJumpToPrimary(view);
-        const gestureHint = "\u60AC\u505C\u6216\u805A\u7126\u663E\u793A\u5FEB\u6377\u83DC\u5355 \xB7 P \u8F7B\u6233 \xB7 Shift+P \u6446\u52A8";
+        const bodyAction = resolvePetBodyClick({
+          trayOpen: view.trayOpen,
+          presentation: state,
+          reducedMotion: motionReduced,
+          canJumpPrimary: attentionJump
+        });
+        const gestureHint = "\u60AC\u505C\u6253\u5F00\u6D3B\u52A8\u5217\u8868 \xB7 P \u4E92\u52A8 \xB7 Shift+P \u6446\u52A8";
+        const bodyHint = bodyAction === "close-tray" ? "\u70B9\u51FB\u6536\u8D77\u6D3B\u52A8\u5217\u8868" : bodyAction === "jump-primary" ? "\u70B9\u51FB\u76F4\u8FBE\u5F85\u5904\u7406\u4EFB\u52A1" : bodyAction === "interact" ? "\u70B9\u51FB\u4E92\u52A8" : "\u70B9\u51FB\u5C55\u5F00\u6D3B\u52A8\u5217\u8868";
         petButton.setAttribute(
           "aria-label",
-          view.trayOpen ? `\u684C\u5BA0\uFF0C\u70B9\u51FB\u6536\u8D77\u6D3B\u52A8\u5217\u8868\uFF0C\u62D6\u52A8\u53EF\u79FB\u52A8\u3002${gestureHint}` : attentionJump ? `\u684C\u5BA0\uFF0C\u70B9\u51FB\u76F4\u8FBE\u5F85\u5904\u7406\u4EFB\u52A1\uFF0C\u62D6\u52A8\u53EF\u79FB\u52A8\u3002${gestureHint}` : `\u684C\u5BA0\uFF0C\u70B9\u51FB\u5C55\u5F00\u6D3B\u52A8\u5217\u8868\uFF0C\u62D6\u52A8\u53EF\u79FB\u52A8\u3002${gestureHint}`
+          `\u684C\u5BA0\uFF0C${bodyHint}\uFF0C\u62D6\u52A8\u53EF\u79FB\u52A8\u3002${gestureHint}`
         );
         petButton.title = gestureHint;
       }
@@ -4219,6 +4282,25 @@
       }
       bridge?.markAllRead();
     }
+    function toggleActivityFromMenu() {
+      wakeIdleSleep();
+      setTrayMoreOpen(false);
+      const showingActivity = current?.trayOpen === true && !settingsOpen && quickSession.phase === "closed";
+      if (showingActivity) {
+        bridge?.toggleTray();
+        return;
+      }
+      settingsOpen = false;
+      if (quickSession.phase !== "closed") {
+        applyQuickSession({ type: "close" }, { render: false });
+      }
+      pendingTrayPanel = null;
+      if (current?.trayOpen) {
+        update(current);
+        return;
+      }
+      bridge?.toggleTray();
+    }
     function openSettingsPanel() {
       wakeIdleSleep();
       setTrayMoreOpen(false);
@@ -4362,7 +4444,11 @@
         event.preventDefault();
         event.stopPropagation();
         cancelClickSequence();
-        playReaction(event.shiftKey ? "flail" : "poke");
+        if (event.shiftKey) {
+          playReaction("flail");
+        } else {
+          playInteract();
+        }
         return;
       }
       if (event.key !== "Enter" && event.key !== " ") return;
@@ -4453,6 +4539,11 @@
       event.stopPropagation();
       wakeIdleSleep();
       markAllVisibleRead();
+    });
+    btnPetActivity?.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      toggleActivityFromMenu();
     });
     btnQuickSession?.addEventListener("click", () => {
       wakeIdleSleep();

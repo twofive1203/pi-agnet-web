@@ -54,6 +54,7 @@ import {
   resolveActivityElapsedMs,
   resolveActivitySelection,
   resolvePetFrame,
+  resolvePetBodyClick,
   resolvePetTransitionAction,
   resolvePrimaryContextMeter,
   resolveRunningCue,
@@ -63,7 +64,6 @@ import {
   shouldAllowPetReaction,
   shouldCelebrateCompletion,
   shouldRunIdleLife,
-  PET_DOUBLE_CLICK_INTERVAL_MS,
   PET_FLAIL_ANIMATION_MS,
   PET_IDLE_POINTER_WAKE_THROTTLE_MS,
   PET_POKE_ANIMATION_MS,
@@ -96,6 +96,8 @@ import {
 import {
   canApplyDragOverlay,
   canApplyLookOverlay,
+  canApplyWaveOverlay,
+  clipTotalDurationMs,
   quantizeCodexLookDirection,
   resolveActivePetClip,
   resolveCodexDragClip,
@@ -178,6 +180,7 @@ export function renderPetApp(root: Document = document): {
   const btnHideTray = root.getElementById("btn-hide-tray");
   const btnSettings = root.getElementById("btn-settings");
   const btnPetMarkAll = root.getElementById("btn-pet-mark-all");
+  const btnPetActivity = root.getElementById("btn-pet-activity");
   const btnPetSettings = root.getElementById("btn-pet-settings");
   const btnPetQuickSession = root.getElementById("btn-pet-quick-session") as HTMLButtonElement | null;
   const btnQuickSession = root.getElementById("btn-quick-session") as HTMLButtonElement | null;
@@ -274,7 +277,7 @@ export function renderPetApp(root: Document = document): {
   let elapsedTimer: ReturnType<typeof setInterval> | null = null;
   // U4b: poke/flail click-sequence state + the two short timers it needs.
   let clickSequenceState: PetClickSequenceState = createInitialPetClickSequenceState();
-  let pokeCommitTimer: ReturnType<typeof setTimeout> | null = null;
+
   let reactionClass: string | null = null;
   let reactionTimer: ReturnType<typeof setTimeout> | null = null;
   let reducedMotion =
@@ -292,6 +295,8 @@ export function renderPetApp(root: Document = document): {
   let petPickerQuery = "";
   let lookDirection: number | null = null;
   let dragClip: PetDragClipName | null = null;
+  let waveActive = false;
+  let waveTimer: ReturnType<typeof setTimeout> | null = null;
   let assetLoadSeq = 0;
   let loadedAssetKey: string | null = null;
   let loadedBlobUrl: string | null = null;
@@ -740,41 +745,64 @@ export function renderPetApp(root: Document = document): {
     }, reaction === "flail" ? PET_FLAIL_ANIMATION_MS : PET_POKE_ANIMATION_MS);
   }
 
+  function clearWave(): void {
+    if (waveTimer) {
+      clearTimeout(waveTimer);
+      waveTimer = null;
+    }
+    waveActive = false;
+  }
+
+  function startWave(durationMs: number): void {
+    clearWave();
+    const ms = Math.max(1, Math.floor(durationMs));
+    waveActive = true;
+    waveTimer = setTimeout(() => {
+      waveTimer = null;
+      waveActive = false;
+      if (current) update(current);
+    }, ms);
+    if (current) update(current);
+  }
+
+  function playInteract(): void {
+    wakeIdleSleep();
+    const presentation = currentPresentation();
+    const profile = currentPetProfile();
+    if (
+      profile?.capabilities.waving &&
+      profile.clips.waving &&
+      canApplyWaveOverlay(presentation)
+    ) {
+      clearReaction();
+      startWave(clipTotalDurationMs(profile.clips.waving));
+      return;
+    }
+    clearWave();
+    playReaction("poke");
+  }
+
   /** Drag, cancel, lost capture, hiding, preemption and teardown all reset here. */
   function cancelClickSequence(): void {
     clickSequenceState = createInitialPetClickSequenceState();
-    if (pokeCommitTimer) {
-      clearTimeout(pokeCommitTimer);
-      pokeCommitTimer = null;
-    }
     clearReaction();
-  }
-
-  function schedulePokeCommit(): void {
-    if (pokeCommitTimer) {
-      clearTimeout(pokeCommitTimer);
-      pokeCommitTimer = null;
-    }
-    if (clickSequenceState.pendingReaction !== "poke") return;
-    pokeCommitTimer = setTimeout(() => {
-      pokeCommitTimer = null;
-      const outcome = reducePetClickSequence(clickSequenceState, {
-        type: "commit",
-        now: Date.now(),
-      });
-      clickSequenceState = outcome.state;
-      if (outcome.startReaction) playReaction(outcome.startReaction);
-    }, PET_DOUBLE_CLICK_INTERVAL_MS);
+    clearWave();
   }
 
   /**
-   * Route one resolved pet click. The first click of a sequence keeps the
-   * existing single-click activation (toggle tray / attention直达); later clicks
-   * only feed the sequence so poke/flail never re-open/close the tray.
+   * Idle/running/retrying clicks greet the pet. Attention, tray-open and
+   * connection clicks keep the work path. A second click in the same burst
+   * upgrades the greeting to flail without toggling the tray.
    */
   function handlePetClick(): void {
     const motionReduced = reducedMotion || current?.reducedMotion === true;
-    if (!shouldAllowPetReaction(currentPresentation(), motionReduced)) {
+    const action = resolvePetBodyClick({
+      trayOpen: current?.trayOpen === true,
+      presentation: currentPresentation(),
+      reducedMotion: motionReduced,
+      canJumpPrimary: canJumpToPrimary(current),
+    });
+    if (action !== "interact") {
       cancelClickSequence();
       activatePet();
       return;
@@ -784,10 +812,18 @@ export function renderPetApp(root: Document = document): {
       now: Date.now(),
     });
     clickSequenceState = outcome.state;
-    if (outcome.cancelReaction) clearReaction();
-    if (outcome.startReaction) playReaction(outcome.startReaction);
-    if (outcome.singleClick) activatePet();
-    schedulePokeCommit();
+    if (outcome.cancelReaction) {
+      clearReaction();
+      clearWave();
+    }
+    if (outcome.startReaction === "flail") {
+      clearWave();
+      playReaction("flail");
+      return;
+    }
+    if (outcome.singleClick || outcome.startReaction === "poke") {
+      playInteract();
+    }
   }
 
   function replaceSpriteStylesheet(token: string, text: string): void {
@@ -1073,6 +1109,9 @@ export function renderPetApp(root: Document = document): {
     if (state === "needs_input" || state === "blocked" || state === "ready" || state === "disconnected" || state === "service_not_running") {
       dragClip = null;
     }
+    if (motionReduced || documentHidden || !canApplyWaveOverlay(state)) {
+      if (waveActive) clearWave();
+    }
     const frame = resolvePetFrame(manifest, state, motionReduced);
     const displayGlyph = state === "running" ? cueVisual.glyph : frame.glyph || petStateGlyph(state);
     const displayLabel = state === "running" ? cueVisual.label : frame.label || petStateLabel(state);
@@ -1082,6 +1121,7 @@ export function renderPetApp(root: Document = document): {
       reducedMotion: motionReduced,
       lookDirection,
       dragClip,
+      waveActive,
     });
     const builtinSheetUrl = petSheetDataUrl(manifest.id);
     if (profile.renderMode === "spritesheet" && !builtinSheetUrl && !petSheetUrl(profile.petKey)) {
@@ -1289,6 +1329,11 @@ export function renderPetApp(root: Document = document): {
     if (btnPetSettings) {
       btnPetSettings.setAttribute("aria-expanded", settingsOpen ? "true" : "false");
     }
+    if (btnPetActivity) {
+      const activityExpanded =
+        view.trayOpen && !settingsOpen && quickSession.phase === "closed";
+      btnPetActivity.setAttribute("aria-expanded", activityExpanded ? "true" : "false");
+    }
     renderQuickSessionPanel(view);
     if (petRoot) {
       petRoot.classList.toggle("is-collapsed", !view.trayOpen);
@@ -1314,14 +1359,24 @@ export function renderPetApp(root: Document = document): {
     if (petButton) {
       petButton.setAttribute("aria-expanded", view.trayOpen ? "true" : "false");
       const attentionJump = canJumpToPrimary(view);
-      const gestureHint = "悬停或聚焦显示快捷菜单 · P 轻戳 · Shift+P 摆动";
+      const bodyAction = resolvePetBodyClick({
+        trayOpen: view.trayOpen,
+        presentation: state,
+        reducedMotion: motionReduced,
+        canJumpPrimary: attentionJump,
+      });
+      const gestureHint = "悬停打开活动列表 · P 互动 · Shift+P 摆动";
+      const bodyHint =
+        bodyAction === "close-tray"
+          ? "点击收起活动列表"
+          : bodyAction === "jump-primary"
+            ? "点击直达待处理任务"
+            : bodyAction === "interact"
+              ? "点击互动"
+              : "点击展开活动列表";
       petButton.setAttribute(
         "aria-label",
-        view.trayOpen
-          ? `桌宠，点击收起活动列表，拖动可移动。${gestureHint}`
-          : attentionJump
-            ? `桌宠，点击直达待处理任务，拖动可移动。${gestureHint}`
-            : `桌宠，点击展开活动列表，拖动可移动。${gestureHint}`,
+        `桌宠，${bodyHint}，拖动可移动。${gestureHint}`,
       );
       petButton.title = gestureHint;
     }
@@ -2204,6 +2259,27 @@ export function renderPetApp(root: Document = document): {
     bridge?.markAllRead();
   }
 
+  function toggleActivityFromMenu(): void {
+    wakeIdleSleep();
+    setTrayMoreOpen(false);
+    const showingActivity =
+      current?.trayOpen === true && !settingsOpen && quickSession.phase === "closed";
+    if (showingActivity) {
+      bridge?.toggleTray();
+      return;
+    }
+    settingsOpen = false;
+    if (quickSession.phase !== "closed") {
+      applyQuickSession({ type: "close" }, { render: false });
+    }
+    pendingTrayPanel = null;
+    if (current?.trayOpen) {
+      update(current);
+      return;
+    }
+    bridge?.toggleTray();
+  }
+
   function openSettingsPanel(): void {
     wakeIdleSleep();
     setTrayMoreOpen(false);
@@ -2370,9 +2446,8 @@ export function renderPetApp(root: Document = document): {
     if (petPointerId === null) resetEyeFollow();
   });
 
-  // Keyboard activation mirrors the contextual pointer action (Enter/Space).
-  // P / Shift+P are the keyboard equivalents of the idle poke / flail reactions.
-  // The click handler below still swallows the browser-synthesized click.
+  // Keyboard activation: Enter/Space still opens/jumps (accessible work path).
+  // P greets; Shift+P flails. The click handler swallows the synthesized click.
   petButton?.addEventListener("keydown", (event) => {
     if (event.key === "p" || event.key === "P") {
       const motionReduced = reducedMotion || current?.reducedMotion === true;
@@ -2380,7 +2455,11 @@ export function renderPetApp(root: Document = document): {
       event.preventDefault();
       event.stopPropagation();
       cancelClickSequence();
-      playReaction(event.shiftKey ? "flail" : "poke");
+      if (event.shiftKey) {
+        playReaction("flail");
+      } else {
+        playInteract();
+      }
       return;
     }
     if (event.key !== "Enter" && event.key !== " ") return;
@@ -2488,6 +2567,12 @@ export function renderPetApp(root: Document = document): {
     event.stopPropagation();
     wakeIdleSleep();
     markAllVisibleRead();
+  });
+
+  btnPetActivity?.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    toggleActivityFromMenu();
   });
 
   btnQuickSession?.addEventListener("click", () => {
