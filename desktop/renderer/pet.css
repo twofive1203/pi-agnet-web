@@ -83,6 +83,72 @@
   --tint-rose: #4a2c38;
 }
 
+.pet-root[data-bubble-theme="ember"] {
+  color-scheme: dark;
+  --ink: #f6d7b0;
+  --paper: #1c1410;
+  --paper-2: #2a1d16;
+  --paper-3: #3c2a20;
+  --pet-muted: #c4a58a;
+  --pet-accent: #f0a05a;
+  --pet-warn: #f0b35a;
+  --pet-danger: #ff8b7a;
+  --pet-ok: #9dcf7a;
+  --focus: #f0a05a;
+  --bubble-shade: rgba(12, 6, 2, 0.55);
+  --tint-running: #3a2818;
+  --tint-ready: #2a3218;
+  --tint-warn: #4a3010;
+  --tint-danger: #4a2018;
+  --tint-accent-soft: #3d2818;
+  --tint-focus-soft: #3d2a1c;
+  --tint-rose: #4a241c;
+}
+
+.pet-root[data-bubble-theme="plum"] {
+  color-scheme: dark;
+  --ink: #f3e0f4;
+  --paper: #1a1224;
+  --paper-2: #281a36;
+  --paper-3: #3a2650;
+  --pet-muted: #b8a0c8;
+  --pet-accent: #d4a0ff;
+  --pet-warn: #f0b35a;
+  --pet-danger: #ff8b9a;
+  --pet-ok: #86d98c;
+  --focus: #d4a0ff;
+  --bubble-shade: rgba(10, 4, 18, 0.55);
+  --tint-running: #2a1840;
+  --tint-ready: #1f352c;
+  --tint-warn: #3d2f16;
+  --tint-danger: #3d222c;
+  --tint-accent-soft: #35204a;
+  --tint-focus-soft: #3a2460;
+  --tint-rose: #4a2c38;
+}
+
+.pet-root[data-bubble-theme="moss"] {
+  color-scheme: dark;
+  --ink: #d8f4ec;
+  --paper: #0f1c1c;
+  --paper-2: #17302c;
+  --paper-3: #214240;
+  --pet-muted: #8fb8b0;
+  --pet-accent: #5ee0c0;
+  --pet-warn: #f0b35a;
+  --pet-danger: #ff8b9a;
+  --pet-ok: #86d98c;
+  --focus: #5ee0c0;
+  --bubble-shade: rgba(2, 10, 10, 0.55);
+  --tint-running: #163832;
+  --tint-ready: #1f352c;
+  --tint-warn: #3d2f16;
+  --tint-danger: #3d222c;
+  --tint-accent-soft: #1a3c36;
+  --tint-focus-soft: #1c403c;
+  --tint-rose: #4a2c38;
+}
+
 /* Rebind aliases on the themed root so tray/text/border follow --paper/--ink.
    :root aliases would otherwise keep the cream computed values. */
 .pet-root {
@@ -1952,6 +2018,36 @@ select {
 .preview-bubble-night::after {
   border-right-color: #f6e7c4;
   border-bottom-color: #f6e7c4;
+}
+
+.preview-bubble-ember {
+  background: #1c1410;
+  border-color: #f6d7b0;
+}
+
+.preview-bubble-ember::after {
+  border-right-color: #f6d7b0;
+  border-bottom-color: #f6d7b0;
+}
+
+.preview-bubble-plum {
+  background: #1a1224;
+  border-color: #f3e0f4;
+}
+
+.preview-bubble-plum::after {
+  border-right-color: #f3e0f4;
+  border-bottom-color: #f3e0f4;
+}
+
+.preview-bubble-moss {
+  background: #0f1c1c;
+  border-color: #d8f4ec;
+}
+
+.preview-bubble-moss::after {
+  border-right-color: #d8f4ec;
+  border-bottom-color: #d8f4ec;
 }
 
 .settings-restore-btn {

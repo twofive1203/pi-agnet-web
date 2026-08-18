@@ -7,13 +7,16 @@
 
 ## Decision
 
-Desktop-pet chrome uses a Q-version comic-bubble language: paper fill, ink outline, chunky radii, and a short tail on the status caption. Three switchable palettes live in settings as `bubbleTheme`:
+Desktop-pet chrome uses a Q-version comic-bubble language: paper fill, ink outline, chunky radii, and a short tail on the status caption. Six switchable palettes live in settings as `bubbleTheme`:
 
 | Token | Label | Read |
 | --- | --- | --- |
 | `cream` | 奶油白 | Warm parchment (default; missing v1 files migrate here) |
 | `peach` | 蜜桃粉 | Rose-ink Q-version sticker |
 | `night` | 星夜 | Indigo night-sky card, cream ink outlines, starlight-blue accent |
+| `ember` | 余烬 | Warm charcoal card, copper/amber accent |
+| `plum` | 暮紫 | Deep purple card, lilac accent |
+| `moss` | 墨青 | Deep teal card, jade accent |
 
 The whole tray/settings chrome follows the same tokens so the balloon and panel stay one sticker set. This follows the Codex pet speech/notification card, not a dark glass admin overlay.
 

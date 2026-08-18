@@ -457,6 +457,9 @@
     medium: 1,
     large: 1.2
   };
+  function isDesktopPetBubbleTheme(value) {
+    return value === "cream" || value === "peach" || value === "night" || value === "ember" || value === "plum" || value === "moss";
+  }
 
   // desktop/main/window-manager.ts
   var PET_LAYOUT_BASE = {
@@ -3533,7 +3536,7 @@
         const scale = view.petScale === "small" || view.petScale === "large" ? view.petScale : "medium";
         const spec = resolvePetLayoutSpec(scale);
         petRoot.setAttribute("data-pet-scale", scale);
-        const bubbleTheme = view.bubbleTheme === "peach" || view.bubbleTheme === "night" ? view.bubbleTheme : "cream";
+        const bubbleTheme = isDesktopPetBubbleTheme(view.bubbleTheme) ? view.bubbleTheme : "cream";
         petRoot.setAttribute("data-bubble-theme", bubbleTheme);
         petRoot.style.setProperty("--pet-scale", String(spec.factor));
         petRoot.style.setProperty("--pet-root-pad", `${spec.rootPad}px`);
@@ -4692,7 +4695,7 @@
     bubbleThemePicker?.addEventListener("click", (event) => {
       const target = event.target instanceof Element ? event.target.closest("[data-bubble-theme]") : null;
       const bubbleTheme = target?.dataset.bubbleTheme;
-      if (bubbleTheme !== "cream" && bubbleTheme !== "peach" && bubbleTheme !== "night") return;
+      if (!isDesktopPetBubbleTheme(bubbleTheme)) return;
       bridge?.setPrefs({ bubbleTheme });
     });
     btnRestorePosition?.addEventListener("click", () => {

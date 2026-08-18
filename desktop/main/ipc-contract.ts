@@ -87,7 +87,7 @@ export type PetPrefsPatch = Partial<{
   selectedPetId: string;
   selectedPetKey: string;
   petScale: "small" | "medium" | "large";
-  bubbleTheme: "cream" | "peach" | "night";
+  bubbleTheme: "cream" | "peach" | "night" | "ember" | "plum" | "moss";
   alwaysOnTop: boolean;
   clickThrough: boolean;
   launchAtLogin: boolean;

@@ -13,6 +13,7 @@ import type {
   DesktopActivityView,
   DesktopProjectGroup,
 } from "../main/activity-store";
+import { isDesktopPetBubbleTheme } from "../main/settings-store";
 import { resolvePetLayoutSpec } from "../main/window-manager";
 import type { SnailPetBridge } from "../preload/pet-preload";
 import {
@@ -1350,10 +1351,9 @@ export function renderPetApp(root: Document = document): {
         view.petScale === "small" || view.petScale === "large" ? view.petScale : "medium";
       const spec = resolvePetLayoutSpec(scale);
       petRoot.setAttribute("data-pet-scale", scale);
-      const bubbleTheme =
-        view.bubbleTheme === "peach" || view.bubbleTheme === "night"
-          ? view.bubbleTheme
-          : "cream";
+      const bubbleTheme = isDesktopPetBubbleTheme(view.bubbleTheme)
+        ? view.bubbleTheme
+        : "cream";
       petRoot.setAttribute("data-bubble-theme", bubbleTheme);
       petRoot.style.setProperty("--pet-scale", String(spec.factor));
       petRoot.style.setProperty("--pet-root-pad", `${spec.rootPad}px`);
@@ -2737,7 +2737,7 @@ export function renderPetApp(root: Document = document): {
       ? event.target.closest<HTMLElement>("[data-bubble-theme]")
       : null;
     const bubbleTheme = target?.dataset.bubbleTheme;
-    if (bubbleTheme !== "cream" && bubbleTheme !== "peach" && bubbleTheme !== "night") return;
+    if (!isDesktopPetBubbleTheme(bubbleTheme)) return;
     bridge?.setPrefs({ bubbleTheme });
   });
 

@@ -16,7 +16,14 @@ export const DESKTOP_SETTINGS_VERSION = 1 as const;
 export const DESKTOP_PET_SCALES = ["small", "medium", "large"] as const;
 export type DesktopPetScale = (typeof DESKTOP_PET_SCALES)[number];
 
-export const DESKTOP_PET_BUBBLE_THEMES = ["cream", "peach", "night"] as const;
+export const DESKTOP_PET_BUBBLE_THEMES = [
+  "cream",
+  "peach",
+  "night",
+  "ember",
+  "plum",
+  "moss",
+] as const;
 export type DesktopPetBubbleTheme = (typeof DESKTOP_PET_BUBBLE_THEMES)[number];
 
 /** Discrete size factors shared with the window layout spec. */
@@ -288,9 +295,19 @@ export function normalizePetScale(value: unknown): DesktopPetScale {
   return DESKTOP_SETTINGS_DEFAULTS.petScale;
 }
 
+export function isDesktopPetBubbleTheme(value: unknown): value is DesktopPetBubbleTheme {
+  return (
+    value === "cream" ||
+    value === "peach" ||
+    value === "night" ||
+    value === "ember" ||
+    value === "plum" ||
+    value === "moss"
+  );
+}
+
 export function normalizeBubbleTheme(value: unknown): DesktopPetBubbleTheme {
-  if (value === "cream" || value === "peach" || value === "night") return value;
-  return DESKTOP_SETTINGS_DEFAULTS.bubbleTheme;
+  return isDesktopPetBubbleTheme(value) ? value : DESKTOP_SETTINGS_DEFAULTS.bubbleTheme;
 }
 
 function normalizeWindowPosition(value: unknown): { x: number; y: number } | null {

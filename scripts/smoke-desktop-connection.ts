@@ -603,6 +603,7 @@ async function main() {
   assert.equal(dirty.selectedPetId, "snail-default");
   assert.equal(dirty.petScale, "medium");
   assert.equal(normalizeDesktopSettings({ bubbleTheme: "night" }).bubbleTheme, "night");
+  assert.equal(normalizeDesktopSettings({ bubbleTheme: "ember" }).bubbleTheme, "ember");
   assert.equal(normalizeDesktopSettings({ bubbleTheme: 1 }).bubbleTheme, "cream");
   assert.equal(dirty.showContextMeter, true);
   assert.equal(dirty.notification.completion, "background-only");

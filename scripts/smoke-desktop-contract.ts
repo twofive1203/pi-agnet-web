@@ -2962,6 +2962,9 @@ async function main() {
   assert.equal(normalizeDesktopSettings({ petScale: "huge" }).petScale, "medium");
   assert.equal(normalizeDesktopSettings({ bubbleTheme: "neon" }).bubbleTheme, "cream");
   assert.equal(normalizeDesktopSettings({ bubbleTheme: "peach" }).bubbleTheme, "peach");
+  assert.equal(normalizeDesktopSettings({ bubbleTheme: "ember" }).bubbleTheme, "ember");
+  assert.equal(normalizeDesktopSettings({ bubbleTheme: "plum" }).bubbleTheme, "plum");
+  assert.equal(normalizeDesktopSettings({ bubbleTheme: "moss" }).bubbleTheme, "moss");
   assert.equal(
     updateDesktopSettings(createDefaultDesktopSettings(), { bubbleTheme: "night" }).bubbleTheme,
     "night",
@@ -3312,6 +3315,9 @@ async function main() {
   assert.ok(css.includes("--bubble-paper"));
   assert.ok(css.includes('data-bubble-theme="peach"'));
   assert.ok(css.includes('data-bubble-theme="night"'));
+  assert.ok(css.includes('data-bubble-theme="ember"'));
+  assert.ok(css.includes('data-bubble-theme="plum"'));
+  assert.ok(css.includes('data-bubble-theme="moss"'));
   assert.ok(css.includes(".bubble-theme-picker"));
   assert.ok(css.includes(".settings-card"));
   assert.ok(html.includes("settings-card"));
