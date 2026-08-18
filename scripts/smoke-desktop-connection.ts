@@ -587,6 +587,7 @@ async function main() {
   assert.equal(defaults.port, 62666);
   assert.equal(defaults.version, 1);
   assert.equal(defaults.petScale, "medium");
+  assert.equal(defaults.bubbleTheme, "cream");
   assert.equal(defaults.showContextMeter, true);
   assertDesktopSettingsSafe(defaults);
 
@@ -601,6 +602,8 @@ async function main() {
   assert.equal(dirty.port, DESKTOP_DEFAULT_PORT);
   assert.equal(dirty.selectedPetId, "snail-default");
   assert.equal(dirty.petScale, "medium");
+  assert.equal(normalizeDesktopSettings({ bubbleTheme: "night" }).bubbleTheme, "night");
+  assert.equal(normalizeDesktopSettings({ bubbleTheme: 1 }).bubbleTheme, "cream");
   assert.equal(dirty.showContextMeter, true);
   assert.equal(dirty.notification.completion, "background-only");
   assert.deepEqual(dirty.acknowledgedTransitionIds, ["a", "b"]);

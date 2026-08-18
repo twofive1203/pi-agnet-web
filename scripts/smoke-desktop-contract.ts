@@ -2511,6 +2511,7 @@ async function main() {
   });
   assert.equal(offlineView.presentation, "service_not_running");
   assert.equal(offlineView.petScale, "medium");
+  assert.equal(offlineView.bubbleTheme, "cream");
   assert.equal(offlineView.showContextMeter, true);
   assert.equal(
     buildActivityView({
@@ -2947,6 +2948,7 @@ async function main() {
     }),
   );
   assert.equal(migrated.petScale, "medium");
+  assert.equal(migrated.bubbleTheme, "cream");
   assert.equal(migrated.showContextMeter, true);
   assert.equal(migrated.dndEnabled, false);
   assert.equal(migrated.selectedPetId, "snail-classic");
@@ -2958,6 +2960,12 @@ async function main() {
   );
   assert.equal(normalizeDesktopSettings({ showContextMeter: "nope" }).showContextMeter, true);
   assert.equal(normalizeDesktopSettings({ petScale: "huge" }).petScale, "medium");
+  assert.equal(normalizeDesktopSettings({ bubbleTheme: "neon" }).bubbleTheme, "cream");
+  assert.equal(normalizeDesktopSettings({ bubbleTheme: "peach" }).bubbleTheme, "peach");
+  assert.equal(
+    updateDesktopSettings(createDefaultDesktopSettings(), { bubbleTheme: "night" }).bubbleTheme,
+    "night",
+  );
   assert.equal(normalizeDesktopSettings({ petScale: 0.85 }).petScale, "small");
   assert.equal(normalizeDesktopSettings({ petScale: 1.2 }).petScale, "large");
   assert.equal(normalizeDesktopSettings({ windowPosition: { x: Number.NaN, y: 10 } }).windowPosition, null);
@@ -3302,8 +3310,12 @@ async function main() {
   assert.ok(css.includes(".pet-stack:focus-within .pet-intent-menu"));
   // Comic-bubble chrome: cream paper + ink outline, not a dark admin overlay.
   assert.ok(css.includes("--bubble-paper"));
+  assert.ok(css.includes('data-bubble-theme="peach"'));
+  assert.ok(css.includes('data-bubble-theme="night"'));
+  assert.ok(css.includes(".bubble-theme-picker"));
   assert.ok(css.includes(".settings-card"));
   assert.ok(html.includes("settings-card"));
+  assert.ok(html.includes('id="bubble-theme-picker"'));
   for (const cue of [
     "thinking",
     "editing",
@@ -3322,7 +3334,7 @@ async function main() {
     "--eye-shift-x",
     "confetti-fly",
     "tray-pop",
-    "empty-pet",
+    "empty-tray",
     "pet-sleepy",
     "pet-sleeping",
     "idle-sleepy-z",
@@ -3355,6 +3367,7 @@ async function main() {
   assert.ok(rendererSource.includes("selectPrimaryActivity"));
   assert.ok(rendererSource.includes("resolvePrimaryContextMeter"));
   assert.ok(rendererSource.includes("showContextMeter"));
+  assert.ok(rendererSource.includes('setAttribute("data-bubble-theme", bubbleTheme)'));
   assert.ok(rendererSource.includes("resolveRunningCue"));
   assert.ok(rendererSource.includes('setAttribute("data-running-cue", runningCue)'));
   assert.ok(rendererSource.includes("scheduleRunningCueUpdate"));
@@ -3503,6 +3516,7 @@ async function main() {
   assert.ok(petAppJs.includes("formatActivityProgress"));
   assert.ok(petAppJs.includes("selectedPetId"));
   assert.ok(petAppJs.includes("petScale"));
+  assert.ok(petAppJs.includes("bubbleTheme"));
   assert.ok(petAppJs.includes("restoreDefaultPosition"));
   assert.ok(petAppJs.includes("settingsOpen"));
   assert.ok(petAppJs.includes("filterProjectGroups"));

@@ -113,6 +113,7 @@ export type DesktopActivityView = {
   selectedPetId: string;
   selectedPetKey: string;
   petScale: DesktopPetSettings["petScale"];
+  bubbleTheme: DesktopPetSettings["bubbleTheme"];
   alwaysOnTop: boolean;
   clickThrough: boolean;
   launchAtLogin: boolean;
@@ -413,6 +414,7 @@ export function buildActivityView(input: ActivityStoreSnapshotInput): DesktopAct
     selectedPetId: input.settings.selectedPetId,
     selectedPetKey: input.settings.selectedPetKey,
     petScale: input.settings.petScale,
+    bubbleTheme: input.settings.bubbleTheme,
     alwaysOnTop: input.settings.alwaysOnTop,
     clickThrough: input.settings.clickThrough,
     launchAtLogin: input.settings.launchAtLogin,

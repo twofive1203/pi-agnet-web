@@ -15,6 +15,7 @@
       id="root"
       class="pet-root is-collapsed"
       data-tray-anchor="top-left"
+      data-bubble-theme="cream"
       aria-live="polite"
     >
       <!-- pet-stack stays fixed on screen; tray grows around it via data-tray-anchor. -->
@@ -229,6 +230,23 @@
                 <input id="pref-show-context-meter" type="checkbox" />
                 <span>显示上下文占比</span>
               </label>
+            </div>
+          </div>
+          <div class="settings-card">
+            <div class="settings-heading">气泡</div>
+            <div id="bubble-theme-picker" class="bubble-theme-picker" role="radiogroup" aria-label="气泡样式">
+              <button type="button" class="bubble-theme-option" data-bubble-theme="cream" role="radio">
+                <span class="bubble-theme-preview preview-bubble-cream" aria-hidden="true"></span>
+                <span>奶油白</span>
+              </button>
+              <button type="button" class="bubble-theme-option" data-bubble-theme="peach" role="radio">
+                <span class="bubble-theme-preview preview-bubble-peach" aria-hidden="true"></span>
+                <span>蜜桃粉</span>
+              </button>
+              <button type="button" class="bubble-theme-option" data-bubble-theme="night" role="radio">
+                <span class="bubble-theme-preview preview-bubble-night" aria-hidden="true"></span>
+                <span>星夜</span>
+              </button>
             </div>
           </div>
           <div class="settings-card">

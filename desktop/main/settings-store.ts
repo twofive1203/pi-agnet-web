@@ -16,6 +16,9 @@ export const DESKTOP_SETTINGS_VERSION = 1 as const;
 export const DESKTOP_PET_SCALES = ["small", "medium", "large"] as const;
 export type DesktopPetScale = (typeof DESKTOP_PET_SCALES)[number];
 
+export const DESKTOP_PET_BUBBLE_THEMES = ["cream", "peach", "night"] as const;
+export type DesktopPetBubbleTheme = (typeof DESKTOP_PET_BUBBLE_THEMES)[number];
+
 /** Discrete size factors shared with the window layout spec. */
 export const DESKTOP_PET_SCALE_FACTORS: Record<DesktopPetScale, number> = {
   small: 0.85,
@@ -34,6 +37,8 @@ export type DesktopPetSettings = {
   selectedPetKey: string;
   /** Collapsed/tray layout size token; missing v1 files migrate to medium. */
   petScale: DesktopPetScale;
+  /** Comic-bubble chrome palette; missing v1 files migrate to cream. */
+  bubbleTheme: DesktopPetBubbleTheme;
   alwaysOnTop: boolean;
   clickThrough: boolean;
   launchAtLogin: boolean;
@@ -74,6 +79,7 @@ export const DESKTOP_SETTINGS_DEFAULTS: DesktopPetSettings = {
   selectedPetId: DEFAULT_PET_ID,
   selectedPetKey: DEFAULT_PET_KEY,
   petScale: "medium",
+  bubbleTheme: "cream",
   alwaysOnTop: true,
   clickThrough: false,
   launchAtLogin: false,
@@ -123,6 +129,7 @@ export function normalizeDesktopSettings(input: unknown): DesktopPetSettings {
 
   const windowPosition = normalizeWindowPosition(raw.windowPosition);
   const petScale = normalizePetScale(raw.petScale);
+  const bubbleTheme = normalizeBubbleTheme(raw.bubbleTheme);
 
   return {
     version: DESKTOP_SETTINGS_VERSION,
@@ -130,6 +137,7 @@ export function normalizeDesktopSettings(input: unknown): DesktopPetSettings {
     selectedPetId,
     selectedPetKey,
     petScale,
+    bubbleTheme,
     alwaysOnTop: raw.alwaysOnTop !== false,
     clickThrough: raw.clickThrough === true,
     launchAtLogin: raw.launchAtLogin === true,
@@ -174,6 +182,7 @@ export function updateDesktopSettings(
     selectedPetId: string;
     selectedPetKey: string;
     petScale: DesktopPetScale;
+    bubbleTheme: DesktopPetBubbleTheme;
     alwaysOnTop: boolean;
     clickThrough: boolean;
     launchAtLogin: boolean;
@@ -277,6 +286,11 @@ export function normalizePetScale(value: unknown): DesktopPetScale {
     if (numeric === DESKTOP_PET_SCALE_FACTORS.large) return "large";
   }
   return DESKTOP_SETTINGS_DEFAULTS.petScale;
+}
+
+export function normalizeBubbleTheme(value: unknown): DesktopPetBubbleTheme {
+  if (value === "cream" || value === "peach" || value === "night") return value;
+  return DESKTOP_SETTINGS_DEFAULTS.bubbleTheme;
 }
 
 function normalizeWindowPosition(value: unknown): { x: number; y: number } | null {

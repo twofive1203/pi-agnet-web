@@ -889,6 +889,7 @@ export async function startDesktopPetMain(deps: DesktopMainDeps): Promise<{
         selectedPetId: p.selectedPetId,
         selectedPetKey: p.selectedPetKey,
         petScale: p.petScale,
+        bubbleTheme: p.bubbleTheme,
         alwaysOnTop: p.alwaysOnTop,
         clickThrough: p.clickThrough,
         launchAtLogin: p.launchAtLogin,

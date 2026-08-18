@@ -214,6 +214,7 @@ export function renderPetApp(root: Document = document): {
   const btnOpenCustomPets = root.getElementById("btn-open-custom-pets");
   const btnRescanCustomPets = root.getElementById("btn-rescan-custom-pets");
   const petScalePicker = root.getElementById("pet-scale-picker");
+  const bubbleThemePicker = root.getElementById("bubble-theme-picker");
   const btnRestorePosition = root.getElementById("btn-restore-position");
   const prefAlwaysOnTop = root.getElementById("pref-always-on-top") as HTMLInputElement | null;
   const prefClickThrough = root.getElementById("pref-click-through") as HTMLInputElement | null;
@@ -1349,6 +1350,11 @@ export function renderPetApp(root: Document = document): {
         view.petScale === "small" || view.petScale === "large" ? view.petScale : "medium";
       const spec = resolvePetLayoutSpec(scale);
       petRoot.setAttribute("data-pet-scale", scale);
+      const bubbleTheme =
+        view.bubbleTheme === "peach" || view.bubbleTheme === "night"
+          ? view.bubbleTheme
+          : "cream";
+      petRoot.setAttribute("data-bubble-theme", bubbleTheme);
       petRoot.style.setProperty("--pet-scale", String(spec.factor));
       petRoot.style.setProperty("--pet-root-pad", `${spec.rootPad}px`);
       petRoot.style.setProperty("--pet-stack-gap", `${Math.max(1, spec.stackHeight - spec.chromeHeight - spec.surfaceSize - spec.bubbleReserve)}px`);
@@ -1464,6 +1470,10 @@ export function renderPetApp(root: Document = document): {
       const selected = option.dataset.petScale === view.petScale;
       option.setAttribute("aria-checked", selected ? "true" : "false");
     });
+    bubbleThemePicker?.querySelectorAll<HTMLElement>("[data-bubble-theme]").forEach((option) => {
+      const selected = option.dataset.bubbleTheme === (view.bubbleTheme ?? "cream");
+      option.setAttribute("aria-checked", selected ? "true" : "false");
+    });
 
     if (projectList) {
       const filteredProjects = filterProjectGroups(view.projects, activityFilter);
@@ -1481,20 +1491,6 @@ export function renderPetApp(root: Document = document): {
       if (filteredProjects.length === 0) {
         const empty = root.createElement("div");
         empty.className = "empty-tray";
-        // A miniature resting snail keeps the empty panel on-brand. It reuses the
-        // pet anatomy classes so palette variants (classic shell) apply for free.
-        const emptyPet = root.createElement("div");
-        emptyPet.className = "empty-pet";
-        emptyPet.setAttribute("aria-hidden", "true");
-        const emptyAvatar = root.createElement("span");
-        emptyAvatar.className = "pet-avatar frame-idle is-animated empty-pet-avatar";
-        emptyAvatar.innerHTML =
-          '<span class="pet-shadow"></span><span class="pet-tail"></span><span class="pet-body"></span>' +
-          '<span class="pet-head"><span class="pet-antenna pet-antenna-left"></span>' +
-          '<span class="pet-antenna pet-antenna-right"></span><span class="pet-eye pet-eye-left"></span>' +
-          '<span class="pet-eye pet-eye-right"></span><span class="pet-mouth"></span></span>' +
-          '<span class="pet-shell"><span class="pet-shell-spiral"></span></span>';
-        emptyPet.appendChild(emptyAvatar);
         const emptyTitle = root.createElement("div");
         emptyTitle.className = "empty-tray-title";
         emptyTitle.textContent =
@@ -1511,7 +1507,7 @@ export function renderPetApp(root: Document = document): {
             : view.connectionStatus === "connected"
               ? "任务开始运行后会出现在这里"
               : "连接本地蜗牛派服务后即可观察任务";
-        empty.append(emptyPet, emptyTitle, emptyHint);
+        empty.append(emptyTitle, emptyHint);
         projectList.appendChild(empty);
       } else {
         for (const project of filteredProjects) {
@@ -2734,6 +2730,15 @@ export function renderPetApp(root: Document = document): {
     const petScale = target?.dataset.petScale;
     if (petScale !== "small" && petScale !== "medium" && petScale !== "large") return;
     bridge?.setPrefs({ petScale });
+  });
+
+  bubbleThemePicker?.addEventListener("click", (event) => {
+    const target = event.target instanceof Element
+      ? event.target.closest<HTMLElement>("[data-bubble-theme]")
+      : null;
+    const bubbleTheme = target?.dataset.bubbleTheme;
+    if (bubbleTheme !== "cream" && bubbleTheme !== "peach" && bubbleTheme !== "night") return;
+    bridge?.setPrefs({ bubbleTheme });
   });
 
   btnRestorePosition?.addEventListener("click", () => {

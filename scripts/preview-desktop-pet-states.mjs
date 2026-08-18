@@ -64,6 +64,7 @@ function baseView(overrides = {}) {
     selectedActivityId: "preview-activity",
     selectedPetId: "snail-default",
     petScale: "medium",
+    bubbleTheme: "cream",
     alwaysOnTop: true,
     clickThrough: false,
     launchAtLogin: false,
