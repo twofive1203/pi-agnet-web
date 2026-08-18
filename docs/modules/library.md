@@ -84,7 +84,7 @@ Shared logic lives under `lib/`. Prefer adding behavior here when it is used by 
 | `desktop/renderer/pet-assets.ts` | Built-in pet manifest v2 validator plus renderer catalog/asset gates. Snail schema is not relaxed for Codex. |
 | `desktop/renderer/pet-key.ts` | Namespaced pet keys and CSS tokens. |
 | `desktop/renderer/codex-pet-assets.ts` | Codex v1/v2 `pet.json` parser and atlas constants (192×208, 8×9 / 8×11, 6 MiB cap). |
-| `desktop/renderer/pet-runtime-profile.ts` | Unified clip profile and business-state → Codex action mapping. |
+| `desktop/renderer/pet-runtime-profile.ts` | Unified clip profile and business-state → Codex action mapping (`ready` uses looping `waving`; `jumping` is not a persistent Ready pose). |
 | `desktop/renderer/pet-state.ts` | Renderer pure helpers: builtin pet manifests, reduced-motion frames, non-color cues, transition/revision-driven persistent/transient bubble reducer with DND gating (task bubbles silenced without replay, connection diagnostics visible), local All/Attention/Running/Completed filtering/counts, filtered-list selection/reset, keyboard movement, elapsed formatting, active-model formatting, compact context/TPS/cost-or-Token formatting, and the primary-activity context meter (`resolvePrimaryContextMeter`). Invalid v2 documents fall back to CSS snails. |
 | `desktop/renderer/pet-sheet.ts` | Pure spritesheet runtime math: cell→background-position/size, `steps()` animation, reduced-motion static frame, injectable per-pet stylesheet; null (CSS fallback) on non-spritesheet/missing bitmap. |
 | `desktop/renderer/pet-sheet-assets.ts` | Built-in sprite sheets inlined as `data:` URLs by esbuild; renderer-only import. |

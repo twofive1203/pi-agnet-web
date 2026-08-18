@@ -91,7 +91,10 @@ export const SNAIL_STATE_TO_CODEX_CLIP: Record<PetRequiredState, PetStateClipBin
   running: { clipName: "running", staticOnly: false },
   retrying: { clipName: "review", staticOnly: false },
   needs_input: { clipName: "waiting", staticOnly: false },
-  ready: { clipName: "jumping", staticOnly: false },
+  // `jumping` is a hop/attack cycle. Looping it as Ready looks like jumping in
+  // place (hatch-pet combat poses especially). Wave is the looping "I finished"
+  // pose; confetti already covers the one-shot celebration.
+  ready: { clipName: "waving", staticOnly: false },
   blocked: { clipName: "failed", staticOnly: false },
   disconnected: { clipName: "failed", staticOnly: true },
   service_not_running: { clipName: "idle", staticOnly: true },

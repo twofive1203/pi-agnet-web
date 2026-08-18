@@ -3973,6 +3973,8 @@ async function main() {
     assert.equal(v2Profile.sheet?.expectedHeight, CODEX_PET_V2_HEIGHT);
     assert.equal(isCodexAtlasSize(2, CODEX_PET_V2_WIDTH, CODEX_PET_V2_HEIGHT), true);
     assert.equal(clipTotalDurationMs(v2Profile.clips.idle), 1100);
+    assert.equal(SNAIL_STATE_TO_CODEX_CLIP.ready.clipName, "waving");
+    assert.notEqual(SNAIL_STATE_TO_CODEX_CLIP.ready.clipName, "jumping");
     for (const state of Object.keys(SNAIL_STATE_TO_CODEX_CLIP)) {
       const binding = SNAIL_STATE_TO_CODEX_CLIP[state as keyof typeof SNAIL_STATE_TO_CODEX_CLIP];
       assert.ok(v2Profile.clips[binding.clipName], `missing clip for ${state}`);
@@ -4046,6 +4048,14 @@ async function main() {
       waveActive: true,
     });
     assert.equal(waveBlocked.clipName, "waiting");
+    const ready = resolveActivePetClip({
+      profile,
+      state: "ready",
+      reducedMotion: false,
+      lookDirection: 4,
+      dragClip: "running-right",
+    });
+    assert.equal(ready.clipName, "waving");
     const blocked = resolveActivePetClip({
       profile,
       state: "needs_input",

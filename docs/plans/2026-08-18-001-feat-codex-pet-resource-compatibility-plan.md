@@ -106,7 +106,7 @@ origin: docs/brainstorms/2026-08-18-codex-pet-resource-compatibility-requirement
 | `running` | `running` | 非方向性工作动画 |
 | `retrying` | `review` | 表达重新检查/再尝试，保留 `↻` 状态提示 |
 | `needs_input` | `waiting` | 等待批准、回答或输入 |
-| `ready` | `jumping` | 完成庆祝 |
+| `ready` | `waving` | 完成庆祝（循环挥手）。`jumping` 是起跳/攻击循环，作为 Ready 主循环会读成原地起跳，因此不再用作持久完成姿态；一次性庆祝仍由彩纸承担。 |
 | `blocked` | `failed` | 失败/受阻 |
 | `disconnected` | `failed` 静态或低动效 | 由 `⚠/未连接` 覆盖精确语义 |
 | `service_not_running` | `idle` 静态并降级显示 | 由 `⏻/未启动` 覆盖精确语义 |
