@@ -3300,6 +3300,10 @@ async function main() {
   assert.ok(css.includes(".tray-counts[hidden]"));
   assert.ok(css.includes(".pet-intent-menu"));
   assert.ok(css.includes(".pet-stack:focus-within .pet-intent-menu"));
+  // Comic-bubble chrome: cream paper + ink outline, not a dark admin overlay.
+  assert.ok(css.includes("--bubble-paper"));
+  assert.ok(css.includes(".settings-card"));
+  assert.ok(html.includes("settings-card"));
   for (const cue of [
     "thinking",
     "editing",

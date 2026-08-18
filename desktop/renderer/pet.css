@@ -1,24 +1,33 @@
-/* Desktop pet + Activity tray. The pet stays visually transparent; chrome appears on intent. */
+/* Desktop pet + Activity tray.
+   The sprite stays transparent; chrome is a Q-version comic bubble
+   (cream paper, ink outline, chunky radius) so status/settings read as
+   pet speech rather than a dark admin overlay. */
 
 :root {
-  color-scheme: dark;
+  color-scheme: light;
   --pet-scale: 1;
   --pet-root-pad: calc(6px * var(--pet-scale));
   --pet-stack-gap: calc(6px * var(--pet-scale));
   --pet-stack-width: calc(112px * var(--pet-scale));
   --pet-chrome-height: calc(18px * var(--pet-scale));
   --pet-surface-size: calc(112px * var(--pet-scale));
-  --pet-text: #f4f7fb;
-  --pet-muted: #9daabc;
-  --pet-accent: #77dbc6;
-  --pet-warn: #f3b95f;
-  --pet-danger: #f47c83;
-  --pet-ok: #9bd875;
-  --tray-bg: rgba(16, 20, 27, 0.94);
-  --surface-raised: rgba(255, 255, 255, 0.055);
-  --surface-hover: rgba(255, 255, 255, 0.09);
-  --pet-border: rgba(255, 255, 255, 0.13);
-  --focus: #8bb8ff;
+  --ink: #2b313c;
+  --paper: #fff7ea;
+  --paper-2: #fffdf8;
+  --paper-3: #ffe9c8;
+  --bubble-paper: var(--paper);
+  --pet-text: #2b313c;
+  --pet-muted: #5b6472;
+  --pet-accent: #2f8f7c;
+  --pet-warn: #c67a1d;
+  --pet-danger: #c44b56;
+  --pet-ok: #4d8a32;
+  --tray-bg: #fff7ea;
+  --surface-raised: #fffdf8;
+  --surface-hover: #ffe9c8;
+  --pet-border: #2b313c;
+  --focus: #3d7de0;
+  --bubble-shadow: 0 3px 0 #2b313c, 0 10px 18px rgba(28, 24, 20, 0.22);
   font-family: "Segoe UI", system-ui, sans-serif;
 }
 
@@ -141,23 +150,25 @@ select {
   width: 20px;
   height: 20px;
   padding: 0;
-  border: 1px solid var(--pet-border);
+  border: 2px solid var(--ink);
   border-radius: 999px;
-  background: rgba(19, 24, 32, 0.9);
-  color: var(--pet-text);
-  font-size: 14px;
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 800;
   line-height: 1;
+  box-shadow: 0 2px 0 var(--ink);
   cursor: pointer;
   -webkit-app-region: no-drag;
 }
 
 .pet-close-btn:hover,
 .tray-btn-close:hover {
-  border-color: rgba(244, 124, 131, 0.6);
-  background: rgba(244, 124, 131, 0.24);
+  background: #ffd0d4;
+  color: var(--pet-danger);
 }
 
-/* Compact list in the top-left pocket so it does not sit on the snail. */
+/* Floating speech-chip stack; no dark menu plate over the snail. */
 .pet-intent-menu {
   position: absolute;
   top: 0;
@@ -166,14 +177,14 @@ select {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 1px;
+  gap: 4px;
   width: max-content;
   max-width: calc(var(--pet-stack-width) - 26px);
-  padding: 3px;
-  border: 1px solid var(--pet-border);
-  border-radius: 10px;
-  background: rgba(16, 20, 27, 0.94);
-  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.32);
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
   opacity: 0;
   pointer-events: none;
   transform: translateY(-2px);
@@ -194,21 +205,23 @@ select {
 }
 
 .pet-intent-btn {
-  min-height: 20px;
-  padding: 3px 7px;
-  border: 0;
-  border-radius: 7px;
-  background: transparent;
-  color: var(--pet-text);
-  font-size: 10px;
+  min-height: 22px;
+  padding: 3px 9px;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 700;
   line-height: 1.2;
   text-align: left;
   white-space: nowrap;
+  box-shadow: 0 2px 0 var(--ink);
   cursor: pointer;
 }
 
 .pet-intent-btn:hover {
-  background: var(--surface-hover);
+  background: var(--paper-3);
 }
 
 .pet-intent-btn[hidden] {
@@ -272,51 +285,74 @@ select {
 .pet-caption {
   position: absolute;
   top: 0;
-  left: 2px;
+  left: 0;
   z-index: 8;
   display: flex;
-  align-items: baseline;
-  gap: 4px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
   max-width: 108px;
-  min-height: 25px;
-  padding: 5px 8px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 10px 10px 10px 3px;
-  background: rgba(18, 23, 31, 0.91);
-  box-shadow: 0 5px 16px rgba(0, 0, 0, 0.25);
+  min-height: 28px;
+  padding: 6px 8px 8px;
+  border: 2px solid var(--ink);
+  border-radius: 16px 16px 16px 5px;
+  background: var(--bubble-paper);
+  box-shadow: var(--bubble-shadow);
   pointer-events: none;
-  animation: pet-caption-in 140ms ease-out both;
+  animation: pet-caption-in 160ms cubic-bezier(0.3, 1.4, 0.6, 1) both;
 }
 
 .pet-caption[data-bubble-mode="transient"] {
-  background: rgba(18, 23, 31, 0.86);
+  background: #eef8f4;
+}
+
+.pet-stage:has(.frame-needs-input) .pet-caption {
+  background: #fff1d4;
+}
+
+.pet-stage:has(.frame-ready) .pet-caption {
+  background: #eef8df;
+}
+
+.pet-stage:has(.frame-blocked) .pet-caption,
+.pet-stage:has(.frame-disconnected) .pet-caption,
+.pet-stage:has(.frame-service-not-running) .pet-caption {
+  background: #ffe4e6;
 }
 
 .pet-caption::after {
   position: absolute;
-  bottom: -5px;
-  left: 12px;
-  width: 8px;
-  height: 8px;
-  border-right: 1px solid rgba(255, 255, 255, 0.14);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(18, 23, 31, 0.91);
+  bottom: -7px;
+  left: 14px;
+  width: 10px;
+  height: 10px;
+  border-right: 2px solid var(--ink);
+  border-bottom: 2px solid var(--ink);
+  background: inherit;
   content: "";
   transform: rotate(45deg);
 }
 
 .pet-caption-state {
   flex: 0 0 auto;
+  padding: 0 5px;
+  border: 1.5px solid var(--ink);
+  border-radius: 999px;
+  background: #fffdf8;
   color: var(--pet-accent);
   font-size: 9px;
-  font-weight: 700;
+  font-weight: 800;
+  line-height: 1.4;
 }
 
 .pet-caption-title {
   min-width: 0;
+  max-width: 100%;
   overflow: hidden;
-  color: var(--pet-text);
-  font-size: 9px;
+  color: var(--ink);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.25;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -496,32 +532,33 @@ select {
   min-width: 23px;
   height: 23px;
   padding: 0 5px;
-  border: 2px solid rgba(255, 255, 255, 0.8);
+  border: 2px solid var(--ink);
   border-radius: 999px;
-  background: #273440;
-  color: #fff;
+  background: var(--paper);
+  color: var(--ink);
   font-size: 13px;
   font-weight: 800;
   line-height: 1;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
 }
 
 .pet-label {
   position: absolute;
-  right: 6px;
+  right: 4px;
   bottom: 0;
   z-index: 7;
-  max-width: 68px;
-  padding: 2px 6px;
+  max-width: 72px;
+  padding: 2px 7px;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  border: 2px solid var(--ink);
   border-radius: 999px;
-  background: rgba(18, 23, 31, 0.85);
-  color: var(--pet-text);
-  font-size: 9px;
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 10px;
+  font-weight: 700;
   line-height: 1.2;
   text-overflow: ellipsis;
   white-space: nowrap;
+  box-shadow: 0 2px 0 var(--ink);
   pointer-events: none;
 }
 
@@ -545,7 +582,7 @@ select {
   border-radius: 50%;
   background: conic-gradient(
     var(--pet-context-fill, var(--pet-ok)) calc(var(--context-percent, 0) * 1%),
-    rgba(255, 255, 255, 0.18) 0
+    rgba(43, 49, 60, 0.16) 0
   );
   -webkit-mask: radial-gradient(farthest-side, transparent 55%, #000 57%);
   mask: radial-gradient(farthest-side, transparent 55%, #000 57%);
@@ -566,12 +603,12 @@ select {
 .pet-context-meter-label {
   width: 36px;
   padding: 1px 2px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 6px;
-  background: rgba(18, 23, 31, 0.88);
-  color: var(--pet-text);
+  border: 1.5px solid var(--ink);
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--ink);
   font-size: 8px;
-  font-weight: 700;
+  font-weight: 800;
   line-height: 1.15;
   text-align: center;
   white-space: normal;
@@ -587,12 +624,13 @@ select {
   min-width: 19px;
   height: 19px;
   padding: 0 5px;
-  border: 2px solid rgba(20, 24, 31, 0.88);
+  border: 2px solid var(--ink);
   border-radius: 999px;
-  background: var(--pet-danger);
-  color: #111820;
+  background: #ffd0d4;
+  color: var(--ink);
   font-size: 10px;
   font-weight: 800;
+  box-shadow: 0 2px 0 var(--ink);
   pointer-events: none;
 }
 
@@ -766,7 +804,7 @@ select {
 }
 
 @keyframes pet-caption-in {
-  from { opacity: 0; transform: translateY(3px) scale(0.98); }
+  from { opacity: 0; transform: translateY(6px) scale(0.86); }
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
@@ -1218,7 +1256,7 @@ select {
   }
 }
 
-/* Activity tray */
+/* Activity tray: a cream comic card, not a glass admin console. */
 .activity-tray {
   position: relative;
   display: flex;
@@ -1231,15 +1269,15 @@ select {
   min-height: 0;
   padding: 12px;
   overflow: hidden;
-  border: 1px solid rgba(119, 219, 198, 0.16);
-  border-radius: 18px;
+  border: 2.5px solid var(--ink);
+  border-radius: 24px;
   background: var(--tray-bg);
-  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.34);
-  backdrop-filter: blur(18px);
+  color: var(--ink);
+  box-shadow: var(--bubble-shadow);
   -webkit-app-region: no-drag;
 }
 
-/* A whisper of the snail's accent color ties the panel to the pet itself. */
+/* Soft mint wash so the card still belongs to the snail. */
 .activity-tray::before {
   position: absolute;
   top: -70px;
@@ -1247,7 +1285,7 @@ select {
   left: 30%;
   height: 140px;
   border-radius: 50%;
-  background: radial-gradient(closest-side, rgba(119, 219, 198, 0.13), transparent 78%);
+  background: radial-gradient(closest-side, rgba(47, 143, 124, 0.16), transparent 78%);
   content: "";
   pointer-events: none;
 }
@@ -1284,23 +1322,24 @@ select {
   }
 }
 
-/* Header reads as a small gradient-edged card so the tray has a clear top. */
+/* Header is a second, smaller bubble so the tray still has a clear top. */
 .tray-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  min-height: 28px;
-  padding: 7px 9px;
-  border: 1px solid rgba(119, 219, 198, 0.16);
-  border-radius: 12px;
-  background: linear-gradient(
-    115deg,
-    rgba(119, 219, 198, 0.1),
-    rgba(59, 145, 168, 0.06) 55%,
-    rgba(255, 255, 255, 0.02)
-  );
+  min-height: 32px;
+  padding: 6px 8px 6px 12px;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: var(--paper-2);
+  box-shadow: 0 2px 0 var(--ink);
   -webkit-app-region: drag;
+}
+
+.tray-header strong {
+  font-size: 13px;
+  font-weight: 800;
 }
 
 .tray-actions,
@@ -1344,11 +1383,11 @@ select {
   flex-direction: column;
   gap: 4px;
   min-width: 96px;
-  padding: 5px;
-  border: 1px solid var(--pet-border);
-  border-radius: 10px;
-  background: rgba(22, 27, 36, 0.98);
-  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.42);
+  padding: 6px;
+  border: 2px solid var(--ink);
+  border-radius: 14px;
+  background: var(--paper);
+  box-shadow: var(--bubble-shadow);
   -webkit-app-region: no-drag;
 }
 
@@ -1363,17 +1402,19 @@ select {
 
 .tray-btn {
   min-height: 26px;
-  padding: 4px 8px;
-  border: 1px solid var(--pet-border);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.04);
-  color: var(--pet-text);
+  padding: 4px 9px;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: var(--paper-2);
+  color: var(--ink);
   font-size: 11px;
+  font-weight: 700;
+  box-shadow: 0 2px 0 var(--ink);
   cursor: pointer;
 }
 
 .tray-btn:hover {
-  background: var(--surface-hover);
+  background: var(--paper-3);
 }
 
 .tray-btn-icon,
@@ -1393,23 +1434,26 @@ select {
 }
 
 .connection-banner {
-  padding: 8px 10px;
-  border: 1px solid rgba(243, 185, 95, 0.36);
-  border-radius: 10px;
-  background: rgba(243, 185, 95, 0.11);
-  color: #f6d7a1;
+  padding: 8px 12px;
+  border: 2px solid var(--ink);
+  border-radius: 14px;
+  background: #fff1d4;
+  color: var(--ink);
   font-size: 11px;
   line-height: 1.45;
+  box-shadow: 0 2px 0 var(--ink);
 }
 
-.auth-panel {
+.auth-panel,
+.settings-card {
   display: flex;
   flex-direction: column;
   gap: 8px;
   padding: 10px;
-  border: 1px solid var(--pet-border);
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.035);
+  border: 2px solid var(--ink);
+  border-radius: 16px;
+  background: var(--paper-2);
+  box-shadow: 0 2px 0 var(--ink);
 }
 
 .settings-panel,
@@ -1423,18 +1467,24 @@ select {
   min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
+  padding: 2px 2px 8px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.quick-session-panel {
   padding: 10px;
-  border: 1px solid var(--pet-border);
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.035);
+  border: 2px solid var(--ink);
+  border-radius: 16px;
+  background: var(--paper-2);
+  box-shadow: 0 2px 0 var(--ink);
 }
 
 .qs-label {
-  color: var(--pet-muted);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 800;
 }
 
 .qs-toolbar {
@@ -1456,22 +1506,22 @@ select {
   align-items: flex-start;
   gap: 0;
   min-height: 34px;
-  padding: 3px 7px;
-  border: 1px solid var(--pet-border);
-  border-radius: 7px;
-  background: rgba(0, 0, 0, 0.2);
-  color: var(--pet-text);
+  padding: 3px 8px;
+  border: 2px solid var(--ink);
+  border-radius: 12px;
+  background: var(--paper-2);
+  color: var(--ink);
   text-align: left;
+  box-shadow: 0 2px 0 var(--ink);
   cursor: pointer;
 }
 
 .qs-chip:hover {
-  background: var(--surface-hover);
+  background: var(--paper-3);
 }
 
 .qs-chip[aria-expanded="true"] {
-  border-color: rgba(119, 219, 198, 0.45);
-  background: rgba(119, 219, 198, 0.12);
+  background: #d8f3ea;
 }
 
 .qs-chip:disabled {
@@ -1505,11 +1555,11 @@ select {
 .qs-textarea {
   width: 100%;
   padding: 6px 8px;
-  border: 1px solid var(--pet-border);
-  border-radius: 8px;
+  border: 2px solid var(--ink);
+  border-radius: 12px;
   outline: none;
-  background: rgba(0, 0, 0, 0.24);
-  color: var(--pet-text);
+  background: var(--paper-2);
+  color: var(--ink);
   font: inherit;
 }
 
@@ -1529,12 +1579,12 @@ select {
   gap: 4px;
   min-width: 0;
   max-height: 148px;
-  padding: 4px;
+  padding: 6px;
   overflow: hidden;
-  border: 1px solid var(--pet-border);
-  border-radius: 8px;
-  background: rgba(18, 23, 31, 0.98);
-  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.42);
+  border: 2px solid var(--ink);
+  border-radius: 14px;
+  background: var(--paper);
+  box-shadow: var(--bubble-shadow);
   font-size: 11px;
 }
 
@@ -1582,7 +1632,7 @@ select {
   min-height: 22px;
   padding: 3px 6px;
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: 8px;
   background: transparent;
   color: var(--pet-text);
   font-size: 11px;
@@ -1591,9 +1641,13 @@ select {
   cursor: pointer;
 }
 
+.qs-picker-option:hover {
+  background: var(--paper-3);
+}
+
 .qs-picker-option[aria-selected="true"] {
-  border-color: rgba(119, 219, 198, 0.45);
-  background: rgba(119, 219, 198, 0.16);
+  border-color: var(--ink);
+  background: #d8f3ea;
   box-shadow: inset 2px 0 0 var(--pet-accent);
 }
 
@@ -1610,11 +1664,11 @@ select {
 }
 
 .qs-count.is-over {
-  color: #f0b4b4;
+  color: var(--pet-danger);
 }
 
 .qs-error {
-  color: #f0b4b4;
+  color: var(--pet-danger);
   font-size: 11px;
 }
 
@@ -1636,22 +1690,20 @@ select {
 
 .auth-label,
 .settings-heading {
-  color: var(--pet-muted);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 800;
 }
 
 .auth-input,
 .setting-select {
   width: 100%;
   padding: 6px 8px;
-  border: 1px solid var(--pet-border);
-  border-radius: 8px;
+  border: 2px solid var(--ink);
+  border-radius: 12px;
   outline: none;
-  background: rgba(0, 0, 0, 0.24);
-  color: var(--pet-text);
+  background: var(--paper-2);
+  color: var(--ink);
   font-size: 11px;
 }
 
@@ -1682,10 +1734,10 @@ select {
   width: 100%;
   margin: 4px 0 8px;
   padding: 6px 8px;
-  border: 1px solid var(--pet-border);
-  border-radius: 8px;
-  background: var(--surface-raised);
-  color: var(--pet-text);
+  border: 2px solid var(--ink);
+  border-radius: 12px;
+  background: var(--paper-2);
+  color: var(--ink);
   font-size: 12px;
 }
 
@@ -1694,8 +1746,7 @@ select {
   margin-top: 4px;
   color: var(--pet-muted);
   font-size: 10px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  font-weight: 800;
 }
 
 .pet-option-copy {
@@ -1707,10 +1758,11 @@ select {
 }
 
 .pet-option-badge {
-  padding: 0 4px;
+  padding: 0 5px;
+  border: 1.5px solid var(--ink);
   border-radius: 999px;
-  background: var(--surface-hover);
-  color: var(--pet-muted);
+  background: var(--paper-3);
+  color: var(--ink);
   font-size: 9px;
   line-height: 1.4;
 }
@@ -1736,28 +1788,31 @@ select {
   gap: 7px;
   min-width: 0;
   padding: 7px;
-  border: 1px solid var(--pet-border);
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.025);
-  color: var(--pet-text);
+  border: 2px solid var(--ink);
+  border-radius: 14px;
+  background: var(--paper-2);
+  color: var(--ink);
   font-size: 11px;
+  font-weight: 700;
+  box-shadow: 0 2px 0 var(--ink);
   cursor: pointer;
 }
 
 .pet-option[aria-checked="true"],
 .pet-scale-option[aria-checked="true"] {
-  border-color: var(--pet-accent);
-  background: rgba(119, 219, 198, 0.1);
+  background: #d8f3ea;
 }
 
 .pet-scale-option {
   min-height: 28px;
   padding: 6px 8px;
-  border: 1px solid var(--pet-border);
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.025);
-  color: var(--pet-text);
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: var(--paper-2);
+  color: var(--ink);
   font-size: 11px;
+  font-weight: 700;
+  box-shadow: 0 2px 0 var(--ink);
   cursor: pointer;
 }
 
@@ -1770,9 +1825,9 @@ select {
   place-items: center;
   width: 24px;
   height: 24px;
-  border: 3px solid rgba(255, 255, 255, 0.6);
+  border: 2px solid var(--ink);
   border-radius: 50%;
-  color: rgba(255, 255, 255, 0.75);
+  color: var(--ink);
 }
 
 .preview-default {
@@ -1814,10 +1869,10 @@ select {
   margin-top: 6px;
   padding: 5px 8px;
   overflow-wrap: anywhere;
-  border: 1px solid var(--pet-border);
-  border-radius: 8px;
-  background: var(--surface-raised);
-  color: var(--pet-text);
+  border: 2px solid var(--ink);
+  border-radius: 10px;
+  background: var(--paper-2);
+  color: var(--ink);
   font-size: 11px;
   line-height: 1.4;
   user-select: text;
@@ -1866,7 +1921,7 @@ select {
 }
 
 .setting-toggle-warning {
-  color: #f3d6a6;
+  color: var(--pet-warn);
 }
 
 .sound-dnd-note {
@@ -1883,15 +1938,15 @@ select {
   width: 112px;
 }
 
-/* Segmented control: one continuous track with an active segment and status dots. */
+/* Segmented sticker track with an active chip and status dots. */
 .activity-filters {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 2px;
-  padding: 2px;
-  border: 1px solid var(--pet-border);
-  border-radius: 10px;
-  background: rgba(0, 0, 0, 0.22);
+  gap: 4px;
+  padding: 3px;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: var(--paper-2);
 }
 
 .activity-filter {
@@ -1902,11 +1957,12 @@ select {
   min-width: 0;
   min-height: 26px;
   padding: 4px 5px;
-  border: 1px solid transparent;
-  border-radius: 8px;
+  border: 1.5px solid transparent;
+  border-radius: 999px;
   background: transparent;
   color: var(--pet-muted);
   font-size: 10px;
+  font-weight: 700;
   white-space: nowrap;
   cursor: pointer;
 }
@@ -1943,9 +1999,10 @@ select {
 }
 
 .activity-filter[aria-pressed="true"] {
-  border-color: rgba(119, 219, 198, 0.3);
-  background: rgba(119, 219, 198, 0.12);
+  border-color: var(--ink);
+  background: #d8f3ea;
   color: var(--pet-accent);
+  box-shadow: 0 2px 0 var(--ink);
 }
 
 .project-list {
@@ -1955,7 +2012,7 @@ select {
   gap: 11px;
   min-height: 0;
   overflow: auto;
-  scrollbar-color: rgba(255, 255, 255, 0.16) transparent;
+  scrollbar-color: rgba(43, 49, 60, 0.28) transparent;
 }
 
 .project-group {
@@ -1965,14 +2022,12 @@ select {
 }
 
 .project-name {
-  padding: 0 4px;
+  padding: 0 6px;
   overflow: hidden;
   color: var(--pet-muted);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
+  font-size: 11px;
+  font-weight: 800;
   text-overflow: ellipsis;
-  text-transform: uppercase;
   white-space: nowrap;
 }
 
@@ -1982,13 +2037,14 @@ select {
   flex-direction: column;
   gap: 7px;
   width: 100%;
-  padding: 9px;
-  border: 1px solid transparent;
-  border-radius: 12px;
+  padding: 9px 9px 9px 12px;
+  border: 2px solid var(--ink);
+  border-radius: 16px;
   outline: none;
-  background: var(--surface-raised);
+  background: var(--paper-2);
   color: inherit;
   text-align: left;
+  box-shadow: 0 2px 0 var(--ink);
   cursor: default;
   transition:
     transform 140ms ease,
@@ -1997,8 +2053,7 @@ select {
 }
 
 .activity-row:hover {
-  background: var(--surface-hover);
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
+  background: var(--paper-3);
   transform: translateY(-1px);
 }
 
@@ -2008,19 +2063,18 @@ select {
 }
 
 .activity-row[aria-selected="true"] {
-  border-color: var(--focus);
-  background: rgba(139, 184, 255, 0.12);
+  background: #e7eefc;
 }
 
 /* Left status strip reads the activity state before any text does. */
 .activity-row::before {
   position: absolute;
-  top: 9px;
-  bottom: 9px;
+  top: 10px;
+  bottom: 10px;
   left: 0;
-  width: 3px;
+  width: 4px;
   border-radius: 0 99px 99px 0;
-  background: rgba(255, 255, 255, 0.14);
+  background: rgba(43, 49, 60, 0.2);
   content: "";
 }
 
@@ -2044,7 +2098,7 @@ select {
 }
 
 .activity-row.is-unread {
-  background: rgba(119, 219, 198, 0.05);
+  background: #eef8f4;
 }
 
 .activity-row-summary {
@@ -2060,33 +2114,34 @@ select {
   place-items: center;
   width: 25px;
   height: 25px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.07);
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: var(--paper);
   font-weight: 800;
 }
 
-/* Status glyphs glow in their state color so rows scan at a glance. */
+/* Status glyphs stay ink-outlined stickers; color is a secondary cue. */
 .activity-row[data-presentation="running"] .row-glyph,
 .activity-row[data-presentation="retrying"] .row-glyph {
   color: var(--pet-accent);
-  box-shadow: 0 0 9px rgba(119, 219, 198, 0.35);
+  background: #d8f3ea;
 }
 
 .activity-row[data-presentation="needs_input"] .row-glyph {
   color: var(--pet-warn);
-  box-shadow: 0 0 9px rgba(243, 185, 95, 0.35);
+  background: #fff1d4;
 }
 
 .activity-row[data-presentation="ready"] .row-glyph {
   color: var(--pet-ok);
-  box-shadow: 0 0 9px rgba(155, 216, 117, 0.35);
+  background: #eef8df;
 }
 
 .activity-row[data-presentation="blocked"] .row-glyph,
 .activity-row[data-presentation="disconnected"] .row-glyph,
 .activity-row[data-presentation="service_not_running"] .row-glyph {
   color: var(--pet-danger);
-  box-shadow: 0 0 9px rgba(244, 124, 131, 0.3);
+  background: #ffe4e6;
 }
 
 .row-main {
@@ -2111,11 +2166,13 @@ select {
 
 .row-source {
   flex: 0 0 auto;
-  padding: 1px 5px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 1px 6px;
+  border: 1.5px solid var(--ink);
   border-radius: 999px;
+  background: var(--paper);
   color: var(--pet-muted);
   font-size: 9px;
+  font-weight: 700;
 }
 
 .row-meta,
@@ -2142,11 +2199,12 @@ select {
 }
 
 .row-progress-track {
-  height: 3px;
+  height: 4px;
   margin-top: 5px;
   overflow: hidden;
+  border: 1.5px solid var(--ink);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--paper);
 }
 
 .row-progress-bar {
@@ -2164,22 +2222,24 @@ select {
 
 .row-action {
   min-height: 24px;
-  padding: 3px 7px;
-  border: 1px solid var(--pet-border);
-  border-radius: 7px;
-  background: rgba(255, 255, 255, 0.035);
+  padding: 3px 8px;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: var(--paper);
   color: var(--pet-muted);
   font-size: 10px;
+  font-weight: 700;
+  box-shadow: 0 1px 0 var(--ink);
   cursor: pointer;
 }
 
 .row-action:hover:not(:disabled) {
-  background: var(--surface-hover);
-  color: var(--pet-text);
+  background: var(--paper-3);
+  color: var(--ink);
 }
 
 .row-open-action {
-  border-color: rgba(119, 219, 198, 0.34);
+  background: #d8f3ea;
   color: var(--pet-accent);
 }
 
@@ -2194,9 +2254,9 @@ select {
   gap: 4px;
   margin-left: 33px;
   padding: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 8px;
-  background: rgba(0, 0, 0, 0.12);
+  border: 2px solid var(--ink);
+  border-radius: 12px;
+  background: var(--paper);
 }
 
 .row-child {
@@ -2206,8 +2266,9 @@ select {
   max-width: 100%;
   padding: 5px 6px;
   overflow: hidden;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.045);
+  border: 1.5px solid rgba(43, 49, 60, 0.28);
+  border-radius: 10px;
+  background: var(--paper-2);
 }
 
 .row-child-title {

@@ -171,103 +171,115 @@
               <button type="button" id="btn-clear-key" class="tray-btn" hidden>清除密钥</button>
             </div>
           </div>
-          <div class="settings-heading">角色</div>
-          <label class="pet-picker-filter-label" for="pet-picker-filter">筛选角色</label>
-          <input id="pet-picker-filter" class="pet-picker-filter" type="search" maxlength="40" placeholder="搜索名称" autocomplete="off" />
-          <div id="pet-picker" class="pet-picker" role="radiogroup" aria-label="选择桌宠">
-            <button type="button" class="pet-option" data-pet-id="snail-default" data-pet-key="snail:snail-default" role="radio">
-              <span class="pet-option-preview preview-default" aria-hidden="true">◉</span>
-              <span>星海蜗牛</span>
+          <div class="settings-card">
+            <div class="settings-heading">角色</div>
+            <label class="pet-picker-filter-label" for="pet-picker-filter">筛选角色</label>
+            <input id="pet-picker-filter" class="pet-picker-filter" type="search" maxlength="40" placeholder="搜索名称" autocomplete="off" />
+            <div id="pet-picker" class="pet-picker" role="radiogroup" aria-label="选择桌宠">
+              <button type="button" class="pet-option" data-pet-id="snail-default" data-pet-key="snail:snail-default" role="radio">
+                <span class="pet-option-preview preview-default" aria-hidden="true">◉</span>
+                <span>星海蜗牛</span>
+              </button>
+              <button type="button" class="pet-option" data-pet-id="snail-classic" data-pet-key="snail:snail-classic" role="radio">
+                <span class="pet-option-preview preview-classic" aria-hidden="true">◉</span>
+                <span>经典蜗牛</span>
+              </button>
+              <button type="button" class="pet-option" data-pet-id="snail-sprite" data-pet-key="snail:snail-sprite" role="radio">
+                <span class="pet-option-preview preview-sprite" aria-hidden="true">◉</span>
+                <span>像素蜗牛</span>
+              </button>
+              <div id="custom-pet-options" class="custom-pet-options" hidden></div>
+            </div>
+          </div>
+          <div class="settings-card">
+            <div class="settings-heading">自定义桌宠</div>
+            <div class="custom-pets-note">蜗牛派包：子目录内放 manifest.json + PNG/WebP。Codex 包：pet.json + spritesheet.webp，可放在同一目录或官方 hatch-pet 目录（%CODEX_HOME%/pets 或 ~/.codex/pets）。点击刷新后即可选择。ZIP 一键导入尚未支持，请先解压成目录。本地能加载不代表项目可再分发该角色。</div>
+            <div id="custom-pets-path" class="custom-pets-path"></div>
+            <div id="codex-pets-path" class="custom-pets-path" hidden></div>
+            <div id="pet-catalog-diagnostics" class="pet-catalog-diagnostics" hidden></div>
+            <div class="custom-pets-actions">
+              <button type="button" id="btn-open-custom-pets" class="tray-btn">打开目录</button>
+              <button type="button" id="btn-rescan-custom-pets" class="tray-btn">刷新列表</button>
+            </div>
+          </div>
+          <div class="settings-card">
+            <div class="settings-heading">尺寸</div>
+            <div id="pet-scale-picker" class="pet-scale-picker" role="radiogroup" aria-label="桌宠尺寸">
+              <button type="button" class="pet-scale-option" data-pet-scale="small" role="radio">小</button>
+              <button type="button" class="pet-scale-option" data-pet-scale="medium" role="radio">中</button>
+              <button type="button" class="pet-scale-option" data-pet-scale="large" role="radio">大</button>
+            </div>
+            <button type="button" id="btn-restore-position" class="tray-btn settings-restore-btn">
+              恢复默认位置与尺寸
             </button>
-            <button type="button" class="pet-option" data-pet-id="snail-classic" data-pet-key="snail:snail-classic" role="radio">
-              <span class="pet-option-preview preview-classic" aria-hidden="true">◉</span>
-              <span>经典蜗牛</span>
-            </button>
-            <button type="button" class="pet-option" data-pet-id="snail-sprite" data-pet-key="snail:snail-sprite" role="radio">
-              <span class="pet-option-preview preview-sprite" aria-hidden="true">◉</span>
-              <span>像素蜗牛</span>
-            </button>
-            <div id="custom-pet-options" class="custom-pet-options" hidden></div>
+            <div class="settings-grid">
+              <label class="setting-toggle">
+                <input id="pref-always-on-top" type="checkbox" />
+                <span>始终置顶</span>
+              </label>
+              <label class="setting-toggle">
+                <input id="pref-launch-at-login" type="checkbox" />
+                <span>开机启动</span>
+              </label>
+              <label class="setting-toggle setting-toggle-warning">
+                <input id="pref-click-through" type="checkbox" />
+                <span>鼠标穿透（可从系统托盘恢复）</span>
+              </label>
+              <label class="setting-toggle">
+                <input id="pref-show-context-meter" type="checkbox" />
+                <span>显示上下文占比</span>
+              </label>
+            </div>
           </div>
-          <div class="settings-heading">自定义桌宠</div>
-          <div class="custom-pets-note">蜗牛派包：子目录内放 manifest.json + PNG/WebP。Codex 包：pet.json + spritesheet.webp，可放在同一目录或官方 hatch-pet 目录（%CODEX_HOME%/pets 或 ~/.codex/pets）。点击刷新后即可选择。ZIP 一键导入尚未支持，请先解压成目录。本地能加载不代表项目可再分发该角色。</div>
-          <div id="custom-pets-path" class="custom-pets-path"></div>
-          <div id="codex-pets-path" class="custom-pets-path" hidden></div>
-          <div id="pet-catalog-diagnostics" class="pet-catalog-diagnostics" hidden></div>
-          <div class="custom-pets-actions">
-            <button type="button" id="btn-open-custom-pets" class="tray-btn">打开目录</button>
-            <button type="button" id="btn-rescan-custom-pets" class="tray-btn">刷新列表</button>
+          <div class="settings-card">
+            <div class="settings-heading">通知</div>
+            <label class="setting-field">
+              <span>完成通知</span>
+              <select id="pref-completion" class="setting-select">
+                <option value="never">从不</option>
+                <option value="background-only">仅后台</option>
+                <option value="always">始终</option>
+              </select>
+            </label>
+            <div class="settings-grid settings-grid-compact">
+              <label class="setting-toggle">
+                <input id="pref-needs-input" type="checkbox" />
+                <span>待输入</span>
+              </label>
+              <label class="setting-toggle">
+                <input id="pref-blocked" type="checkbox" />
+                <span>受阻/失败</span>
+              </label>
+            </div>
           </div>
-          <div class="settings-heading">尺寸</div>
-          <div id="pet-scale-picker" class="pet-scale-picker" role="radiogroup" aria-label="桌宠尺寸">
-            <button type="button" class="pet-scale-option" data-pet-scale="small" role="radio">小</button>
-            <button type="button" class="pet-scale-option" data-pet-scale="medium" role="radio">中</button>
-            <button type="button" class="pet-scale-option" data-pet-scale="large" role="radio">大</button>
+          <div class="settings-card">
+            <div class="settings-heading">声音</div>
+            <div class="settings-grid">
+              <label class="setting-toggle">
+                <input id="pref-sound-master" type="checkbox" />
+                <span>声音提示（默认关闭，开启后播放短促提示音）</span>
+              </label>
+            </div>
+            <div class="settings-grid settings-grid-compact">
+              <label class="setting-toggle">
+                <input id="pref-sound-needs-input" type="checkbox" />
+                <span>待输入提示音</span>
+              </label>
+              <label class="setting-toggle">
+                <input id="pref-sound-completion" type="checkbox" />
+                <span>完成提示音</span>
+              </label>
+            </div>
+            <p id="sound-dnd-note" class="sound-dnd-note" hidden>声音已被勿扰模式静音</p>
           </div>
-          <button type="button" id="btn-restore-position" class="tray-btn settings-restore-btn">
-            恢复默认位置与尺寸
-          </button>
-          <div class="settings-grid">
-            <label class="setting-toggle">
-              <input id="pref-always-on-top" type="checkbox" />
-              <span>始终置顶</span>
-            </label>
-            <label class="setting-toggle">
-              <input id="pref-launch-at-login" type="checkbox" />
-              <span>开机启动</span>
-            </label>
-            <label class="setting-toggle setting-toggle-warning">
-              <input id="pref-click-through" type="checkbox" />
-              <span>鼠标穿透（可从系统托盘恢复）</span>
-            </label>
-            <label class="setting-toggle">
-              <input id="pref-show-context-meter" type="checkbox" />
-              <span>显示上下文占比</span>
-            </label>
-          </div>
-          <div class="settings-heading">通知</div>
-          <label class="setting-field">
-            <span>完成通知</span>
-            <select id="pref-completion" class="setting-select">
-              <option value="never">从不</option>
-              <option value="background-only">仅后台</option>
-              <option value="always">始终</option>
-            </select>
-          </label>
-          <div class="settings-grid settings-grid-compact">
-            <label class="setting-toggle">
-              <input id="pref-needs-input" type="checkbox" />
-              <span>待输入</span>
-            </label>
-            <label class="setting-toggle">
-              <input id="pref-blocked" type="checkbox" />
-              <span>受阻/失败</span>
-            </label>
-          </div>
-          <div class="settings-heading">声音</div>
-          <div class="settings-grid">
-            <label class="setting-toggle">
-              <input id="pref-sound-master" type="checkbox" />
-              <span>声音提示（默认关闭，开启后播放短促提示音）</span>
-            </label>
-          </div>
-          <div class="settings-grid settings-grid-compact">
-            <label class="setting-toggle">
-              <input id="pref-sound-needs-input" type="checkbox" />
-              <span>待输入提示音</span>
-            </label>
-            <label class="setting-toggle">
-              <input id="pref-sound-completion" type="checkbox" />
-              <span>完成提示音</span>
-            </label>
-          </div>
-          <p id="sound-dnd-note" class="sound-dnd-note" hidden>声音已被勿扰模式静音</p>
-          <div class="settings-heading">勿扰</div>
-          <div class="settings-grid">
-            <label class="setting-toggle">
-              <input id="pref-dnd" type="checkbox" />
-              <span>勿扰模式（暂停系统通知与状态气泡，状态仍实时更新）</span>
-            </label>
+          <div class="settings-card">
+            <div class="settings-heading">勿扰</div>
+            <div class="settings-grid">
+              <label class="setting-toggle">
+                <input id="pref-dnd" type="checkbox" />
+                <span>勿扰模式（暂停系统通知与状态气泡，状态仍实时更新）</span>
+              </label>
+            </div>
           </div>
         </section>
         <section id="quick-session-panel" class="quick-session-panel" hidden aria-label="快速会话">
