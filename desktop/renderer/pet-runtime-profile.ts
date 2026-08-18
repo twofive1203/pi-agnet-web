@@ -258,6 +258,11 @@ export function canApplyWaveOverlay(state: PetRequiredState): boolean {
   return state === "idle" || state === "running" || state === "retrying";
 }
 
+/** One-shot hop is decorative and never covers attention / terminal / connection. */
+export function canApplyJumpOverlay(state: PetRequiredState): boolean {
+  return state === "idle" || state === "running" || state === "retrying";
+}
+
 export type PetDragClipName = "running-right" | "running-left";
 
 export type ActivePetClip = {
@@ -273,13 +278,28 @@ export function resolveActivePetClip(input: {
   lookDirection: number | null;
   dragClip: PetDragClipName | null;
   waveActive?: boolean;
+  jumpActive?: boolean;
+  /** Debounced Running cue. Only `thinking` may select `review`. */
+  runningCue?: string | null;
 }): ActivePetClip {
   const binding = input.profile.stateClips[input.state] ?? input.profile.stateClips.idle;
-  const fallback: ActivePetClip = {
-    clipName: binding.clipName,
-    staticOnly: binding.staticOnly || input.reducedMotion,
-    clip: input.profile.clips[binding.clipName] ?? null,
-  };
+  const reviewClip =
+    input.state === "running" &&
+    input.runningCue === "thinking" &&
+    input.profile.clips.review
+      ? input.profile.clips.review
+      : null;
+  const fallback: ActivePetClip = reviewClip
+    ? {
+        clipName: "review",
+        staticOnly: binding.staticOnly || input.reducedMotion,
+        clip: reviewClip,
+      }
+    : {
+        clipName: binding.clipName,
+        staticOnly: binding.staticOnly || input.reducedMotion,
+        clip: input.profile.clips[binding.clipName] ?? null,
+      };
   if (input.reducedMotion) return fallback;
 
   if (
@@ -292,6 +312,18 @@ export function resolveActivePetClip(input: {
       clipName: input.dragClip,
       staticOnly: false,
       clip: input.profile.clips[input.dragClip],
+    };
+  }
+
+  if (
+    input.jumpActive &&
+    canApplyJumpOverlay(input.state) &&
+    input.profile.clips.jumping
+  ) {
+    return {
+      clipName: "jumping",
+      staticOnly: false,
+      clip: input.profile.clips.jumping,
     };
   }
 
@@ -368,4 +400,151 @@ export function assertNoLookRows(profile: PetRuntimeProfile): boolean {
   }
   if (profile.sheet && profile.sheet.rows >= CODEX_PET_V2_ROWS) return false;
   return true;
+}
+
+/**
+ * Every official hatch-pet clip must have a business state or explicit
+ * interaction path. `via: "exception"` is allowed only with a comment in
+ * `detail` explaining why the clip stays unused.
+ */
+export type CodexClipReachability =
+  | {
+      clipName: string;
+      via: "state" | "overlay";
+      detail: string;
+    }
+  | {
+      clipName: string;
+      via: "exception";
+      detail: string;
+    };
+
+export const CODEX_STANDARD_CLIP_REACHABILITY: readonly CodexClipReachability[] = [
+  { clipName: "idle", via: "state", detail: "idle|service_not_running" },
+  { clipName: "running-right", via: "overlay", detail: "drag:right" },
+  { clipName: "running-left", via: "overlay", detail: "drag:left" },
+  { clipName: "waving", via: "state", detail: "ready" },
+  { clipName: "jumping", via: "overlay", detail: "interact:click|dblclick" },
+  { clipName: "failed", via: "state", detail: "blocked|disconnected" },
+  { clipName: "waiting", via: "state", detail: "needs_input" },
+  { clipName: "running", via: "state", detail: "running|retrying" },
+  { clipName: "review", via: "overlay", detail: "runningCue:thinking" },
+];
+
+export const CODEX_ATLAS_OCCUPIED_ALPHA = 8;
+
+export type CodexAtlasCellFinding = {
+  row: number;
+  col: number;
+  cellIndex: number;
+  clipName: string | null;
+  kind: "used_empty" | "reserved_occupied" | "invalid_size";
+  code: "used_empty" | "reserved_occupied" | "idle_extra_frame" | "invalid_size";
+  occupancy: number;
+};
+
+export type CodexAtlasCellAudit = {
+  ok: boolean;
+  findings: CodexAtlasCellFinding[];
+};
+
+function cellOccupancy(
+  rgba: Uint8Array | Uint8ClampedArray,
+  width: number,
+  col: number,
+  row: number,
+  frameWidth: number,
+  frameHeight: number,
+): number {
+  const x0 = col * frameWidth;
+  const y0 = row * frameHeight;
+  let occupied = 0;
+  const total = frameWidth * frameHeight;
+  for (let y = 0; y < frameHeight; y += 1) {
+    for (let x = 0; x < frameWidth; x += 1) {
+      const alpha = rgba[((y0 + y) * width + (x0 + x)) * 4 + 3] ?? 0;
+      if (alpha > CODEX_ATLAS_OCCUPIED_ALPHA) occupied += 1;
+    }
+  }
+  return total === 0 ? 0 : occupied / total;
+}
+
+/**
+ * Protocol pixel audit. Runtime still plays the official used-frame counts
+ * (idle=6); extra content in reserved cells is reported, not adopted.
+ */
+export function auditCodexAtlasCells(input: {
+  rgba: Uint8Array | Uint8ClampedArray;
+  width: number;
+  height: number;
+  spriteVersion: CodexSpriteVersion;
+}): CodexAtlasCellAudit {
+  const spec = codexAtlasSpec(input.spriteVersion);
+  const expectedBytes = spec.width * spec.height * 4;
+  if (
+    input.width !== spec.width ||
+    input.height !== spec.height ||
+    input.rgba.length < expectedBytes
+  ) {
+    return {
+      ok: false,
+      findings: [
+        {
+          row: -1,
+          col: -1,
+          cellIndex: -1,
+          clipName: null,
+          kind: "invalid_size",
+          code: "invalid_size",
+          occupancy: 0,
+        },
+      ],
+    };
+  }
+
+  const findings: CodexAtlasCellFinding[] = [];
+  for (let row = 0; row < spec.rows; row += 1) {
+    const standard = CODEX_STANDARD_ROWS[row];
+    const lookRow = input.spriteVersion === 2 && row >= CODEX_STANDARD_ROWS.length;
+    for (let col = 0; col < spec.columns; col += 1) {
+      const used = standard ? col < standard.used : lookRow;
+      const clipName = standard
+        ? standard.name
+        : lookRow
+          ? `look-${(row - CODEX_STANDARD_ROWS.length) * spec.columns + col}`
+          : null;
+      const occupancy = cellOccupancy(
+        input.rgba,
+        input.width,
+        col,
+        row,
+        spec.frameWidth,
+        spec.frameHeight,
+      );
+      if (used && occupancy === 0) {
+        findings.push({
+          row,
+          col,
+          cellIndex: row * spec.columns + col,
+          clipName,
+          kind: "used_empty",
+          code: "used_empty",
+          occupancy,
+        });
+        continue;
+      }
+      if (!used && occupancy > 0) {
+        findings.push({
+          row,
+          col,
+          cellIndex: row * spec.columns + col,
+          clipName,
+          kind: "reserved_occupied",
+          code: row === 0 && col === 6 ? "idle_extra_frame" : "reserved_occupied",
+          occupancy,
+        });
+      }
+    }
+  }
+  return { ok: findings.length === 0, findings };
 }

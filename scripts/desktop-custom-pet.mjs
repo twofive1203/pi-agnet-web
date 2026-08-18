@@ -10,6 +10,8 @@
  *   node scripts/desktop-custom-pet.mjs list [root]
  *   node scripts/desktop-custom-pet.mjs check <petDir>
  *   node scripts/desktop-custom-pet.mjs review <petDir>
+ *     Snail: manifest.json + PNG sheet. Codex: pet.json + PNG atlas.
+ *     WebP pixel review is skipped; unused-cell transparency still runs on PNG.
  *   node scripts/desktop-custom-pet.mjs stitch <petDir> --frames <framesDir> [--force]
  *   node scripts/desktop-custom-pet.mjs selftest
  *
@@ -474,12 +476,81 @@ function reviewDecodedSheet(manifest, decoded) {
   return { findings, notes };
 }
 
+async function cmdReviewCodex(root) {
+  const {
+    validateCodexPetDocument,
+    auditCodexAtlasCells,
+    isCodexAtlasSize,
+  } = await loadValidator();
+  const name = path.basename(root);
+  const manifestPath = path.join(root, "pet.json");
+  let raw;
+  try {
+    raw = JSON.parse(readFileSync(manifestPath, "utf8"));
+  } catch (error) {
+    fail(`pet.json is not valid JSON: ${error.message}`);
+    return;
+  }
+  const validated = validateCodexPetDocument(raw, name);
+  if (!validated.ok) {
+    fail(`contract rejects "${name}": ${validated.reason}`);
+    return;
+  }
+  const sheetPath = path.join(root, validated.metadata.spritesheetPath);
+  if (!existsSync(sheetPath)) {
+    fail(`sheet missing: ${sheetPath}`);
+    return;
+  }
+  if (!/\.png$/i.test(validated.metadata.spritesheetPath)) {
+    console.log(`REVIEW SKIP ${name}: Codex pixel review is PNG-only (got ${validated.metadata.spritesheetPath})`);
+    return;
+  }
+  let decoded;
+  try {
+    decoded = decodePng(readFileSync(sheetPath));
+  } catch (error) {
+    fail(`sheet is not a readable PNG: ${error.message}`);
+    return;
+  }
+  if (!isCodexAtlasSize(validated.metadata.spriteVersionNumber, decoded.width, decoded.height)) {
+    fail(
+      `sheet dimensions ${decoded.width}x${decoded.height} are not a Codex v${validated.metadata.spriteVersionNumber} atlas`,
+    );
+    return;
+  }
+  const audit = auditCodexAtlasCells({
+    rgba: decoded.rgba,
+    width: decoded.width,
+    height: decoded.height,
+    spriteVersion: validated.metadata.spriteVersionNumber,
+  });
+  const hard = audit.findings.filter((item) => item.kind === "used_empty" || item.kind === "invalid_size");
+  const warnings = audit.findings.filter((item) => item.kind === "reserved_occupied");
+  if (hard.length > 0) {
+    fail(`review ${name}: ${hard.length} used-cell issue(s)`);
+    for (const finding of hard) {
+      console.error(`  - ${finding.code} r${finding.row}c${finding.col} ${finding.clipName ?? ""} occupancy=${finding.occupancy.toFixed(4)}`);
+    }
+  } else {
+    console.log(`REVIEW PASS ${name}`);
+  }
+  for (const finding of warnings) {
+    console.log(
+      `  warn: ${finding.code} r${finding.row}c${finding.col} ${finding.clipName ?? ""} occupancy=${finding.occupancy.toFixed(4)} (runtime still uses official frame counts)`,
+    );
+  }
+}
+
 async function cmdReview(petDir) {
-  const { scanCustomPets } = await loadValidator();
   const root = path.resolve(petDir);
+  if (existsSync(path.join(root, "pet.json"))) {
+    await cmdReviewCodex(root);
+    return;
+  }
+  const { scanCustomPets } = await loadValidator();
   const name = path.basename(root);
   if (!existsSync(path.join(root, "manifest.json"))) {
-    fail(`${root} has no manifest.json`);
+    fail(`${root} has no manifest.json or pet.json`);
     return;
   }
   const parent = path.dirname(root);
@@ -664,6 +735,7 @@ async function cmdSelfTest() {
     if (process.exitCode !== 0) throw new Error("check reported failure");
 
     await assertReviewSelfTest(tmp);
+    await assertCodexAuditSelfTest();
 
     // Decoder coverage: PNG scanline filters 1-4 (real image tools use these;
     // the stitcher must decode them, not just filter-0 output).
@@ -820,6 +892,43 @@ function makeReviewManifest() {
     };
   });
   return manifest;
+}
+
+async function assertCodexAuditSelfTest() {
+  const { auditCodexAtlasCells, CODEX_PET_V2_WIDTH, CODEX_PET_V2_HEIGHT } = await loadValidator();
+  const width = CODEX_PET_V2_WIDTH;
+  const height = CODEX_PET_V2_HEIGHT;
+  const rgba = Buffer.alloc(width * height * 4);
+  const extra = auditCodexAtlasCells({
+    rgba,
+    width,
+    height,
+    spriteVersion: 2,
+  });
+  if (extra.findings.some((item) => item.code === "used_empty") !== true) {
+    throw new Error("empty Codex atlas should report used_empty cells");
+  }
+  rgba[3] = 255;
+  const stillEmptyLooks = auditCodexAtlasCells({
+    rgba,
+    width,
+    height,
+    spriteVersion: 2,
+  });
+  if (stillEmptyLooks.findings.some((item) => item.code === "used_empty") !== true) {
+    throw new Error("partial Codex atlas should still report unused official frames");
+  }
+  const idleExtraIndex = 6 * 192 * 4 + 3;
+  rgba[idleExtraIndex] = 255;
+  const leak = auditCodexAtlasCells({
+    rgba,
+    width,
+    height,
+    spriteVersion: 2,
+  });
+  if (leak.findings.some((item) => item.code === "idle_extra_frame") !== true) {
+    throw new Error("idle column 6 leak should report idle_extra_frame");
+  }
 }
 
 async function assertReviewSelfTest(tmp) {

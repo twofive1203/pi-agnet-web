@@ -96,8 +96,8 @@ import {
 } from "./pet-sheet-assets";
 import {
   canApplyDragOverlay,
+  canApplyJumpOverlay,
   canApplyLookOverlay,
-  canApplyWaveOverlay,
   clipTotalDurationMs,
   quantizeCodexLookDirection,
   resolveActivePetClip,
@@ -297,8 +297,8 @@ export function renderPetApp(root: Document = document): {
   let petPickerQuery = "";
   let lookDirection: number | null = null;
   let dragClip: PetDragClipName | null = null;
-  let waveActive = false;
-  let waveTimer: ReturnType<typeof setTimeout> | null = null;
+  let jumpActive = false;
+  let jumpTimer: ReturnType<typeof setTimeout> | null = null;
   let assetLoadSeq = 0;
   let loadedAssetKey: string | null = null;
   let loadedBlobUrl: string | null = null;
@@ -747,40 +747,40 @@ export function renderPetApp(root: Document = document): {
     }, reaction === "flail" ? PET_FLAIL_ANIMATION_MS : PET_POKE_ANIMATION_MS);
   }
 
-  function clearWave(): void {
-    if (waveTimer) {
-      clearTimeout(waveTimer);
-      waveTimer = null;
+  function clearJump(): void {
+    if (jumpTimer) {
+      clearTimeout(jumpTimer);
+      jumpTimer = null;
     }
-    waveActive = false;
+    jumpActive = false;
   }
 
-  function startWave(durationMs: number): void {
-    clearWave();
+  function startJump(durationMs: number): void {
+    clearJump();
     const ms = Math.max(1, Math.floor(durationMs));
-    waveActive = true;
-    waveTimer = setTimeout(() => {
-      waveTimer = null;
-      waveActive = false;
+    jumpActive = true;
+    jumpTimer = setTimeout(() => {
+      jumpTimer = null;
+      jumpActive = false;
       if (current) update(current);
     }, ms);
     if (current) update(current);
   }
 
-  function playInteract(): void {
-    wakeIdleSleep();
+  /** Codex one-shot hop. Skip CSS poke/flail so spritesheet `animation` can play. */
+  function playCodexJump(): boolean {
     const presentation = currentPresentation();
     const profile = currentPetProfile();
-    if (
-      profile?.capabilities.waving &&
-      profile.clips.waving &&
-      canApplyWaveOverlay(presentation)
-    ) {
-      clearReaction();
-      startWave(clipTotalDurationMs(profile.clips.waving));
-      return;
-    }
-    clearWave();
+    if (!profile?.clips.jumping || !canApplyJumpOverlay(presentation)) return false;
+    clearReaction();
+    startJump(clipTotalDurationMs(profile.clips.jumping));
+    return true;
+  }
+
+  function playInteract(): void {
+    wakeIdleSleep();
+    if (playCodexJump()) return;
+    clearJump();
     playReaction("poke");
   }
 
@@ -788,7 +788,7 @@ export function renderPetApp(root: Document = document): {
   function cancelClickSequence(): void {
     clickSequenceState = createInitialPetClickSequenceState();
     clearReaction();
-    clearWave();
+    clearJump();
   }
 
   /**
@@ -816,11 +816,13 @@ export function renderPetApp(root: Document = document): {
     clickSequenceState = outcome.state;
     if (outcome.cancelReaction) {
       clearReaction();
-      clearWave();
+      clearJump();
     }
     if (outcome.startReaction === "flail") {
-      clearWave();
-      playReaction("flail");
+      if (!playCodexJump()) {
+        clearJump();
+        playReaction("flail");
+      }
       return;
     }
     if (outcome.singleClick || outcome.startReaction === "poke") {
@@ -1111,8 +1113,8 @@ export function renderPetApp(root: Document = document): {
     if (state === "needs_input" || state === "blocked" || state === "ready" || state === "disconnected" || state === "service_not_running") {
       dragClip = null;
     }
-    if (motionReduced || documentHidden || !canApplyWaveOverlay(state)) {
-      if (waveActive) clearWave();
+    if (motionReduced || documentHidden || !canApplyJumpOverlay(state)) {
+      if (jumpActive) clearJump();
     }
     const frame = resolvePetFrame(manifest, state, motionReduced);
     const displayGlyph = state === "running" ? cueVisual.glyph : frame.glyph || petStateGlyph(state);
@@ -1123,7 +1125,8 @@ export function renderPetApp(root: Document = document): {
       reducedMotion: motionReduced,
       lookDirection,
       dragClip,
-      waveActive,
+      jumpActive,
+      runningCue,
     });
     const builtinSheetUrl = petSheetDataUrl(manifest.id);
     if (profile.renderMode === "spritesheet" && !builtinSheetUrl && !petSheetUrl(profile.petKey)) {
@@ -2455,7 +2458,7 @@ export function renderPetApp(root: Document = document): {
       event.stopPropagation();
       cancelClickSequence();
       if (event.shiftKey) {
-        playReaction("flail");
+        if (!playCodexJump()) playReaction("flail");
       } else {
         playInteract();
       }

@@ -183,7 +183,7 @@ Automated coverage lives in `scripts/smoke-desktop-contract.ts` (parser, catalog
 | Case | Expected | Status |
 | --- | --- | --- |
 | Snail + Codex packs in the picker | Both formats listed, source badge visible, distinct keys | Automated catalog smoke |
-| Select Codex v2 | Running/Needs input/Ready/Blocked map to running/waiting/waving/failed; Snail labels/glyphs unchanged. Ready does not loop `jumping` (that clip is a hop/attack cycle and reads as in-place jumping). | Automated profile mapping; visual playback 未执行 |
+| Select Codex v2 | Running/Needs input/Ready/Blocked map to running/waiting/waving/failed; Snail labels/glyphs unchanged. Ready does not loop `jumping` (that clip is a hop/attack cycle and reads as in-place jumping). Idle/running/retrying click or double-click plays one-shot `jumping`. Running `thinking` plays `review` and keeps cue debounce / attention preemption. | Automated profile mapping + clip reachability; visual playback 未执行 |
 | v2 look + reduced-motion | 16-dir quantization; reduced-motion stays on a static business frame | Automated; desktop size readability 未执行 |
 | Multiple 2–3 MB atlases | Catalog has no base64; only the selected bitmap is read | Automated |
 | Bad path / size / decode / deleted file | Reject or CSS-snail fallback, pet stays up | Automated hard errors; Electron decode 未执行 |

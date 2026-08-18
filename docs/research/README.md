@@ -15,6 +15,7 @@ Archive investigation notes, analysis records, and future-improvement research h
 
 | Document | Topic |
 | --- | --- |
-| [`desktop-pet-improvements-2026-08-13.md`](desktop-pet-improvements-2026-08-13.md) | 桌宠动画/交互/性能/产品向优化建议清单（未实现） |
+| [`desktop-pet-improvements-2026-08-13.md`](desktop-pet-improvements-2026-08-13.md) | 桌宠动画/交互/性能/产品向优化建议清单（混合已实现项与历史 backlog） |
+| [`codex-pet-resource-utilization-audit-2026-08-18.md`](codex-pet-resource-utilization-audit-2026-08-18.md) | Codex v1/v2 图集可达率、渲染正确性、当前交互对标与优化优先级 |
 
 Active performance and functional backlog items are tracked in [`../plans/README.md`](../plans/README.md).

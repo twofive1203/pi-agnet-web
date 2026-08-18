@@ -117,6 +117,7 @@ import {
 import {
   validateCodexPetDocument,
   isCodexAtlasSize,
+  codexAtlasSpec,
   CODEX_PET_V1_HEIGHT,
   CODEX_PET_V1_WIDTH,
   CODEX_PET_V2_HEIGHT,
@@ -131,8 +132,13 @@ import {
 } from "../desktop/renderer/pet-key";
 import {
   assertNoLookRows,
+  auditCodexAtlasCells,
+  canApplyJumpOverlay,
   canApplyWaveOverlay,
   clipTotalDurationMs,
+  CODEX_LOOK_DIRECTION_COUNT,
+  CODEX_STANDARD_CLIP_REACHABILITY,
+  CODEX_STANDARD_ROWS,
   lookCellIndex,
   profileFromCodexMetadata,
   profileFromSnailManifest,
@@ -3421,6 +3427,10 @@ async function main() {
   assert.ok(rendererSource.includes("shouldAllowPetReaction"));
   assert.ok(rendererSource.includes("resolvePetBodyClick"));
   assert.ok(rendererSource.includes("playInteract"));
+  assert.ok(rendererSource.includes("playCodexJump"));
+  assert.ok(rendererSource.includes("startJump"));
+  assert.ok(rendererSource.includes("jumpActive"));
+  assert.equal(rendererSource.includes("startWave("), false);
   assert.ok(rendererSource.includes("toggleActivityFromMenu"));
   assert.ok(rendererSource.includes("cancelClickSequence"));
   assert.ok(rendererSource.includes("handlePetClick"));
@@ -4062,6 +4072,102 @@ async function main() {
       waveActive: true,
     });
     assert.equal(waveBlocked.clipName, "waiting");
+    assert.equal(canApplyJumpOverlay("idle"), true);
+    assert.equal(canApplyJumpOverlay("running"), true);
+    assert.equal(canApplyJumpOverlay("needs_input"), false);
+    const jump = resolveActivePetClip({
+      profile,
+      state: "idle",
+      reducedMotion: false,
+      lookDirection: 4,
+      dragClip: null,
+      jumpActive: true,
+    });
+    assert.equal(jump.clipName, "jumping");
+    const jumpBlocked = resolveActivePetClip({
+      profile,
+      state: "needs_input",
+      reducedMotion: false,
+      lookDirection: 4,
+      dragClip: null,
+      jumpActive: true,
+    });
+    assert.equal(jumpBlocked.clipName, "waiting");
+    const readyJump = resolveActivePetClip({
+      profile,
+      state: "ready",
+      reducedMotion: false,
+      lookDirection: null,
+      dragClip: null,
+      jumpActive: true,
+    });
+    assert.equal(readyJump.clipName, "waving");
+    const thinking = resolveActivePetClip({
+      profile,
+      state: "running",
+      reducedMotion: false,
+      lookDirection: null,
+      dragClip: null,
+      runningCue: "thinking",
+    });
+    assert.equal(thinking.clipName, "review");
+    const editing = resolveActivePetClip({
+      profile,
+      state: "running",
+      reducedMotion: false,
+      lookDirection: null,
+      dragClip: null,
+      runningCue: "editing",
+    });
+    assert.equal(editing.clipName, "running");
+    const retryThinking = resolveActivePetClip({
+      profile,
+      state: "retrying",
+      reducedMotion: false,
+      lookDirection: null,
+      dragClip: null,
+      runningCue: "thinking",
+    });
+    assert.equal(retryThinking.clipName, "running");
+    const attentionThinking = resolveActivePetClip({
+      profile,
+      state: "needs_input",
+      reducedMotion: false,
+      lookDirection: null,
+      dragClip: null,
+      runningCue: "thinking",
+    });
+    assert.equal(attentionThinking.clipName, "waiting");
+    const jumpOverReview = resolveActivePetClip({
+      profile,
+      state: "running",
+      reducedMotion: false,
+      lookDirection: null,
+      dragClip: null,
+      jumpActive: true,
+      runningCue: "thinking",
+    });
+    assert.equal(jumpOverReview.clipName, "jumping");
+    const dragOverJump = resolveActivePetClip({
+      profile,
+      state: "running",
+      reducedMotion: false,
+      lookDirection: null,
+      dragClip: "running-right",
+      jumpActive: true,
+      runningCue: "thinking",
+    });
+    assert.equal(dragOverJump.clipName, "running-right");
+    const reducedThinking = resolveActivePetClip({
+      profile,
+      state: "running",
+      reducedMotion: true,
+      lookDirection: null,
+      dragClip: null,
+      runningCue: "thinking",
+    });
+    assert.equal(reducedThinking.clipName, "review");
+    assert.equal(reducedThinking.staticOnly, true);
     const ready = resolveActivePetClip({
       profile,
       state: "ready",
@@ -4131,7 +4237,190 @@ async function main() {
     });
     assert.equal(v1Look.clipName, "idle");
     assert.equal(v1.clips["look-0"], undefined);
+
+    const reachableNames = new Set(CODEX_STANDARD_CLIP_REACHABILITY.map((item) => item.clipName));
+    for (const row of CODEX_STANDARD_ROWS) {
+      assert.ok(reachableNames.has(row.name), `standard clip ${row.name} must have a reachability entry`);
+    }
+    for (const item of CODEX_STANDARD_CLIP_REACHABILITY) {
+      if (item.via === "exception") {
+        assert.ok(item.detail.trim().length > 0, `${item.clipName} exception needs a comment`);
+        continue;
+      }
+      assert.ok(profile.clips[item.clipName], `missing reachable clip ${item.clipName}`);
+    }
+    assert.equal(
+      resolveActivePetClip({
+        profile,
+        state: "idle",
+        reducedMotion: false,
+        lookDirection: null,
+        dragClip: null,
+      }).clipName,
+      "idle",
+    );
+    assert.equal(
+      resolveActivePetClip({
+        profile,
+        state: "idle",
+        reducedMotion: false,
+        lookDirection: null,
+        dragClip: "running-right",
+      }).clipName,
+      "running-right",
+    );
+    assert.equal(
+      resolveActivePetClip({
+        profile,
+        state: "idle",
+        reducedMotion: false,
+        lookDirection: null,
+        dragClip: "running-left",
+      }).clipName,
+      "running-left",
+    );
+    assert.equal(
+      resolveActivePetClip({
+        profile,
+        state: "ready",
+        reducedMotion: false,
+        lookDirection: null,
+        dragClip: null,
+      }).clipName,
+      "waving",
+    );
+    assert.equal(
+      resolveActivePetClip({
+        profile,
+        state: "idle",
+        reducedMotion: false,
+        lookDirection: null,
+        dragClip: null,
+        jumpActive: true,
+      }).clipName,
+      "jumping",
+    );
+    assert.equal(
+      resolveActivePetClip({
+        profile,
+        state: "blocked",
+        reducedMotion: false,
+        lookDirection: null,
+        dragClip: null,
+      }).clipName,
+      "failed",
+    );
+    assert.equal(
+      resolveActivePetClip({
+        profile,
+        state: "needs_input",
+        reducedMotion: false,
+        lookDirection: null,
+        dragClip: null,
+      }).clipName,
+      "waiting",
+    );
+    assert.equal(
+      resolveActivePetClip({
+        profile,
+        state: "running",
+        reducedMotion: false,
+        lookDirection: null,
+        dragClip: null,
+      }).clipName,
+      "running",
+    );
+    assert.equal(
+      resolveActivePetClip({
+        profile,
+        state: "running",
+        reducedMotion: false,
+        lookDirection: null,
+        dragClip: null,
+        runningCue: "thinking",
+      }).clipName,
+      "review",
+    );
+    for (let direction = 0; direction < CODEX_LOOK_DIRECTION_COUNT; direction += 1) {
+      assert.equal(
+        resolveActivePetClip({
+          profile,
+          state: "idle",
+          reducedMotion: false,
+          lookDirection: direction,
+          dragClip: null,
+        }).clipName,
+        `look-${direction}`,
+      );
+    }
   }
+
+  function paintCodexCell(
+    rgba: Uint8Array,
+    spec: ReturnType<typeof codexAtlasSpec>,
+    col: number,
+    row: number,
+  ): void {
+    const x = col * spec.frameWidth;
+    const y = row * spec.frameHeight;
+    const index = (y * spec.width + x) * 4;
+    rgba[index] = 40;
+    rgba[index + 1] = 40;
+    rgba[index + 2] = 40;
+    rgba[index + 3] = 255;
+  }
+  function paintUsedCodexCells(version: 1 | 2, extraIdle = false): Uint8Array {
+    const spec = codexAtlasSpec(version);
+    const rgba = new Uint8Array(spec.width * spec.height * 4);
+    for (const [row, def] of CODEX_STANDARD_ROWS.entries()) {
+      for (let col = 0; col < def.used; col += 1) paintCodexCell(rgba, spec, col, row);
+    }
+    if (version === 2) {
+      for (let direction = 0; direction < CODEX_LOOK_DIRECTION_COUNT; direction += 1) {
+        const row = direction < 8 ? 9 : 10;
+        paintCodexCell(rgba, spec, direction % 8, row);
+      }
+    }
+    if (extraIdle) paintCodexCell(rgba, spec, 6, 0);
+    return rgba;
+  }
+  const cleanV2 = auditCodexAtlasCells({
+    rgba: paintUsedCodexCells(2),
+    width: CODEX_PET_V2_WIDTH,
+    height: CODEX_PET_V2_HEIGHT,
+    spriteVersion: 2,
+  });
+  assert.equal(cleanV2.ok, true);
+  assert.deepEqual(cleanV2.findings, []);
+  const extraIdle = auditCodexAtlasCells({
+    rgba: paintUsedCodexCells(2, true),
+    width: CODEX_PET_V2_WIDTH,
+    height: CODEX_PET_V2_HEIGHT,
+    spriteVersion: 2,
+  });
+  assert.equal(extraIdle.ok, false);
+  assert.equal(extraIdle.findings.some((item) => item.code === "idle_extra_frame"), true);
+  assert.equal(extraIdle.findings.find((item) => item.code === "idle_extra_frame")?.row, 0);
+  assert.equal(extraIdle.findings.find((item) => item.code === "idle_extra_frame")?.col, 6);
+  const emptyUsed = paintUsedCodexCells(1);
+  const v1Spec = codexAtlasSpec(1);
+  const idleOrigin = 0;
+  emptyUsed[idleOrigin + 3] = 0;
+  const emptyIdle = auditCodexAtlasCells({
+    rgba: emptyUsed,
+    width: v1Spec.width,
+    height: v1Spec.height,
+    spriteVersion: 1,
+  });
+  assert.equal(emptyIdle.findings.some((item) => item.code === "used_empty" && item.clipName === "idle"), true);
+  const badSize = auditCodexAtlasCells({
+    rgba: new Uint8Array(16),
+    width: 2,
+    height: 2,
+    spriteVersion: 2,
+  });
+  assert.equal(badSize.ok, false);
+  assert.equal(badSize.findings[0]?.code, "invalid_size");
 
   const snailSprite = getBuiltinPetManifest("snail-sprite");
   const snailProfile = profileFromSnailManifest(snailSprite);

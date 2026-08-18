@@ -1004,9 +1004,17 @@
   function canApplyWaveOverlay(state) {
     return state === "idle" || state === "running" || state === "retrying";
   }
+  function canApplyJumpOverlay(state) {
+    return state === "idle" || state === "running" || state === "retrying";
+  }
   function resolveActivePetClip(input) {
     const binding = input.profile.stateClips[input.state] ?? input.profile.stateClips.idle;
-    const fallback = {
+    const reviewClip = input.state === "running" && input.runningCue === "thinking" && input.profile.clips.review ? input.profile.clips.review : null;
+    const fallback = reviewClip ? {
+      clipName: "review",
+      staticOnly: binding.staticOnly || input.reducedMotion,
+      clip: reviewClip
+    } : {
       clipName: binding.clipName,
       staticOnly: binding.staticOnly || input.reducedMotion,
       clip: input.profile.clips[binding.clipName] ?? null
@@ -1017,6 +1025,13 @@
         clipName: input.dragClip,
         staticOnly: false,
         clip: input.profile.clips[input.dragClip]
+      };
+    }
+    if (input.jumpActive && canApplyJumpOverlay(input.state) && input.profile.clips.jumping) {
+      return {
+        clipName: "jumping",
+        staticOnly: false,
+        clip: input.profile.clips.jumping
       };
     }
     if (input.waveActive && canApplyWaveOverlay(input.state) && input.profile.capabilities.waving && input.profile.clips.waving) {
@@ -2655,8 +2670,8 @@
     let petPickerQuery = "";
     let lookDirection = null;
     let dragClip = null;
-    let waveActive = false;
-    let waveTimer = null;
+    let jumpActive = false;
+    let jumpTimer = null;
     let assetLoadSeq = 0;
     let loadedAssetKey = null;
     let loadedBlobUrl = null;
@@ -3019,40 +3034,42 @@
         clearReaction();
       }, reaction === "flail" ? PET_FLAIL_ANIMATION_MS : PET_POKE_ANIMATION_MS);
     }
-    function clearWave() {
-      if (waveTimer) {
-        clearTimeout(waveTimer);
-        waveTimer = null;
+    function clearJump() {
+      if (jumpTimer) {
+        clearTimeout(jumpTimer);
+        jumpTimer = null;
       }
-      waveActive = false;
+      jumpActive = false;
     }
-    function startWave(durationMs) {
-      clearWave();
+    function startJump(durationMs) {
+      clearJump();
       const ms = Math.max(1, Math.floor(durationMs));
-      waveActive = true;
-      waveTimer = setTimeout(() => {
-        waveTimer = null;
-        waveActive = false;
+      jumpActive = true;
+      jumpTimer = setTimeout(() => {
+        jumpTimer = null;
+        jumpActive = false;
         if (current) update(current);
       }, ms);
       if (current) update(current);
     }
-    function playInteract() {
-      wakeIdleSleep();
+    function playCodexJump() {
       const presentation = currentPresentation();
       const profile = currentPetProfile();
-      if (profile?.capabilities.waving && profile.clips.waving && canApplyWaveOverlay(presentation)) {
-        clearReaction();
-        startWave(clipTotalDurationMs(profile.clips.waving));
-        return;
-      }
-      clearWave();
+      if (!profile?.clips.jumping || !canApplyJumpOverlay(presentation)) return false;
+      clearReaction();
+      startJump(clipTotalDurationMs(profile.clips.jumping));
+      return true;
+    }
+    function playInteract() {
+      wakeIdleSleep();
+      if (playCodexJump()) return;
+      clearJump();
       playReaction("poke");
     }
     function cancelClickSequence() {
       clickSequenceState = createInitialPetClickSequenceState();
       clearReaction();
-      clearWave();
+      clearJump();
     }
     function handlePetClick() {
       const motionReduced = reducedMotion || current?.reducedMotion === true;
@@ -3074,11 +3091,13 @@
       clickSequenceState = outcome.state;
       if (outcome.cancelReaction) {
         clearReaction();
-        clearWave();
+        clearJump();
       }
       if (outcome.startReaction === "flail") {
-        clearWave();
-        playReaction("flail");
+        if (!playCodexJump()) {
+          clearJump();
+          playReaction("flail");
+        }
         return;
       }
       if (outcome.singleClick || outcome.startReaction === "poke") {
@@ -3336,8 +3355,8 @@
       if (state === "needs_input" || state === "blocked" || state === "ready" || state === "disconnected" || state === "service_not_running") {
         dragClip = null;
       }
-      if (motionReduced || documentHidden || !canApplyWaveOverlay(state)) {
-        if (waveActive) clearWave();
+      if (motionReduced || documentHidden || !canApplyJumpOverlay(state)) {
+        if (jumpActive) clearJump();
       }
       const frame = resolvePetFrame(manifest, state, motionReduced);
       const displayGlyph = state === "running" ? cueVisual.glyph : frame.glyph || petStateGlyph(state);
@@ -3348,7 +3367,8 @@
         reducedMotion: motionReduced,
         lookDirection,
         dragClip,
-        waveActive
+        jumpActive,
+        runningCue
       });
       const builtinSheetUrl = petSheetDataUrl(manifest.id);
       if (profile.renderMode === "spritesheet" && !builtinSheetUrl && !petSheetUrl(profile.petKey)) {
@@ -4465,7 +4485,7 @@
         event.stopPropagation();
         cancelClickSequence();
         if (event.shiftKey) {
-          playReaction("flail");
+          if (!playCodexJump()) playReaction("flail");
         } else {
           playInteract();
         }

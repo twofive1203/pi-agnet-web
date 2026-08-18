@@ -21,3 +21,12 @@ export {
   PET_REQUIRED_STATES,
   validatePetManifestDocument,
 } from "../desktop/renderer/pet-assets";
+export {
+  CODEX_PET_V1_HEIGHT,
+  CODEX_PET_V1_WIDTH,
+  CODEX_PET_V2_HEIGHT,
+  CODEX_PET_V2_WIDTH,
+  isCodexAtlasSize,
+  validateCodexPetDocument,
+} from "../desktop/renderer/codex-pet-assets";
+export { auditCodexAtlasCells } from "../desktop/renderer/pet-runtime-profile";
