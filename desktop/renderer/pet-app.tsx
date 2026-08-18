@@ -1351,10 +1351,11 @@ export function renderPetApp(root: Document = document): {
       petRoot.setAttribute("data-pet-scale", scale);
       petRoot.style.setProperty("--pet-scale", String(spec.factor));
       petRoot.style.setProperty("--pet-root-pad", `${spec.rootPad}px`);
-      petRoot.style.setProperty("--pet-stack-gap", `${Math.max(1, spec.stackHeight - spec.chromeHeight - spec.surfaceSize)}px`);
+      petRoot.style.setProperty("--pet-stack-gap", `${Math.max(1, spec.stackHeight - spec.chromeHeight - spec.surfaceSize - spec.bubbleReserve)}px`);
       petRoot.style.setProperty("--pet-stack-width", `${spec.stackWidth}px`);
       petRoot.style.setProperty("--pet-chrome-height", `${spec.chromeHeight}px`);
       petRoot.style.setProperty("--pet-surface-size", `${spec.surfaceSize}px`);
+      petRoot.style.setProperty("--pet-bubble-reserve", `${spec.bubbleReserve}px`);
     }
     if (petButton) {
       petButton.setAttribute("aria-expanded", view.trayOpen ? "true" : "false");

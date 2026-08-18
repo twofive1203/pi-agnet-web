@@ -32,7 +32,7 @@ Native form controls follow `color-scheme: light` so checkboxes and selects matc
 
 - IDs, preload bridge, observer snapshot, DND/bubble reducer, and window metrics stay as they are.
 - Caption remains inside `#pet-button` (no nested button). It is still `pointer-events: none`.
-- Collapsed bounds stay 140×160 at medium; the balloon must clamp inside the existing stage.
+- Collapsed width stays 140 at medium. Height reserves a 40px band above the sprite (196 total) so the balloon sits over the head instead of on the face.
 - No new fonts (CSP `font-src 'self' data:`).
 - Reduced-motion still collapses the pop animation through the existing global gate.
 

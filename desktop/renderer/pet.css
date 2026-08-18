@@ -11,6 +11,7 @@
   --pet-stack-width: calc(112px * var(--pet-scale));
   --pet-chrome-height: calc(18px * var(--pet-scale));
   --pet-surface-size: calc(112px * var(--pet-scale));
+  --pet-bubble-reserve: calc(40px * var(--pet-scale));
   --ink: #2b313c;
   --paper: #fff7ea;
   --paper-2: #fffdf8;
@@ -99,6 +100,7 @@ select {
   flex-direction: column;
   gap: var(--pet-stack-gap);
   width: var(--pet-stack-width);
+  padding-top: var(--pet-bubble-reserve);
 }
 
 .activity-tray[hidden],
@@ -171,7 +173,7 @@ select {
 /* Floating speech-chip stack; no dark menu plate over the snail. */
 .pet-intent-menu {
   position: absolute;
-  top: 0;
+  top: var(--pet-bubble-reserve);
   left: 0;
   z-index: 12;
   display: flex;
@@ -284,8 +286,8 @@ select {
 
 .pet-caption {
   position: absolute;
-  top: 0;
-  left: 0;
+  top: calc(var(--pet-bubble-reserve) * -1 + 2px);
+  left: 2px;
   z-index: 8;
   display: flex;
   flex-direction: column;

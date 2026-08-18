@@ -2462,7 +2462,7 @@ async function main() {
   win = handleToggleTray(win, workArea);
   assert.equal(win.trayExpanded, false);
   assert.deepEqual(petStackScreenRect(win.bounds!, "top-left"), cornerStack);
-  assert.ok(PET_LAYOUT.stackHeight === 136);
+  assert.ok(PET_LAYOUT.stackHeight === 176);
 
   // Custom body drag delta + soft edge clamp.
   const moved = handleMoveBy(win, { dx: 12, dy: -8 }, workArea);

@@ -464,12 +464,14 @@
     chromeHeight: 18,
     stackGap: 6,
     surfaceSize: 112,
-    /** chrome 18 + gap 6 + surface 112 */
+    /** Empty band above the sprite so the speech balloon does not cover the face. */
+    bubbleReserve: 40,
+    /** chrome 18 + gap 6 + surface 112 + bubble 40 */
     stackWidth: 112,
-    stackHeight: 136,
-    /** Collapsed chrome + avatar + root padding/gap — must fit without clipping. */
+    stackHeight: 176,
+    /** Collapsed chrome + bubble band + avatar + root padding — must fit without clipping. */
     collapsedWidth: 140,
-    collapsedHeight: 160,
+    collapsedHeight: 196,
     trayWidth: 360,
     trayHeight: 480
   };
@@ -495,14 +497,16 @@
     const chromeHeight = scaleLayoutPx(PET_LAYOUT_BASE.chromeHeight, factor);
     const stackGap = scaleLayoutPx(PET_LAYOUT_BASE.stackGap, factor);
     const surfaceSize = scaleLayoutPx(PET_LAYOUT_BASE.surfaceSize, factor);
+    const bubbleReserve = scaleLayoutPx(PET_LAYOUT_BASE.bubbleReserve, factor);
     const stackWidth = surfaceSize;
-    const stackHeight = chromeHeight + stackGap + surfaceSize;
+    const stackHeight = chromeHeight + stackGap + surfaceSize + bubbleReserve;
     return {
       scale,
       factor,
       rootPad,
       chromeHeight,
       surfaceSize,
+      bubbleReserve,
       stackWidth,
       stackHeight,
       clickTargetWidth: surfaceSize,
@@ -3530,10 +3534,11 @@
         petRoot.setAttribute("data-pet-scale", scale);
         petRoot.style.setProperty("--pet-scale", String(spec.factor));
         petRoot.style.setProperty("--pet-root-pad", `${spec.rootPad}px`);
-        petRoot.style.setProperty("--pet-stack-gap", `${Math.max(1, spec.stackHeight - spec.chromeHeight - spec.surfaceSize)}px`);
+        petRoot.style.setProperty("--pet-stack-gap", `${Math.max(1, spec.stackHeight - spec.chromeHeight - spec.surfaceSize - spec.bubbleReserve)}px`);
         petRoot.style.setProperty("--pet-stack-width", `${spec.stackWidth}px`);
         petRoot.style.setProperty("--pet-chrome-height", `${spec.chromeHeight}px`);
         petRoot.style.setProperty("--pet-surface-size", `${spec.surfaceSize}px`);
+        petRoot.style.setProperty("--pet-bubble-reserve", `${spec.bubbleReserve}px`);
       }
       if (petButton) {
         petButton.setAttribute("aria-expanded", view.trayOpen ? "true" : "false");

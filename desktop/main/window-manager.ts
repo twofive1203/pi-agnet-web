@@ -70,12 +70,14 @@ export const PET_LAYOUT_BASE = {
   chromeHeight: 18,
   stackGap: 6,
   surfaceSize: 112,
-  /** chrome 18 + gap 6 + surface 112 */
+  /** Empty band above the sprite so the speech balloon does not cover the face. */
+  bubbleReserve: 40,
+  /** chrome 18 + gap 6 + surface 112 + bubble 40 */
   stackWidth: 112,
-  stackHeight: 136,
-  /** Collapsed chrome + avatar + root padding/gap — must fit without clipping. */
+  stackHeight: 176,
+  /** Collapsed chrome + bubble band + avatar + root padding — must fit without clipping. */
   collapsedWidth: 140,
-  collapsedHeight: 160,
+  collapsedHeight: 196,
   trayWidth: 360,
   trayHeight: 480,
 } as const;
@@ -108,6 +110,7 @@ export type PetLayoutSpec = {
   rootPad: number;
   chromeHeight: number;
   surfaceSize: number;
+  bubbleReserve: number;
   stackWidth: number;
   stackHeight: number;
   clickTargetWidth: number;
@@ -129,14 +132,16 @@ export function resolvePetLayoutSpec(scale: DesktopPetScale = "medium"): PetLayo
   const chromeHeight = scaleLayoutPx(PET_LAYOUT_BASE.chromeHeight, factor);
   const stackGap = scaleLayoutPx(PET_LAYOUT_BASE.stackGap, factor);
   const surfaceSize = scaleLayoutPx(PET_LAYOUT_BASE.surfaceSize, factor);
+  const bubbleReserve = scaleLayoutPx(PET_LAYOUT_BASE.bubbleReserve, factor);
   const stackWidth = surfaceSize;
-  const stackHeight = chromeHeight + stackGap + surfaceSize;
+  const stackHeight = chromeHeight + stackGap + surfaceSize + bubbleReserve;
   return {
     scale,
     factor,
     rootPad,
     chromeHeight,
     surfaceSize,
+    bubbleReserve,
     stackWidth,
     stackHeight,
     clickTargetWidth: surfaceSize,
