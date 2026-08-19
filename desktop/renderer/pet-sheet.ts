@@ -10,9 +10,64 @@
 import type { PetManifest, PetVisualState } from "./pet-state";
 import type { PetRuntimeClip, PetRuntimeProfile, PetRuntimeSheet } from "./pet-runtime-profile";
 
-/** CSS render box of `.pet-avatar`; sprites are scaled to fill it. */
+/** CSS render box of `.pet-avatar`. Bitmaps contain into this box. */
 export const PET_SPRITE_AVATAR_WIDTH = 108;
 export const PET_SPRITE_AVATAR_HEIGHT = 92;
+
+/** Uniform contain scale so a source cell is never stretched. */
+export function spriteContainScale(sheet: SpriteSheet): number {
+  return Math.min(
+    PET_SPRITE_AVATAR_WIDTH / sheet.frameWidth,
+    PET_SPRITE_AVATAR_HEIGHT / sheet.frameHeight,
+  );
+}
+
+/** Inner `.pet-bitmap` box after contain. Snail 108×92 stays 108×92; Codex 192×208 becomes ~85×92. */
+export function spriteBitmapSize(sheet: SpriteSheet): { width: number; height: number } {
+  const scale = spriteContainScale(sheet);
+  return {
+    width: sheet.frameWidth * scale,
+    height: sheet.frameHeight * scale,
+  };
+}
+
+/** On-screen size after `.pet-stage { transform: scale(petScale) }`. */
+export function spriteVisualSize(
+  sheet: SpriteSheet,
+  petScale: number,
+): { width: number; height: number } {
+  const box = spriteBitmapSize(sheet);
+  return {
+    width: box.width * petScale,
+    height: box.height * petScale,
+  };
+}
+
+export function spriteBitmapBaseSelector(token: string): string {
+  return `.pet-avatar.pet-sprite-${token} > .pet-bitmap`;
+}
+
+export function spriteBitmapClipSelector(
+  token: string,
+  clipName: string,
+  animated = false,
+): string {
+  return `.pet-avatar.pet-sprite-${token}[data-clip="${clipName}"]${animated ? ".is-animated" : ""} > .pet-bitmap`;
+}
+
+export function spriteBitmapStateSelector(
+  token: string,
+  state: string,
+  animated = false,
+): string {
+  return `.pet-avatar.pet-sprite-${token}[data-state="${state}"]${animated ? ".is-animated" : ""} > .pet-bitmap`;
+}
+
+function formatCssPx(value: number): string {
+  if (!Number.isFinite(value) || Math.abs(value) < 1e-9) return "0px";
+  const rounded = Math.round(value * 1e6) / 1e6;
+  return `${rounded}px`;
+}
 
 type SpriteSheet = {
   frameWidth: number;
@@ -27,18 +82,16 @@ export type SpriteCell = { x: number; y: number };
 export function spriteCellPosition(sheet: SpriteSheet, frameIndex: number): SpriteCell {
   const col = frameIndex % sheet.columns;
   const row = Math.floor(frameIndex / sheet.columns);
-  const scaleX = PET_SPRITE_AVATAR_WIDTH / sheet.frameWidth;
-  const scaleY = PET_SPRITE_AVATAR_HEIGHT / sheet.frameHeight;
+  const scale = spriteContainScale(sheet);
   return {
-    x: -col * sheet.frameWidth * scaleX,
-    y: -row * sheet.frameHeight * scaleY,
+    x: -col * sheet.frameWidth * scale,
+    y: -row * sheet.frameHeight * scale,
   };
 }
 
 export function spriteSheetBackgroundSize(sheet: SpriteSheet): string {
-  const scaleX = PET_SPRITE_AVATAR_WIDTH / sheet.frameWidth;
-  const scaleY = PET_SPRITE_AVATAR_HEIGHT / sheet.frameHeight;
-  return `${sheet.frameWidth * sheet.columns * scaleX}px ${sheet.frameHeight * sheet.rows * scaleY}px`;
+  const scale = spriteContainScale(sheet);
+  return `${formatCssPx(sheet.frameWidth * sheet.columns * scale)} ${formatCssPx(sheet.frameHeight * sheet.rows * scale)}`;
 }
 
 export type SpriteSheetStyle = {
@@ -54,7 +107,7 @@ export type SpriteSheetStyle = {
 };
 
 export function positionCss(cell: SpriteCell): string {
-  return `${cell.x}px ${cell.y}px`;
+  return `${formatCssPx(cell.x)} ${formatCssPx(cell.y)}`;
 }
 
 export function animationName(manifestId: string, state: PetVisualState): string {
@@ -135,8 +188,8 @@ export function resolveSpriteSheetStyle(
 
 function frameSelectors(manifestId: string, state: PetVisualState): { base: string; animated: string } {
   return {
-    base: `.pet-avatar.pet-sprite-${manifestId}[data-state="${state}"]`,
-    animated: `.pet-avatar.pet-sprite-${manifestId}[data-state="${state}"].is-animated`,
+    base: spriteBitmapStateSelector(manifestId, state),
+    animated: spriteBitmapStateSelector(manifestId, state, true),
   };
 }
 
@@ -149,9 +202,12 @@ export function buildSpriteSheetStyleText(manifest: PetManifest, imageUrl: strin
   if (manifest.renderMode !== "spritesheet" || !manifest.sheet || !imageUrl) return "";
   const id = manifest.id;
   const sheet = manifest.sheet;
+  const box = spriteBitmapSize(sheet);
   const lines: string[] = [];
   lines.push(
-    `.pet-avatar.pet-sprite-${id} {`,
+    `${spriteBitmapBaseSelector(id)} {`,
+    `  width: ${formatCssPx(box.width)};`,
+    `  height: ${formatCssPx(box.height)};`,
     `  background-image: url("${imageUrl}");`,
     `  background-size: ${spriteSheetBackgroundSize(sheet)};`,
     "  background-repeat: no-repeat;",
@@ -281,9 +337,12 @@ export function buildSpriteSheetStyleTextFromProfile(
   if (profile.renderMode !== "spritesheet" || !profile.sheet || !imageUrl) return "";
   const sheet = profile.sheet;
   const token = profile.cssToken;
+  const box = spriteBitmapSize(sheet);
   const lines: string[] = [];
   lines.push(
-    `.pet-avatar.pet-sprite-${token} {`,
+    `${spriteBitmapBaseSelector(token)} {`,
+    `  width: ${formatCssPx(box.width)};`,
+    `  height: ${formatCssPx(box.height)};`,
     `  background-image: url("${imageUrl}");`,
     `  background-size: ${spriteSheetBackgroundSize(sheet)};`,
     "  background-repeat: no-repeat;",
@@ -292,8 +351,8 @@ export function buildSpriteSheetStyleTextFromProfile(
   for (const clip of Object.values(profile.clips)) {
     const plan = resolveClipSheetStyle(sheet, clip, token);
     if (!plan) continue;
-    const base = `.pet-avatar.pet-sprite-${token}[data-clip="${clip.name}"]`;
-    const animated = `${base}.is-animated`;
+    const base = spriteBitmapClipSelector(token, clip.name);
+    const animated = spriteBitmapClipSelector(token, clip.name, true);
     lines.push(`${base} { background-position: ${plan.staticPosition}; }`);
     if (plan.animatedPosition && plan.animation) {
       lines.push(

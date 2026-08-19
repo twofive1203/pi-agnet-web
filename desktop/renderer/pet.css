@@ -511,6 +511,25 @@ select {
   transform-origin: 56px 80px;
 }
 
+/* Inner bitmap is the only spritesheet animation surface. Outer avatar keeps
+   108×92 for glyphs, press, reaction, and transition transforms. */
+.pet-bitmap {
+  display: none;
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 1;
+  overflow: hidden;
+  margin-inline: auto;
+  pointer-events: none;
+  background-repeat: no-repeat;
+}
+
+.pet-avatar.pet-sprite .pet-bitmap {
+  display: block;
+}
+
 /* Spritesheet pets replace the CSS snail anatomy with a bitmap. The glyph/label
    stay visible so the non-color status cues survive the render-mode switch. */
 .pet-avatar.pet-sprite .pet-shadow,
@@ -879,7 +898,7 @@ select {
 
 /* Idle keeps the pet alive: breathing, swaying antennae, shell shimmer, irregular blinks.
    --blink-interval is jittered from JS so the rhythm never feels mechanical. */
-.pet-avatar.is-animated.frame-idle {
+.pet-avatar.is-animated.frame-idle:not(.pet-sprite) {
   --blink-interval: 4.8s;
   animation: idle-breathe 3.6s ease-in-out infinite;
 }
@@ -916,7 +935,7 @@ select {
 /* Running is a low-amplitude "focused work" loop: the shell stays put while the
    head probes forward, antennae observe, and the tail stretches on staggered,
    asymmetric rhythms with small rests. No whole-body front/back scoot. */
-.pet-avatar.is-animated.frame-running {
+.pet-avatar.is-animated.frame-running:not(.pet-sprite) {
   animation: running-focus 2.6s ease-in-out infinite;
 }
 
@@ -932,7 +951,7 @@ select {
   animation: running-shell-gloss 2.6s ease-in-out infinite;
 }
 
-.pet-avatar.is-animated.frame-retrying {
+.pet-avatar.is-animated.frame-retrying:not(.pet-sprite) {
   animation: pet-retry 0.72s ease-in-out infinite;
 }
 
@@ -940,7 +959,7 @@ select {
   animation: pet-pulse 1.3s ease-in-out infinite;
 }
 
-.pet-avatar.is-animated.frame-ready {
+.pet-avatar.is-animated.frame-ready:not(.pet-sprite) {
   animation: pet-celebrate 1.8s ease-in-out infinite;
 }
 
@@ -1130,10 +1149,9 @@ select {
 }
 
 /* U4b fun reactions: short, interruptible, low-amplitude nudges. Applied only
-   in idle and only while motion is allowed (the reduced-motion block below
-   also collapses their durations). Spritesheet pets reuse existing frames — the
-   nudge moves the whole bitmap wrapper, never the anatomy or the manifest. The
-   durations must match PET_POKE_ANIMATION_MS / PET_FLAIL_ANIMATION_MS. */
+   while motion is allowed. Spritesheet pets play frames on `.pet-bitmap` and
+   keep these transforms on the outer avatar so the two animation channels
+   never share `animation`. Durations match PET_POKE / PET_FLAIL constants. */
 .pet-avatar.is-animated.reaction-poke {
   animation: reaction-poke 380ms ease-in-out;
 }
@@ -1272,7 +1290,7 @@ select {
   animation: idle-sleep-z 3.4s ease-in-out infinite;
 }
 
-.pet-avatar.is-animated.frame-idle.pet-sleepy {
+.pet-avatar.is-animated.frame-idle.pet-sleepy:not(.pet-sprite) {
   animation: idle-sleepy-breathe 4.4s ease-in-out infinite;
 }
 
@@ -1284,7 +1302,7 @@ select {
   animation: idle-sleepy-eyes 4.4s ease-in-out infinite;
 }
 
-.pet-avatar.is-animated.frame-idle.pet-sleeping {
+.pet-avatar.is-animated.frame-idle.pet-sleeping:not(.pet-sprite) {
   animation: idle-sleep-breathe 5.6s ease-in-out infinite;
 }
 

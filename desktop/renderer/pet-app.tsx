@@ -767,20 +767,18 @@ export function renderPetApp(root: Document = document): {
     if (current) update(current);
   }
 
-  /** Codex one-shot hop. Skip CSS poke/flail so spritesheet `animation` can play. */
+  /** Codex one-shot hop on the inner bitmap. Outer poke/flail can play at the same time. */
   function playCodexJump(): boolean {
     const presentation = currentPresentation();
     const profile = currentPetProfile();
     if (!profile?.clips.jumping || !canApplyJumpOverlay(presentation)) return false;
-    clearReaction();
     startJump(clipTotalDurationMs(profile.clips.jumping));
     return true;
   }
 
   function playInteract(): void {
     wakeIdleSleep();
-    if (playCodexJump()) return;
-    clearJump();
+    playCodexJump();
     playReaction("poke");
   }
 
@@ -819,10 +817,8 @@ export function renderPetApp(root: Document = document): {
       clearJump();
     }
     if (outcome.startReaction === "flail") {
-      if (!playCodexJump()) {
-        clearJump();
-        playReaction("flail");
-      }
+      playCodexJump();
+      playReaction("flail");
       return;
     }
     if (outcome.singleClick || outcome.startReaction === "poke") {
@@ -2458,7 +2454,8 @@ export function renderPetApp(root: Document = document): {
       event.stopPropagation();
       cancelClickSequence();
       if (event.shiftKey) {
-        if (!playCodexJump()) playReaction("flail");
+        playCodexJump();
+        playReaction("flail");
       } else {
         playInteract();
       }

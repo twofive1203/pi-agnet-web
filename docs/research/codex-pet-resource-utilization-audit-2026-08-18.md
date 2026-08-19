@@ -1,6 +1,6 @@
 # Codex 桌宠资源利用率与交互对标审计 — 2026-08-18
 
-状态：Open research（P1 资源完整利用已落地；P0 视觉分层与 P2 发现/导入仍开放。未执行 Electron 实机逐帧播放矩阵）。
+状态：Open research（P0 分层/动画通道与 P1 资源完整利用已落地；P2 发现/导入仍开放。未执行 Electron 实机逐帧播放矩阵）。
 
 ## 结论
 
@@ -13,7 +13,7 @@
 - 当前运行时真正可达的格子为 62 个。
 - 因此按整张图集计算可达率为 **62/88 = 70.45%**；按样本实际有内容的格子计算为 **62/74 = 83.78%**。
 - 审计当时的主要缺口是 `jumping` 5 帧和 `review` 6 帧从未被运行时选中；额外的 idle 第 7 帧也被忽略。P1 已把 `jumping` 接到一次性点击/双击、把 `review` 接到 Running `thinking`，并增加 reachability / unused-cell 校验；idle 第 7 格仍不进入运行时（协议仍是 6 帧）。
-- 更影响观感的问题不是“少播几张图”，而是当前将 192×208 单帧非等比缩放到 108×92，角色相对横向被拉宽约 **27.2%**。
+- 更影响观感的问题曾是把 192×208 单帧非等比缩放到 108×92，角色相对横向被拉宽约 **27.2%**。P0 已改为内层 `.pet-bitmap` 按 192:208 contain。
 
 ## 审计范围
 
@@ -196,11 +196,11 @@ OpenAI 当前官方 Pets 文档确认：
 
 ## 建议优先级
 
-### P0 — 视觉/播放正确性
+### P0 — 视觉/播放正确性（已完成 2026-08-18）
 
-1. 外层 avatar 与内层 bitmap 分层，保持 192:208 等比。
-2. 修复 spritesheet 帧动画与 reaction/transition 的 `animation` 冲突。
-3. 增加 actual-browser/computed-style 或 Electron 视觉验证，覆盖小/中/大尺寸。
+1. 外层 `.pet-avatar` 保持 108×92；内层 `.pet-bitmap` 按 192:208 contain（约 85×92）。
+2. 图集 `animation` 只写在 `.pet-bitmap`；`reaction-poke` / `reaction-flail` / `transition-retry-go` 留在外层。CSS 蜗牛的 wrapper 循环加 `:not(.pet-sprite)`，避免 `frame-idle` 抢占图集角色。
+3. smoke 用解析后的 CSS cascade + `spriteVisualSize` 覆盖小/中/大尺寸等比，不只检查 class/marker。Electron 实机逐帧仍未跑。
 
 ### P1 — 资源完整利用（已完成 2026-08-18）
 

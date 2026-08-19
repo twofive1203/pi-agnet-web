@@ -66,6 +66,7 @@ import {
 import {
   assertDesktopSettingsSafe,
   createDefaultDesktopSettings,
+  DESKTOP_PET_SCALE_FACTORS,
   normalizeDesktopSettings,
   parseDesktopSettingsJson,
   serializeDesktopSettings,
@@ -210,8 +211,14 @@ import {
   resolveClipSheetStyle,
   resolveSpriteSheetStyle,
   resolveSpriteStylesheetSource,
+  spriteBitmapBaseSelector,
+  spriteBitmapClipSelector,
+  spriteBitmapSize,
+  spriteBitmapStateSelector,
   spriteCellPosition,
+  spriteContainScale,
   spriteSheetBackgroundSize,
+  spriteVisualSize,
 } from "../desktop/renderer/pet-sheet";
 import {
   PetSoundPlayer,
@@ -2885,6 +2892,8 @@ async function main() {
   assert.equal(sheet.frameHeight, 92);
   assert.equal(sheet.columns, 4);
   assert.equal(sheet.rows, 8);
+  assert.equal(spriteContainScale(sheet), 1);
+  assert.deepEqual(spriteBitmapSize(sheet), { width: 108, height: 92 });
   assert.equal(spriteSheetBackgroundSize(sheet), "432px 736px");
   assert.equal(positionCss(spriteCellPosition(sheet, 0)), "0px 0px");
   assert.equal(positionCss(spriteCellPosition(sheet, 1)), "-108px 0px");
@@ -2906,8 +2915,10 @@ async function main() {
   assert.equal(animationName("snail-sprite", "idle"), "pet-sprite-snail-sprite-idle");
 
   const spriteCss = buildSpriteSheetStyleText(spriteManifest, spriteUrl);
-  assert.ok(spriteCss.includes('.pet-sprite-snail-sprite[data-state="idle"].is-animated'));
+  assert.ok(spriteCss.includes(spriteBitmapStateSelector("snail-sprite", "idle", true)));
+  assert.equal(spriteCss.includes('.pet-avatar.pet-sprite-snail-sprite[data-state="idle"].is-animated {'), false);
   assert.ok(spriteCss.includes("@keyframes pet-sprite-snail-sprite-idle"));
+  assert.ok(spriteCss.includes(`${spriteBitmapBaseSelector("snail-sprite")} {`));
   assert.ok(spriteCss.includes("steps(3, end)"));
   assert.equal(buildSpriteSheetStyleText(spriteManifest, null), "");
   assert.equal(buildSpriteSheetStyleText(manifest, spriteUrl), "");
@@ -3449,7 +3460,15 @@ async function main() {
   assert.ok(css.includes(".row-child-meta"));
   assert.ok(css.includes(".row-actions"));
   assert.ok(html.includes("pet-stack"));
+  assert.ok(html.includes("id=\"pet-bitmap\""));
+  assert.ok(html.includes("class=\"pet-bitmap\""));
   assert.ok(html.includes("data-tray-anchor"));
+  assert.ok(css.includes(".pet-bitmap"));
+  assert.ok(css.includes(".pet-avatar.pet-sprite .pet-bitmap"));
+  assert.ok(css.includes(".pet-avatar.is-animated.frame-idle:not(.pet-sprite)"));
+  assert.ok(css.includes(".pet-avatar.is-animated.reaction-poke"));
+  assert.ok(css.includes(".pet-avatar.is-animated.transition-retry-go"));
+  assert.equal(css.includes(".pet-bitmap.is-animated"), false);
 
   assert.equal(isRendererIpcChannel(PET_IPC_CHANNELS.hideToTray), true);
   assert.equal(isRendererIpcChannel(PET_IPC_CHANNELS.moveBy), true);
@@ -4497,6 +4516,243 @@ async function main() {
     }),
     { kind: "none" },
   );
+
+  const codexSheet = {
+    frameWidth: 192,
+    frameHeight: 208,
+    columns: 8,
+    rows: 11,
+  };
+  const containScale = 92 / 208;
+  assert.equal(spriteContainScale(codexSheet), containScale);
+  const bitmapBox = spriteBitmapSize(codexSheet);
+  assert.equal(bitmapBox.height, 92);
+  assert.equal(bitmapBox.width, 192 * containScale);
+  assert.ok(Math.abs(bitmapBox.width / bitmapBox.height - 192 / 208) < 1e-12);
+  assert.ok(bitmapBox.width < 108, "Codex bitmap must be narrower than the 108 avatar box");
+  for (const [scaleName, factor] of Object.entries(DESKTOP_PET_SCALE_FACTORS)) {
+    const visual = spriteVisualSize(codexSheet, factor);
+    assert.ok(
+      Math.abs(visual.width / visual.height - 192 / 208) < 1e-12,
+      `${scaleName} must stay 192:208`,
+    );
+    assert.equal(visual.height, 92 * factor, `${scaleName} height follows pet-stage scale`);
+    assert.equal(visual.width, 192 * containScale * factor, `${scaleName} width`);
+    assert.ok(visual.width < 108 * factor + 1e-9, `${scaleName} must not overflow the scaled avatar`);
+  }
+  const snailVisualLarge = spriteVisualSize(sheet, DESKTOP_PET_SCALE_FACTORS.large);
+  assert.deepEqual(snailVisualLarge, { width: 108 * 1.2, height: 92 * 1.2 });
+
+  const minatoCss = v2Meta.ok
+    ? buildSpriteSheetStyleTextFromProfile(profileFromCodexMetadata(v2Meta.metadata), "blob:minato")
+    : "";
+  assert.ok(minatoCss.includes(spriteBitmapBaseSelector("codex-blue-whale-maid")));
+  assert.ok(minatoCss.includes(spriteBitmapClipSelector("codex-blue-whale-maid", "idle", true)));
+  assert.equal(
+    minatoCss.includes('.pet-avatar.pet-sprite-codex-blue-whale-maid[data-clip="idle"].is-animated {'),
+    false,
+  );
+  assert.ok(minatoCss.includes(`width: ${bitmapBox.width}px`) || minatoCss.includes("width: 84.923077px") || /width:\s*84\.923/.test(minatoCss));
+  assert.ok(/height:\s*92px/.test(minatoCss));
+
+  type CssCascadeNode = {
+    tag: string;
+    classes: Set<string>;
+    attrs: Record<string, string>;
+    parent?: CssCascadeNode;
+  };
+  type CssRule = { selector: string; declarations: Record<string, string> };
+
+  function stripAtRules(source: string): string {
+    let out = "";
+    let i = 0;
+    while (i < source.length) {
+      if (source.startsWith("@", i)) {
+        const brace = source.indexOf("{", i);
+        if (brace < 0) break;
+        let depth = 1;
+        let j = brace + 1;
+        while (j < source.length && depth > 0) {
+          if (source[j] === "{") depth += 1;
+          else if (source[j] === "}") depth -= 1;
+          j += 1;
+        }
+        i = j;
+        continue;
+      }
+      out += source[i];
+      i += 1;
+    }
+    return out;
+  }
+
+  function parseCssRules(source: string): CssRule[] {
+    const rules: CssRule[] = [];
+    const cleaned = stripAtRules(source.replace(/\/\*[\s\S]*?\*\//g, ""));
+    const chunks = cleaned.split("}");
+    for (const chunk of chunks) {
+      const split = chunk.split("{");
+      if (split.length < 2) continue;
+      const selectors = split[0];
+      const body = split.slice(1).join("{");
+      const declarations: Record<string, string> = {};
+      for (const line of body.split(";")) {
+        const colon = line.indexOf(":");
+        if (colon < 0) continue;
+        const prop = line.slice(0, colon).trim();
+        const value = line.slice(colon + 1).trim();
+        if (prop && value) declarations[prop] = value;
+      }
+      for (const selector of selectors.split(",")) {
+        const trimmed = selector.replace(/\s+/g, " ").trim();
+        if (trimmed) rules.push({ selector: trimmed, declarations });
+      }
+    }
+    return rules;
+  }
+
+  function parseSimpleSelector(simple: string): {
+    tag: string | null;
+    classes: string[];
+    notClasses: string[];
+    attrs: Record<string, string>;
+    classCount: number;
+    tagCount: number;
+  } {
+    const classes: string[] = [];
+    const notClasses: string[] = [];
+    const attrs: Record<string, string> = {};
+    let tag: string | null = null;
+    const tokenRe = /:not\(\.([\w-]+)\)|\[([\w-]+)="([^"]*)"\]|\.([\w-]+)|#([\w-]+)|([a-z][\w-]*)/gi;
+    let match: RegExpExecArray | null;
+    let classCount = 0;
+    let tagCount = 0;
+    while ((match = tokenRe.exec(simple))) {
+      if (match[1]) {
+        notClasses.push(match[1]);
+        classCount += 1;
+      } else if (match[2] && match[3] != null) {
+        attrs[match[2]] = match[3];
+        classCount += 1;
+      } else if (match[4]) {
+        classes.push(match[4]);
+        classCount += 1;
+      } else if (match[5]) {
+        classCount += 1;
+      } else if (match[6] && match.index === 0) {
+        tag = match[6];
+        tagCount += 1;
+      }
+    }
+    return { tag, classes, notClasses, attrs, classCount, tagCount };
+  }
+
+  function matchSimpleSelector(
+    simple: string,
+    node: CssCascadeNode,
+  ): boolean {
+    const parsed = parseSimpleSelector(simple);
+    if (parsed.tag && parsed.tag !== node.tag) return false;
+    for (const name of parsed.classes) if (!node.classes.has(name)) return false;
+    for (const name of parsed.notClasses) if (node.classes.has(name)) return false;
+    for (const [key, value] of Object.entries(parsed.attrs)) {
+      if (node.attrs[key] !== value) return false;
+    }
+    return true;
+  }
+
+  function selectorMatches(selector: string, node: CssCascadeNode): boolean {
+    const parts = selector.split(/\s*(>)\s*|\s+/).filter(Boolean);
+    let current: CssCascadeNode | undefined = node;
+    for (let i = parts.length - 1; i >= 0; i -= 1) {
+      if (!current) return false;
+      const part = parts[i];
+      if (part === ">") {
+        i -= 1;
+        const parentPart = parts[i];
+        current = current.parent;
+        if (!current || !parentPart || !matchSimpleSelector(parentPart, current)) return false;
+        continue;
+      }
+      if (!matchSimpleSelector(part, current)) return false;
+      if (i > 0 && parts[i - 1] !== ">") current = current.parent;
+    }
+    return true;
+  }
+
+  function specificity(selector: string): number {
+    let score = 0;
+    for (const part of selector.split(/\s*>\s*|\s+/)) {
+      if (!part) continue;
+      const parsed = parseSimpleSelector(part);
+      score += parsed.classCount * 10 + parsed.tagCount;
+    }
+    return score;
+  }
+
+  function computedStyle(
+    rules: CssRule[],
+    node: CssCascadeNode,
+    property: string,
+  ): string | null {
+    let winner: { score: number; index: number; value: string } | null = null;
+    for (const [index, rule] of rules.entries()) {
+      if (!(property in rule.declarations)) continue;
+      if (!selectorMatches(rule.selector, node)) continue;
+      const score = specificity(rule.selector);
+      if (!winner || score > winner.score || (score === winner.score && index > winner.index)) {
+        winner = { score, index, value: rule.declarations[property] };
+      }
+    }
+    return winner?.value ?? null;
+  }
+
+  const cascadeRules = [...parseCssRules(css), ...parseCssRules(minatoCss)];
+  const avatarReaction: CssCascadeNode = {
+    tag: "div",
+    classes: new Set(["pet-avatar", "pet-sprite", "pet-sprite-codex-blue-whale-maid", "is-animated", "reaction-poke", "frame-idle"]),
+    attrs: { "data-clip": "idle", "data-state": "idle" },
+  };
+  const bitmapReaction: CssCascadeNode = {
+    tag: "span",
+    classes: new Set(["pet-bitmap"]),
+    attrs: {},
+    parent: avatarReaction,
+  };
+  const avatarAnim = computedStyle(cascadeRules, avatarReaction, "animation");
+  const bitmapAnim = computedStyle(cascadeRules, bitmapReaction, "animation");
+  assert.ok(avatarAnim && avatarAnim.includes("reaction-poke"), `avatar animation should be poke, got ${avatarAnim}`);
+  assert.ok(
+    bitmapAnim && bitmapAnim.includes("pet-sprite-codex-blue-whale-maid-idle"),
+    `bitmap animation should be the clip, got ${bitmapAnim}`,
+  );
+  assert.equal(avatarAnim === bitmapAnim, false);
+
+  const avatarTransition: CssCascadeNode = {
+    tag: "div",
+    classes: new Set(["pet-avatar", "pet-sprite", "pet-sprite-codex-blue-whale-maid", "is-animated", "transition-retry-go", "frame-running"]),
+    attrs: { "data-clip": "running", "data-state": "running" },
+  };
+  const bitmapTransition: CssCascadeNode = {
+    tag: "span",
+    classes: new Set(["pet-bitmap"]),
+    attrs: {},
+    parent: avatarTransition,
+  };
+  assert.ok(
+    computedStyle(cascadeRules, avatarTransition, "animation")?.includes("transition-retry-go"),
+    "retry transition must win on the outer avatar",
+  );
+  assert.ok(
+    computedStyle(cascadeRules, bitmapTransition, "animation")?.includes("pet-sprite-codex-blue-whale-maid-running"),
+    "running clip must keep playing on the inner bitmap",
+  );
+  const computedBitmapWidth = computedStyle(cascadeRules, bitmapReaction, "width");
+  assert.ok(
+    computedBitmapWidth != null && /^84\.923/.test(computedBitmapWidth),
+    `bitmap width should be ~85px, got ${computedBitmapWidth}`,
+  );
+  assert.equal(computedStyle(cascadeRules, bitmapReaction, "height"), "92px");
 
   // --- Dual-root catalog + lazy asset load (U2) ---
   assert.equal(

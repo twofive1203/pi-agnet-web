@@ -1813,23 +1813,48 @@
   // desktop/renderer/pet-sheet.ts
   var PET_SPRITE_AVATAR_WIDTH = 108;
   var PET_SPRITE_AVATAR_HEIGHT = 92;
+  function spriteContainScale(sheet) {
+    return Math.min(
+      PET_SPRITE_AVATAR_WIDTH / sheet.frameWidth,
+      PET_SPRITE_AVATAR_HEIGHT / sheet.frameHeight
+    );
+  }
+  function spriteBitmapSize(sheet) {
+    const scale = spriteContainScale(sheet);
+    return {
+      width: sheet.frameWidth * scale,
+      height: sheet.frameHeight * scale
+    };
+  }
+  function spriteBitmapBaseSelector(token) {
+    return `.pet-avatar.pet-sprite-${token} > .pet-bitmap`;
+  }
+  function spriteBitmapClipSelector(token, clipName, animated = false) {
+    return `.pet-avatar.pet-sprite-${token}[data-clip="${clipName}"]${animated ? ".is-animated" : ""} > .pet-bitmap`;
+  }
+  function spriteBitmapStateSelector(token, state, animated = false) {
+    return `.pet-avatar.pet-sprite-${token}[data-state="${state}"]${animated ? ".is-animated" : ""} > .pet-bitmap`;
+  }
+  function formatCssPx(value) {
+    if (!Number.isFinite(value) || Math.abs(value) < 1e-9) return "0px";
+    const rounded = Math.round(value * 1e6) / 1e6;
+    return `${rounded}px`;
+  }
   function spriteCellPosition(sheet, frameIndex) {
     const col = frameIndex % sheet.columns;
     const row = Math.floor(frameIndex / sheet.columns);
-    const scaleX = PET_SPRITE_AVATAR_WIDTH / sheet.frameWidth;
-    const scaleY = PET_SPRITE_AVATAR_HEIGHT / sheet.frameHeight;
+    const scale = spriteContainScale(sheet);
     return {
-      x: -col * sheet.frameWidth * scaleX,
-      y: -row * sheet.frameHeight * scaleY
+      x: -col * sheet.frameWidth * scale,
+      y: -row * sheet.frameHeight * scale
     };
   }
   function spriteSheetBackgroundSize(sheet) {
-    const scaleX = PET_SPRITE_AVATAR_WIDTH / sheet.frameWidth;
-    const scaleY = PET_SPRITE_AVATAR_HEIGHT / sheet.frameHeight;
-    return `${sheet.frameWidth * sheet.columns * scaleX}px ${sheet.frameHeight * sheet.rows * scaleY}px`;
+    const scale = spriteContainScale(sheet);
+    return `${formatCssPx(sheet.frameWidth * sheet.columns * scale)} ${formatCssPx(sheet.frameHeight * sheet.rows * scale)}`;
   }
   function positionCss(cell) {
-    return `${cell.x}px ${cell.y}px`;
+    return `${formatCssPx(cell.x)} ${formatCssPx(cell.y)}`;
   }
   function animationName(manifestId, state) {
     return `pet-sprite-${manifestId}-${state}`;
@@ -1874,17 +1899,20 @@
   }
   function frameSelectors(manifestId, state) {
     return {
-      base: `.pet-avatar.pet-sprite-${manifestId}[data-state="${state}"]`,
-      animated: `.pet-avatar.pet-sprite-${manifestId}[data-state="${state}"].is-animated`
+      base: spriteBitmapStateSelector(manifestId, state),
+      animated: spriteBitmapStateSelector(manifestId, state, true)
     };
   }
   function buildSpriteSheetStyleText(manifest, imageUrl) {
     if (manifest.renderMode !== "spritesheet" || !manifest.sheet || !imageUrl) return "";
     const id = manifest.id;
     const sheet = manifest.sheet;
+    const box = spriteBitmapSize(sheet);
     const lines = [];
     lines.push(
-      `.pet-avatar.pet-sprite-${id} {`,
+      `${spriteBitmapBaseSelector(id)} {`,
+      `  width: ${formatCssPx(box.width)};`,
+      `  height: ${formatCssPx(box.height)};`,
       `  background-image: url("${imageUrl}");`,
       `  background-size: ${spriteSheetBackgroundSize(sheet)};`,
       "  background-repeat: no-repeat;",
@@ -1991,9 +2019,12 @@
     if (profile.renderMode !== "spritesheet" || !profile.sheet || !imageUrl) return "";
     const sheet = profile.sheet;
     const token = profile.cssToken;
+    const box = spriteBitmapSize(sheet);
     const lines = [];
     lines.push(
-      `.pet-avatar.pet-sprite-${token} {`,
+      `${spriteBitmapBaseSelector(token)} {`,
+      `  width: ${formatCssPx(box.width)};`,
+      `  height: ${formatCssPx(box.height)};`,
       `  background-image: url("${imageUrl}");`,
       `  background-size: ${spriteSheetBackgroundSize(sheet)};`,
       "  background-repeat: no-repeat;",
@@ -2002,8 +2033,8 @@
     for (const clip of Object.values(profile.clips)) {
       const plan = resolveClipSheetStyle(sheet, clip, token);
       if (!plan) continue;
-      const base = `.pet-avatar.pet-sprite-${token}[data-clip="${clip.name}"]`;
-      const animated = `${base}.is-animated`;
+      const base = spriteBitmapClipSelector(token, clip.name);
+      const animated = spriteBitmapClipSelector(token, clip.name, true);
       lines.push(`${base} { background-position: ${plan.staticPosition}; }`);
       if (plan.animatedPosition && plan.animation) {
         lines.push(
@@ -3056,14 +3087,12 @@
       const presentation = currentPresentation();
       const profile = currentPetProfile();
       if (!profile?.clips.jumping || !canApplyJumpOverlay(presentation)) return false;
-      clearReaction();
       startJump(clipTotalDurationMs(profile.clips.jumping));
       return true;
     }
     function playInteract() {
       wakeIdleSleep();
-      if (playCodexJump()) return;
-      clearJump();
+      playCodexJump();
       playReaction("poke");
     }
     function cancelClickSequence() {
@@ -3094,10 +3123,8 @@
         clearJump();
       }
       if (outcome.startReaction === "flail") {
-        if (!playCodexJump()) {
-          clearJump();
-          playReaction("flail");
-        }
+        playCodexJump();
+        playReaction("flail");
         return;
       }
       if (outcome.singleClick || outcome.startReaction === "poke") {
@@ -4485,7 +4512,8 @@
         event.stopPropagation();
         cancelClickSequence();
         if (event.shiftKey) {
-          if (!playCodexJump()) playReaction("flail");
+          playCodexJump();
+          playReaction("flail");
         } else {
           playInteract();
         }
