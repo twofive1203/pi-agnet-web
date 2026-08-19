@@ -30,6 +30,7 @@
     "lib",
     "public",
     "scripts",
+    "!scripts/smoke-*",
     "extensions/chrome-tab-debug",
     "ecosystem.config.cjs",
     "proxy.ts",
