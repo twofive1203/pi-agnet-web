@@ -53,6 +53,12 @@ export type DesktopPetSettings = {
   /** Compact pet-side context ring; missing v1 files migrate to on. */
   showContextMeter: boolean;
   /**
+   * Right-click aggregated shortcut menu. Off keeps hover chips + chrome X;
+   * on hides hover chrome and puts close into the right-click list.
+   * Missing v1 files migrate to off.
+   */
+  rightClickAggregatedMenu: boolean;
+  /**
    * Manual Do Not Disturb: suppresses proactive notifications/bubbles/sounds
    * while observation keeps running. Missing v1 files migrate to off.
    */
@@ -92,6 +98,7 @@ export const DESKTOP_SETTINGS_DEFAULTS: DesktopPetSettings = {
   launchAtLogin: false,
   activityTrayOpen: false,
   showContextMeter: true,
+  rightClickAggregatedMenu: false,
   dndEnabled: false,
   windowPosition: null,
   notification: {
@@ -150,6 +157,7 @@ export function normalizeDesktopSettings(input: unknown): DesktopPetSettings {
     launchAtLogin: raw.launchAtLogin === true,
     activityTrayOpen: raw.activityTrayOpen === true,
     showContextMeter: raw.showContextMeter !== false,
+    rightClickAggregatedMenu: raw.rightClickAggregatedMenu === true,
     dndEnabled: raw.dndEnabled === true,
     windowPosition,
     notification: {
@@ -195,6 +203,7 @@ export function updateDesktopSettings(
     launchAtLogin: boolean;
     activityTrayOpen: boolean;
     showContextMeter: boolean;
+    rightClickAggregatedMenu: boolean;
     dndEnabled: boolean;
     windowPosition: { x: number; y: number } | null;
     notification: Partial<DesktopPetSettings["notification"]>;

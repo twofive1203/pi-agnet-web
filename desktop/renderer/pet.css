@@ -368,6 +368,43 @@ select {
   background: var(--paper-3);
 }
 
+.pet-intent-btn-danger:hover {
+  background: var(--tint-rose);
+  color: var(--pet-danger);
+}
+
+/* Right-click mode: hover never reveals the chrome X. Closed chips stay
+   `[hidden]`; `.is-open` must beat `.pet-stack:hover` so a right-click
+   while the pointer is still on the pet is visible. */
+.pet-root[data-intent-trigger="right-click"] .pet-stack:hover .pet-chrome,
+.pet-root[data-intent-trigger="right-click"] .pet-stack:focus-within .pet-chrome {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.pet-root[data-intent-trigger="right-click"] .pet-stack:hover .pet-intent-menu.is-open,
+.pet-root[data-intent-trigger="right-click"] .pet-stack:focus-within .pet-intent-menu.is-open,
+.pet-root[data-intent-trigger="right-click"] .pet-intent-menu.is-open {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+.pet-root[data-intent-trigger="right-click"] .pet-stack:hover .pet-caption,
+.pet-root[data-intent-trigger="right-click"] .pet-stack:focus-within .pet-caption,
+.pet-root[data-intent-trigger="right-click"] .pet-stack:hover .pet-label,
+.pet-root[data-intent-trigger="right-click"] .pet-stack:focus-within .pet-label {
+  opacity: 1;
+  visibility: visible;
+}
+
+.pet-root[data-intent-trigger="right-click"].is-intent-menu-open .pet-caption,
+.pet-root[data-intent-trigger="right-click"].is-intent-menu-open .pet-label {
+  animation: none;
+  opacity: 0;
+  visibility: hidden;
+}
+
 .pet-intent-btn[hidden] {
   display: none !important;
 }

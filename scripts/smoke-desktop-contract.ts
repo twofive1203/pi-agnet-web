@@ -182,6 +182,7 @@ import {
   resolveIdleSleepStage,
   resolvePetFrame,
   resolvePetBodyClick,
+  resolvePetIntentMenuPresentation,
   resolvePetReaction,
   resolvePrimaryContextMeter,
   resolvePetTransitionAction,
@@ -1397,6 +1398,19 @@ async function main() {
     "open-tray",
   );
 
+  assert.deepEqual(resolvePetIntentMenuPresentation(false), {
+    trigger: "hover",
+    showChromeClose: true,
+    showMenuHideAction: false,
+    hoverRevealsMenu: true,
+  });
+  assert.deepEqual(resolvePetIntentMenuPresentation(true), {
+    trigger: "right-click",
+    showChromeClose: false,
+    showMenuHideAction: true,
+    hoverRevealsMenu: false,
+  });
+
   // First click is the greeting; the caller maps singleClick to interact.
   let clickSeq = createInitialPetClickSequenceState();
   let clickOut = reducePetClickSequence(clickSeq, { type: "click", now: 1000 });
@@ -2543,6 +2557,7 @@ async function main() {
   assert.equal(offlineView.petScale, "medium");
   assert.equal(offlineView.bubbleTheme, "cream");
   assert.equal(offlineView.showContextMeter, true);
+  assert.equal(offlineView.rightClickAggregatedMenu, false);
   assert.equal(
     buildActivityView({
       snapshot: null,
@@ -2550,6 +2565,14 @@ async function main() {
       settings: updateDesktopSettings(createDefaultDesktopSettings(), { showContextMeter: false }),
     }).showContextMeter,
     false,
+  );
+  assert.equal(
+    buildActivityView({
+      snapshot: null,
+      connection: offline,
+      settings: updateDesktopSettings(createDefaultDesktopSettings(), { rightClickAggregatedMenu: true }),
+    }).rightClickAggregatedMenu,
+    true,
   );
   assert.equal(offlineView.canCopyStartCommand, true);
   assert.equal(offlineView.startCommand, DESKTOP_START_COMMAND);
@@ -2984,6 +3007,7 @@ async function main() {
   assert.equal(migrated.petScale, "medium");
   assert.equal(migrated.bubbleTheme, "cream");
   assert.equal(migrated.showContextMeter, true);
+  assert.equal(migrated.rightClickAggregatedMenu, false);
   assert.equal(migrated.dndEnabled, false);
   assert.equal(migrated.selectedPetId, "snail-classic");
   assert.equal(migrated.selectedPetKey, "snail:snail-classic");
@@ -2993,6 +3017,12 @@ async function main() {
     false,
   );
   assert.equal(normalizeDesktopSettings({ showContextMeter: "nope" }).showContextMeter, true);
+  assert.equal(
+    updateDesktopSettings(createDefaultDesktopSettings(), { rightClickAggregatedMenu: true })
+      .rightClickAggregatedMenu,
+    true,
+  );
+  assert.equal(normalizeDesktopSettings({ rightClickAggregatedMenu: "yes" }).rightClickAggregatedMenu, false);
   assert.equal(normalizeDesktopSettings({ petScale: "huge" }).petScale, "medium");
   assert.equal(normalizeDesktopSettings({ bubbleTheme: "neon" }).bubbleTheme, "cream");
   assert.equal(normalizeDesktopSettings({ bubbleTheme: "peach" }).bubbleTheme, "peach");
@@ -3177,6 +3207,7 @@ async function main() {
     "utf8",
   );
   assert.ok(ipcSrc.includes("dndEnabled"));
+  assert.ok(ipcSrc.includes("rightClickAggregatedMenu"));
   const petAppSrc = readFileSync(
     path.join(process.cwd(), "desktop", "renderer", "pet-app.tsx"),
     "utf8",
@@ -3184,11 +3215,18 @@ async function main() {
   assert.ok(petAppSrc.includes("pref-dnd"));
   assert.ok(petAppSrc.includes("setPrefs({ dndEnabled: prefDnd.checked })"));
   assert.ok(petAppSrc.includes("dndEnabled: view.dndEnabled === true"));
+  assert.ok(petAppSrc.includes("pref-right-click-menu"));
+  assert.ok(petAppSrc.includes("setPrefs({ rightClickAggregatedMenu: prefRightClickMenu.checked })"));
+  assert.ok(petAppSrc.includes("resolvePetIntentMenuPresentation"));
+  assert.ok(petAppSrc.includes("contextmenu"));
   const indexHtmlSrc = readFileSync(
     path.join(process.cwd(), "desktop", "renderer", "index.html"),
     "utf8",
   );
   assert.ok(indexHtmlSrc.includes('id="pref-dnd"'));
+  assert.ok(indexHtmlSrc.includes('id="pref-right-click-menu"'));
+  assert.ok(indexHtmlSrc.includes("鼠标右键聚合菜单"));
+  assert.ok(indexHtmlSrc.includes('id="btn-pet-hide"'));
   assert.ok(indexHtmlSrc.includes('id="quick-session-panel"'));
   assert.ok(indexHtmlSrc.includes('id="btn-quick-session"'));
   assert.ok(indexHtmlSrc.includes("connect-src 'none'"));
@@ -3339,8 +3377,11 @@ async function main() {
   assert.ok(html.includes('data-pet-scale="large"'));
   assert.ok(html.includes("恢复默认位置与尺寸"));
   assert.ok(html.includes("显示上下文占比"));
+  assert.ok(html.includes("鼠标右键聚合菜单"));
   assert.ok(html.includes('id="pet-context-meter"'));
   assert.ok(html.includes('id="pref-show-context-meter"'));
+  assert.ok(html.includes('id="pref-right-click-menu"'));
+  assert.ok(html.includes('id="btn-pet-hide"'));
   assert.ok(html.includes("收起活动列表"));
   assert.ok(html.includes('id="activity-filters"'));
   for (const filter of ["all", "attention", "running", "completed"]) {
@@ -3391,6 +3432,13 @@ async function main() {
   assert.ok(css.includes('data-bubble-theme="ember"'));
   assert.ok(css.includes('data-bubble-theme="plum"'));
   assert.ok(css.includes('data-bubble-theme="moss"'));
+  assert.ok(css.includes('data-intent-trigger="right-click"'));
+  assert.ok(css.includes(".pet-stack:hover .pet-intent-menu.is-open"));
+  assert.equal(
+    /\[data-intent-trigger="right-click"\] \.pet-stack:hover \.pet-intent-menu(?!\.is-open)/.test(css),
+    false,
+    "right-click hover must not hide an open aggregated menu",
+  );
   assert.ok(css.includes(".bubble-theme-picker"));
   assert.ok(css.includes(".settings-card"));
   assert.ok(html.includes("settings-card"));
@@ -3457,6 +3505,8 @@ async function main() {
     "pet badge must not mix local attention with server aggregate.ready",
   );
   assert.ok(rendererSource.includes("showContextMeter"));
+  assert.ok(rendererSource.includes("rightClickAggregatedMenu"));
+  assert.ok(rendererSource.includes("data-intent-trigger"));
   assert.ok(rendererSource.includes('setAttribute("data-bubble-theme", bubbleTheme)'));
   assert.ok(rendererSource.includes("resolveRunningCue"));
   assert.ok(rendererSource.includes('setAttribute("data-running-cue", runningCue)'));
@@ -3637,6 +3687,7 @@ async function main() {
   assert.ok(petAppJs.includes("isCodexLookPointerInBounds"));
   assert.ok(petAppJs.includes("countUnreadActivities"));
   assert.ok(petAppJs.includes("showContextMeter"));
+  assert.ok(petAppJs.includes("rightClickAggregatedMenu"));
   assert.ok(petAppJs.includes("data-running-cue"));
   assert.ok(petAppJs.includes("scheduleRunningCueUpdate"));
   assert.ok(petAppJs.includes("PetSoundPlayer"));

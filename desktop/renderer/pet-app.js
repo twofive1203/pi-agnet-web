@@ -1735,6 +1735,15 @@
     }
     return null;
   }
+  function resolvePetIntentMenuPresentation(rightClickAggregatedMenu) {
+    const trigger = rightClickAggregatedMenu === true ? "right-click" : "hover";
+    return {
+      trigger,
+      showChromeClose: trigger === "hover",
+      showMenuHideAction: trigger === "right-click",
+      hoverRevealsMenu: trigger === "hover"
+    };
+  }
   var PET_DOUBLE_CLICK_INTERVAL_MS = 320;
   var PET_QUAD_CLICK_WINDOW_MS = 900;
   var PET_POKE_ANIMATION_MS = 380;
@@ -2612,12 +2621,14 @@
     const btnTrayMore = root.getElementById("btn-tray-more");
     const trayMoreMenu = root.getElementById("tray-more-menu");
     const btnCopy = root.getElementById("btn-copy-cmd");
+    const intentMenu = root.getElementById("pet-intent-menu");
     const btnHide = root.getElementById("btn-hide");
     const btnHideTray = root.getElementById("btn-hide-tray");
     const btnSettings = root.getElementById("btn-settings");
     const btnPetMarkAll = root.getElementById("btn-pet-mark-all");
     const btnPetActivity = root.getElementById("btn-pet-activity");
     const btnPetSettings = root.getElementById("btn-pet-settings");
+    const btnPetHide = root.getElementById("btn-pet-hide");
     const btnPetQuickSession = root.getElementById("btn-pet-quick-session");
     const btnQuickSession = root.getElementById("btn-quick-session");
     const quickSessionPanel = root.getElementById("quick-session-panel");
@@ -2659,6 +2670,8 @@
     const prefNeedsInput = root.getElementById("pref-needs-input");
     const prefBlocked = root.getElementById("pref-blocked");
     const prefShowContextMeter = root.getElementById("pref-show-context-meter");
+    const prefRightClickMenu = root.getElementById("pref-right-click-menu");
+    const interactionHint = root.getElementById("settings-interaction-hint");
     const prefDnd = root.getElementById("pref-dnd");
     const prefSoundMaster = root.getElementById("pref-sound-master");
     const prefSoundNeedsInput = root.getElementById("pref-sound-needs-input");
@@ -2682,6 +2695,7 @@
     let qsSubmitInFlight = false;
     let qsModelsInFlight = null;
     let trayMoreOpen = false;
+    let intentMenuOpen = false;
     let idleBlinkTimer = null;
     let idleActTimer = null;
     let idleActRemoveTimer = null;
@@ -3031,6 +3045,27 @@
       if (trayMoreMenu) trayMoreMenu.hidden = !open;
       btnTrayMore?.setAttribute("aria-expanded", open ? "true" : "false");
     }
+    function isRightClickMenu() {
+      return current?.rightClickAggregatedMenu === true;
+    }
+    function setIntentMenuOpen(open, opts) {
+      intentMenuOpen = open && isRightClickMenu();
+      intentMenu?.classList.toggle("is-open", intentMenuOpen);
+      petRoot?.classList.toggle("is-intent-menu-open", intentMenuOpen);
+      if (isRightClickMenu()) {
+        if (intentMenu) intentMenu.hidden = !intentMenuOpen;
+      } else if (intentMenu) {
+        intentMenu.hidden = false;
+        intentMenu.classList.remove("is-open");
+      }
+      if (intentMenuOpen && opts?.focus) {
+        intentMenu?.querySelector("button:not([hidden])")?.focus();
+      }
+    }
+    function closeIntentMenu() {
+      if (!intentMenuOpen) return;
+      setIntentMenuOpen(false);
+    }
     function startTransition(className) {
       if (transitionTimer) {
         clearTimeout(transitionTimer);
@@ -3118,6 +3153,10 @@
       clearJump();
     }
     function handlePetClick() {
+      if (intentMenuOpen) {
+        closeIntentMenu();
+        return;
+      }
       const motionReduced = reducedMotion || current?.reducedMotion === true;
       const action = resolvePetBodyClick({
         trayOpen: current?.trayOpen === true,
@@ -3613,6 +3652,25 @@
         petRoot.setAttribute("data-pet-scale", scale);
         const bubbleTheme = isDesktopPetBubbleTheme(view.bubbleTheme) ? view.bubbleTheme : "cream";
         petRoot.setAttribute("data-bubble-theme", bubbleTheme);
+        const intentMenuPresentation = resolvePetIntentMenuPresentation(
+          view.rightClickAggregatedMenu === true
+        );
+        petRoot.setAttribute("data-intent-trigger", intentMenuPresentation.trigger);
+        if (btnHide) btnHide.hidden = !intentMenuPresentation.showChromeClose;
+        if (btnPetHide) btnPetHide.hidden = !intentMenuPresentation.showMenuHideAction;
+        if (intentMenuPresentation.hoverRevealsMenu) {
+          intentMenuOpen = false;
+          if (intentMenu) {
+            intentMenu.hidden = false;
+            intentMenu.classList.remove("is-open");
+          }
+          petRoot.classList.remove("is-intent-menu-open");
+        } else {
+          setIntentMenuOpen(intentMenuOpen);
+        }
+        if (interactionHint) {
+          interactionHint.textContent = intentMenuPresentation.trigger === "right-click" ? "\u53F3\u952E\u89D2\u8272\u6253\u5F00\u5FEB\u6377\u83DC\u5355\uFF0C\u9690\u85CF\u5230\u6258\u76D8\u5DF2\u653E\u5165\u83DC\u5355\u3002P \u4E92\u52A8\uFF0CShift+P \u6446\u52A8\u3002\u62D6\u52A8\u53EF\u79FB\u52A8\u3002" : "\u60AC\u505C\u89D2\u8272\u6253\u5F00\u5FEB\u6377\u83DC\u5355\u3002P \u4E92\u52A8\uFF0CShift+P \u6446\u52A8\u3002\u62D6\u52A8\u53EF\u79FB\u52A8\u3002";
+        }
         petRoot.style.setProperty("--pet-scale", String(spec.factor));
         petRoot.style.setProperty("--pet-root-pad", `${spec.rootPad}px`);
         petRoot.style.setProperty("--pet-stack-gap", `${Math.max(1, spec.stackHeight - spec.chromeHeight - spec.surfaceSize - spec.bubbleReserve)}px`);
@@ -3632,7 +3690,7 @@
           reducedMotion: motionReduced,
           canJumpPrimary: attentionJump
         });
-        const gestureHint = "\u60AC\u505C\u6253\u5F00\u5FEB\u6377\u83DC\u5355 \xB7 P \u4E92\u52A8 \xB7 Shift+P \u6446\u52A8";
+        const gestureHint = view.rightClickAggregatedMenu === true ? "\u53F3\u952E\u6253\u5F00\u5FEB\u6377\u83DC\u5355 \xB7 P \u4E92\u52A8 \xB7 Shift+P \u6446\u52A8" : "\u60AC\u505C\u6253\u5F00\u5FEB\u6377\u83DC\u5355 \xB7 P \u4E92\u52A8 \xB7 Shift+P \u6446\u52A8";
         const bodyHint = bodyAction === "close-tray" ? "\u70B9\u51FB\u6536\u8D77\u6D3B\u52A8\u5217\u8868" : bodyAction === "jump-primary" ? "\u70B9\u51FB\u76F4\u8FBE\u5F85\u5904\u7406\u4EFB\u52A1" : bodyAction === "interact" ? "\u70B9\u51FB\u4E92\u52A8" : "\u70B9\u51FB\u5C55\u5F00\u6D3B\u52A8\u5217\u8868";
         petButton.setAttribute(
           "aria-label",
@@ -3693,6 +3751,7 @@
       if (prefNeedsInput) prefNeedsInput.checked = view.notification.needsInput;
       if (prefBlocked) prefBlocked.checked = view.notification.blocked;
       if (prefShowContextMeter) prefShowContextMeter.checked = view.showContextMeter;
+      if (prefRightClickMenu) prefRightClickMenu.checked = view.rightClickAggregatedMenu === true;
       if (prefDnd) prefDnd.checked = view.dndEnabled === true;
       if (prefSoundMaster) prefSoundMaster.checked = view.sound.masterEnabled === true;
       if (prefSoundNeedsInput) prefSoundNeedsInput.checked = view.sound.needsInput !== false;
@@ -4498,6 +4557,7 @@
       if (!petDragging && (Math.abs(totalDx) >= DRAG_THRESHOLD_PX || Math.abs(totalDy) >= DRAG_THRESHOLD_PX)) {
         petDragging = true;
         cancelClickSequence();
+        closeIntentMenu();
         petButton.classList.add("is-dragging");
         petAvatar?.classList.remove("is-pressed");
         petAvatar?.classList.add("is-dragging");
@@ -4550,6 +4610,13 @@
       }
     });
     petButton?.addEventListener("keydown", (event) => {
+      if (isRightClickMenu() && (event.key === "ContextMenu" || event.shiftKey && event.key === "F10")) {
+        event.preventDefault();
+        event.stopPropagation();
+        wakeIdleSleep();
+        setIntentMenuOpen(true, { focus: true });
+        return;
+      }
       if (event.key === "p" || event.key === "P") {
         const motionReduced = reducedMotion || current?.reducedMotion === true;
         if (!shouldAllowPetReaction(currentPresentation(), motionReduced)) return;
@@ -4582,6 +4649,10 @@
     });
     const onRootClick = (event) => {
       if (trayMoreOpen) setTrayMoreOpen(false);
+      if (intentMenuOpen) {
+        const intentTarget = event.target instanceof Element ? event.target : null;
+        if (!intentTarget?.closest("#pet-intent-menu")) closeIntentMenu();
+      }
       if (quickSession.openPicker === "none") return;
       const target = event.target instanceof Element ? event.target : null;
       if (target?.closest("#qs-picker, #qs-project-trigger, #qs-model-trigger")) return;
@@ -4623,6 +4694,12 @@
       event.stopPropagation();
       hideToTray();
     });
+    btnPetHide?.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      closeIntentMenu();
+      hideToTray();
+    });
     btnHideTray?.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
@@ -4640,6 +4717,7 @@
     btnPetSettings?.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
+      closeIntentMenu();
       if (current?.trayOpen && settingsOpen) {
         settingsOpen = false;
         update(current);
@@ -4650,12 +4728,14 @@
     btnPetMarkAll?.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
+      closeIntentMenu();
       wakeIdleSleep();
       markAllVisibleRead();
     });
     btnPetActivity?.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
+      closeIntentMenu();
       toggleActivityFromMenu();
     });
     btnQuickSession?.addEventListener("click", () => {
@@ -4671,6 +4751,7 @@
     btnPetQuickSession?.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
+      closeIntentMenu();
       if (current?.trayOpen && quickSession.phase !== "closed") {
         applyQuickSession({ type: "close" });
         return;
@@ -4836,6 +4917,9 @@
     prefShowContextMeter?.addEventListener("change", () => {
       bridge?.setPrefs({ showContextMeter: prefShowContextMeter.checked });
     });
+    prefRightClickMenu?.addEventListener("change", () => {
+      bridge?.setPrefs({ rightClickAggregatedMenu: prefRightClickMenu.checked });
+    });
     prefDnd?.addEventListener("change", () => {
       bridge?.setPrefs({ dndEnabled: prefDnd.checked });
     });
@@ -4852,6 +4936,11 @@
       if (event.key === "Escape" && trayMoreOpen) {
         setTrayMoreOpen(false);
         btnTrayMore?.focus();
+        return;
+      }
+      if (event.key === "Escape" && intentMenuOpen) {
+        event.preventDefault();
+        closeIntentMenu();
         return;
       }
       if (!current?.trayOpen) return;
@@ -4903,6 +4992,18 @@
       }
     };
     root.addEventListener("keydown", onKeyDown);
+    const onRootContextMenu = (event) => {
+      if (!isRightClickMenu()) return;
+      const target = event.target instanceof Element ? event.target : null;
+      if (target?.closest("#pet-stack")) {
+        event.preventDefault();
+        wakeIdleSleep();
+        setIntentMenuOpen(true);
+        return;
+      }
+      closeIntentMenu();
+    };
+    root.addEventListener("contextmenu", onRootContextMenu);
     let unsubscribe;
     let unsubscribeSoundCue;
     let unsubscribeCustomPets;
@@ -4955,6 +5056,7 @@
         clearLookReleaseTimer();
         root.removeEventListener("keydown", onKeyDown);
         root.removeEventListener("click", onRootClick);
+        root.removeEventListener("contextmenu", onRootContextMenu);
         for (const style of spriteStyleSheets.values()) style.remove();
         spriteStyleSheets.clear();
         clearCustomPetRegistrations();

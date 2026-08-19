@@ -422,6 +422,7 @@ Electron `userData` stores:
 - selected built-in pet;
 - always-on-top/click-through;
 - compact primary-activity context meter visibility;
+- optional right-click aggregated shortcut menu (`rightClickAggregatedMenu`, default off; missing v1 files migrate to off);
 - manual Do Not Disturb (`dndEnabled`, default off; missing v1 files migrate to off);
 - notification settings;
 - sound settings (`sound.masterEnabled` default off, `sound.needsInput`/`sound.completion` default on; missing v1 files migrate to those defaults without a schema version bump);

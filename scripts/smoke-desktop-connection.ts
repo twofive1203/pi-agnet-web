@@ -589,6 +589,7 @@ async function main() {
   assert.equal(defaults.petScale, "medium");
   assert.equal(defaults.bubbleTheme, "cream");
   assert.equal(defaults.showContextMeter, true);
+  assert.equal(defaults.rightClickAggregatedMenu, false);
   assertDesktopSettingsSafe(defaults);
 
   const dirty = normalizeDesktopSettings({
@@ -606,6 +607,7 @@ async function main() {
   assert.equal(normalizeDesktopSettings({ bubbleTheme: "ember" }).bubbleTheme, "ember");
   assert.equal(normalizeDesktopSettings({ bubbleTheme: 1 }).bubbleTheme, "cream");
   assert.equal(dirty.showContextMeter, true);
+  assert.equal(dirty.rightClickAggregatedMenu, false);
   assert.equal(dirty.notification.completion, "background-only");
   assert.deepEqual(dirty.acknowledgedTransitionIds, ["a", "b"]);
   // Forbidden keys stripped by normalization (not present on public shape)
@@ -615,10 +617,12 @@ async function main() {
     port: 62667,
     alwaysOnTop: false,
     showContextMeter: false,
+    rightClickAggregatedMenu: true,
   });
   assert.equal(updated.port, 62667);
   assert.equal(updated.alwaysOnTop, false);
   assert.equal(updated.showContextMeter, false);
+  assert.equal(updated.rightClickAggregatedMenu, true);
 
   const roundTrip = parseDesktopSettingsJson(serializeDesktopSettings(updated));
   assert.equal(roundTrip.port, 62667);

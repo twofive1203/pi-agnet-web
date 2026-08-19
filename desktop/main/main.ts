@@ -911,6 +911,7 @@ export async function startDesktopPetMain(deps: DesktopMainDeps): Promise<{
         launchAtLogin: p.launchAtLogin,
         activityTrayOpen: p.activityTrayOpen,
         showContextMeter: p.showContextMeter,
+        rightClickAggregatedMenu: p.rightClickAggregatedMenu,
         dndEnabled: p.dndEnabled,
         notification: p.notification,
         sound: p.sound,

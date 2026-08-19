@@ -57,6 +57,7 @@ import {
   resolveActivitySelection,
   resolvePetFrame,
   resolvePetBodyClick,
+  resolvePetIntentMenuPresentation,
   resolvePetTransitionAction,
   resolvePrimaryContextMeter,
   resolveRunningCue,
@@ -180,12 +181,14 @@ export function renderPetApp(root: Document = document): {
   const btnTrayMore = root.getElementById("btn-tray-more");
   const trayMoreMenu = root.getElementById("tray-more-menu");
   const btnCopy = root.getElementById("btn-copy-cmd");
+  const intentMenu = root.getElementById("pet-intent-menu");
   const btnHide = root.getElementById("btn-hide");
   const btnHideTray = root.getElementById("btn-hide-tray");
   const btnSettings = root.getElementById("btn-settings");
   const btnPetMarkAll = root.getElementById("btn-pet-mark-all");
   const btnPetActivity = root.getElementById("btn-pet-activity");
   const btnPetSettings = root.getElementById("btn-pet-settings");
+  const btnPetHide = root.getElementById("btn-pet-hide");
   const btnPetQuickSession = root.getElementById("btn-pet-quick-session") as HTMLButtonElement | null;
   const btnQuickSession = root.getElementById("btn-quick-session") as HTMLButtonElement | null;
   const quickSessionPanel = root.getElementById("quick-session-panel");
@@ -227,6 +230,8 @@ export function renderPetApp(root: Document = document): {
   const prefNeedsInput = root.getElementById("pref-needs-input") as HTMLInputElement | null;
   const prefBlocked = root.getElementById("pref-blocked") as HTMLInputElement | null;
   const prefShowContextMeter = root.getElementById("pref-show-context-meter") as HTMLInputElement | null;
+  const prefRightClickMenu = root.getElementById("pref-right-click-menu") as HTMLInputElement | null;
+  const interactionHint = root.getElementById("settings-interaction-hint");
   const prefDnd = root.getElementById("pref-dnd") as HTMLInputElement | null;
   const prefSoundMaster = root.getElementById("pref-sound-master") as HTMLInputElement | null;
   const prefSoundNeedsInput = root.getElementById("pref-sound-needs-input") as HTMLInputElement | null;
@@ -257,6 +262,7 @@ export function renderPetApp(root: Document = document): {
   let qsSubmitInFlight = false;
   let qsModelsInFlight: string | null = null;
   let trayMoreOpen = false;
+  let intentMenuOpen = false;
   let idleBlinkTimer: ReturnType<typeof setTimeout> | null = null;
   let idleActTimer: ReturnType<typeof setTimeout> | null = null;
   let idleActRemoveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -694,6 +700,30 @@ export function renderPetApp(root: Document = document): {
     btnTrayMore?.setAttribute("aria-expanded", open ? "true" : "false");
   }
 
+  function isRightClickMenu(): boolean {
+    return current?.rightClickAggregatedMenu === true;
+  }
+
+  function setIntentMenuOpen(open: boolean, opts?: { focus?: boolean }): void {
+    intentMenuOpen = open && isRightClickMenu();
+    intentMenu?.classList.toggle("is-open", intentMenuOpen);
+    petRoot?.classList.toggle("is-intent-menu-open", intentMenuOpen);
+    if (isRightClickMenu()) {
+      if (intentMenu) intentMenu.hidden = !intentMenuOpen;
+    } else if (intentMenu) {
+      intentMenu.hidden = false;
+      intentMenu.classList.remove("is-open");
+    }
+    if (intentMenuOpen && opts?.focus) {
+      intentMenu?.querySelector<HTMLButtonElement>("button:not([hidden])")?.focus();
+    }
+  }
+
+  function closeIntentMenu(): void {
+    if (!intentMenuOpen) return;
+    setIntentMenuOpen(false);
+  }
+
   function startTransition(className: string): void {
     if (transitionTimer) {
       clearTimeout(transitionTimer);
@@ -800,6 +830,10 @@ export function renderPetApp(root: Document = document): {
    * upgrades the greeting to flail without toggling the tray.
    */
   function handlePetClick(): void {
+    if (intentMenuOpen) {
+      closeIntentMenu();
+      return;
+    }
     const motionReduced = reducedMotion || current?.reducedMotion === true;
     const action = resolvePetBodyClick({
       trayOpen: current?.trayOpen === true,
@@ -1359,6 +1393,27 @@ export function renderPetApp(root: Document = document): {
         ? view.bubbleTheme
         : "cream";
       petRoot.setAttribute("data-bubble-theme", bubbleTheme);
+      const intentMenuPresentation = resolvePetIntentMenuPresentation(
+        view.rightClickAggregatedMenu === true,
+      );
+      petRoot.setAttribute("data-intent-trigger", intentMenuPresentation.trigger);
+      if (btnHide) btnHide.hidden = !intentMenuPresentation.showChromeClose;
+      if (btnPetHide) btnPetHide.hidden = !intentMenuPresentation.showMenuHideAction;
+      if (intentMenuPresentation.hoverRevealsMenu) {
+        intentMenuOpen = false;
+        if (intentMenu) {
+          intentMenu.hidden = false;
+          intentMenu.classList.remove("is-open");
+        }
+        petRoot.classList.remove("is-intent-menu-open");
+      } else {
+        setIntentMenuOpen(intentMenuOpen);
+      }
+      if (interactionHint) {
+        interactionHint.textContent = intentMenuPresentation.trigger === "right-click"
+          ? "右键角色打开快捷菜单，隐藏到托盘已放入菜单。P 互动，Shift+P 摆动。拖动可移动。"
+          : "悬停角色打开快捷菜单。P 互动，Shift+P 摆动。拖动可移动。";
+      }
       petRoot.style.setProperty("--pet-scale", String(spec.factor));
       petRoot.style.setProperty("--pet-root-pad", `${spec.rootPad}px`);
       petRoot.style.setProperty("--pet-stack-gap", `${Math.max(1, spec.stackHeight - spec.chromeHeight - spec.surfaceSize - spec.bubbleReserve)}px`);
@@ -1378,7 +1433,10 @@ export function renderPetApp(root: Document = document): {
         reducedMotion: motionReduced,
         canJumpPrimary: attentionJump,
       });
-      const gestureHint = "悬停打开快捷菜单 · P 互动 · Shift+P 摆动";
+      const gestureHint =
+        view.rightClickAggregatedMenu === true
+          ? "右键打开快捷菜单 · P 互动 · Shift+P 摆动"
+          : "悬停打开快捷菜单 · P 互动 · Shift+P 摆动";
       const bodyHint =
         bodyAction === "close-tray"
           ? "点击收起活动列表"
@@ -1453,6 +1511,7 @@ export function renderPetApp(root: Document = document): {
     if (prefNeedsInput) prefNeedsInput.checked = view.notification.needsInput;
     if (prefBlocked) prefBlocked.checked = view.notification.blocked;
     if (prefShowContextMeter) prefShowContextMeter.checked = view.showContextMeter;
+    if (prefRightClickMenu) prefRightClickMenu.checked = view.rightClickAggregatedMenu === true;
     if (prefDnd) prefDnd.checked = view.dndEnabled === true;
     if (prefSoundMaster) prefSoundMaster.checked = view.sound.masterEnabled === true;
     if (prefSoundNeedsInput) prefSoundNeedsInput.checked = view.sound.needsInput !== false;
@@ -2420,6 +2479,7 @@ export function renderPetApp(root: Document = document): {
       // Crossing the drag threshold cancels the whole click sequence, so a drag
       // never re-toggles the tray or fires a deferred poke/flail.
       cancelClickSequence();
+      closeIntentMenu();
       petButton.classList.add("is-dragging");
       petAvatar?.classList.remove("is-pressed");
       petAvatar?.classList.add("is-dragging");
@@ -2483,6 +2543,16 @@ export function renderPetApp(root: Document = document): {
   // Keyboard activation: Enter/Space still opens/jumps (accessible work path).
   // P greets; Shift+P flails. The click handler swallows the synthesized click.
   petButton?.addEventListener("keydown", (event) => {
+    if (
+      isRightClickMenu() &&
+      (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10"))
+    ) {
+      event.preventDefault();
+      event.stopPropagation();
+      wakeIdleSleep();
+      setIntentMenuOpen(true, { focus: true });
+      return;
+    }
     if (event.key === "p" || event.key === "P") {
       const motionReduced = reducedMotion || current?.reducedMotion === true;
       if (!shouldAllowPetReaction(currentPresentation(), motionReduced)) return;
@@ -2520,6 +2590,10 @@ export function renderPetApp(root: Document = document): {
 
   const onRootClick = (event: Event) => {
     if (trayMoreOpen) setTrayMoreOpen(false);
+    if (intentMenuOpen) {
+      const intentTarget = event.target instanceof Element ? event.target : null;
+      if (!intentTarget?.closest("#pet-intent-menu")) closeIntentMenu();
+    }
     if (quickSession.openPicker === "none") return;
     const target = event.target instanceof Element ? event.target : null;
     if (target?.closest("#qs-picker, #qs-project-trigger, #qs-model-trigger")) return;
@@ -2570,6 +2644,13 @@ export function renderPetApp(root: Document = document): {
     hideToTray();
   });
 
+  btnPetHide?.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    closeIntentMenu();
+    hideToTray();
+  });
+
   btnHideTray?.addEventListener("click", (event) => {
     event.preventDefault();
     event.stopPropagation();
@@ -2589,6 +2670,7 @@ export function renderPetApp(root: Document = document): {
   btnPetSettings?.addEventListener("click", (event) => {
     event.preventDefault();
     event.stopPropagation();
+    closeIntentMenu();
     if (current?.trayOpen && settingsOpen) {
       settingsOpen = false;
       update(current);
@@ -2600,6 +2682,7 @@ export function renderPetApp(root: Document = document): {
   btnPetMarkAll?.addEventListener("click", (event) => {
     event.preventDefault();
     event.stopPropagation();
+    closeIntentMenu();
     wakeIdleSleep();
     markAllVisibleRead();
   });
@@ -2607,6 +2690,7 @@ export function renderPetApp(root: Document = document): {
   btnPetActivity?.addEventListener("click", (event) => {
     event.preventDefault();
     event.stopPropagation();
+    closeIntentMenu();
     toggleActivityFromMenu();
   });
 
@@ -2624,6 +2708,7 @@ export function renderPetApp(root: Document = document): {
   btnPetQuickSession?.addEventListener("click", (event) => {
     event.preventDefault();
     event.stopPropagation();
+    closeIntentMenu();
     if (current?.trayOpen && quickSession.phase !== "closed") {
       applyQuickSession({ type: "close" });
       return;
@@ -2814,6 +2899,9 @@ export function renderPetApp(root: Document = document): {
   prefShowContextMeter?.addEventListener("change", () => {
     bridge?.setPrefs({ showContextMeter: prefShowContextMeter.checked });
   });
+  prefRightClickMenu?.addEventListener("change", () => {
+    bridge?.setPrefs({ rightClickAggregatedMenu: prefRightClickMenu.checked });
+  });
   prefDnd?.addEventListener("change", () => {
     bridge?.setPrefs({ dndEnabled: prefDnd.checked });
   });
@@ -2832,6 +2920,11 @@ export function renderPetApp(root: Document = document): {
     if (event.key === "Escape" && trayMoreOpen) {
       setTrayMoreOpen(false);
       btnTrayMore?.focus();
+      return;
+    }
+    if (event.key === "Escape" && intentMenuOpen) {
+      event.preventDefault();
+      closeIntentMenu();
       return;
     }
     if (!current?.trayOpen) return;
@@ -2901,6 +2994,19 @@ export function renderPetApp(root: Document = document): {
   };
   root.addEventListener("keydown", onKeyDown);
 
+  const onRootContextMenu = (event: Event) => {
+    if (!isRightClickMenu()) return;
+    const target = event.target instanceof Element ? event.target : null;
+    if (target?.closest("#pet-stack")) {
+      event.preventDefault();
+      wakeIdleSleep();
+      setIntentMenuOpen(true);
+      return;
+    }
+    closeIntentMenu();
+  };
+  root.addEventListener("contextmenu", onRootContextMenu);
+
   let unsubscribe: (() => void) | undefined;
   let unsubscribeSoundCue: (() => void) | undefined;
   let unsubscribeCustomPets: (() => void) | undefined;
@@ -2956,6 +3062,7 @@ export function renderPetApp(root: Document = document): {
       clearLookReleaseTimer();
       root.removeEventListener("keydown", onKeyDown);
       root.removeEventListener("click", onRootClick);
+      root.removeEventListener("contextmenu", onRootContextMenu);
       for (const style of spriteStyleSheets.values()) style.remove();
       spriteStyleSheets.clear();
       clearCustomPetRegistrations();

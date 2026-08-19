@@ -83,6 +83,16 @@
           <button type="button" id="btn-pet-settings" class="pet-intent-btn">
             设置
           </button>
+          <button
+            type="button"
+            id="btn-pet-hide"
+            class="pet-intent-btn pet-intent-btn-danger"
+            title="隐藏到托盘"
+            aria-label="隐藏到托盘"
+            hidden
+          >
+            隐藏到托盘
+          </button>
         </div>
       </div>
 
@@ -214,7 +224,7 @@
             <button type="button" id="btn-restore-position" class="tray-btn settings-restore-btn">
               恢复默认位置与尺寸
             </button>
-            <p class="settings-hint">悬停角色打开快捷菜单。P 互动，Shift+P 摆动。拖动可移动。</p>
+            <p id="settings-interaction-hint" class="settings-hint">悬停角色打开快捷菜单。P 互动，Shift+P 摆动。拖动可移动。</p>
             <div class="settings-grid">
               <label class="setting-toggle">
                 <input id="pref-always-on-top" type="checkbox" />
@@ -231,6 +241,10 @@
               <label class="setting-toggle">
                 <input id="pref-show-context-meter" type="checkbox" />
                 <span>显示上下文占比</span>
+              </label>
+              <label class="setting-toggle">
+                <input id="pref-right-click-menu" type="checkbox" />
+                <span>鼠标右键聚合菜单</span>
               </label>
             </div>
           </div>

@@ -93,6 +93,7 @@ export type PetPrefsPatch = Partial<{
   launchAtLogin: boolean;
   activityTrayOpen: boolean;
   showContextMeter: boolean;
+  rightClickAggregatedMenu: boolean;
   dndEnabled: boolean;
   notification: Partial<{
     needsInput: boolean;

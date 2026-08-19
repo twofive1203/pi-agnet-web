@@ -118,6 +118,7 @@ export type DesktopActivityView = {
   clickThrough: boolean;
   launchAtLogin: boolean;
   showContextMeter: boolean;
+  rightClickAggregatedMenu: boolean;
   dndEnabled: boolean;
   notification: DesktopPetSettings["notification"];
   sound: DesktopPetSettings["sound"];
@@ -419,6 +420,7 @@ export function buildActivityView(input: ActivityStoreSnapshotInput): DesktopAct
     clickThrough: input.settings.clickThrough,
     launchAtLogin: input.settings.launchAtLogin,
     showContextMeter: input.settings.showContextMeter,
+    rightClickAggregatedMenu: input.settings.rightClickAggregatedMenu === true,
     dndEnabled: input.settings.dndEnabled,
     notification: { ...input.settings.notification },
     sound: { ...input.settings.sound },

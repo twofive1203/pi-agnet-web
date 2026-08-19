@@ -1210,6 +1210,32 @@ export type PetReaction = "poke" | "flail";
 
 export type PetBodyClickAction = "close-tray" | "jump-primary" | "interact" | "open-tray";
 
+export type PetIntentMenuTrigger = "hover" | "right-click";
+
+export type PetIntentMenuPresentation = {
+  trigger: PetIntentMenuTrigger;
+  showChromeClose: boolean;
+  showMenuHideAction: boolean;
+  hoverRevealsMenu: boolean;
+};
+
+/**
+ * Hover chips + chrome X stay the default. The optional right-click mode
+ * hides hover chrome and folds close into the same shortcut list.
+ */
+export function resolvePetIntentMenuPresentation(
+  rightClickAggregatedMenu: boolean,
+): PetIntentMenuPresentation {
+  const trigger: PetIntentMenuTrigger =
+    rightClickAggregatedMenu === true ? "right-click" : "hover";
+  return {
+    trigger,
+    showChromeClose: trigger === "hover",
+    showMenuHideAction: trigger === "right-click",
+    hoverRevealsMenu: trigger === "hover",
+  };
+}
+
 /** Maximum gap between consecutive clicks that still extends a click sequence. */
 export const PET_DOUBLE_CLICK_INTERVAL_MS = 320;
 /** Total window (first → last click) a quadruple click must fit within. */
