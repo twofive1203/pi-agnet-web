@@ -877,6 +877,7 @@
   ];
   var CODEX_LOOK_DIRECTION_COUNT = 16;
   var CODEX_LOOK_DEADZONE_PX = 28;
+  var CODEX_LOOK_RELEASE_MS = 1600;
   var SNAIL_STATE_TO_CODEX_CLIP = {
     idle: { clipName: "idle", staticOnly: false },
     running: { clipName: "running", staticOnly: false },
@@ -1060,6 +1061,9 @@
     if (magnitude === 0 || magnitude < deadzonePx) return null;
     const deg = (Math.atan2(dx, -dy) * 180 / Math.PI + 360) % 360;
     return Math.round(deg / 22.5) % CODEX_LOOK_DIRECTION_COUNT;
+  }
+  function isCodexLookPointerInBounds(pointerX, pointerY, bounds) {
+    return pointerX >= bounds.left && pointerX <= bounds.right && pointerY >= bounds.top && pointerY <= bounds.bottom;
   }
   function resolveCodexDragClip(dx, dy, last) {
     if (!Number.isFinite(dx) || !Number.isFinite(dy)) return last;
@@ -2711,6 +2715,7 @@
     const registeredCustomPetIds = /* @__PURE__ */ new Set();
     let petPickerQuery = "";
     let lookDirection = null;
+    let lookReleaseTimer = null;
     let dragClip = null;
     let jumpActive = false;
     let jumpTimer = null;
@@ -2993,6 +2998,7 @@
           idleBlinkTimer = null;
         }
         clearIdleAct(petAvatar instanceof HTMLElement ? petAvatar : null);
+        clearCodexLook();
         cancelClickSequence();
       } else if (petAvatar instanceof HTMLElement) {
         scheduleIdleBlink(petAvatar);
@@ -4274,31 +4280,53 @@
         })
       );
     };
+    const clearLookReleaseTimer = () => {
+      if (lookReleaseTimer) {
+        clearTimeout(lookReleaseTimer);
+        lookReleaseTimer = null;
+      }
+    };
+    const clearCodexLook = () => {
+      clearLookReleaseTimer();
+      if (lookDirection == null) return;
+      lookDirection = null;
+      if (current) update(current);
+    };
+    const armLookRelease = () => {
+      clearLookReleaseTimer();
+      lookReleaseTimer = setTimeout(() => {
+        lookReleaseTimer = null;
+        clearCodexLook();
+      }, CODEX_LOOK_RELEASE_MS);
+    };
     const applyCodexLook = (event) => {
       const profile = currentPetProfile();
       if (!profile?.capabilities.look || !current) return;
       const motionReduced = reducedMotion || current.reducedMotion === true;
       if (motionReduced || documentHidden || petDragging) {
-        if (lookDirection != null) {
-          lookDirection = null;
-          update(current);
-        }
+        clearCodexLook();
         return;
       }
       if (!canApplyLookOverlay(currentPresentation())) {
-        if (lookDirection != null) {
-          lookDirection = null;
-          update(current);
-        }
+        clearCodexLook();
         return;
       }
       if (!(petAvatar instanceof HTMLElement)) return;
       const rect = petAvatar.getBoundingClientRect();
       if (rect.width === 0) return;
+      if (!isCodexLookPointerInBounds(event.clientX, event.clientY, rect)) {
+        clearCodexLook();
+        return;
+      }
       const next = quantizeCodexLookDirection(
         event.clientX - (rect.left + rect.width / 2),
         event.clientY - (rect.top + rect.height / 2)
       );
+      if (next == null) {
+        clearCodexLook();
+        return;
+      }
+      armLookRelease();
       if (next === lookDirection) return;
       lookDirection = next;
       update(current);
@@ -4325,13 +4353,15 @@
       applyCodexLook(event);
     };
     const onWindowPointerLeave = () => {
-      if (lookDirection == null || !current) return;
-      lookDirection = null;
-      update(current);
+      clearCodexLook();
+    };
+    const onWindowBlur = () => {
+      clearCodexLook();
     };
     if (typeof window !== "undefined") {
       window.addEventListener("pointermove", onWindowPointerMove);
       window.addEventListener("pointerleave", onWindowPointerLeave);
+      window.addEventListener("blur", onWindowBlur);
     }
     function canJumpToPrimary(view) {
       if (!view || view.trayOpen) return false;
@@ -4514,7 +4544,10 @@
       if (current) update(current);
     });
     petButton?.addEventListener("pointerleave", () => {
-      if (petPointerId === null) resetEyeFollow();
+      if (petPointerId === null) {
+        resetEyeFollow();
+        clearCodexLook();
+      }
     });
     petButton?.addEventListener("keydown", (event) => {
       if (event.key === "p" || event.key === "P") {
@@ -4917,7 +4950,9 @@
         if (typeof window !== "undefined") {
           window.removeEventListener("pointermove", onWindowPointerMove);
           window.removeEventListener("pointerleave", onWindowPointerLeave);
+          window.removeEventListener("blur", onWindowBlur);
         }
+        clearLookReleaseTimer();
         root.removeEventListener("keydown", onKeyDown);
         root.removeEventListener("click", onRootClick);
         for (const style of spriteStyleSheets.values()) style.remove();

@@ -144,6 +144,7 @@ import {
   lookCellIndex,
   profileFromCodexMetadata,
   profileFromSnailManifest,
+  isCodexLookPointerInBounds,
   quantizeCodexLookDirection,
   resolveActivePetClip,
   resolveCodexDragClip,
@@ -3445,6 +3446,9 @@ async function main() {
   assert.ok(rendererSource.includes("dataset.presentation"));
   assert.ok(rendererSource.includes("selectPrimaryActivity"));
   assert.ok(rendererSource.includes("resolvePrimaryContextMeter"));
+  assert.ok(rendererSource.includes("isCodexLookPointerInBounds"));
+  assert.ok(rendererSource.includes("CODEX_LOOK_RELEASE_MS"));
+  assert.ok(rendererSource.includes('addEventListener("blur", onWindowBlur)'));
   assert.ok(rendererSource.includes("countUnreadActivities"));
   assert.equal(
     rendererSource.includes("view.attentionCount + (view.aggregate?.ready"),
@@ -3629,6 +3633,7 @@ async function main() {
   assert.ok(petAppJs.includes("markRead"));
   assert.ok(petAppJs.includes("selectPrimaryActivity"));
   assert.ok(petAppJs.includes("resolvePrimaryContextMeter"));
+  assert.ok(petAppJs.includes("isCodexLookPointerInBounds"));
   assert.ok(petAppJs.includes("countUnreadActivities"));
   assert.ok(petAppJs.includes("showContextMeter"));
   assert.ok(petAppJs.includes("data-running-cue"));
@@ -4113,6 +4118,15 @@ async function main() {
   assert.equal(quantizeCodexLookDirection(0, -80), 0);
   assert.equal(quantizeCodexLookDirection(2, -2), null);
   assert.equal(quantizeCodexLookDirection(0, 0), null);
+  assert.equal(
+    isCodexLookPointerInBounds(10, 10, { left: 0, top: 0, right: 20, bottom: 20 }),
+    true,
+  );
+  assert.equal(
+    isCodexLookPointerInBounds(50, 10, { left: 0, top: 0, right: 20, bottom: 20 }),
+    false,
+    "pointer outside the avatar must drop look so idle can resume",
+  );
   assert.equal(resolveCodexDragClip(8, 1, null), "running-right");
   assert.equal(resolveCodexDragClip(-8, 1, null), "running-left");
   assert.equal(resolveCodexDragClip(1, 8, "running-right"), "running-right");

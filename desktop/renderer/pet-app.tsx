@@ -100,6 +100,8 @@ import {
   canApplyJumpOverlay,
   canApplyLookOverlay,
   clipTotalDurationMs,
+  CODEX_LOOK_RELEASE_MS,
+  isCodexLookPointerInBounds,
   quantizeCodexLookDirection,
   resolveActivePetClip,
   resolveCodexDragClip,
@@ -297,6 +299,7 @@ export function renderPetApp(root: Document = document): {
   const registeredCustomPetIds = new Set<string>();
   let petPickerQuery = "";
   let lookDirection: number | null = null;
+  let lookReleaseTimer: ReturnType<typeof setTimeout> | null = null;
   let dragClip: PetDragClipName | null = null;
   let jumpActive = false;
   let jumpTimer: ReturnType<typeof setTimeout> | null = null;
@@ -651,6 +654,7 @@ export function renderPetApp(root: Document = document): {
         idleBlinkTimer = null;
       }
       clearIdleAct(petAvatar instanceof HTMLElement ? petAvatar : null);
+      clearCodexLook();
       // Hiding the window also cancels any in-flight click sequence / reaction.
       cancelClickSequence();
     } else if (petAvatar instanceof HTMLElement) {
@@ -2157,31 +2161,56 @@ export function renderPetApp(root: Document = document): {
     );
   };
 
+  const clearLookReleaseTimer = () => {
+    if (lookReleaseTimer) {
+      clearTimeout(lookReleaseTimer);
+      lookReleaseTimer = null;
+    }
+  };
+
+  const clearCodexLook = () => {
+    clearLookReleaseTimer();
+    if (lookDirection == null) return;
+    lookDirection = null;
+    if (current) update(current);
+  };
+
+  const armLookRelease = () => {
+    clearLookReleaseTimer();
+    lookReleaseTimer = setTimeout(() => {
+      lookReleaseTimer = null;
+      clearCodexLook();
+    }, CODEX_LOOK_RELEASE_MS);
+  };
+
   const applyCodexLook = (event: PointerEvent) => {
     const profile = currentPetProfile();
     if (!profile?.capabilities.look || !current) return;
     const motionReduced = reducedMotion || current.reducedMotion === true;
     if (motionReduced || documentHidden || petDragging) {
-      if (lookDirection != null) {
-        lookDirection = null;
-        update(current);
-      }
+      clearCodexLook();
       return;
     }
     if (!canApplyLookOverlay(currentPresentation())) {
-      if (lookDirection != null) {
-        lookDirection = null;
-        update(current);
-      }
+      clearCodexLook();
       return;
     }
     if (!(petAvatar instanceof HTMLElement)) return;
     const rect = petAvatar.getBoundingClientRect();
     if (rect.width === 0) return;
+    if (!isCodexLookPointerInBounds(event.clientX, event.clientY, rect)) {
+      clearCodexLook();
+      return;
+    }
     const next = quantizeCodexLookDirection(
       event.clientX - (rect.left + rect.width / 2),
       event.clientY - (rect.top + rect.height / 2),
     );
+    if (next == null) {
+      clearCodexLook();
+      return;
+    }
+    armLookRelease();
     if (next === lookDirection) return;
     lookDirection = next;
     update(current);
@@ -2211,13 +2240,15 @@ export function renderPetApp(root: Document = document): {
     applyCodexLook(event);
   };
   const onWindowPointerLeave = () => {
-    if (lookDirection == null || !current) return;
-    lookDirection = null;
-    update(current);
+    clearCodexLook();
+  };
+  const onWindowBlur = () => {
+    clearCodexLook();
   };
   if (typeof window !== "undefined") {
     window.addEventListener("pointermove", onWindowPointerMove);
     window.addEventListener("pointerleave", onWindowPointerLeave);
+    window.addEventListener("blur", onWindowBlur);
   }
 
   // Whether a single pet activation should jump straight to the top-priority
@@ -2443,7 +2474,10 @@ export function renderPetApp(root: Document = document): {
   });
 
   petButton?.addEventListener("pointerleave", () => {
-    if (petPointerId === null) resetEyeFollow();
+    if (petPointerId === null) {
+      resetEyeFollow();
+      clearCodexLook();
+    }
   });
 
   // Keyboard activation: Enter/Space still opens/jumps (accessible work path).
@@ -2917,7 +2951,9 @@ export function renderPetApp(root: Document = document): {
       if (typeof window !== "undefined") {
         window.removeEventListener("pointermove", onWindowPointerMove);
         window.removeEventListener("pointerleave", onWindowPointerLeave);
+        window.removeEventListener("blur", onWindowBlur);
       }
+      clearLookReleaseTimer();
       root.removeEventListener("keydown", onKeyDown);
       root.removeEventListener("click", onRootClick);
       for (const style of spriteStyleSheets.values()) style.remove();

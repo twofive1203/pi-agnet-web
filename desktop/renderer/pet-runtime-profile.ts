@@ -84,6 +84,8 @@ export const CODEX_STANDARD_ROWS = [
 
 export const CODEX_LOOK_DIRECTION_COUNT = 16;
 export const CODEX_LOOK_DEADZONE_PX = 28;
+/** Resume idle if look is not refreshed. Transparent windows often skip pointerleave. */
+export const CODEX_LOOK_RELEASE_MS = 1600;
 
 /** Snail business state → Codex standard clip. Glyphs/labels stay Snail. */
 export const SNAIL_STATE_TO_CODEX_CLIP: Record<PetRequiredState, PetStateClipBinding> = {
@@ -369,6 +371,20 @@ export function quantizeCodexLookDirection(
   if (magnitude === 0 || magnitude < deadzonePx) return null;
   const deg = ((Math.atan2(dx, -dy) * 180) / Math.PI + 360) % 360;
   return Math.round(deg / 22.5) % CODEX_LOOK_DIRECTION_COUNT;
+}
+
+/** Look only while the pointer stays over the avatar box. */
+export function isCodexLookPointerInBounds(
+  pointerX: number,
+  pointerY: number,
+  bounds: { left: number; top: number; right: number; bottom: number },
+): boolean {
+  return (
+    pointerX >= bounds.left &&
+    pointerX <= bounds.right &&
+    pointerY >= bounds.top &&
+    pointerY <= bounds.bottom
+  );
 }
 
 /**
