@@ -455,6 +455,7 @@ select {
 .pet-stack:focus-within .pet-caption,
 .pet-stack:hover .pet-label,
 .pet-stack:focus-within .pet-label {
+  animation: none;
   opacity: 0;
   visibility: hidden;
 }
@@ -724,6 +725,17 @@ select {
   box-shadow: 0 2px 0 var(--ink);
   pointer-events: none;
   transition: opacity 140ms ease, visibility 140ms ease;
+}
+
+/* Idle-only: fade the chip away so it does not sit on the sprite forever. */
+.pet-stage:has(.frame-idle) .pet-label {
+  animation: pet-label-breathe 8s ease-in-out infinite;
+}
+
+@keyframes pet-label-breathe {
+  0%, 32% { opacity: 1; }
+  44%, 88% { opacity: 0; }
+  100% { opacity: 1; }
 }
 
 .pet-context-meter {
