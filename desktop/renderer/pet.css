@@ -6,13 +6,6 @@
 :root {
   color-scheme: light;
   --pet-scale: 1;
-  --pet-root-pad: calc(6px * var(--pet-scale));
-  --pet-stack-gap: calc(6px * var(--pet-scale));
-  --pet-stack-width: calc(136px * var(--pet-scale));
-  --pet-chrome-height: calc(18px * var(--pet-scale));
-  --pet-surface-size: calc(112px * var(--pet-scale));
-  --pet-bubble-reserve: calc(40px * var(--pet-scale));
-  --pet-intent-gutter: calc(24px * var(--pet-scale));
   --ink: #2b313c;
   --paper: #fff7ea;
   --paper-2: #fffdf8;
@@ -185,6 +178,15 @@ select {
 }
 
 .pet-root {
+  /* Derived metrics must live here so data-pet-scale/--pet-scale updates them.
+     Defining them on :root freezes calc() against the unscaled 1.0 token. */
+  --pet-root-pad: calc(6px * var(--pet-scale));
+  --pet-stack-gap: calc(6px * var(--pet-scale));
+  --pet-stack-width: calc(136px * var(--pet-scale));
+  --pet-chrome-height: calc(18px * var(--pet-scale));
+  --pet-surface-size: calc(112px * var(--pet-scale));
+  --pet-bubble-reserve: calc(40px * var(--pet-scale));
+  --pet-intent-gutter: calc(24px * var(--pet-scale));
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -395,6 +397,8 @@ select {
   padding: 0;
   overflow: visible;
   border: 0;
+  appearance: none;
+  -webkit-appearance: none;
   background: transparent;
   color: inherit;
   cursor: grab;
@@ -406,8 +410,9 @@ select {
   position: relative;
   width: 112px;
   height: 112px;
-  transform: scale(var(--pet-scale));
-  transform-origin: top left;
+  /* zoom grows the layout box with --pet-scale. transform:scale() would leave
+     the box at 112px and Chromium clips the overflow inside the <button>. */
+  zoom: var(--pet-scale);
 }
 
 .pet-surface.is-dragging,

@@ -512,7 +512,17 @@ export function handleBoundsChanged(
   state: WindowManagerState,
   bounds: PetWindowBounds,
 ): WindowManagerState {
-  return { ...state, bounds };
+  const spec = layoutSpecFromState(state);
+  const size = windowSizeForLayout(spec, state.trayExpanded);
+  return {
+    ...state,
+    bounds: {
+      x: bounds.x,
+      y: bounds.y,
+      width: size.width,
+      height: size.height,
+    },
+  };
 }
 
 function windowFullyVisible(bounds: PetWindowBounds, workArea: WorkAreaRect): boolean {
@@ -688,7 +698,16 @@ export function applyWindowManagerState(
   handle.setAlwaysOnTop(state.alwaysOnTop);
   handle.setIgnoreMouseEvents(state.clickThrough, { forward: true });
   if (state.bounds) {
-    handle.setBounds(state.bounds);
+    const current = handle.getBounds();
+    const next = state.bounds;
+    if (
+      current.x !== next.x ||
+      current.y !== next.y ||
+      current.width !== next.width ||
+      current.height !== next.height
+    ) {
+      handle.setBounds(next);
+    }
   }
   if (!state.visible) {
     handle.hide();

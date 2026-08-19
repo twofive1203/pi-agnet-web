@@ -87,6 +87,7 @@ import {
   handleMoveBy,
   handlePetWindowCloseRequest,
   handleRestoreDefaultPosition,
+  handleBoundsChanged,
   handleSetClickThrough,
   handleSetPetScale,
   handleShowPet,
@@ -3082,6 +3083,18 @@ async function main() {
     width: mediumSpec.collapsedWidth,
     height: mediumSpec.collapsedHeight,
   });
+  const nativeShrink = handleBoundsChanged(
+    createInitialWindowManagerState({
+      position: { x: 80, y: 90 },
+      petScale: "large",
+      trayOpen: false,
+    }),
+    { x: 10, y: 20, width: 80, height: 90 },
+  );
+  assert.equal(nativeShrink.bounds?.x, 10);
+  assert.equal(nativeShrink.bounds?.y, 20);
+  assert.equal(nativeShrink.bounds?.width, largeSpec.collapsedWidth);
+  assert.equal(nativeShrink.bounds?.height, largeSpec.collapsedHeight);
 
   // --- Settings persistence without tokens ---
   const memory = new Map<string, string>();
@@ -3330,6 +3343,12 @@ async function main() {
   assert.ok(css.includes('.pet-root[data-pet="snail-classic"]'));
   assert.ok(css.includes('data-pet-scale="large"'));
   assert.ok(css.includes("--pet-scale"));
+  assert.ok(css.includes("zoom: var(--pet-scale)"));
+  assert.equal(
+    css.includes("transform: scale(var(--pet-scale))"),
+    false,
+    "pet-stage must grow layout via zoom, not transform:scale",
+  );
   assert.ok(css.includes("background: transparent"));
   assert.ok(css.includes("prefers-reduced-motion: reduce"));
   assert.ok(css.includes(".activity-filter"));

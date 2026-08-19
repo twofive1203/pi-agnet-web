@@ -31,7 +31,7 @@ export function spriteBitmapSize(sheet: SpriteSheet): { width: number; height: n
   };
 }
 
-/** On-screen size after `.pet-stage { transform: scale(petScale) }`. */
+/** On-screen size after `.pet-stage { zoom: petScale }`. */
 export function spriteVisualSize(
   sheet: SpriteSheet,
   petScale: number,

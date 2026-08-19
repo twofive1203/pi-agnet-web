@@ -714,7 +714,23 @@ export async function startDesktopPetMain(deps: DesktopMainDeps): Promise<{
       setAlwaysOnTop: (flag) => win.setAlwaysOnTop(flag),
       setIgnoreMouseEvents: (ignore, options) => win.setIgnoreMouseEvents(ignore, options),
       getBounds: () => win.getBounds(),
-      setBounds: (next) => win.setBounds(next),
+      setBounds: (next) => {
+        const width = next.width;
+        const height = next.height;
+        if (typeof width === "number" && typeof height === "number") {
+          // Windows ignores size changes on resizable:false frameless windows.
+          win.setResizable(true);
+          win.setBounds({
+            x: next.x ?? win.getBounds().x,
+            y: next.y ?? win.getBounds().y,
+            width,
+            height,
+          });
+          win.setResizable(false);
+          return;
+        }
+        win.setBounds(next);
+      },
       send: (channel, payload) => {
         if (!win.isDestroyed()) win.webContents.send(channel, payload);
       },
