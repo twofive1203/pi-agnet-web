@@ -2258,12 +2258,14 @@ async function main() {
   assert.equal(suspendedCtx.resumeCalls, 1, "suspended context resumes best-effort");
 
   // --- Default position is bottom-right of work area (not 0,0) ---
+  const defaultLayout = resolvePetLayoutSpec("medium");
   const pos = defaultPetWindowPosition({ x: 0, y: 0, width: 1920, height: 1080 });
   assert.ok(pos.x > 1000);
   assert.ok(pos.y > 500);
-  // Collapsed window must fit chrome + avatar (not the old 128² clip box).
+  // Unscaled collapsed window must fit chrome + avatar (not the old 128² clip box).
   assert.ok(PET_WINDOW_DEFAULTS.petOnlyWidth >= 140);
   assert.ok(PET_WINDOW_DEFAULTS.petOnlyHeight >= 160);
+  assert.ok(defaultLayout.collapsedWidth >= PET_WINDOW_DEFAULTS.petOnlyWidth);
 
   // --- Close-to-tray + click-through recovery ---
   let win = createInitialWindowManagerState({
@@ -2273,8 +2275,8 @@ async function main() {
   });
   assert.equal(win.bounds?.x, pos.x);
   assert.equal(win.bounds?.y, pos.y);
-  assert.equal(win.bounds?.width, PET_WINDOW_DEFAULTS.petOnlyWidth);
-  assert.equal(win.bounds?.height, PET_WINDOW_DEFAULTS.petOnlyHeight);
+  assert.equal(win.bounds?.width, defaultLayout.collapsedWidth);
+  assert.equal(win.bounds?.height, defaultLayout.collapsedHeight);
   win = handlePetWindowCloseRequest(win);
   assert.equal(win.visible, false);
   win = handleShowPet(win);
@@ -2423,23 +2425,23 @@ async function main() {
     bounds: {
       x: centerPos.x,
       y: centerPos.y,
-      width: PET_WINDOW_DEFAULTS.petOnlyWidth,
-      height: PET_WINDOW_DEFAULTS.petOnlyHeight,
+      width: defaultLayout.collapsedWidth,
+      height: defaultLayout.collapsedHeight,
     },
   };
   const centerStack = petStackScreenRect(win.bounds!, "top-left");
   win = handleToggleTray(win, workArea);
   assert.equal(win.trayExpanded, true);
   assert.equal(win.trayAnchor, "top-left");
-  assert.equal(win.bounds?.width, PET_WINDOW_DEFAULTS.trayWidth);
-  assert.equal(win.bounds?.height, PET_WINDOW_DEFAULTS.trayHeight);
+  assert.equal(win.bounds?.width, defaultLayout.trayWidth);
+  assert.equal(win.bounds?.height, defaultLayout.trayHeight);
   assert.deepEqual(petStackScreenRect(win.bounds!, win.trayAnchor), centerStack);
 
   // Collapse keeps the same pet-stack screen position.
   win = handleToggleTray(win, workArea);
   assert.equal(win.trayExpanded, false);
-  assert.equal(win.bounds?.width, PET_WINDOW_DEFAULTS.petOnlyWidth);
-  assert.equal(win.bounds?.height, PET_WINDOW_DEFAULTS.petOnlyHeight);
+  assert.equal(win.bounds?.width, defaultLayout.collapsedWidth);
+  assert.equal(win.bounds?.height, defaultLayout.collapsedHeight);
   assert.deepEqual(petStackScreenRect(win.bounds!, "top-left"), centerStack);
 
   // Bottom-right docked pet expands UP+LEFT so the icon does not jump to the card corner.
@@ -2451,15 +2453,15 @@ async function main() {
     bounds: {
       x: corner.x,
       y: corner.y,
-      width: PET_WINDOW_DEFAULTS.petOnlyWidth,
-      height: PET_WINDOW_DEFAULTS.petOnlyHeight,
+      width: defaultLayout.collapsedWidth,
+      height: defaultLayout.collapsedHeight,
     },
   };
   const cornerStack = petStackScreenRect(win.bounds!, "top-left");
   assert.equal(
     pickTrayLayoutAnchor(
       cornerStack,
-      { width: PET_WINDOW_DEFAULTS.trayWidth, height: PET_WINDOW_DEFAULTS.trayHeight },
+      { width: defaultLayout.trayWidth, height: defaultLayout.trayHeight },
       workArea,
     ),
     "bottom-right",
@@ -2985,7 +2987,9 @@ async function main() {
     "night",
   );
   assert.equal(normalizeDesktopSettings({ petScale: 0.85 }).petScale, "small");
-  assert.equal(normalizeDesktopSettings({ petScale: 1.2 }).petScale, "large");
+  assert.equal(normalizeDesktopSettings({ petScale: 1 }).petScale, "small");
+  assert.equal(normalizeDesktopSettings({ petScale: 1.2 }).petScale, "medium");
+  assert.equal(normalizeDesktopSettings({ petScale: 1.5 }).petScale, "large");
   assert.equal(normalizeDesktopSettings({ windowPosition: { x: Number.NaN, y: 10 } }).windowPosition, null);
   assert.equal(
     normalizeDesktopSettings({ windowPosition: { x: "12", y: 8 } }).windowPosition,
@@ -2995,11 +2999,16 @@ async function main() {
   const mediumSpec = resolvePetLayoutSpec("medium");
   const smallSpec = resolvePetLayoutSpec("small");
   const largeSpec = resolvePetLayoutSpec("large");
-  assert.equal(mediumSpec.collapsedWidth, PET_WINDOW_DEFAULTS.petOnlyWidth);
-  assert.equal(mediumSpec.collapsedHeight, PET_WINDOW_DEFAULTS.petOnlyHeight);
-  assert.equal(mediumSpec.trayWidth, PET_WINDOW_DEFAULTS.trayWidth);
-  assert.equal(mediumSpec.stackHeight, PET_LAYOUT.stackHeight);
-  assert.equal(mediumSpec.intentGutter, 24);
+  assert.equal(DESKTOP_PET_SCALE_FACTORS.small, 1);
+  assert.equal(DESKTOP_PET_SCALE_FACTORS.medium, 1.2);
+  assert.equal(DESKTOP_PET_SCALE_FACTORS.large, 1.5);
+  assert.equal(smallSpec.collapsedWidth, PET_WINDOW_DEFAULTS.petOnlyWidth);
+  assert.equal(smallSpec.collapsedHeight, PET_WINDOW_DEFAULTS.petOnlyHeight);
+  assert.equal(smallSpec.trayWidth, PET_WINDOW_DEFAULTS.trayWidth);
+  assert.equal(smallSpec.stackHeight, PET_LAYOUT.stackHeight);
+  assert.equal(smallSpec.intentGutter, 24);
+  assert.equal(mediumSpec.factor, 1.2);
+  assert.equal(largeSpec.factor, 1.5);
   assert.equal(mediumSpec.stackWidth, mediumSpec.surfaceSize + mediumSpec.intentGutter);
   assert.ok(smallSpec.collapsedWidth < mediumSpec.collapsedWidth);
   assert.ok(largeSpec.collapsedWidth > mediumSpec.collapsedWidth);
@@ -4541,7 +4550,10 @@ async function main() {
     assert.ok(visual.width < 108 * factor + 1e-9, `${scaleName} must not overflow the scaled avatar`);
   }
   const snailVisualLarge = spriteVisualSize(sheet, DESKTOP_PET_SCALE_FACTORS.large);
-  assert.deepEqual(snailVisualLarge, { width: 108 * 1.2, height: 92 * 1.2 });
+  assert.deepEqual(snailVisualLarge, {
+    width: 108 * DESKTOP_PET_SCALE_FACTORS.large,
+    height: 92 * DESKTOP_PET_SCALE_FACTORS.large,
+  });
 
   const minatoCss = v2Meta.ok
     ? buildSpriteSheetStyleTextFromProfile(profileFromCodexMetadata(v2Meta.metadata), "blob:minato")

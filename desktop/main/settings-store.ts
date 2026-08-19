@@ -28,9 +28,9 @@ export type DesktopPetBubbleTheme = (typeof DESKTOP_PET_BUBBLE_THEMES)[number];
 
 /** Discrete size factors shared with the window layout spec. */
 export const DESKTOP_PET_SCALE_FACTORS: Record<DesktopPetScale, number> = {
-  small: 0.85,
-  medium: 1,
-  large: 1.2,
+  small: 1,
+  medium: 1.2,
+  large: 1.5,
 };
 
 export type DesktopNotificationCompletionPolicy = "never" | "background-only" | "always";
@@ -278,7 +278,7 @@ function normalizeCompletion(value: unknown): DesktopNotificationCompletionPolic
   return DESKTOP_SETTINGS_DEFAULTS.notification.completion;
 }
 
-/** Accept size tokens or the documented 0.85/1/1.2 factors from older drafts. */
+/** Accept size tokens or the documented 1/1.2/1.5 factors; 0.85 still maps to small from older drafts. */
 export function normalizePetScale(value: unknown): DesktopPetScale {
   if (value === "small" || value === "medium" || value === "large") return value;
   const numeric =
@@ -291,6 +291,7 @@ export function normalizePetScale(value: unknown): DesktopPetScale {
     if (numeric === DESKTOP_PET_SCALE_FACTORS.small) return "small";
     if (numeric === DESKTOP_PET_SCALE_FACTORS.medium) return "medium";
     if (numeric === DESKTOP_PET_SCALE_FACTORS.large) return "large";
+    if (numeric === 0.85) return "small";
   }
   return DESKTOP_SETTINGS_DEFAULTS.petScale;
 }

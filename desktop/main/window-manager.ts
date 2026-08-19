@@ -64,7 +64,7 @@ export type PetWindowHandle = {
   onFocus(handler: () => void): void;
 };
 
-/** Medium-size DIP metrics. Small/large multiply these through resolvePetLayoutSpec. */
+/** Factor-1 DIP metrics (current small token). Medium/large multiply these through resolvePetLayoutSpec. */
 export const PET_LAYOUT_BASE = {
   rootPad: 6,
   chromeHeight: 18,

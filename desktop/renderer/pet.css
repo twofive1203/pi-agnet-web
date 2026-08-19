@@ -197,11 +197,15 @@ select {
 }
 
 .pet-root[data-pet-scale="small"] {
-  --pet-scale: 0.85;
+  --pet-scale: 1;
+}
+
+.pet-root[data-pet-scale="medium"] {
+  --pet-scale: 1.2;
 }
 
 .pet-root[data-pet-scale="large"] {
-  --pet-scale: 1.2;
+  --pet-scale: 1.5;
 }
 
 .pet-root[data-tray-anchor="top-left"] {

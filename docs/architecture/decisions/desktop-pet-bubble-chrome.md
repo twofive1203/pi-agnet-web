@@ -43,7 +43,7 @@ Native form controls follow `color-scheme: light` so checkboxes and selects matc
 
 - IDs, preload bridge, observer snapshot, DND/bubble reducer, and window metrics stay as they are.
 - Caption remains inside `#pet-button` (no nested button). It is still `pointer-events: none`.
-- Collapsed size at medium is 148×196: a 24px left shift plus the 112px sprite, and a 40px band above the sprite so the balloon sits over the head instead of on the face.
+- Unscaled collapsed size is 148×196 (current small): a 24px left shift plus the 112px sprite, and a 40px band above the sprite so the balloon sits over the head instead of on the face. Medium/large multiply that layout (1.2 / 1.5).
 - Hover chips sit in that top-left pocket (`top: 0` + `--pet-intent-gutter`) and may overlap the empty left of the stage, not a separate distant column.
 - No new fonts (CSP `font-src 'self' data:`).
 - Reduced-motion still collapses the pop animation through the existing global gate.

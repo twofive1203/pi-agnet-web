@@ -453,9 +453,9 @@
 
   // desktop/main/settings-store.ts
   var DESKTOP_PET_SCALE_FACTORS = {
-    small: 0.85,
-    medium: 1,
-    large: 1.2
+    small: 1,
+    medium: 1.2,
+    large: 1.5
   };
   function isDesktopPetBubbleTheme(value) {
     return value === "cream" || value === "peach" || value === "night" || value === "ember" || value === "plum" || value === "moss";
