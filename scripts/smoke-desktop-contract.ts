@@ -152,6 +152,7 @@ import {
 import {
   connectionBannerText,
   countActivitiesByFilter,
+  countUnreadActivities,
   createInitialIdleSleepState,
   createInitialPetBubbleState,
   createInitialPetCelebrateState,
@@ -561,6 +562,11 @@ async function main() {
   assert.equal(sortedRows[1].presentation, "blocked");
   assert.equal(sortedRows[2].presentation, "ready");
   assert.equal(sortedRows[3].presentation, "running");
+  assert.equal(
+    countUnreadActivities(view.projects),
+    3,
+    "pet badge counts local unread, not server aggregate.ready",
+  );
 
   // --- Primary activity selection must not inherit project-name ordering ---
   const primaryBase = sortedRows[3];
@@ -978,6 +984,15 @@ async function main() {
   // needs_input still unread after mark-all terminal
   const needAfter = flattenActivities(view.projects).find((r) => r.presentation === "needs_input");
   assert.ok(needAfter);
+  assert.equal(
+    countUnreadActivities(view.projects),
+    1,
+    "mark-all-read hides ready/blocked from the pet badge",
+  );
+  assert.ok(
+    (view.aggregate?.ready ?? 0) >= 1,
+    "server ready aggregate stays independent of local ack",
+  );
 
   // --- Transition/revision-driven pet bubble lifecycle ---
   let bubble = createInitialPetBubbleState();
@@ -3008,9 +3023,13 @@ async function main() {
   assert.equal(smallSpec.trayWidth, PET_WINDOW_DEFAULTS.trayWidth);
   assert.equal(smallSpec.stackHeight, PET_LAYOUT.stackHeight);
   assert.equal(smallSpec.intentGutter, 24);
+  assert.equal(smallSpec.statusGutter, 16);
   assert.equal(mediumSpec.factor, 1.2);
   assert.equal(largeSpec.factor, 1.5);
-  assert.equal(mediumSpec.stackWidth, mediumSpec.surfaceSize + mediumSpec.intentGutter);
+  assert.equal(
+    mediumSpec.stackWidth,
+    mediumSpec.surfaceSize + mediumSpec.intentGutter + mediumSpec.statusGutter,
+  );
   assert.ok(smallSpec.collapsedWidth < mediumSpec.collapsedWidth);
   assert.ok(largeSpec.collapsedWidth > mediumSpec.collapsedWidth);
   assert.ok(smallSpec.collapsedWidth >= smallSpec.rootPad * 2 + smallSpec.stackWidth);
@@ -3360,7 +3379,9 @@ async function main() {
   assert.ok(css.includes(".pet-stack:focus-within .pet-label"));
   assert.ok(css.includes(".settings-hint"));
   assert.ok(css.includes("--pet-intent-gutter"));
+  assert.ok(css.includes("--pet-status-gutter"));
   assert.ok(css.includes("padding-left: var(--pet-intent-gutter)"));
+  assert.ok(css.includes("padding-right: var(--pet-status-gutter)"));
   // Comic-bubble chrome: cream paper + ink outline, not a dark admin overlay.
   assert.ok(css.includes("--bubble-paper"));
   assert.ok(css.includes('data-bubble-theme="peach"'));
@@ -3424,6 +3445,12 @@ async function main() {
   assert.ok(rendererSource.includes("dataset.presentation"));
   assert.ok(rendererSource.includes("selectPrimaryActivity"));
   assert.ok(rendererSource.includes("resolvePrimaryContextMeter"));
+  assert.ok(rendererSource.includes("countUnreadActivities"));
+  assert.equal(
+    rendererSource.includes("view.attentionCount + (view.aggregate?.ready"),
+    false,
+    "pet badge must not mix local attention with server aggregate.ready",
+  );
   assert.ok(rendererSource.includes("showContextMeter"));
   assert.ok(rendererSource.includes('setAttribute("data-bubble-theme", bubbleTheme)'));
   assert.ok(rendererSource.includes("resolveRunningCue"));
@@ -3551,6 +3578,7 @@ async function main() {
   assert.ok(petAppSource.includes("trayCounts.hidden = hideCounts"));
   assert.ok(petAppSource.includes("悬停打开快捷菜单"));
   assert.ok(petAppSource.includes("--pet-intent-gutter"));
+  assert.ok(petAppSource.includes("--pet-status-gutter"));
   assert.equal(petAppSource.includes("petButton.title"), false);
   assert.ok(petAppSource.includes('removeAttribute("title")'));
   assert.ok(petAppSource.includes("markAllVisibleRead"));
@@ -3601,6 +3629,7 @@ async function main() {
   assert.ok(petAppJs.includes("markRead"));
   assert.ok(petAppJs.includes("selectPrimaryActivity"));
   assert.ok(petAppJs.includes("resolvePrimaryContextMeter"));
+  assert.ok(petAppJs.includes("countUnreadActivities"));
   assert.ok(petAppJs.includes("showContextMeter"));
   assert.ok(petAppJs.includes("data-running-cue"));
   assert.ok(petAppJs.includes("scheduleRunningCueUpdate"));

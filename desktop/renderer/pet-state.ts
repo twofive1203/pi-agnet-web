@@ -1115,6 +1115,17 @@ export function filterProjectGroups(
   });
 }
 
+/** Desktop-local unread count for the pet badge. Never use server aggregate.ready. */
+export function countUnreadActivities(
+  groups: readonly DesktopProjectGroup[],
+): number {
+  let count = 0;
+  for (const group of groups) {
+    count += group.counts.unread;
+  }
+  return count;
+}
+
 export function countActivitiesByFilter(
   groups: readonly DesktopProjectGroup[],
 ): DesktopActivityFilterCounts {

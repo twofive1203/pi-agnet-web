@@ -74,12 +74,14 @@ export const PET_LAYOUT_BASE = {
   bubbleReserve: 40,
   /** Small left shift so hover chips sit beside the sprite instead of on the face. */
   intentGutter: 24,
-  /** intent 24 + surface 112 */
-  stackWidth: 136,
+  /** Right shift so the status chip can sit off the sprite without clipping. */
+  statusGutter: 16,
+  /** intent 24 + surface 112 + status 16 */
+  stackWidth: 152,
   /** chrome 18 + gap 6 + surface 112 + bubble 40 */
   stackHeight: 176,
-  /** Collapsed chrome + small left shift + avatar + root padding — must fit without clipping. */
-  collapsedWidth: 148,
+  /** Collapsed chrome + gutters + avatar + root padding — must fit without clipping. */
+  collapsedWidth: 164,
   collapsedHeight: 196,
   trayWidth: 360,
   trayHeight: 480,
@@ -115,6 +117,7 @@ export type PetLayoutSpec = {
   surfaceSize: number;
   bubbleReserve: number;
   intentGutter: number;
+  statusGutter: number;
   stackWidth: number;
   stackHeight: number;
   clickTargetWidth: number;
@@ -138,7 +141,8 @@ export function resolvePetLayoutSpec(scale: DesktopPetScale = "medium"): PetLayo
   const surfaceSize = scaleLayoutPx(PET_LAYOUT_BASE.surfaceSize, factor);
   const bubbleReserve = scaleLayoutPx(PET_LAYOUT_BASE.bubbleReserve, factor);
   const intentGutter = scaleLayoutPx(PET_LAYOUT_BASE.intentGutter, factor);
-  const stackWidth = surfaceSize + intentGutter;
+  const statusGutter = scaleLayoutPx(PET_LAYOUT_BASE.statusGutter, factor);
+  const stackWidth = surfaceSize + intentGutter + statusGutter;
   const stackHeight = chromeHeight + stackGap + surfaceSize + bubbleReserve;
   return {
     scale,
@@ -148,6 +152,7 @@ export function resolvePetLayoutSpec(scale: DesktopPetScale = "medium"): PetLayo
     surfaceSize,
     bubbleReserve,
     intentGutter,
+    statusGutter,
     stackWidth,
     stackHeight,
     clickTargetWidth: surfaceSize,

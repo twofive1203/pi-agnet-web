@@ -24,6 +24,7 @@ import {
 import {
   connectionBannerText,
   countActivitiesByFilter,
+  countUnreadActivities,
   createInitialIdleSleepState,
   createInitialPetBubbleState,
   createInitialPetCelebrateState,
@@ -1245,7 +1246,7 @@ export function renderPetApp(root: Document = document): {
     scheduleBubbleExpiry(bubbleNow);
 
     if (petBadge) {
-      const count = view.attentionCount + (view.aggregate?.ready ?? 0);
+      const count = countUnreadActivities(view.projects);
       if (count > 0) {
         petBadge.hidden = false;
         petBadge.textContent = String(count > 99 ? "99+" : count);
@@ -1362,6 +1363,7 @@ export function renderPetApp(root: Document = document): {
       petRoot.style.setProperty("--pet-surface-size", `${spec.surfaceSize}px`);
       petRoot.style.setProperty("--pet-bubble-reserve", `${spec.bubbleReserve}px`);
       petRoot.style.setProperty("--pet-intent-gutter", `${spec.intentGutter}px`);
+      petRoot.style.setProperty("--pet-status-gutter", `${spec.statusGutter}px`);
     }
     if (petButton) {
       petButton.setAttribute("aria-expanded", view.trayOpen ? "true" : "false");

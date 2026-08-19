@@ -471,12 +471,14 @@
     bubbleReserve: 40,
     /** Small left shift so hover chips sit beside the sprite instead of on the face. */
     intentGutter: 24,
-    /** intent 24 + surface 112 */
-    stackWidth: 136,
+    /** Right shift so the status chip can sit off the sprite without clipping. */
+    statusGutter: 16,
+    /** intent 24 + surface 112 + status 16 */
+    stackWidth: 152,
     /** chrome 18 + gap 6 + surface 112 + bubble 40 */
     stackHeight: 176,
-    /** Collapsed chrome + small left shift + avatar + root padding — must fit without clipping. */
-    collapsedWidth: 148,
+    /** Collapsed chrome + gutters + avatar + root padding — must fit without clipping. */
+    collapsedWidth: 164,
     collapsedHeight: 196,
     trayWidth: 360,
     trayHeight: 480
@@ -505,7 +507,8 @@
     const surfaceSize = scaleLayoutPx(PET_LAYOUT_BASE.surfaceSize, factor);
     const bubbleReserve = scaleLayoutPx(PET_LAYOUT_BASE.bubbleReserve, factor);
     const intentGutter = scaleLayoutPx(PET_LAYOUT_BASE.intentGutter, factor);
-    const stackWidth = surfaceSize + intentGutter;
+    const statusGutter = scaleLayoutPx(PET_LAYOUT_BASE.statusGutter, factor);
+    const stackWidth = surfaceSize + intentGutter + statusGutter;
     const stackHeight = chromeHeight + stackGap + surfaceSize + bubbleReserve;
     return {
       scale,
@@ -515,6 +518,7 @@
       surfaceSize,
       bubbleReserve,
       intentGutter,
+      statusGutter,
       stackWidth,
       stackHeight,
       clickTargetWidth: surfaceSize,
@@ -1666,6 +1670,13 @@
       );
       return activities.length > 0 ? [{ ...group, activities }] : [];
     });
+  }
+  function countUnreadActivities(groups) {
+    let count = 0;
+    for (const group of groups) {
+      count += group.counts.unread;
+    }
+    return count;
   }
   function countActivitiesByFilter(groups) {
     const counts = {
@@ -3501,7 +3512,7 @@
       }
       scheduleBubbleExpiry(bubbleNow);
       if (petBadge) {
-        const count = view.attentionCount + (view.aggregate?.ready ?? 0);
+        const count = countUnreadActivities(view.projects);
         if (count > 0) {
           petBadge.hidden = false;
           petBadge.textContent = String(count > 99 ? "99+" : count);
@@ -3604,6 +3615,7 @@
         petRoot.style.setProperty("--pet-surface-size", `${spec.surfaceSize}px`);
         petRoot.style.setProperty("--pet-bubble-reserve", `${spec.bubbleReserve}px`);
         petRoot.style.setProperty("--pet-intent-gutter", `${spec.intentGutter}px`);
+        petRoot.style.setProperty("--pet-status-gutter", `${spec.statusGutter}px`);
       }
       if (petButton) {
         petButton.setAttribute("aria-expanded", view.trayOpen ? "true" : "false");

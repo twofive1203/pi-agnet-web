@@ -182,11 +182,12 @@ select {
      Defining them on :root freezes calc() against the unscaled 1.0 token. */
   --pet-root-pad: calc(6px * var(--pet-scale));
   --pet-stack-gap: calc(6px * var(--pet-scale));
-  --pet-stack-width: calc(136px * var(--pet-scale));
+  --pet-stack-width: calc(152px * var(--pet-scale));
   --pet-chrome-height: calc(18px * var(--pet-scale));
   --pet-surface-size: calc(112px * var(--pet-scale));
   --pet-bubble-reserve: calc(40px * var(--pet-scale));
   --pet-intent-gutter: calc(24px * var(--pet-scale));
+  --pet-status-gutter: calc(16px * var(--pet-scale));
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -239,6 +240,7 @@ select {
   width: var(--pet-stack-width);
   padding-top: var(--pet-bubble-reserve);
   padding-left: var(--pet-intent-gutter);
+  padding-right: var(--pet-status-gutter);
 }
 
 .activity-tray[hidden],
@@ -259,7 +261,7 @@ select {
   display: none !important;
 }
 
-/* Frameless recovery chrome is quiet until hover/focus. */
+/* Frameless recovery chrome stays hidden until hover/focus. */
 .pet-chrome {
   position: relative;
   z-index: 10;
@@ -269,7 +271,8 @@ select {
   justify-content: center;
   width: var(--pet-surface-size);
   height: var(--pet-chrome-height);
-  opacity: 0.18;
+  opacity: 0;
+  pointer-events: none;
   transition: opacity 160ms ease;
 }
 
@@ -277,6 +280,7 @@ select {
 .pet-stack:focus-within .pet-chrome,
 .pet-chrome.is-dragging {
   opacity: 1;
+  pointer-events: auto;
 }
 
 .pet-chrome-btn,
@@ -694,29 +698,16 @@ select {
   content: "";
 }
 
+/* Hidden: the foot label already carries the same state (空闲/运行中/已完成). */
 .pet-glyph {
-  position: absolute;
-  top: 8px;
-  right: 5px;
-  z-index: 6;
-  display: grid;
-  place-items: center;
-  min-width: 23px;
-  height: 23px;
-  padding: 0 5px;
-  border: 2px solid var(--ink);
-  border-radius: 999px;
-  background: var(--paper);
-  color: var(--ink);
-  font-size: 13px;
-  font-weight: 800;
-  line-height: 1;
+  display: none;
 }
 
+/* Just under the speech bubble, at the top-right of the sprite box. */
 .pet-label {
   position: absolute;
-  right: 4px;
-  bottom: 0;
+  top: 20px;
+  right: -16px;
   z-index: 7;
   max-width: 72px;
   padding: 2px 7px;
@@ -787,10 +778,12 @@ select {
   white-space: normal;
 }
 
+/* Unread/attention count. Keep it off the avatar's top-right so it does not
+   sit on the status glyph (·/✓/›/?/!). */
 .pet-badge {
   position: absolute;
-  top: 25px;
-  right: 0;
+  top: 4px;
+  left: 0;
   z-index: 9;
   display: grid;
   place-items: center;
