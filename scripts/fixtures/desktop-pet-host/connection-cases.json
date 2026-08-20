@@ -1,0 +1,481 @@
+{
+  "schemaVersion": 1,
+  "host": "desktop-pet-connection",
+  "constants": {
+    "product": "snail-pi-web",
+    "observerProtocolVersion": 1,
+    "quickSessionCapability": "quick_session",
+    "defaultPort": 62666,
+    "defaultOrigin": "http://127.0.0.1:62666",
+    "startCommand": "spi --no-open"
+  },
+  "forbiddenWebViewKeys": [
+    "token",
+    "observerToken",
+    "accessKey",
+    "password",
+    "pid",
+    "servicePid",
+    "cwd",
+    "firstMessage",
+    "prompt"
+  ],
+  "reducerCases": [
+    {
+      "id": "initial-probe",
+      "port": 62666,
+      "now": 1,
+      "steps": [],
+      "expected": {
+        "status": "probing",
+        "origin": "http://127.0.0.1:62666",
+        "port": 62666,
+        "startCommand": "spi --no-open",
+        "instanceId": null,
+        "reasonCode": null,
+        "detail": null,
+        "attempt": 0,
+        "resetNotificationBaseline": true,
+        "quickSessionAvailable": false
+      }
+    },
+    {
+      "id": "connection-refused-is-service-not-running",
+      "port": 62666,
+      "now": 1,
+      "steps": [{ "kind": "event", "at": 2, "event": { "type": "connection_refused" } }],
+      "expected": {
+        "status": "service-not-running",
+        "origin": "http://127.0.0.1:62666",
+        "port": 62666,
+        "startCommand": "spi --no-open",
+        "instanceId": null,
+        "reasonCode": "connection_refused",
+        "detail": null,
+        "attempt": 0,
+        "resetNotificationBaseline": true,
+        "quickSessionAvailable": false
+      }
+    },
+    {
+      "id": "retry-after-refused-reprobes",
+      "port": 62666,
+      "now": 1,
+      "steps": [
+        { "kind": "event", "at": 2, "event": { "type": "connection_refused" } },
+        { "kind": "event", "at": 3, "event": { "type": "retry" } }
+      ],
+      "expected": {
+        "status": "probing",
+        "origin": "http://127.0.0.1:62666",
+        "port": 62666,
+        "startCommand": "spi --no-open",
+        "instanceId": null,
+        "reasonCode": null,
+        "detail": null,
+        "attempt": 1,
+        "resetNotificationBaseline": true,
+        "quickSessionAvailable": false
+      }
+    },
+    {
+      "id": "connected-then-ack-clears-baseline",
+      "port": 62666,
+      "now": 1,
+      "steps": [
+        {
+          "kind": "event",
+          "at": 4,
+          "event": { "type": "connected", "instanceId": "inst-a", "resetBaseline": true }
+        },
+        { "kind": "acknowledge", "at": 5 }
+      ],
+      "expected": {
+        "status": "connected",
+        "origin": "http://127.0.0.1:62666",
+        "port": 62666,
+        "startCommand": "spi --no-open",
+        "instanceId": "inst-a",
+        "reasonCode": null,
+        "detail": null,
+        "attempt": 0,
+        "resetNotificationBaseline": false,
+        "quickSessionAvailable": false
+      }
+    },
+    {
+      "id": "stream-lost-while-connected-reconnects",
+      "port": 62666,
+      "now": 1,
+      "steps": [
+        { "kind": "event", "at": 4, "event": { "type": "connected", "instanceId": "inst-a" } },
+        { "kind": "acknowledge", "at": 5 },
+        { "kind": "event", "at": 6, "event": { "type": "stream_lost", "detail": "sse drop" } }
+      ],
+      "expected": {
+        "status": "reconnecting",
+        "origin": "http://127.0.0.1:62666",
+        "port": 62666,
+        "startCommand": "spi --no-open",
+        "instanceId": "inst-a",
+        "reasonCode": "stream_error",
+        "detail": "sse drop",
+        "attempt": 1,
+        "resetNotificationBaseline": false,
+        "quickSessionAvailable": false
+      }
+    },
+    {
+      "id": "legacy-server-mode-incompatible",
+      "port": 62666,
+      "now": 1,
+      "steps": [
+        { "kind": "event", "at": 7, "event": { "type": "incompatible", "reasonCode": "server_mode" } }
+      ],
+      "expected": {
+        "status": "incompatible",
+        "origin": "http://127.0.0.1:62666",
+        "port": 62666,
+        "startCommand": "spi --no-open",
+        "instanceId": null,
+        "reasonCode": "server_mode",
+        "detail": null,
+        "attempt": 0,
+        "resetNotificationBaseline": true,
+        "quickSessionAvailable": false
+      }
+    },
+    {
+      "id": "quit-is-local-only",
+      "port": 62666,
+      "now": 1,
+      "steps": [
+        { "kind": "event", "at": 4, "event": { "type": "connected", "instanceId": "inst-a" } },
+        { "kind": "event", "at": 8, "event": { "type": "quit" } }
+      ],
+      "expected": {
+        "status": "service-not-running",
+        "origin": "http://127.0.0.1:62666",
+        "port": 62666,
+        "startCommand": "spi --no-open",
+        "instanceId": null,
+        "reasonCode": null,
+        "detail": "desktop_quit",
+        "attempt": 0,
+        "resetNotificationBaseline": true,
+        "quickSessionAvailable": false
+      }
+    },
+    {
+      "id": "instance-change-forces-baseline",
+      "port": 62666,
+      "now": 10,
+      "steps": [
+        { "kind": "event", "at": 11, "event": { "type": "connected", "instanceId": "a" } },
+        { "kind": "acknowledge", "at": 12 },
+        { "kind": "event", "at": 13, "event": { "type": "connected", "instanceId": "b" } }
+      ],
+      "expected": {
+        "status": "connected",
+        "origin": "http://127.0.0.1:62666",
+        "port": 62666,
+        "startCommand": "spi --no-open",
+        "instanceId": "b",
+        "reasonCode": null,
+        "detail": null,
+        "attempt": 0,
+        "resetNotificationBaseline": true,
+        "quickSessionAvailable": false
+      }
+    },
+    {
+      "id": "quick-session-capability-is-additive",
+      "port": 62666,
+      "now": 20,
+      "steps": [
+        {
+          "kind": "event",
+          "at": 21,
+          "event": {
+            "type": "connected",
+            "instanceId": "i1",
+            "quickSessionAvailable": true
+          }
+        }
+      ],
+      "expected": {
+        "status": "connected",
+        "origin": "http://127.0.0.1:62666",
+        "port": 62666,
+        "startCommand": "spi --no-open",
+        "instanceId": "i1",
+        "reasonCode": null,
+        "detail": null,
+        "attempt": 0,
+        "resetNotificationBaseline": true,
+        "quickSessionAvailable": true
+      }
+    },
+    {
+      "id": "network-error-while-connected-reconnects",
+      "port": 62666,
+      "now": 1,
+      "steps": [
+        { "kind": "event", "at": 2, "event": { "type": "connected", "instanceId": "live" } },
+        { "kind": "acknowledge", "at": 3 },
+        { "kind": "event", "at": 4, "event": { "type": "network_error", "detail": "fetch failed" } }
+      ],
+      "expected": {
+        "status": "reconnecting",
+        "origin": "http://127.0.0.1:62666",
+        "port": 62666,
+        "startCommand": "spi --no-open",
+        "instanceId": "live",
+        "reasonCode": "network_error",
+        "detail": "fetch failed",
+        "attempt": 1,
+        "resetNotificationBaseline": false,
+        "quickSessionAvailable": false
+      }
+    },
+    {
+      "id": "token-rejected-resets-baseline",
+      "port": 62666,
+      "now": 1,
+      "steps": [
+        { "kind": "event", "at": 2, "event": { "type": "connected", "instanceId": "live" } },
+        { "kind": "acknowledge", "at": 3 },
+        { "kind": "event", "at": 4, "event": { "type": "token_rejected" } }
+      ],
+      "expected": {
+        "status": "reconnecting",
+        "origin": "http://127.0.0.1:62666",
+        "port": 62666,
+        "startCommand": "spi --no-open",
+        "instanceId": "live",
+        "reasonCode": "token_rejected",
+        "detail": null,
+        "attempt": 1,
+        "resetNotificationBaseline": true,
+        "quickSessionAvailable": false
+      }
+    },
+    {
+      "id": "auth-required-incompatible",
+      "port": 62666,
+      "now": 1,
+      "steps": [
+        {
+          "kind": "event",
+          "at": 2,
+          "event": { "type": "incompatible", "reasonCode": "auth_required", "detail": "missing_access_key" }
+        }
+      ],
+      "expected": {
+        "status": "incompatible",
+        "origin": "http://127.0.0.1:62666",
+        "port": 62666,
+        "startCommand": "spi --no-open",
+        "instanceId": null,
+        "reasonCode": "auth_required",
+        "detail": "missing_access_key",
+        "attempt": 0,
+        "resetNotificationBaseline": true,
+        "quickSessionAvailable": false
+      }
+    }
+  ],
+  "healthCases": [
+    {
+      "id": "health-ok",
+      "httpStatus": 200,
+      "payload": { "ok": true, "instanceId": "i1" },
+      "expected": null
+    },
+    {
+      "id": "health-missing-instance",
+      "httpStatus": 200,
+      "payload": { "ok": true },
+      "expected": { "type": "incompatible", "reasonCode": "health_invalid", "detail": "missing_instance" }
+    },
+    {
+      "id": "health-http-error",
+      "httpStatus": 503,
+      "payload": { "ok": false },
+      "expected": { "type": "incompatible", "reasonCode": "health_http_error", "detail": "http_503" }
+    },
+    {
+      "id": "health-refused",
+      "httpStatus": 0,
+      "payload": {},
+      "expected": { "type": "connection_refused" }
+    }
+  ],
+  "protocolCases": [
+    {
+      "id": "protocol-local-ok-without-capability",
+      "httpStatus": 200,
+      "payload": {
+        "product": "snail-pi-web",
+        "protocolVersion": 1,
+        "mode": "local",
+        "compatible": true,
+        "instanceId": "i1"
+      },
+      "expected": {
+        "type": "protocol_ok",
+        "instanceId": "i1",
+        "authRequired": false,
+        "quickSessionAvailable": false
+      }
+    },
+    {
+      "id": "protocol-local-with-quick-session",
+      "httpStatus": 200,
+      "payload": {
+        "product": "snail-pi-web",
+        "protocolVersion": 1,
+        "mode": "local",
+        "compatible": true,
+        "instanceId": "i1",
+        "capabilities": ["quick_session"]
+      },
+      "expected": {
+        "type": "protocol_ok",
+        "instanceId": "i1",
+        "authRequired": false,
+        "quickSessionAvailable": true
+      }
+    },
+    {
+      "id": "protocol-server-requires-key",
+      "httpStatus": 200,
+      "payload": {
+        "product": "snail-pi-web",
+        "protocolVersion": 1,
+        "mode": "server",
+        "compatible": true,
+        "authRequired": true,
+        "reasonCode": null,
+        "instanceId": "i1"
+      },
+      "expected": {
+        "type": "protocol_ok",
+        "instanceId": "i1",
+        "authRequired": true,
+        "quickSessionAvailable": false
+      }
+    },
+    {
+      "id": "protocol-legacy-server-incompatible",
+      "httpStatus": 200,
+      "payload": {
+        "product": "snail-pi-web",
+        "protocolVersion": 1,
+        "mode": "server",
+        "compatible": false,
+        "reasonCode": "server_mode",
+        "instanceId": "i1"
+      },
+      "expected": { "type": "incompatible", "reasonCode": "server_mode", "detail": "server_mode" }
+    },
+    {
+      "id": "protocol-http-401-auth-required",
+      "httpStatus": 401,
+      "payload": {},
+      "expected": { "type": "incompatible", "reasonCode": "auth_required", "detail": "http_401" }
+    },
+    {
+      "id": "protocol-version-mismatch",
+      "httpStatus": 200,
+      "payload": {
+        "product": "snail-pi-web",
+        "protocolVersion": 999,
+        "mode": "local",
+        "compatible": true,
+        "instanceId": "i1"
+      },
+      "expected": { "type": "incompatible", "reasonCode": "protocol_mismatch", "detail": "got_999" }
+    },
+    {
+      "id": "protocol-product-mismatch",
+      "httpStatus": 200,
+      "payload": {
+        "product": "other",
+        "protocolVersion": 1,
+        "instanceId": "i1"
+      },
+      "expected": { "type": "incompatible", "reasonCode": "product_mismatch", "detail": "other" }
+    }
+  ],
+  "sessionCases": [
+    {
+      "id": "session-ok",
+      "httpStatus": 200,
+      "payload": { "expiresAt": 123, "instanceId": "i1" },
+      "sessionSecret": "fixture-session",
+      "expected": { "ok": true, "expiresAt": 123, "instanceId": "i1" }
+    },
+    {
+      "id": "session-auth-invalid",
+      "httpStatus": 401,
+      "payload": { "error": "Invalid access key", "code": "auth_invalid" },
+      "expected": { "type": "incompatible", "reasonCode": "auth_invalid", "detail": "session_http_401" }
+    },
+    {
+      "id": "session-auth-required",
+      "httpStatus": 401,
+      "payload": { "code": "auth_required" },
+      "expected": { "type": "incompatible", "reasonCode": "auth_required", "detail": "session_http_401" }
+    },
+    {
+      "id": "session-missing-secret",
+      "httpStatus": 200,
+      "payload": { "expiresAt": 123, "instanceId": "i1" },
+      "expected": { "type": "incompatible", "reasonCode": "protocol_invalid", "detail": "missing_token" }
+    }
+  ],
+  "sseCases": [
+    {
+      "id": "reset-envelope",
+      "raw": "{\"type\":\"reset\",\"snapshot\":{\"instanceId\":\"i1\",\"revision\":1,\"reset\":true,\"projects\":[]}}",
+      "expected": { "kind": "snapshot", "reset": true, "includes": "\"instanceId\":\"i1\"" }
+    },
+    {
+      "id": "token-expired-error",
+      "raw": "{\"type\":\"error\",\"code\":\"token_expired\"}",
+      "expected": { "kind": "error", "code": "token_expired" }
+    },
+    {
+      "id": "legacy-plain-snapshot",
+      "raw": "{\"instanceId\":\"x\",\"revision\":3}",
+      "expected": { "kind": "snapshot", "reset": false, "includes": "\"instanceId\":\"x\"" }
+    },
+    {
+      "id": "ignore-unknown-object",
+      "raw": "{\"hello\":\"world\"}",
+      "expected": { "kind": "ignore" }
+    }
+  ],
+  "classifyCases": [
+    {
+      "id": "econnrefused",
+      "message": "connect ECONNREFUSED 127.0.0.1:62666",
+      "expected": { "type": "connection_refused" }
+    },
+    {
+      "id": "generic-network",
+      "message": "fetch failed",
+      "expected": { "type": "network_error" }
+    }
+  ],
+  "urlAllowlist": {
+    "accepted": ["http://127.0.0.1:62666/api/health"],
+    "rejected": [
+      "http://localhost:62666/api/health",
+      "https://example.com/api/health",
+      "http://192.168.1.8:62666/api/health",
+      "http://127.0.0.1:80/api/health"
+    ]
+  }
+}

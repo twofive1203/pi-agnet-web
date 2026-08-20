@@ -1,6 +1,6 @@
 # Snail Pi Pet — Tauri Preview
 
-这是与现有 Electron `desktop/` 完全隔离的 Tauri 2 Windows 可行性 Preview。Phase A 只验证透明桌宠窗口、Tray、拖动、点击穿透恢复、置顶、动态尺寸、焦点和多显示器/DPI；**不连接、启动、停止或监督 `spi`**，也不替代 Electron 发行物。
+这是与现有 Electron `desktop/` 完全隔离的 Tauri 2 Windows Preview。Phase A 验证透明窗口/Tray/拖动/穿透恢复；Phase B 在 Rust 后端接入真实 `spi` Observer，并通过兼容桥复用现有 `desktop/renderer/`。**不启动、停止或监督 `spi`**，也不替代 Electron 发行物。
 
 ## 独立身份
 
@@ -12,7 +12,7 @@
 | 设置文件（后续阶段） | `tauri-preview-settings.json` | `desktop-pet-settings.json` |
 | 构建输出 | `desktop-tauri/dist`, `desktop-tauri/src-tauri/target` | `desktop/out` |
 
-Tauri 的 app-data/config 目录由 Preview identifier 派生。Phase A 不写设置或密钥；后续也不得写 Electron 的 userData 文件。两个实现可以并行安装和运行。
+Tauri 的 app-data/config 目录由 Preview identifier 派生。Phase B 设置只在内存中；不得写 Electron 的 userData 文件。两个实现可以并行安装和运行，并可同时 attach 同一个 `spi`。
 
 ## Windows 前置
 
@@ -32,35 +32,34 @@ npm run desktop:tauri:build-ui
 npm run desktop:tauri:dev
 npm run desktop:tauri:build
 npm run test:desktop-tauri-contract
+npm run test:desktop-tauri-view-parity
 ```
 
-`desktop:tauri:dev` 和 `desktop:tauri:build` 的 before hook 会重建静态 UI。现有 `desktop:build/dev/package/make` 命令仍只操作 Electron。
+`desktop:tauri:dev` / `desktop:tauri:build` 的 before hook 会把现有 `desktop/renderer` 与 `tauri-bridge.ts` 打进 `desktop-tauri/dist`。现有 `desktop:build/dev/package/make` 命令仍只操作 Electron。
 
-## Phase A 操作
+## Phase B 行为
 
-- 拖动蜗牛主体移动透明无边框窗口；
-- “展开 / 收起”动态切换窗口尺寸，并尽量保持最近屏幕角锚点；
-- “开启穿透”后，必须从系统 Tray 选择“取消鼠标穿透”恢复；
-- Tray 可显示、隐藏、切换置顶和退出 Preview；
-- 关闭窗口只隐藏到 Tray；第二实例只唤醒本 Preview；
-- 启动使用 Windows `SW_SHOWNOACTIVATE` 窄适配，用户 Tray/第二实例动作才聚焦。
+- Rust 只连接 `http://127.0.0.1:<port>`；Observer Token / Access Key 只留在后端内存；
+- WebView CSP 仍是 `connect-src 'none'`，前端只消费 `window.snailPet` 安全视图；
+- 现有 renderer 展示 Idle / Running / Needs input / Ready / Blocked 与 Activity tray；
+- 设置、自定义宠物、Deep Link、剪贴板、快速会话写入仍是 Phase C 范围（当前为安全 stub）。
 
-Tauri 的 `set_ignore_cursor_events` 没有 Electron `{ forward: true }` 等价参数。Phase A 不安装全局鼠标 hook，恢复路径始终保留在 Tray。是否满足实际体验必须按验证矩阵实机判断。
+启动 Preview 前请先自行运行 `spi`。关闭 Preview 只断开自己的 HTTP/SSE，不影响 Electron 或服务任务。
 
 ## 权限边界
 
 - capability 只绑定 `pet` 窗口和 `core:default`；
-- 无 shell/process/fs/http/opener 插件权限；
+- 无 shell/process/fs/http/opener 插件权限（HTTP 走普通 Rust crate，不进 WebView）；
 - `withGlobalTauri` 关闭；前端只暴露冻结的 `window.snailPet` allowlist；
-- CSP `connect-src 'none'`；Phase A WebView 不联网；
 - Rust/前端均无服务进程控制代码。
 
-## 当前 Electron 基线与后续测量
+## 验证
 
-计划记录的同机前置基线为 Electron Setup 约 **140.4 MB**、解包应用目录约 **365.1 MB**，而 `app.asar` + 内置宠物资源不足 1 MB。该数字只用于说明 PoC 动机，不是 Tauri 成功结论。
+自动契约、共享 fixture 和 Rust 测试：
 
-Phase D 才测量发行包。届时须在同一机器分别记录 installer、应用专属安装目录、用户数据/WebView2 cache、共享 Evergreen Runtime，并按完整进程树统计 private working set；不得用 `target/` 或仅 Rust host 进程代表发行结果。
+```powershell
+npm run test:desktop-connection
+npm run test:desktop-tauri-contract
+```
 
-## 验证状态
-
-自动契约与 Rust 几何测试不能证明真实 Windows 透明白闪、焦点、虚拟桌面、混合 DPI 或点击穿透转发。Gate A 证据与未执行项维护在 [`../docs/operations/desktop-pet-tauri-validation.md`](../docs/operations/desktop-pet-tauri-validation.md)。
+Gate B 实机证据与未执行项维护在 [`../docs/operations/desktop-pet-tauri-validation.md`](../docs/operations/desktop-pet-tauri-validation.md)。

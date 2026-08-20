@@ -1,15 +1,43 @@
-import { copyFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import * as esbuild from "esbuild";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const rendererRoot = path.join(ROOT, "desktop", "renderer");
 const sourceRoot = path.join(ROOT, "desktop-tauri", "src");
 const outputRoot = path.join(ROOT, "desktop-tauri", "dist");
 
+function injectBridge(html) {
+  if (html.includes("tauri-bridge.js")) return html;
+  if (!html.includes("./pet-app.js")) {
+    throw new Error("desktop/renderer/index.html must load ./pet-app.js");
+  }
+  return html.replace(
+    '<script src="./pet-app.js"></script>',
+    '<script src="./tauri-bridge.js"></script>\n    <script src="./pet-app.js"></script>',
+  );
+}
+
 async function build() {
   mkdirSync(outputRoot, { recursive: true });
-  copyFileSync(path.join(sourceRoot, "index.html"), path.join(outputRoot, "index.html"));
+
+  const rendererHtml = readFileSync(path.join(rendererRoot, "index.html"), "utf8");
+  writeFileSync(path.join(outputRoot, "index.html"), injectBridge(rendererHtml), "utf8");
+  copyFileSync(path.join(rendererRoot, "pet.css"), path.join(outputRoot, "pet.css"));
+
+  await esbuild.build({
+    absWorkingDir: ROOT,
+    entryPoints: [path.join(rendererRoot, "pet-app.tsx")],
+    outfile: path.join(outputRoot, "pet-app.js"),
+    bundle: true,
+    platform: "browser",
+    format: "iife",
+    target: "chrome120",
+    sourcemap: false,
+    loader: { ".png": "dataurl", ".webp": "dataurl" },
+    logLevel: "info",
+  });
 
   await esbuild.build({
     absWorkingDir: ROOT,
@@ -24,11 +52,20 @@ async function build() {
   });
 
   writeFileSync(
-    path.join(outputRoot, ".phase-a-build.json"),
-    `${JSON.stringify({ builtAt: new Date().toISOString(), phase: "A", host: "tauri-preview" }, null, 2)}\n`,
+    path.join(outputRoot, ".phase-b-build.json"),
+    `${JSON.stringify(
+      {
+        builtAt: new Date().toISOString(),
+        phase: "B",
+        host: "tauri-preview",
+        renderer: "desktop/renderer",
+      },
+      null,
+      2,
+    )}\n`,
     "utf8",
   );
-  console.log("desktop-tauri Phase A UI build ok");
+  console.log("desktop-tauri Phase B renderer+bridge build ok");
 }
 
 build().catch((error) => {

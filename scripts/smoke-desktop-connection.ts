@@ -23,6 +23,7 @@ import {
   interpretHealthPayload,
   interpretProtocolPayload,
   interpretSessionPayload,
+  isLoopbackObserverUrl,
   parseSseBlock,
   protocolHasQuickSessionCapability,
   unwrapObserverSseData,
@@ -46,6 +47,12 @@ import {
 } from "../desktop/main/settings-store";
 import { DESKTOP_OBSERVER_PRODUCT } from "../lib/desktop-observer-access";
 import { TASK_OBSERVER_PROTOCOL_VERSION } from "../lib/task-observer-types";
+import {
+  assertFixtureFileHasNoSecrets,
+  publicConnectionState,
+  readDesktopPetHostFixture,
+  type ConnectionFixtureFile,
+} from "./desktop-pet-host-fixtures";
 
 function mockFetch(sequence: Array<{
   match: RegExp;
@@ -692,7 +699,98 @@ async function main() {
   assert.ok(quickClientSrc.includes("DESKTOP_CONTROL_TOKEN_HEADER"));
   assert.equal(/child_process|spawn\(/.test(quickClientSrc), false);
 
+  runSharedConnectionFixtures();
+
   console.log("smoke-desktop-connection: ok");
+}
+
+function runSharedConnectionFixtures(): void {
+  assertFixtureFileHasNoSecrets("connection-cases.json");
+  const fixtures = readDesktopPetHostFixture<ConnectionFixtureFile>("connection-cases.json");
+  assert.equal(fixtures.constants.product, DESKTOP_OBSERVER_PRODUCT);
+  assert.equal(fixtures.constants.observerProtocolVersion, TASK_OBSERVER_PROTOCOL_VERSION);
+  assert.equal(fixtures.constants.defaultOrigin, "http://127.0.0.1:62666");
+
+  for (const testCase of fixtures.reducerCases) {
+    let state = createInitialConnectionState({ port: testCase.port, now: testCase.now });
+    for (const step of testCase.steps) {
+      if (step.kind === "acknowledge") {
+        state = acknowledgeConnectionBaseline(state, step.at);
+        continue;
+      }
+      state = reduceConnectionState(
+        state,
+        step.event as Parameters<typeof reduceConnectionState>[1],
+        step.at,
+      );
+    }
+    assert.deepEqual(
+      publicConnectionState(state),
+      testCase.expected,
+      `reducer fixture ${testCase.id}`,
+    );
+  }
+
+  for (const testCase of fixtures.healthCases) {
+    const actual = interpretHealthPayload(testCase.payload, testCase.httpStatus);
+    assert.deepEqual(actual, testCase.expected, `health fixture ${testCase.id}`);
+  }
+
+  for (const testCase of fixtures.protocolCases) {
+    const actual = interpretProtocolPayload(testCase.payload, testCase.httpStatus);
+    if (testCase.expected.type === "protocol_ok") {
+      assert.equal(actual.type, "protocol_ok", `protocol fixture ${testCase.id}`);
+      if (actual.type === "protocol_ok") {
+        assert.equal(actual.instanceId, testCase.expected.instanceId, testCase.id);
+        assert.equal(actual.authRequired, testCase.expected.authRequired, testCase.id);
+        assert.equal(actual.quickSessionAvailable, testCase.expected.quickSessionAvailable, testCase.id);
+      }
+      continue;
+    }
+    assert.deepEqual(actual, testCase.expected, `protocol fixture ${testCase.id}`);
+  }
+
+  for (const testCase of fixtures.sessionCases) {
+    const payload = { ...testCase.payload };
+    if (testCase.sessionSecret) payload.token = testCase.sessionSecret;
+    const actual = interpretSessionPayload(payload, testCase.httpStatus);
+    if (testCase.expected.ok === true) {
+      assert.equal("ok" in actual && actual.ok, true, `session fixture ${testCase.id}`);
+      if ("ok" in actual && actual.ok) {
+        assert.equal(actual.instanceId, testCase.expected.instanceId, testCase.id);
+        assert.equal(actual.expiresAt, testCase.expected.expiresAt, testCase.id);
+        assert.equal(actual.token, testCase.sessionSecret, testCase.id);
+      }
+      continue;
+    }
+    assert.deepEqual(actual, testCase.expected, `session fixture ${testCase.id}`);
+  }
+
+  for (const testCase of fixtures.sseCases) {
+    const actual = unwrapObserverSseData(testCase.raw);
+    assert.equal(actual.kind, testCase.expected.kind, `sse fixture ${testCase.id}`);
+    if (testCase.expected.reset !== undefined) {
+      assert.equal(actual.reset ?? false, testCase.expected.reset, testCase.id);
+    }
+    if (testCase.expected.code) {
+      assert.equal(actual.code, testCase.expected.code, testCase.id);
+    }
+    if (testCase.expected.includes) {
+      assert.ok(actual.snapshotJson?.includes(testCase.expected.includes), testCase.id);
+    }
+  }
+
+  for (const testCase of fixtures.classifyCases) {
+    const actual = classifyFetchFailure(new Error(testCase.message));
+    assert.equal(actual.type, testCase.expected.type, `classify fixture ${testCase.id}`);
+  }
+
+  for (const url of fixtures.urlAllowlist.accepted) {
+    assert.equal(isLoopbackObserverUrl(url, fixtures.constants.defaultPort), true, url);
+  }
+  for (const url of fixtures.urlAllowlist.rejected) {
+    assert.equal(isLoopbackObserverUrl(url, fixtures.constants.defaultPort), false, url);
+  }
 }
 
 main().catch((error) => {

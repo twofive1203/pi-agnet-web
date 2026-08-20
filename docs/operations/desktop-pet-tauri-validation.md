@@ -2,7 +2,7 @@
 
 - **Date:** 2026-09-17
 - **Plan:** `docs/plans/2026-09-17-001-refactor-tauri-desktop-pet-migration-plan.md`
-- **Scope:** Gate A Windows shell viability（U1–U2）
+- **Scope:** Gate A Windows shell viability（U1–U2）and Gate B secure observer / renderer reuse（U3–U4）
 - **Product:** `SnailPiPet Tauri Preview` / `com.twofive.snail-pi-pet.tauri-preview`
 
 本矩阵独立于 Electron 的 `desktop-pet-validation.md`。自动测试只证明配置隔离、权限静态契约和纯几何；真实 WebView2 窗口、Tray、焦点、点击穿透、多显示器/DPI 和虚拟桌面必须保留实机证据。未实际执行的行必须保持 **未执行**，不能继承 Electron 结果。
@@ -86,4 +86,35 @@ cargo check --manifest-path desktop-tauri/src-tauri/Cargo.toml
 
 ## Gate A conclusion
 
-**Pending / 未执行实机 Gate。** U1–U2 开发和自动契约完成后，仍需填完上述 Windows 10/11、100%/150%/200%、负坐标和虚拟桌面证据。当前不得将 Gate A 标记为 Pass，也不得据此开始 Phase B。
+**Pending / 未执行实机 Gate。** U1–U2 自动契约已完成；Windows 10/11、DPI 和虚拟桌面证据仍需实机填写。Phase B 代码已按旁路策略继续，不把未执行的 Gate A 行记为 Pass。
+
+## Phase B — 安全观察与 renderer 复用
+
+```powershell
+npm run test:desktop-connection
+npm run test:desktop-tauri-view-parity
+npm run test:desktop-tauri-contract
+npm run desktop:tauri:build-ui
+```
+
+| Contract | Expected | Status |
+| --- | --- | --- |
+| Shared connection fixtures | Electron TS 与 Rust reducer/protocol/SSE/url allowlist 同一组输入输出 | 自动覆盖 |
+| Shared view/transition fixtures | 同一 Snapshot 的 presentation/priority/unread/DND/dedupe 结果一致 | 自动覆盖 |
+| WebView privacy | 发给 renderer 的 view 不含 token/accessKey/cwd/prompt/非 loopback URL | 自动覆盖 |
+| Attach-only | Rust observer 无 process/PID/service control；capability 无 http/fs/shell | 自动覆盖 |
+| Renderer reuse | Tauri 构建复用 `desktop/renderer`，只增加 `tauri-bridge.ts` | 自动覆盖 |
+
+## Windows Gate B 矩阵
+
+| ID | 场景 | Pass criteria | Status |
+| --- | --- | --- | --- |
+| TA-B1 | 连接真实 local `spi` | 展示与 Electron 可比的 Idle/Running/Needs input/Ready/Blocked | **未执行** |
+| TA-B2 | DevTools 检查 | Application/Network/事件载荷中不可见 Token、Access Key、cwd、Prompt | **未执行** |
+| TA-B3 | 启停 `spi` | service-not-running / reconnecting 诊断与 Electron 一致；退出 Preview 不影响服务任务 | **未执行** |
+| TA-B4 | instance 变更 | 新 baseline，不把旧 terminal transition 重放成声音 | **未执行** |
+| TA-B5 | server-mode 无密钥 | 显示 Access key 面板；输入错误密钥得到 auth_invalid | **未执行** |
+
+## Gate B conclusion
+
+**Pending / 自动契约已完成，实机未执行。** 不得把 Electron 证据继承为 Tauri Pass。

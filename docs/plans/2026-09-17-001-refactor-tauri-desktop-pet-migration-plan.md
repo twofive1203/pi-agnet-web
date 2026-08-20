@@ -358,7 +358,7 @@ flowchart TB
 
 ---
 
-- [ ] U3. **Implement the secure Rust observer and control transport boundary**
+- [x] U3. **Implement the secure Rust observer and control transport boundary**
 
 **Goal:** 在 Rust 后端复刻健康探测、协议协商、Token mint、SSE、重连和 stale/reset 语义，保持所有凭据与 raw transport 数据不进入 WebView。
 
@@ -406,7 +406,7 @@ flowchart TB
 
 ---
 
-- [ ] U4. **Reach activity-view parity through a compatible renderer bridge**
+- [x] U4. **Reach activity-view parity through a compatible renderer bridge**
 
 **Goal:** 让 Tauri 使用现有桌宠 renderer 展示真实活动，同时用跨实现夹具验证安全视图、优先级、未读、通知候选和 transition dedupe 等关键行为。
 

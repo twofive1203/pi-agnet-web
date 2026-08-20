@@ -209,6 +209,12 @@ export function interpretProtocolPayload(
   };
 }
 
+/** Only the validated loopback origin for the current pet port may be requested. */
+export function isLoopbackObserverUrl(url: string, port: number): boolean {
+  const expected = buildDesktopOrigin(port);
+  return url.startsWith(`${expected}/`) || url === expected;
+}
+
 export function protocolHasQuickSessionCapability(capabilities: unknown): boolean {
   if (!Array.isArray(capabilities)) return false;
   return capabilities.some((item) => item === DESKTOP_PROTOCOL_CAPABILITY_QUICK_SESSION);

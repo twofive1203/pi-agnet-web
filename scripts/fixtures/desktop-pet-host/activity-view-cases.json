@@ -1,0 +1,533 @@
+{
+  "schemaVersion": 1,
+  "host": "desktop-pet-activity-view",
+  "forbiddenWebViewKeys": [
+    "token",
+    "observerToken",
+    "accessKey",
+    "password",
+    "pid",
+    "servicePid",
+    "cwd",
+    "firstMessage",
+    "prompt",
+    "command",
+    "output",
+    "child_process"
+  ],
+  "cases": [
+    {
+      "id": "priority-sort-and-unread",
+      "now": 1755000300000,
+      "connection": {
+        "status": "connected",
+        "origin": "http://127.0.0.1:62666",
+        "port": 62666,
+        "startCommand": "spi --no-open",
+        "instanceId": "inst-u7",
+        "reasonCode": null,
+        "detail": null,
+        "attempt": 0,
+        "resetNotificationBaseline": false,
+        "quickSessionAvailable": false,
+        "updatedAt": 2
+      },
+      "settings": {
+        "activityTrayOpen": false,
+        "acknowledgedTransitionIds": []
+      },
+      "snapshot": {
+        "protocolVersion": 1,
+        "instanceId": "inst-u7",
+        "revision": 4,
+        "generatedAt": "2026-08-12T12:05:00.000Z",
+        "reset": false,
+        "truncation": {
+          "projectsOmitted": 0,
+          "activitiesOmitted": 0,
+          "transitionsOmitted": 0,
+          "childrenOmitted": 0,
+          "encodedBytesLimited": false
+        },
+        "aggregate": {
+          "activeProjects": 3,
+          "activeActivities": 4,
+          "needsInput": 1,
+          "blocked": 1,
+          "ready": 1,
+          "running": 1
+        },
+        "projects": [
+          {
+            "projectKey": "proj-a",
+            "displayName": "Alpha",
+            "counts": { "active": 2, "needsInput": 0, "blocked": 1, "ready": 1 },
+            "activities": [
+              {
+                "taskKey": "agent:ready",
+                "activityId": "act-ready",
+                "source": "agent",
+                "projectKey": "proj-a",
+                "projectName": "Alpha",
+                "title": "Ready task",
+                "executionState": "settled",
+                "outcome": "succeeded",
+                "attention": "none",
+                "progress": { "kind": "indeterminate" },
+                "startedAt": "2026-08-12T11:00:00.000Z",
+                "updatedAt": "2026-08-12T12:01:00.000Z",
+                "endedAt": "2026-08-12T12:01:00.000Z",
+                "children": [],
+                "deepLink": "/?session=ready",
+                "lastTransitionId": "t-ready",
+                "stateVersion": 2
+              },
+              {
+                "taskKey": "agent:blocked",
+                "activityId": "act-blocked",
+                "source": "agent",
+                "projectKey": "proj-a",
+                "projectName": "Alpha",
+                "title": "Blocked task",
+                "executionState": "settled",
+                "outcome": "failed",
+                "attention": "none",
+                "progress": { "kind": "indeterminate" },
+                "startedAt": "2026-08-12T11:10:00.000Z",
+                "updatedAt": "2026-08-12T12:02:00.000Z",
+                "endedAt": "2026-08-12T12:02:00.000Z",
+                "children": [],
+                "deepLink": "/?session=blocked",
+                "lastTransitionId": "t-blocked",
+                "stateVersion": 3
+              }
+            ]
+          },
+          {
+            "projectKey": "proj-b",
+            "displayName": "Beta",
+            "counts": { "active": 1, "needsInput": 0, "blocked": 0, "ready": 0 },
+            "activities": [
+              {
+                "taskKey": "agent:running",
+                "activityId": "act-running",
+                "source": "agent",
+                "projectKey": "proj-b",
+                "projectName": "Beta",
+                "title": "Running task",
+                "executionState": "running",
+                "outcome": null,
+                "attention": "none",
+                "progress": { "kind": "counters", "toolCount": 2, "turnCount": 1 },
+                "startedAt": "2026-08-12T12:00:00.000Z",
+                "updatedAt": "2026-08-12T12:03:00.000Z",
+                "children": [
+                  {
+                    "childId": "child-1",
+                    "title": "Subagent",
+                    "executionState": "running",
+                    "outcome": null,
+                    "attention": "none",
+                    "updatedAt": "2026-08-12T12:03:00.000Z"
+                  }
+                ],
+                "deepLink": "/?session=running",
+                "lastTransitionId": "t-running",
+                "stateVersion": 4
+              }
+            ]
+          },
+          {
+            "projectKey": "proj-c",
+            "displayName": "Gamma",
+            "counts": { "active": 1, "needsInput": 1, "blocked": 0, "ready": 0 },
+            "activities": [
+              {
+                "taskKey": "agent:needs",
+                "activityId": "act-needs",
+                "source": "agent",
+                "projectKey": "proj-c",
+                "projectName": "Gamma",
+                "title": "Need review",
+                "executionState": "running",
+                "outcome": null,
+                "attention": "needs_input",
+                "progress": { "kind": "indeterminate" },
+                "startedAt": "2026-08-12T12:00:00.000Z",
+                "updatedAt": "2026-08-12T12:04:00.000Z",
+                "children": [],
+                "deepLink": "/?session=needs",
+                "lastTransitionId": "t-needs",
+                "stateVersion": 2
+              }
+            ]
+          }
+        ],
+        "recentTransitions": [
+          {
+            "transitionId": "t-needs",
+            "taskKey": "agent:needs",
+            "activityId": "act-needs",
+            "source": "agent",
+            "projectKey": "proj-c",
+            "presentation": "needs_input",
+            "executionState": "running",
+            "outcome": null,
+            "attention": "needs_input",
+            "at": "2026-08-12T12:04:00.000Z"
+          }
+        ],
+        "diagnostics": []
+      },
+      "expected": {
+        "presentation": "needs_input",
+        "connectionStatus": "connected",
+        "connectionReasonCode": null,
+        "origin": "http://127.0.0.1:62666",
+        "port": 62666,
+        "startCommand": "spi --no-open",
+        "canCopyStartCommand": false,
+        "hasAccessKey": false,
+        "needsAccessKey": false,
+        "stale": false,
+        "trayOpen": false,
+        "selectedActivityId": null,
+        "selectedPetKey": "snail:snail-default",
+        "reset": false,
+        "instanceId": "inst-u7",
+        "projectKeys": ["proj-c", "proj-a", "proj-b"],
+        "activityRows": [
+          { "activityId": "act-needs", "presentation": "needs_input", "unread": true, "projectKey": "proj-c" },
+          { "activityId": "act-blocked", "presentation": "blocked", "unread": true, "projectKey": "proj-a" },
+          { "activityId": "act-ready", "presentation": "ready", "unread": true, "projectKey": "proj-a" },
+          { "activityId": "act-running", "presentation": "running", "unread": false, "projectKey": "proj-b" }
+        ],
+        "attentionCount": 2,
+        "activeCount": 2,
+        "quickSessionAvailable": false,
+        "diagnosticCodes": []
+      }
+    },
+    {
+      "id": "connection-overlay-outranks-tasks",
+      "now": 1755000300000,
+      "connection": {
+        "status": "service-not-running",
+        "origin": "http://127.0.0.1:62666",
+        "port": 62666,
+        "startCommand": "spi --no-open",
+        "instanceId": null,
+        "reasonCode": "connection_refused",
+        "detail": null,
+        "attempt": 0,
+        "resetNotificationBaseline": true,
+        "quickSessionAvailable": false,
+        "updatedAt": 8
+      },
+      "settings": {},
+      "snapshot": {
+        "protocolVersion": 1,
+        "instanceId": "inst-u7",
+        "revision": 4,
+        "generatedAt": "2026-08-12T12:05:00.000Z",
+        "reset": false,
+        "truncation": {
+          "projectsOmitted": 0,
+          "activitiesOmitted": 0,
+          "transitionsOmitted": 0,
+          "childrenOmitted": 0,
+          "encodedBytesLimited": false
+        },
+        "aggregate": {
+          "activeProjects": 1,
+          "activeActivities": 1,
+          "needsInput": 1,
+          "blocked": 0,
+          "ready": 0,
+          "running": 0
+        },
+        "projects": [
+          {
+            "projectKey": "proj-c",
+            "displayName": "Gamma",
+            "counts": { "active": 1, "needsInput": 1, "blocked": 0, "ready": 0 },
+            "activities": [
+              {
+                "taskKey": "agent:needs",
+                "activityId": "act-needs",
+                "source": "agent",
+                "projectKey": "proj-c",
+                "projectName": "Gamma",
+                "title": "Need review",
+                "executionState": "running",
+                "outcome": null,
+                "attention": "needs_input",
+                "progress": { "kind": "indeterminate" },
+                "children": [],
+                "deepLink": "/?session=needs",
+                "lastTransitionId": "t-needs",
+                "stateVersion": 2
+              }
+            ]
+          }
+        ],
+        "recentTransitions": [],
+        "diagnostics": []
+      },
+      "stale": true,
+      "expected": {
+        "presentation": "service_not_running",
+        "connectionStatus": "service-not-running",
+        "connectionReasonCode": "connection_refused",
+        "origin": "http://127.0.0.1:62666",
+        "port": 62666,
+        "startCommand": "spi --no-open",
+        "canCopyStartCommand": true,
+        "hasAccessKey": false,
+        "needsAccessKey": false,
+        "stale": true,
+        "trayOpen": false,
+        "selectedActivityId": null,
+        "selectedPetKey": "snail:snail-default",
+        "reset": false,
+        "instanceId": "inst-u7",
+        "projectKeys": ["proj-c"],
+        "activityRows": [
+          { "activityId": "act-needs", "presentation": "needs_input", "unread": true, "projectKey": "proj-c" }
+        ],
+        "attentionCount": 1,
+        "activeCount": 1,
+        "quickSessionAvailable": false,
+        "diagnosticCodes": []
+      }
+    },
+    {
+      "id": "auth-required-shows-key-panel",
+      "now": 1755000300000,
+      "connection": {
+        "status": "incompatible",
+        "origin": "http://127.0.0.1:62666",
+        "port": 62666,
+        "startCommand": "spi --no-open",
+        "instanceId": null,
+        "reasonCode": "auth_required",
+        "detail": "missing_access_key",
+        "attempt": 0,
+        "resetNotificationBaseline": true,
+        "quickSessionAvailable": false,
+        "updatedAt": 2
+      },
+      "settings": {},
+      "hasAccessKey": false,
+      "expected": {
+        "presentation": "disconnected",
+        "connectionStatus": "incompatible",
+        "connectionReasonCode": "auth_required",
+        "origin": "http://127.0.0.1:62666",
+        "port": 62666,
+        "startCommand": "spi --no-open",
+        "canCopyStartCommand": true,
+        "hasAccessKey": false,
+        "needsAccessKey": true,
+        "stale": false,
+        "trayOpen": false,
+        "selectedActivityId": null,
+        "selectedPetKey": "snail:snail-default",
+        "reset": false,
+        "instanceId": null,
+        "projectKeys": [],
+        "activityRows": [],
+        "attentionCount": 0,
+        "activeCount": 0,
+        "quickSessionAvailable": false,
+        "diagnosticCodes": []
+      }
+    },
+    {
+      "id": "empty-snapshot-idle",
+      "now": 1755000300000,
+      "connection": {
+        "status": "connected",
+        "origin": "http://127.0.0.1:62666",
+        "port": 62666,
+        "startCommand": "spi --no-open",
+        "instanceId": "inst-empty",
+        "reasonCode": null,
+        "detail": null,
+        "attempt": 0,
+        "resetNotificationBaseline": false,
+        "quickSessionAvailable": true,
+        "updatedAt": 2
+      },
+      "settings": { "activityTrayOpen": true },
+      "snapshot": {
+        "protocolVersion": 1,
+        "instanceId": "inst-empty",
+        "revision": 1,
+        "generatedAt": "2026-08-12T12:00:00.000Z",
+        "reset": true,
+        "truncation": {
+          "projectsOmitted": 1,
+          "activitiesOmitted": 2,
+          "transitionsOmitted": 0,
+          "childrenOmitted": 0,
+          "encodedBytesLimited": false
+        },
+        "aggregate": {
+          "activeProjects": 0,
+          "activeActivities": 0,
+          "needsInput": 0,
+          "blocked": 0,
+          "ready": 0,
+          "running": 0
+        },
+        "projects": [],
+        "recentTransitions": [],
+        "diagnostics": [
+          { "code": "truncated", "message": "projects omitted" }
+        ]
+      },
+      "reset": true,
+      "expected": {
+        "presentation": "idle",
+        "connectionStatus": "connected",
+        "connectionReasonCode": null,
+        "origin": "http://127.0.0.1:62666",
+        "port": 62666,
+        "startCommand": "spi --no-open",
+        "canCopyStartCommand": false,
+        "hasAccessKey": false,
+        "needsAccessKey": false,
+        "stale": false,
+        "trayOpen": true,
+        "selectedActivityId": null,
+        "selectedPetKey": "snail:snail-default",
+        "reset": true,
+        "instanceId": "inst-empty",
+        "projectKeys": [],
+        "activityRows": [],
+        "attentionCount": 0,
+        "activeCount": 0,
+        "quickSessionAvailable": true,
+        "diagnosticCodes": ["truncated"]
+      }
+    },
+    {
+      "id": "acked-ready-becomes-idle",
+      "now": 1755000300000,
+      "connection": {
+        "status": "connected",
+        "origin": "http://127.0.0.1:62666",
+        "port": 62666,
+        "startCommand": "spi --no-open",
+        "instanceId": "inst-ack",
+        "reasonCode": null,
+        "detail": null,
+        "attempt": 0,
+        "resetNotificationBaseline": false,
+        "quickSessionAvailable": false,
+        "updatedAt": 2
+      },
+      "settings": {
+        "acknowledgedTransitionIds": ["t-ready"]
+      },
+      "snapshot": {
+        "protocolVersion": 1,
+        "instanceId": "inst-ack",
+        "revision": 2,
+        "generatedAt": "2026-08-12T12:05:00.000Z",
+        "reset": false,
+        "truncation": {
+          "projectsOmitted": 0,
+          "activitiesOmitted": 0,
+          "transitionsOmitted": 0,
+          "childrenOmitted": 0,
+          "encodedBytesLimited": false
+        },
+        "aggregate": {
+          "activeProjects": 1,
+          "activeActivities": 1,
+          "needsInput": 0,
+          "blocked": 0,
+          "ready": 1,
+          "running": 0
+        },
+        "projects": [
+          {
+            "projectKey": "proj-a",
+            "displayName": "Alpha",
+            "counts": { "active": 1, "needsInput": 0, "blocked": 0, "ready": 1 },
+            "activities": [
+              {
+                "taskKey": "agent:ready",
+                "activityId": "act-ready",
+                "source": "agent",
+                "projectKey": "proj-a",
+                "projectName": "Alpha",
+                "title": "Ready task",
+                "executionState": "settled",
+                "outcome": "succeeded",
+                "attention": "none",
+                "progress": { "kind": "indeterminate" },
+                "updatedAt": "2026-08-12T12:01:00.000Z",
+                "children": [],
+                "deepLink": "/?session=ready",
+                "lastTransitionId": "t-ready",
+                "stateVersion": 2
+              }
+            ]
+          }
+        ],
+        "recentTransitions": [],
+        "diagnostics": []
+      },
+      "expected": {
+        "presentation": "idle",
+        "connectionStatus": "connected",
+        "connectionReasonCode": null,
+        "origin": "http://127.0.0.1:62666",
+        "port": 62666,
+        "startCommand": "spi --no-open",
+        "canCopyStartCommand": false,
+        "hasAccessKey": false,
+        "needsAccessKey": false,
+        "stale": false,
+        "trayOpen": false,
+        "selectedActivityId": null,
+        "selectedPetKey": "snail:snail-default",
+        "reset": false,
+        "instanceId": "inst-ack",
+        "projectKeys": ["proj-a"],
+        "activityRows": [
+          { "activityId": "act-ready", "presentation": "idle", "unread": false, "projectKey": "proj-a" }
+        ],
+        "attentionCount": 0,
+        "activeCount": 0,
+        "quickSessionAvailable": false,
+        "diagnosticCodes": []
+      }
+    }
+  ],
+  "safetyCases": [
+    {
+      "id": "rejects-secret-key",
+      "payload": { "presentation": "idle", "secretField": "x" },
+      "injectKey": "token",
+      "expectThrow": true
+    },
+    {
+      "id": "rejects-non-loopback-url",
+      "payload": { "presentation": "idle", "origin": "https://example.com" },
+      "expectThrow": true
+    },
+    {
+      "id": "allows-loopback-origin",
+      "payload": {
+        "presentation": "idle",
+        "origin": "http://127.0.0.1:62666",
+        "projects": []
+      },
+      "expectThrow": false
+    }
+  ]
+}

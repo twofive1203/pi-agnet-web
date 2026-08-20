@@ -1,121 +1,133 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
-export type PhaseAShellState = {
-  visible: boolean;
-  clickThrough: boolean;
-  alwaysOnTop: boolean;
-  expanded: boolean;
-  bounds: { x: number; y: number; width: number; height: number } | null;
-  monitorCount: number;
-  scaleFactor: number;
+import type { PetPrefsPatch } from "../../desktop/main/ipc-contract";
+import { isSoundCueKind, type SoundCueKind } from "../../desktop/main/sound-cue";
+
+const STATE_CHANGED = "pet:state-changed";
+const SOUND_CUE = "pet:sound-cue";
+const CUSTOM_PETS_CHANGED = "pet:custom-pets-changed";
+
+type SnailPetBridge = {
+  getState: () => Promise<unknown>;
+  onStateChanged: (handler: (view: unknown) => void) => () => void;
+  toggleTray: () => void;
+  hideToTray: () => void;
+  moveBy: (dx: number, dy: number) => void;
+  selectActivity: (activityId: string) => void;
+  markRead: (activityId: string) => void;
+  markAllRead: () => void;
+  openActivity: (activityId: string) => Promise<unknown>;
+  openExternalUrl: (href: string) => Promise<unknown>;
+  retry: () => void;
+  copyStartCommand: () => Promise<unknown>;
+  setPrefs: (patch: PetPrefsPatch) => void;
+  restoreDefaultPosition: () => void;
+  setReducedMotion: (value: boolean) => void;
+  setAccessKey: (accessKey: string) => Promise<unknown>;
+  clearAccessKey: () => Promise<unknown>;
+  onSoundCue: (handler: (cue: SoundCueKind) => void) => () => void;
+  getCustomPets: () => Promise<unknown>;
+  onCustomPetsChanged: (handler: (payload: unknown) => void) => () => void;
+  openCustomPetsDir: () => Promise<unknown>;
+  rescanCustomPets: () => void;
+  getPetAsset: (petKey: string) => Promise<unknown>;
+  listQuickSessionProjects: () => Promise<unknown>;
+  listQuickSessionModels: (projectRef: string) => Promise<unknown>;
+  createQuickSession: (input: {
+    projectRef: string;
+    message: string;
+    requestId: string;
+    provider?: string;
+    modelId?: string;
+  }) => Promise<unknown>;
 };
 
-export type PhaseASnailPetBridge = {
-  getState: () => Promise<PhaseAShellState>;
-  toggleTray: () => Promise<PhaseAShellState>;
-  hideToTray: () => Promise<PhaseAShellState>;
-  moveBy: (dx: number, dy: number) => Promise<PhaseAShellState>;
-  setClickThrough: (enabled: boolean) => Promise<PhaseAShellState>;
-  setAlwaysOnTop: (enabled: boolean) => Promise<PhaseAShellState>;
-  showPreview: () => Promise<PhaseAShellState>;
-  quitPreview: () => Promise<void>;
+const listeners = new Map<string, Set<(payload: unknown) => void>>();
+const unlistens: UnlistenFn[] = [];
+
+function subscribe(eventName: string, handler: (payload: unknown) => void): () => void {
+  let bucket = listeners.get(eventName);
+  if (!bucket) {
+    bucket = new Set();
+    listeners.set(eventName, bucket);
+    void listen(eventName, (event) => {
+      const current = listeners.get(eventName);
+      if (!current) return;
+      for (const listener of current) listener(event.payload);
+    }).then((unlisten) => {
+      unlistens.push(unlisten);
+    });
+  }
+  bucket.add(handler);
+  return () => {
+    bucket?.delete(handler);
+  };
+}
+
+const bridge: SnailPetBridge = {
+  getState: () => invoke("get_state"),
+  onStateChanged: (handler) => subscribe(STATE_CHANGED, handler),
+  toggleTray: () => {
+    void invoke("toggle_tray");
+  },
+  hideToTray: () => {
+    void invoke("hide_to_tray");
+  },
+  moveBy: (dx, dy) => {
+    void invoke("move_by", { dx, dy });
+  },
+  selectActivity: (activityId) => {
+    void invoke("select_activity", { activityId });
+  },
+  markRead: (activityId) => {
+    void invoke("mark_read", { activityId });
+  },
+  markAllRead: () => {
+    void invoke("mark_all_read");
+  },
+  openActivity: (activityId) => invoke("open_activity", { activityId }),
+  openExternalUrl: (href) => invoke("open_external_url", { href }),
+  retry: () => {
+    void invoke("retry");
+  },
+  copyStartCommand: () => invoke("copy_start_command"),
+  setPrefs: (patch) => {
+    void invoke("set_prefs", { patch });
+  },
+  restoreDefaultPosition: () => {
+    void invoke("restore_default_position");
+  },
+  setReducedMotion: (value) => {
+    void invoke("set_reduced_motion", { value });
+  },
+  setAccessKey: (accessKey) => invoke("set_access_key", { accessKey }),
+  clearAccessKey: () => invoke("clear_access_key"),
+  onSoundCue: (handler) =>
+    subscribe(SOUND_CUE, (payload) => {
+      const kind =
+        Boolean(payload) &&
+        typeof payload === "object" &&
+        (payload as { kind?: unknown }).kind;
+      if (!isSoundCueKind(kind)) return;
+      handler(kind);
+    }),
+  getCustomPets: () => invoke("get_custom_pets"),
+  onCustomPetsChanged: (handler) => subscribe(CUSTOM_PETS_CHANGED, handler),
+  openCustomPetsDir: () => invoke("open_custom_pets_dir"),
+  rescanCustomPets: () => {
+    void invoke("rescan_custom_pets");
+  },
+  getPetAsset: (petKey) => invoke("get_pet_asset", { petKey }),
+  listQuickSessionProjects: () => invoke("list_quick_session_projects"),
+  listQuickSessionModels: (projectRef) => invoke("list_quick_session_models", { projectRef }),
+  createQuickSession: (input) => invoke("create_quick_session", { ...input }),
 };
 
-const bridge: PhaseASnailPetBridge = Object.freeze({
-  getState: () => invoke<PhaseAShellState>("get_shell_state"),
-  toggleTray: () => invoke<PhaseAShellState>("toggle_expanded"),
-  hideToTray: () => invoke<PhaseAShellState>("hide_to_tray"),
-  moveBy: (dx, dy) => invoke<PhaseAShellState>("move_by", { dx, dy }),
-  setClickThrough: (clickThrough) =>
-    invoke<PhaseAShellState>("set_click_through", { clickThrough }),
-  setAlwaysOnTop: (alwaysOnTop) =>
-    invoke<PhaseAShellState>("set_always_on_top", { alwaysOnTop }),
-  showPreview: () => invoke<PhaseAShellState>("show_preview"),
-  quitPreview: () => invoke<void>("quit_preview"),
-});
-
-// Keep the existing host shape without exposing Tauri's generic invoke/event/window objects.
 Object.defineProperty(window, "snailPet", {
-  value: bridge,
+  value: Object.freeze(bridge),
   configurable: false,
   enumerable: true,
   writable: false,
 });
-// Static contract marker: the Phase B renderer will consume window.snailPet only.
 void "window.snailPet";
-
-const status = document.querySelector<HTMLElement>("#shell-status");
-const panel = document.querySelector<HTMLElement>("#phase-a-panel");
-const pet = document.querySelector<HTMLElement>("#pet-drag-surface");
-const topToggle = document.querySelector<HTMLInputElement>("#always-on-top");
-
-function render(state: PhaseAShellState): void {
-  if (status) {
-    const bounds = state.bounds
-      ? `${state.bounds.x},${state.bounds.y} · ${state.bounds.width}×${state.bounds.height}`
-      : "bounds unavailable";
-    status.textContent = `${state.monitorCount} monitor · ${Math.round(state.scaleFactor * 100)}% · ${bounds}`;
-  }
-  panel?.classList.toggle("is-expanded", state.expanded);
-  if (topToggle) topToggle.checked = state.alwaysOnTop;
-}
-
-async function run(action: () => Promise<PhaseAShellState>): Promise<void> {
-  try {
-    render(await action());
-  } catch (error) {
-    if (status) status.textContent = error instanceof Error ? error.message : String(error);
-  }
-}
-
-document.querySelector("#toggle-size")?.addEventListener("click", () => void run(bridge.toggleTray));
-document.querySelector("#hide-preview")?.addEventListener("click", () => void run(bridge.hideToTray));
-document.querySelector("#enable-click-through")?.addEventListener("click", () => {
-  const hint = document.querySelector<HTMLElement>("#recovery-hint");
-  if (hint) hint.hidden = false;
-  void run(() => bridge.setClickThrough(true));
-});
-topToggle?.addEventListener("change", () => void run(() => bridge.setAlwaysOnTop(topToggle.checked)));
-
-let dragPointerId: number | null = null;
-let previousPoint: { x: number; y: number } | null = null;
-let dragInFlight = false;
-let queuedDelta = { dx: 0, dy: 0 };
-
-async function flushDrag(): Promise<void> {
-  if (dragInFlight || (queuedDelta.dx === 0 && queuedDelta.dy === 0)) return;
-  dragInFlight = true;
-  const delta = queuedDelta;
-  queuedDelta = { dx: 0, dy: 0 };
-  try {
-    render(await bridge.moveBy(delta.dx, delta.dy));
-  } finally {
-    dragInFlight = false;
-    void flushDrag();
-  }
-}
-
-pet?.addEventListener("pointerdown", (event) => {
-  if (event.button !== 0) return;
-  dragPointerId = event.pointerId;
-  previousPoint = { x: event.clientX, y: event.clientY };
-  pet.setPointerCapture(event.pointerId);
-  pet.classList.add("is-dragging");
-});
-pet?.addEventListener("pointermove", (event) => {
-  if (event.pointerId !== dragPointerId || !previousPoint) return;
-  queuedDelta.dx += event.clientX - previousPoint.x;
-  queuedDelta.dy += event.clientY - previousPoint.y;
-  previousPoint = { x: event.clientX, y: event.clientY };
-  void flushDrag();
-});
-const endDrag = (event: PointerEvent): void => {
-  if (event.pointerId !== dragPointerId) return;
-  dragPointerId = null;
-  previousPoint = null;
-  pet?.classList.remove("is-dragging");
-};
-pet?.addEventListener("pointerup", endDrag);
-pet?.addEventListener("pointercancel", endDrag);
-
-void run(bridge.getState);

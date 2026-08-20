@@ -55,8 +55,12 @@ const rustLib = read("desktop-tauri/src-tauri/src/lib.rs");
 const rustMain = read("desktop-tauri/src-tauri/src/main.rs");
 const windowController = read("desktop-tauri/src-tauri/src/window_controller.rs");
 const trayController = read("desktop-tauri/src-tauri/src/tray_controller.rs");
+const observerClient = read("desktop-tauri/src-tauri/src/observer_client.rs");
+const connectionState = read("desktop-tauri/src-tauri/src/connection_state.rs");
+const activityView = read("desktop-tauri/src-tauri/src/activity_view.rs");
+const appState = read("desktop-tauri/src-tauri/src/app_state.rs");
 const bridge = read("desktop-tauri/src/tauri-bridge.ts");
-const html = read("desktop-tauri/src/index.html");
+const rendererHtml = read("desktop/renderer/index.html");
 const buildScript = read("scripts/build-desktop-tauri.mjs");
 const gitignore = read(".gitignore");
 const forgeConfig = read("forge.config.ts");
@@ -106,7 +110,7 @@ assert.equal(petWindow.focus, false);
 assert.equal(petWindow.resizable, false);
 assert.match(config.app?.security?.csp ?? "", /connect-src\s+'none'/);
 
-assert.equal(capabilities.identifier, "phase-a-pet-shell");
+assert.match(capabilities.identifier, /phase-[ab]-/);
 assert.deepEqual(capabilities.windows, ["pet"]);
 const capabilityText = capabilities.permissions.join("\n").toLowerCase();
 for (const forbidden of ["shell", "process", "fs:", "http:", "opener", "*"]) {
@@ -115,17 +119,28 @@ for (const forbidden of ["shell", "process", "fs:", "http:", "opener", "*"]) {
 
 assert.match(bridge, /Object\.freeze/);
 assert.match(bridge, /window\.snailPet/);
+assert.match(bridge, /onStateChanged/);
+assert.match(bridge, /getState/);
 assert.doesNotMatch(bridge, /__TAURI_INTERNALS__|__TAURI__/, "bridge must not depend on a global generic invoke surface");
-assert.match(html, /Content-Security-Policy/);
-assert.match(html, /connect-src 'none'/);
-assert.match(html, /tauri-bridge\.js/);
+assert.match(rendererHtml, /Content-Security-Policy/);
+assert.match(rendererHtml, /connect-src 'none'/);
+assert.match(rendererHtml, /pet-app\.js/);
+assert.match(buildScript, /desktop\/renderer/);
+assert.match(buildScript, /tauri-bridge/);
 assert.match(buildScript, /desktop-tauri["'],\s*["']dist/);
+assert.match(connectionState, /127\.0\.0\.1/);
+assert.match(observerClient, /is_loopback_observer_url/);
+assert.match(activityView, /assert_renderer_view_safe/);
+assert.match(appState, /pet:state-changed/);
 
 for (const [label, source] of [
   ["Rust lib", rustLib],
   ["Rust main", rustMain],
   ["window controller", windowController],
   ["tray controller", trayController],
+  ["observer client", observerClient],
+  ["connection state", connectionState],
+  ["app state", appState],
   ["Tauri bridge", bridge],
 ] as const) {
   assertNoServiceControl(source, label);

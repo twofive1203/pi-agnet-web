@@ -35,6 +35,11 @@ npm run dev     # http://localhost:62666
 | `npm run desktop:build` | Bundle desktop pet main/preload JS for Electron (`scripts/build-desktop-pet.mjs`). |
 | `npm run desktop:preview` | Generate the local visual-state matrix under `desktop/.preview/` (not packaged). |
 | `npm run desktop:dev` | Build if needed and launch the pet under Electron (does not start `spi`). |
+| `npm run desktop:tauri:build-ui` | Bundle the shared renderer plus Tauri `window.snailPet` bridge into `desktop-tauri/dist`. |
+| `npm run desktop:tauri:dev` | Isolated Tauri Preview (`tauri dev`); does not start or stop `spi`. |
+| `npm run desktop:tauri:build` | Isolated Tauri Preview installer/app build. |
+| `npm run test:desktop-tauri-contract` | Tauri isolation/capability/attach-only contract + shared fixture parity + Rust tests. |
+| `npm run test:desktop-tauri-view-parity` | Electron/Tauri shared activity-view and transition fixture smoke. |
 | `npm run test:scale-baseline` | Usage/allowed-roots/session-index/long-JSONL scale baseline + accelerated-path correctness smoke. |
 | `npm run test:usage` | Usage timeline projection + parent/subagent/archive accounting smoke suite. |
 | `npm run test:session-tabs` | Same-session multi-tab write-lock coordination pure smoke. |

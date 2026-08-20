@@ -1,0 +1,430 @@
+{
+  "schemaVersion": 1,
+  "host": "desktop-pet-transitions",
+  "cases": [
+    {
+      "id": "baseline-reset-emits-nothing-and-seeds",
+      "now": 1755000300000,
+      "resetBaseline": true,
+      "appInBackground": true,
+      "settings": {
+        "dndEnabled": false,
+        "notification": { "needsInput": true, "blocked": true, "completion": "always" },
+        "sound": { "masterEnabled": true, "needsInput": true, "completion": true },
+        "notifiedTransitionIds": [],
+        "soundedTransitionIds": []
+      },
+      "snapshot": {
+        "protocolVersion": 1,
+        "instanceId": "inst-t",
+        "revision": 1,
+        "generatedAt": "2026-08-12T12:05:00.000Z",
+        "reset": true,
+        "truncation": {
+          "projectsOmitted": 0,
+          "activitiesOmitted": 0,
+          "transitionsOmitted": 0,
+          "childrenOmitted": 0,
+          "encodedBytesLimited": false
+        },
+        "aggregate": {
+          "activeProjects": 1,
+          "activeActivities": 2,
+          "needsInput": 1,
+          "blocked": 0,
+          "ready": 1,
+          "running": 0
+        },
+        "projects": [
+          {
+            "projectKey": "proj-a",
+            "displayName": "Alpha",
+            "counts": { "active": 2, "needsInput": 1, "blocked": 0, "ready": 1 },
+            "activities": [
+              {
+                "taskKey": "agent:needs",
+                "activityId": "act-needs",
+                "source": "agent",
+                "projectKey": "proj-a",
+                "projectName": "Alpha",
+                "title": "Need review",
+                "executionState": "running",
+                "outcome": null,
+                "attention": "needs_input",
+                "progress": { "kind": "indeterminate" },
+                "children": [],
+                "deepLink": "/?session=needs",
+                "lastTransitionId": "t-needs",
+                "stateVersion": 1
+              },
+              {
+                "taskKey": "agent:ready",
+                "activityId": "act-ready",
+                "source": "agent",
+                "projectKey": "proj-a",
+                "projectName": "Alpha",
+                "title": "Ready task",
+                "executionState": "settled",
+                "outcome": "succeeded",
+                "attention": "none",
+                "progress": { "kind": "indeterminate" },
+                "children": [],
+                "deepLink": "/?session=ready",
+                "lastTransitionId": "t-ready",
+                "stateVersion": 1
+              }
+            ]
+          }
+        ],
+        "recentTransitions": [
+          {
+            "transitionId": "t-needs",
+            "taskKey": "agent:needs",
+            "activityId": "act-needs",
+            "source": "agent",
+            "projectKey": "proj-a",
+            "presentation": "needs_input",
+            "executionState": "running",
+            "outcome": null,
+            "attention": "needs_input",
+            "at": "2026-08-12T12:04:00.000Z"
+          },
+          {
+            "transitionId": "t-ready",
+            "taskKey": "agent:ready",
+            "activityId": "act-ready",
+            "source": "agent",
+            "projectKey": "proj-a",
+            "presentation": "ready",
+            "executionState": "settled",
+            "outcome": "succeeded",
+            "attention": "none",
+            "at": "2026-08-12T12:03:00.000Z"
+          }
+        ],
+        "diagnostics": []
+      },
+      "expected": {
+        "notifyPresentations": [],
+        "notifyTransitionIds": [],
+        "soundCues": [],
+        "notifiedTransitionIds": ["t-needs", "t-ready"],
+        "soundedTransitionIds": ["t-needs", "t-ready"]
+      }
+    },
+    {
+      "id": "live-emits-attention-and-completion-once",
+      "now": 1755000300000,
+      "resetBaseline": false,
+      "appInBackground": true,
+      "settings": {
+        "dndEnabled": false,
+        "notification": { "needsInput": true, "blocked": true, "completion": "always" },
+        "sound": { "masterEnabled": true, "needsInput": true, "completion": true },
+        "notifiedTransitionIds": [],
+        "soundedTransitionIds": []
+      },
+      "snapshot": {
+        "protocolVersion": 1,
+        "instanceId": "inst-t",
+        "revision": 2,
+        "generatedAt": "2026-08-12T12:05:00.000Z",
+        "reset": false,
+        "truncation": {
+          "projectsOmitted": 0,
+          "activitiesOmitted": 0,
+          "transitionsOmitted": 0,
+          "childrenOmitted": 0,
+          "encodedBytesLimited": false
+        },
+        "aggregate": {
+          "activeProjects": 1,
+          "activeActivities": 3,
+          "needsInput": 1,
+          "blocked": 1,
+          "ready": 1,
+          "running": 0
+        },
+        "projects": [
+          {
+            "projectKey": "proj-a",
+            "displayName": "Alpha",
+            "counts": { "active": 3, "needsInput": 1, "blocked": 1, "ready": 1 },
+            "activities": [
+              {
+                "taskKey": "agent:needs",
+                "activityId": "act-needs",
+                "source": "agent",
+                "projectKey": "proj-a",
+                "projectName": "Alpha",
+                "title": "Need review",
+                "executionState": "running",
+                "outcome": null,
+                "attention": "needs_input",
+                "progress": { "kind": "indeterminate" },
+                "children": [],
+                "deepLink": "/?session=needs",
+                "lastTransitionId": "t-needs",
+                "stateVersion": 1
+              },
+              {
+                "taskKey": "agent:ready",
+                "activityId": "act-ready",
+                "source": "agent",
+                "projectKey": "proj-a",
+                "projectName": "Alpha",
+                "title": "Ready task",
+                "executionState": "settled",
+                "outcome": "succeeded",
+                "attention": "none",
+                "progress": { "kind": "indeterminate" },
+                "children": [],
+                "deepLink": "/?session=ready",
+                "lastTransitionId": "t-ready",
+                "stateVersion": 1
+              },
+              {
+                "taskKey": "agent:blocked",
+                "activityId": "act-blocked",
+                "source": "agent",
+                "projectKey": "proj-a",
+                "projectName": "Alpha",
+                "title": "Blocked task",
+                "executionState": "settled",
+                "outcome": "failed",
+                "attention": "none",
+                "progress": { "kind": "indeterminate" },
+                "children": [],
+                "deepLink": "/?session=blocked",
+                "lastTransitionId": "t-blocked",
+                "stateVersion": 1
+              }
+            ]
+          }
+        ],
+        "recentTransitions": [
+          {
+            "transitionId": "t-needs",
+            "taskKey": "agent:needs",
+            "activityId": "act-needs",
+            "source": "agent",
+            "projectKey": "proj-a",
+            "presentation": "needs_input",
+            "executionState": "running",
+            "outcome": null,
+            "attention": "needs_input",
+            "at": "2026-08-12T12:04:00.000Z"
+          },
+          {
+            "transitionId": "t-blocked",
+            "taskKey": "agent:blocked",
+            "activityId": "act-blocked",
+            "source": "agent",
+            "projectKey": "proj-a",
+            "presentation": "blocked",
+            "executionState": "settled",
+            "outcome": "failed",
+            "attention": "none",
+            "at": "2026-08-12T12:03:30.000Z"
+          },
+          {
+            "transitionId": "t-ready",
+            "taskKey": "agent:ready",
+            "activityId": "act-ready",
+            "source": "agent",
+            "projectKey": "proj-a",
+            "presentation": "ready",
+            "executionState": "settled",
+            "outcome": "succeeded",
+            "attention": "none",
+            "at": "2026-08-12T12:03:00.000Z"
+          }
+        ],
+        "diagnostics": []
+      },
+      "expected": {
+        "notifyPresentations": ["needs_input", "blocked", "ready"],
+        "notifyTransitionIds": ["t-needs", "t-blocked", "t-ready"],
+        "soundCues": ["attention", "completion"],
+        "notifiedTransitionIds": ["t-needs", "t-blocked", "t-ready"],
+        "soundedTransitionIds": ["t-needs", "t-ready"]
+      }
+    },
+    {
+      "id": "dedupe-does-not-replay",
+      "now": 1755000300000,
+      "resetBaseline": false,
+      "appInBackground": true,
+      "settings": {
+        "dndEnabled": false,
+        "notification": { "needsInput": true, "blocked": true, "completion": "always" },
+        "sound": { "masterEnabled": true, "needsInput": true, "completion": true },
+        "notifiedTransitionIds": ["t-needs", "t-ready"],
+        "soundedTransitionIds": ["t-needs", "t-ready"]
+      },
+      "snapshot": {
+        "protocolVersion": 1,
+        "instanceId": "inst-t",
+        "revision": 3,
+        "generatedAt": "2026-08-12T12:06:00.000Z",
+        "reset": false,
+        "truncation": {
+          "projectsOmitted": 0,
+          "activitiesOmitted": 0,
+          "transitionsOmitted": 0,
+          "childrenOmitted": 0,
+          "encodedBytesLimited": false
+        },
+        "aggregate": {
+          "activeProjects": 1,
+          "activeActivities": 2,
+          "needsInput": 1,
+          "blocked": 0,
+          "ready": 1,
+          "running": 0
+        },
+        "projects": [
+          {
+            "projectKey": "proj-a",
+            "displayName": "Alpha",
+            "counts": { "active": 2, "needsInput": 1, "blocked": 0, "ready": 1 },
+            "activities": [
+              {
+                "taskKey": "agent:needs",
+                "activityId": "act-needs",
+                "source": "agent",
+                "projectKey": "proj-a",
+                "projectName": "Alpha",
+                "title": "Need review",
+                "executionState": "running",
+                "outcome": null,
+                "attention": "needs_input",
+                "progress": { "kind": "indeterminate" },
+                "children": [],
+                "deepLink": "/?session=needs",
+                "lastTransitionId": "t-needs",
+                "stateVersion": 1
+              }
+            ]
+          }
+        ],
+        "recentTransitions": [
+          {
+            "transitionId": "t-needs",
+            "taskKey": "agent:needs",
+            "activityId": "act-needs",
+            "source": "agent",
+            "projectKey": "proj-a",
+            "presentation": "needs_input",
+            "executionState": "running",
+            "outcome": null,
+            "attention": "needs_input",
+            "at": "2026-08-12T12:04:00.000Z"
+          },
+          {
+            "transitionId": "t-ready",
+            "taskKey": "agent:ready",
+            "activityId": "act-ready",
+            "source": "agent",
+            "projectKey": "proj-a",
+            "presentation": "ready",
+            "executionState": "settled",
+            "outcome": "succeeded",
+            "attention": "none",
+            "at": "2026-08-12T12:03:00.000Z"
+          }
+        ],
+        "diagnostics": []
+      },
+      "expected": {
+        "notifyPresentations": [],
+        "notifyTransitionIds": [],
+        "soundCues": [],
+        "notifiedTransitionIds": ["t-needs", "t-ready"],
+        "soundedTransitionIds": ["t-needs", "t-ready"]
+      }
+    },
+    {
+      "id": "dnd-consumes-without-replay",
+      "now": 1755000300000,
+      "resetBaseline": false,
+      "appInBackground": true,
+      "settings": {
+        "dndEnabled": true,
+        "notification": { "needsInput": true, "blocked": true, "completion": "always" },
+        "sound": { "masterEnabled": true, "needsInput": true, "completion": true },
+        "notifiedTransitionIds": [],
+        "soundedTransitionIds": []
+      },
+      "snapshot": {
+        "protocolVersion": 1,
+        "instanceId": "inst-t",
+        "revision": 4,
+        "generatedAt": "2026-08-12T12:05:00.000Z",
+        "reset": false,
+        "truncation": {
+          "projectsOmitted": 0,
+          "activitiesOmitted": 0,
+          "transitionsOmitted": 0,
+          "childrenOmitted": 0,
+          "encodedBytesLimited": false
+        },
+        "aggregate": {
+          "activeProjects": 1,
+          "activeActivities": 1,
+          "needsInput": 1,
+          "blocked": 0,
+          "ready": 0,
+          "running": 0
+        },
+        "projects": [
+          {
+            "projectKey": "proj-a",
+            "displayName": "Alpha",
+            "counts": { "active": 1, "needsInput": 1, "blocked": 0, "ready": 0 },
+            "activities": [
+              {
+                "taskKey": "agent:needs",
+                "activityId": "act-needs",
+                "source": "agent",
+                "projectKey": "proj-a",
+                "projectName": "Alpha",
+                "title": "Need review",
+                "executionState": "running",
+                "outcome": null,
+                "attention": "needs_input",
+                "progress": { "kind": "indeterminate" },
+                "children": [],
+                "deepLink": "/?session=needs",
+                "lastTransitionId": "t-needs",
+                "stateVersion": 1
+              }
+            ]
+          }
+        ],
+        "recentTransitions": [
+          {
+            "transitionId": "t-needs",
+            "taskKey": "agent:needs",
+            "activityId": "act-needs",
+            "source": "agent",
+            "projectKey": "proj-a",
+            "presentation": "needs_input",
+            "executionState": "running",
+            "outcome": null,
+            "attention": "needs_input",
+            "at": "2026-08-12T12:04:00.000Z"
+          }
+        ],
+        "diagnostics": []
+      },
+      "expected": {
+        "notifyPresentations": [],
+        "notifyTransitionIds": [],
+        "soundCues": [],
+        "notifiedTransitionIds": ["t-needs"],
+        "soundedTransitionIds": ["t-needs"]
+      }
+    }
+  ]
+}
