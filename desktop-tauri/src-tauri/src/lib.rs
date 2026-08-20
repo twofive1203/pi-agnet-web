@@ -567,14 +567,6 @@ pub fn run() {
                         state.set_app_in_background(!focused);
                     }
                 }
-                WindowEvent::ScaleFactorChanged { .. } => {
-                    if let (Some(window), Some(state)) = (
-                        app_handle.get_webview_window("pet"),
-                        app_handle.try_state::<std::sync::Arc<AppState>>(),
-                    ) {
-                        let _ = state.recover_window_position(&window);
-                    }
-                }
                 _ => {}
             });
 

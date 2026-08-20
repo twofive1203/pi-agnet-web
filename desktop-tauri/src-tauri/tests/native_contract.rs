@@ -204,6 +204,13 @@ fn virtual_desktop_union_spans_mixed_layouts() {
 }
 
 #[test]
+fn mixed_dpi_crossing_does_not_run_display_topology_recovery() {
+    let host_source = include_str!("../src/lib.rs");
+    assert!(host_source.contains("spawn_monitor_watcher"));
+    assert!(!host_source.contains("WindowEvent::ScaleFactorChanged"));
+}
+
+#[test]
 fn tray_always_has_click_through_recovery_and_preview_only_quit() {
     assert_eq!(DISABLE_CLICK_THROUGH, "disable-click-through");
     assert_eq!(QUIT_PREVIEW, "quit-preview");
