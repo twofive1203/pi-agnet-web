@@ -1358,6 +1358,35 @@
   function resolveRunningCueVisual(cue) {
     return RUNNING_CUE_VISUALS[cue];
   }
+  var RUNNING_TOOL_DETAIL = {
+    read: "\u6B63\u5728\u8BFB\u53D6",
+    grep: "\u6B63\u5728\u641C\u7D22",
+    find: "\u6B63\u5728\u67E5\u627E\u6587\u4EF6",
+    ls: "\u6B63\u5728\u6D4F\u89C8\u76EE\u5F55",
+    edit: "\u6B63\u5728\u7F16\u8F91",
+    write: "\u6B63\u5728\u5199\u5165",
+    bash: "\u6B63\u5728\u8FD0\u884C\u547D\u4EE4"
+  };
+  function formatPetActivityDetail(activity, presentation, runningCue = "generic") {
+    if (presentation === "retrying") return "\u6B63\u5728\u91CD\u8BD5";
+    if (presentation !== "running") return petStateLabel(presentation);
+    if (activity?.progress.kind === "counters") {
+      const toolName = activity.progress.currentToolName?.trim();
+      if (toolName) {
+        const action = RUNNING_TOOL_DETAIL[toolName];
+        return action ? `${action} \xB7 ${toolName}` : `\u6B63\u5728\u4F7F\u7528 ${toolName}`;
+      }
+      const activeSubagents = Math.max(
+        0,
+        Math.floor(activity.progress.activeSubagents ?? 0)
+      );
+      if (activeSubagents > 0) {
+        return activeSubagents === 1 ? "\u6B63\u5728\u534F\u4F5C \xB7 1 \u4E2A\u4EFB\u52A1" : `\u6B63\u5728\u534F\u4F5C \xB7 ${activeSubagents} \u4E2A\u4EFB\u52A1`;
+      }
+    }
+    const cueLabel = resolveRunningCueVisual(runningCue).label;
+    return cueLabel === "\u8FD0\u884C\u4E2D" ? "\u6B63\u5728\u6267\u884C" : cueLabel;
+  }
   var RUNNING_CUE_MIN_DWELL_MS = 900;
   var RUNNING_CUE_DEBOUNCE_MS = 250;
   function createInitialRunningCueState() {
@@ -1509,6 +1538,9 @@
     }
     if (signal.presentation === "ready") {
       return signal.unread ? "persistent" : null;
+    }
+    if (signal.presentation === "running" || signal.presentation === "retrying") {
+      return "persistent";
     }
     return null;
   }
@@ -2894,6 +2926,7 @@
     }
     function dismissActivityBubble(activity) {
       if (!activity) return;
+      if (activity.presentation === "running" || activity.presentation === "retrying") return;
       bubbleState = reducePetBubbleState(bubbleState, {
         type: "viewed",
         transitionId: activity.lastTransitionId
@@ -3542,19 +3575,21 @@
       if (celebrateDecision.celebrate) {
         launchConfetti();
       }
+      const connectionDetail = connectionBannerText({
+        connectionStatus: view.connectionStatus,
+        canCopyStartCommand: view.canCopyStartCommand,
+        startCommand: view.startCommand,
+        reasonCode: view.connectionReasonCode
+      });
+      const captionTitle = primary?.title ?? "\u8717\u725B\u6D3E";
+      const captionDetail = primary ? formatPetActivityDetail(primary, state, runningCue) : connectionDetail ?? displayLabel;
       if (petCaption) {
         petCaption.hidden = !bubbleState.visible;
         petCaption.dataset.bubbleMode = bubbleState.mode ?? "hidden";
+        petCaption.setAttribute("aria-label", `${captionTitle}\uFF0C${captionDetail}`);
       }
-      if (petCaptionState) petCaptionState.textContent = displayLabel;
-      if (petCaptionTitle) {
-        petCaptionTitle.textContent = primary?.title ?? connectionBannerText({
-          connectionStatus: view.connectionStatus,
-          canCopyStartCommand: view.canCopyStartCommand,
-          startCommand: view.startCommand,
-          reasonCode: view.connectionReasonCode
-        }) ?? "";
-      }
+      if (petCaptionTitle) petCaptionTitle.textContent = captionTitle;
+      if (petCaptionState) petCaptionState.textContent = captionDetail;
       scheduleBubbleExpiry(bubbleNow);
       if (petBadge) {
         const count = countUnreadActivities(view.projects);

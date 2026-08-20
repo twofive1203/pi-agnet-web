@@ -163,6 +163,7 @@ import {
   formatActiveModel,
   formatActivityProgress,
   formatElapsed,
+  formatPetActivityDetail,
   formatSessionResources,
   getBuiltinPetManifest,
   moveActivitySelection,
@@ -863,6 +864,31 @@ async function main() {
   );
   assert.deepEqual(resolveRunningCueVisual("editing"), { glyph: "✎", label: "编辑中" });
   assert.deepEqual(resolveRunningCueVisual("subagent_many"), { glyph: "2+", label: "协作中" });
+  assert.equal(
+    formatPetActivityDetail(
+      { ...runningCueRow, progress: { kind: "counters", currentToolName: "read" } },
+      "running",
+      "thinking",
+    ),
+    "正在读取 · read",
+  );
+  assert.equal(
+    formatPetActivityDetail(
+      { ...runningCueRow, progress: { kind: "counters", currentToolName: "extension_tool" } },
+      "running",
+    ),
+    "正在使用 extension_tool",
+  );
+  assert.equal(
+    formatPetActivityDetail(
+      { ...runningCueRow, progress: { kind: "counters", activeSubagents: 2 } },
+      "running",
+      "subagent_many",
+    ),
+    "正在协作 · 2 个任务",
+  );
+  assert.equal(formatPetActivityDetail(runningCueRow, "retrying"), "正在重试");
+  assert.equal(formatPetActivityDetail(runningCueRow, "ready"), "已完成");
 
   // --- Running cue dwell/debounce; aggregate states preempt immediately ---
   let cueState = createInitialRunningCueState();
@@ -1008,17 +1034,17 @@ async function main() {
     reset: false,
   };
   bubble = reducePetBubbleState(bubble, { type: "snapshot", signal: runningSignal, now: 100 });
-  assert.equal(bubble.visible, false, "running uses glyph/label instead of a task caption");
-  assert.equal(bubble.mode, null);
+  assert.equal(bubble.visible, true, "running keeps the Codex-style activity card visible");
+  assert.equal(bubble.mode, "persistent");
   assert.equal(bubble.expiresAt, null);
   bubble = reducePetBubbleState(bubble, { type: "tick", now: 4600 });
-  assert.equal(bubble.visible, false);
+  assert.equal(bubble.visible, true, "running activity cards do not expire");
   bubble = reducePetBubbleState(bubble, {
     type: "snapshot",
-    signal: { ...runningSignal, revision: 11 },
+    signal: { ...runningSignal, transitionId: "bubble-running-2", revision: 11 },
     now: 4601,
   });
-  assert.equal(bubble.visible, false, "running revision changes still do not open a caption");
+  assert.equal(bubble.visible, true, "tool transitions keep the running card visible");
 
   bubble = reducePetBubbleState(bubble, {
     type: "snapshot",
@@ -1030,8 +1056,8 @@ async function main() {
     },
     now: 5000,
   });
-  assert.equal(bubble.visible, false, "retrying uses glyph/label instead of a task caption");
-  assert.equal(bubble.mode, null);
+  assert.equal(bubble.visible, true, "retrying keeps the activity card visible");
+  assert.equal(bubble.mode, "persistent");
 
   const needsSignal = {
     ...runningSignal,
@@ -1080,7 +1106,7 @@ async function main() {
     },
     now: 1000003,
   });
-  assert.equal(bubble.visible, false, "reset baseline does not replay running bubble");
+  assert.equal(bubble.visible, true, "an active running card remains visible after reset/baseline");
   bubble = reducePetBubbleState(bubble, {
     type: "snapshot",
     signal: {
@@ -1809,7 +1835,7 @@ async function main() {
   assert.equal(dndDiagBubble.visible, true, "disconnected stays visible under DND");
   assert.equal(dndDiagBubble.mode, "persistent");
 
-  // Running never opens a task caption, with or without DND.
+  // Running cards obey DND and do not replay the suppressed transition.
   let dndRunBubble = createInitialPetBubbleState();
   dndRunBubble = reducePetBubbleState(dndRunBubble, {
     type: "snapshot",
@@ -1824,7 +1850,7 @@ async function main() {
     },
     now: 1000,
   });
-  assert.equal(dndRunBubble.visible, false, "running does not open a caption under DND");
+  assert.equal(dndRunBubble.visible, false, "DND suppresses the running activity card");
   dndRunBubble = reducePetBubbleState(dndRunBubble, {
     type: "snapshot",
     signal: {
@@ -1838,7 +1864,21 @@ async function main() {
     },
     now: 2000,
   });
-  assert.equal(dndRunBubble.visible, false, "running still has no caption after DND off");
+  assert.equal(dndRunBubble.visible, false, "the suppressed running transition does not replay");
+  dndRunBubble = reducePetBubbleState(dndRunBubble, {
+    type: "snapshot",
+    signal: {
+      presentation: "running",
+      transitionId: null,
+      revision: 32,
+      instanceId: "inst-u7",
+      unread: false,
+      dndEnabled: false,
+      reset: false,
+    },
+    now: 3000,
+  });
+  assert.equal(dndRunBubble.visible, true, "a fresh tool transition reopens the running card");
 
   // --- Sound cues (U4a): defaults, migration, gating, DND, cooldown, dedupe ---
   // Fresh install never beeps; per-event switches default on (preserved when master off).
@@ -3215,6 +3255,11 @@ async function main() {
   assert.ok(petAppSrc.includes("pref-dnd"));
   assert.ok(petAppSrc.includes("setPrefs({ dndEnabled: prefDnd.checked })"));
   assert.ok(petAppSrc.includes("dndEnabled: view.dndEnabled === true"));
+  assert.ok(petAppSrc.includes("formatPetActivityDetail(primary, state, runningCue)"));
+  assert.ok(
+    petAppSrc.includes('activity.presentation === "running" || activity.presentation === "retrying"'),
+    "opening an active task must not dismiss its persistent activity card",
+  );
   assert.ok(petAppSrc.includes("pref-right-click-menu"));
   assert.ok(petAppSrc.includes("setPrefs({ rightClickAggregatedMenu: prefRightClickMenu.checked })"));
   assert.ok(petAppSrc.includes("resolvePetIntentMenuPresentation"));
@@ -3367,6 +3412,10 @@ async function main() {
   assert.ok(html.includes('id="btn-pet-quick-session"'));
   assert.ok(html.includes('id="btn-pet-settings"'));
   assert.ok(html.includes('id="pet-caption"'));
+  assert.ok(
+    html.indexOf('id="pet-caption-title"') < html.indexOf('id="pet-caption-state"'),
+    "the activity card must show its title before the action detail",
+  );
   assert.ok(html.includes('id="settings-panel"'));
   assert.ok(html.includes('id="auth-panel"'));
   assert.ok(

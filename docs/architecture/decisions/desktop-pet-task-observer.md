@@ -367,6 +367,7 @@ The renderer is a dedicated small bundle. The desktop package contains the pet o
 - Multiple versioned built-in pet manifests map required states to assets/static fallback.
 - Persist pet selection and position.
 - Honor reduced motion and provide non-color state cues.
+- Running/Retrying keep a Codex-style activity card visible above the pet: the first line is the explicit task/session title, and the second line is a bounded action/tool summary derived from `currentToolName` (never tool arguments or paths). Ready keeps the same title and changes the detail to completion state until read.
 - The pet-side compact resource ring uses only the U1 primary activity's `sessionResources.context.percent`. Settled/ready Agent primaries may show their own percent; non-Agent, missing/`null`/invalid, or stale snapshots hide the ring instead of borrowing another activity or drawing a fake 0%.
 - Tray always offers show, disable click-through, DND toggle (checked state), Retry, Open WebUI and Quit.
 
@@ -399,7 +400,7 @@ The renderer is a dedicated small bundle. The desktop package contains the pet o
 ### Manual Do Not Disturb (U7a)
 
 - `dndEnabled` is a desktop-local presentation setting (default false) toggled from the settings panel and the tray menu (checked state); both surfaces share the same persisted flag.
-- While enabled, proactive surfaces are gated through the shared `dnd-policy`: Electron notifications and task-state bubbles (Needs input / Blocked / Ready / Running / Retrying) are suppressed. Connection diagnostics (service not running / disconnected / reconnecting) always remain visible.
+- While enabled, proactive surfaces are gated through the shared `dnd-policy`: Electron notifications and task-state bubbles/cards (Needs input / Blocked / Ready / Running / Retrying) are suppressed. Connection diagnostics (service not running / disconnected / reconnecting) always remain visible.
 - Enabling DND closes the current suppressible bubble immediately; transitions during DND are treated as silently handled (notified/dismissed LRUs advance), so disabling DND, renderer rebuilds, or snapshot replays never re-alert.
 - DND never writes `acknowledgedTransitionIds` (no mark-read), never changes the 8-state presentation, pet visuals, glyphs, Activity tray unread projection, retry/deep-link/mark-read actions, or server/observer state.
 - DND does not switch the pet to idle/sleeping and is independent of reduced motion.

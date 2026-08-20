@@ -34,6 +34,7 @@ import {
   formatActiveModel,
   formatActivityProgress,
   formatElapsed,
+  formatPetActivityDetail,
   formatSessionResources,
   getPetManifest,
   getPetRuntimeProfile,
@@ -508,6 +509,8 @@ export function renderPetApp(root: Document = document): {
 
   function dismissActivityBubble(activity: DesktopActivityRow | null): void {
     if (!activity) return;
+    // Opening an active task must not dismiss the always-on activity card.
+    if (activity.presentation === "running" || activity.presentation === "retrying") return;
     bubbleState = reducePetBubbleState(bubbleState, {
       type: "viewed",
       transitionId: activity.lastTransitionId,
@@ -1268,19 +1271,23 @@ export function renderPetApp(root: Document = document): {
     if (celebrateDecision.celebrate) {
       launchConfetti();
     }
+    const connectionDetail = connectionBannerText({
+      connectionStatus: view.connectionStatus,
+      canCopyStartCommand: view.canCopyStartCommand,
+      startCommand: view.startCommand,
+      reasonCode: view.connectionReasonCode,
+    });
+    const captionTitle = primary?.title ?? "蜗牛派";
+    const captionDetail = primary
+      ? formatPetActivityDetail(primary, state, runningCue)
+      : connectionDetail ?? displayLabel;
     if (petCaption) {
       petCaption.hidden = !bubbleState.visible;
       petCaption.dataset.bubbleMode = bubbleState.mode ?? "hidden";
+      petCaption.setAttribute("aria-label", `${captionTitle}，${captionDetail}`);
     }
-    if (petCaptionState) petCaptionState.textContent = displayLabel;
-    if (petCaptionTitle) {
-      petCaptionTitle.textContent = primary?.title ?? connectionBannerText({
-        connectionStatus: view.connectionStatus,
-        canCopyStartCommand: view.canCopyStartCommand,
-        startCommand: view.startCommand,
-        reasonCode: view.connectionReasonCode,
-      }) ?? "";
-    }
+    if (petCaptionTitle) petCaptionTitle.textContent = captionTitle;
+    if (petCaptionState) petCaptionState.textContent = captionDetail;
     scheduleBubbleExpiry(bubbleNow);
 
     if (petBadge) {

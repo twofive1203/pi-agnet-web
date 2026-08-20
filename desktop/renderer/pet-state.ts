@@ -516,6 +516,46 @@ export function resolveRunningCueVisual(
   return RUNNING_CUE_VISUALS[cue];
 }
 
+const RUNNING_TOOL_DETAIL: Readonly<Record<string, string>> = {
+  read: "正在读取",
+  grep: "正在搜索",
+  find: "正在查找文件",
+  ls: "正在浏览目录",
+  edit: "正在编辑",
+  write: "正在写入",
+  bash: "正在运行命令",
+};
+
+/** Build the compact Codex-style action line from bounded observer fields only. */
+export function formatPetActivityDetail(
+  activity: DesktopActivityRow | null,
+  presentation: PetVisualState,
+  runningCue: RunningCue = "generic",
+): string {
+  if (presentation === "retrying") return "正在重试";
+  if (presentation !== "running") return petStateLabel(presentation);
+
+  if (activity?.progress.kind === "counters") {
+    const toolName = activity.progress.currentToolName?.trim();
+    if (toolName) {
+      const action = RUNNING_TOOL_DETAIL[toolName];
+      return action ? `${action} · ${toolName}` : `正在使用 ${toolName}`;
+    }
+    const activeSubagents = Math.max(
+      0,
+      Math.floor(activity.progress.activeSubagents ?? 0),
+    );
+    if (activeSubagents > 0) {
+      return activeSubagents === 1
+        ? "正在协作 · 1 个任务"
+        : `正在协作 · ${activeSubagents} 个任务`;
+    }
+  }
+
+  const cueLabel = resolveRunningCueVisual(runningCue).label;
+  return cueLabel === "运行中" ? "正在执行" : cueLabel;
+}
+
 export const RUNNING_CUE_MIN_DWELL_MS = 900;
 export const RUNNING_CUE_DEBOUNCE_MS = 250;
 
@@ -755,8 +795,9 @@ function petBubbleMode(signal: PetBubbleSignal): PetBubbleMode {
   if (signal.presentation === "ready") {
     return signal.unread ? "persistent" : null;
   }
-  // Running/retrying already have the glyph and foot label. A transient task
-  // caption repeated the same status and covered the hover intent chips.
+  if (signal.presentation === "running" || signal.presentation === "retrying") {
+    return "persistent";
+  }
   return null;
 }
 

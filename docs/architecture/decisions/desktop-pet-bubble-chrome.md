@@ -32,7 +32,7 @@ Desktop pets are chibi companions. The chrome should look like stickers the snai
 
 | Surface | Before | After |
 | --- | --- | --- |
-| Status caption | Dark 9px HUD in the top-left of the 112px stage | Cream comic balloon with ink outline, state pill, and tail |
+| Status caption | Dark 9px HUD in the top-left of the 112px stage | Cream comic balloon with ink outline, bold task title, muted action line, and tail |
 | Hover intent | Dark rectangular menu | Separate paper pill chips |
 | Activity tray / settings | Dark glass stack | Warm paper card, pill header, grouped `settings-card` stickers |
 | Activity rows | Flat dark rows + glow glyphs | Outlined mini-bubbles with state-tinted sticker glyphs |
@@ -48,7 +48,7 @@ Native form controls follow `color-scheme: light` so checkboxes and selects matc
 - No new fonts (CSP `font-src 'self' data:`).
 - Reduced-motion still collapses the pop animation through the existing global gate.
 - Hover/focus on `.pet-stack` hides the caption and foot label so the intent chips are the only chrome.
-- Running/Retrying do not open a task caption; the glyph and foot label already carry the work cue.
+- Running/Retrying keep the task caption visible in a Codex-style two-line card: explicit task/session title first, then a safe action/tool summary. Hover/focus still hides it so the intent chips remain unobstructed.
 - The pet body does not use a native `title` tooltip. Transparent frameless windows clip it over the sprite. Shortcuts live in the settings 操作 hint and the button `aria-label`.
 
 ## Non-goals
