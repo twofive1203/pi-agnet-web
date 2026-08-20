@@ -163,7 +163,7 @@ fn hide_to_tray(
     if let Ok(bounds) = window_controller::current_bounds(&window) {
         app.persist_window_position(bounds.x, bounds.y);
     }
-    window.hide().map_err(|error| error.to_string())?;
+    window_controller::hide_to_tray(&window)?;
     app.set_app_in_background(true);
     store
         .0
@@ -551,7 +551,7 @@ pub fn run() {
                 WindowEvent::CloseRequested { api, .. } => {
                     api.prevent_close();
                     if let Some(window) = app_handle.get_webview_window("pet") {
-                        let _ = window.hide();
+                        let _ = window_controller::hide_to_tray(&window);
                     }
                     if let Some(state) = app_handle.try_state::<std::sync::Arc<AppState>>() {
                         state.set_app_in_background(true);

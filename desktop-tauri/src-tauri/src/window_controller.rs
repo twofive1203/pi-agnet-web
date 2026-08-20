@@ -629,6 +629,27 @@ pub fn set_click_through(window: &WebviewWindow, click_through: bool) -> Result<
         .map_err(|error| error.to_string())
 }
 
+#[cfg(windows)]
+pub fn hide_to_tray(window: &WebviewWindow) -> Result<(), String> {
+    use windows::Win32::UI::WindowsAndMessaging::{ShowWindow, SW_HIDE};
+
+    let hwnd = window.hwnd().map_err(|error| error.to_string())?;
+    // Tauri's dispatcher hide is a no-op for this transparent, always-on-top WebView2 window.
+    // Use the same narrow HWND boundary as no-activate show/resize so tray hiding is immediate.
+    unsafe {
+        let _ = ShowWindow(hwnd, SW_HIDE);
+    }
+    if window.is_visible().unwrap_or(true) {
+        return Err("window remained visible after native hide".to_string());
+    }
+    Ok(())
+}
+
+#[cfg(not(windows))]
+pub fn hide_to_tray(window: &WebviewWindow) -> Result<(), String> {
+    window.hide().map_err(|error| error.to_string())
+}
+
 pub fn show_user(window: &WebviewWindow) -> Result<(), String> {
     set_click_through(window, false)?;
     window.unminimize().map_err(|error| error.to_string())?;

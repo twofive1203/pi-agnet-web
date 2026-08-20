@@ -214,6 +214,15 @@ fn tray_always_has_click_through_recovery_and_preview_only_quit() {
 }
 
 #[test]
+fn hide_to_tray_uses_the_windows_native_visibility_path() {
+    let window_source = include_str!("../src/window_controller.rs");
+    let host_source = include_str!("../src/lib.rs");
+    assert!(window_source.contains("SW_HIDE"));
+    assert!(window_source.contains("pub fn hide_to_tray"));
+    assert!(host_source.contains("window_controller::hide_to_tray(&window)"));
+}
+
+#[test]
 fn click_through_uses_tauri_api_without_global_input_hooks() {
     let source = include_str!("../src/window_controller.rs");
     assert!(source.contains("set_ignore_cursor_events"));
