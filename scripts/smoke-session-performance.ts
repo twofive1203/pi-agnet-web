@@ -26,6 +26,7 @@ const {
   readSessionPerformanceSummary,
   recordPerformanceSample,
 } = await import("../lib/session-performance");
+const { selectLatestSessionPerformance } = await import("../lib/session-performance-client");
 
 function assistantMessage(overrides: {
   provider?: string;
@@ -150,6 +151,47 @@ try {
   assert.equal(projected.byModel[1].avgTps, 12.5);
   assert.deepEqual(emptySessionPerformanceSummary().sampleCount, 0);
   assert.equal(emptySessionPerformanceSummary().avgTps, null);
+
+  // A live summary from a brand-new session must not depend on session-detail
+  // data existing yet, and a slower detail response must not overwrite it.
+  const firstLiveSummary = projectSessionPerformanceSummary(
+    {
+      sampleCount: 1,
+      totalOutputTokens: 40,
+      totalStreamDurationMs: 2_000,
+      totalTtftMs: 500,
+    },
+    {},
+  );
+  const secondLiveSummary = projectSessionPerformanceSummary(
+    {
+      sampleCount: 2,
+      totalOutputTokens: 100,
+      totalStreamDurationMs: 4_000,
+      totalTtftMs: 1_200,
+    },
+    {},
+  );
+  assert.equal(selectLatestSessionPerformance(null, firstLiveSummary), firstLiveSummary);
+  assert.equal(selectLatestSessionPerformance(firstLiveSummary, null), firstLiveSummary);
+  assert.equal(
+    selectLatestSessionPerformance(secondLiveSummary, firstLiveSummary),
+    secondLiveSummary,
+  );
+  assert.equal(
+    selectLatestSessionPerformance(firstLiveSummary, secondLiveSummary),
+    secondLiveSummary,
+  );
+
+  // The hook must apply live performance independently of SessionData. New-session
+  // first prompts do not have a detail payload yet, so setData would drop the event.
+  const hookSource = await readFile(path.join(process.cwd(), "hooks/useAgentSession.ts"), "utf8");
+  const liveUpdateCase = hookSource.match(
+    /case "session_performance_update":[\s\S]*?\n\s*break;/,
+  )?.[0];
+  assert.ok(liveUpdateCase, "session_performance_update handler must exist");
+  assert.match(liveUpdateCase, /setSessionPerformance\(/);
+  assert.doesNotMatch(liveUpdateCase, /setData\(/);
 
   // --- Persistence + recorder lifecycle ---
   const sessionId = "perf-session-main";

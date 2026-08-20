@@ -9,6 +9,7 @@ import type {
   SessionPerformanceSummary,
   SessionTreeNode,
 } from "@/lib/types";
+import { selectLatestSessionPerformance } from "@/lib/session-performance-client";
 import { useExtensionUi } from "@/hooks/useExtensionUi";
 import {
   hasUrgentSubagentUpdate,
@@ -253,6 +254,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const isNew = session === null && newSessionCwd !== null;
 
   const [data, setData] = useState<SessionData | null>(null);
+  const [sessionPerformance, setSessionPerformance] = useState<SessionPerformanceSummary | null>(null);
   const [loading, setLoading] = useState(!isNew);
   const [error, setError] = useState<string | null>(null);
   const [activeLeafId, setActiveLeafId] = useState<string | null>(null);
@@ -371,7 +373,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     return total > 0 ? { tokens, cost } : null;
   }, [messages]);
   const sessionStats = data?.sessionStats ?? currentContextStats;
-  const sessionPerformance = data?.sessionPerformance ?? null;
 
   const loadSession = useCallback(async (sid: string, showLoading = false, includeState = false) => {
     const requestId = ++sessionLoadRequestRef.current;
@@ -387,6 +388,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       if (res.status === 404) {
         if (showLoading) {
           setData(null);
+          setSessionPerformance(null);
           setActiveLeafId(null);
           setMessages([]);
           setError(null);
@@ -397,6 +399,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       const d = await res.json() as SessionData & { agentState?: { running: boolean; state?: { isStreaming?: boolean; isCompacting?: boolean; contextUsage?: { percent: number | null; contextWindow: number; tokens: number | null } | null; systemPrompt?: string; thinkingLevel?: string } } };
       if (requestId !== sessionLoadRequestRef.current || sid !== sessionIdRef.current) return null;
       setData(d);
+      setSessionPerformance((current) => selectLatestSessionPerformance(
+        current,
+        d.sessionPerformance,
+      ));
       setActiveLeafId(d.leafId);
       setMessages(d.context.messages);
       setEntryIds(d.context.entryIds ?? []);
@@ -839,7 +845,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       case "session_performance_update":
         if (event.sessionId === sessionIdRef.current && event.sessionPerformance) {
           const summary = event.sessionPerformance as SessionPerformanceSummary;
-          setData((prev) => prev ? { ...prev, sessionPerformance: summary } : prev);
+          // Brand-new sessions have no detail payload until the first prompt settles.
+          // Keep live performance independent so completed tool-use turns surface immediately.
+          setSessionPerformance((current) => selectLatestSessionPerformance(current, summary));
         }
         break;
     }
