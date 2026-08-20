@@ -14,18 +14,18 @@ use crate::access_key::{
 };
 use crate::activity_view::{
     assert_renderer_view_safe, build_activity_view, find_last_transition_id, mark_activity_read,
-    mark_all_terminal_read, BuildViewInput, DesktopPetSettings,
+    mark_all_terminal_read, BuildViewInput, DesktopPetSettings, TransitionRuntimeState,
 };
 use crate::connection_state::{
     build_desktop_origin, is_loopback_observer_url, DesktopConnectionReasonCode,
     DesktopConnectionState,
 };
 use crate::custom_pets::{
-    read_pet_asset, renderer_catalog_payload, resolve_codex_root, resolve_snail_root, scan_pet_catalog,
-    PetCatalogState,
+    normalize_selected_pet, read_pet_asset, renderer_catalog_payload, resolve_codex_root,
+    resolve_snail_root, scan_pet_catalog, PetCatalogState,
 };
 use crate::deep_links::{open_validated_deep_link, reject_arbitrary_renderer_url};
-use crate::notifications::{select_notification_candidates, show_candidates};
+use crate::notifications::{select_notification_candidates_with_runtime, show_candidates};
 use crate::observer_client::{
     LoopbackTransport, ObserverClient, ProbeResult, DESKTOP_OBSERVER_TOKEN_HEADER,
 };
@@ -47,6 +47,8 @@ pub struct PetRuntime {
     pub reset: bool,
     pub access_key: Option<String>,
     pub tray_anchor: TrayLayoutAnchor,
+    pub app_in_background: bool,
+    pub transition_runtime: TransitionRuntimeState,
 }
 
 impl PetRuntime {
@@ -63,6 +65,8 @@ impl PetRuntime {
             reset: true,
             access_key,
             tray_anchor: TrayLayoutAnchor::TopLeft,
+            app_in_background: true,
+            transition_runtime: TransitionRuntimeState::default(),
         }
     }
 
@@ -100,12 +104,15 @@ impl AppState {
             .path()
             .app_config_dir()
             .map_err(|error| error.to_string())?;
-        let settings = load_desktop_settings(&data_dir);
+        let mut settings = load_desktop_settings(&data_dir);
         let codec = default_codec();
         let access_key = load_desktop_access_key(&data_dir, codec.as_ref());
+        let catalog = scan_pet_catalog(&resolve_snail_root(), &resolve_codex_root());
+        if normalize_selected_pet(&mut settings, &catalog) {
+            let _ = save_desktop_settings(&data_dir, &settings);
+        }
         let runtime = PetRuntime::from_settings(settings, access_key.clone());
         let port = runtime.settings.port;
-        let catalog = scan_pet_catalog(&resolve_snail_root(), &resolve_codex_root());
         let runtime = Mutex::new(runtime);
         let app_for_state = app.clone();
         let app_for_snapshot = app.clone();
@@ -153,7 +160,10 @@ impl AppState {
         self.quick_session.set_connection(&state);
         let needs_auth_tray = matches!(
             state.reason_code,
-            Some(DesktopConnectionReasonCode::AuthRequired | DesktopConnectionReasonCode::AuthInvalid)
+            Some(
+                DesktopConnectionReasonCode::AuthRequired
+                    | DesktopConnectionReasonCode::AuthInvalid
+            )
         );
         if needs_auth_tray {
             let layout_input = self.runtime.lock().ok().and_then(|runtime| {
@@ -176,10 +186,11 @@ impl AppState {
                 ) {
                     if let Ok(mut runtime) = self.runtime.lock() {
                         runtime.settings.activity_tray_open = true;
-                        runtime.settings.window_position = Some(crate::activity_view::WindowPosition {
-                            x: layout.bounds.x,
-                            y: layout.bounds.y,
-                        });
+                        runtime.settings.window_position =
+                            Some(crate::activity_view::WindowPosition {
+                                x: layout.bounds.x,
+                                y: layout.bounds.y,
+                            });
                         runtime.tray_anchor = layout.tray_anchor;
                     }
                 }
@@ -195,23 +206,27 @@ impl AppState {
 
     pub fn apply_snapshot(&self, app: &AppHandle, json: &str, reset: bool) {
         let parsed = match serde_json::from_str::<Value>(json) {
-            Ok(Value::Object(value)) if value.get("instanceId").and_then(Value::as_str).is_some() => {
+            Ok(Value::Object(value))
+                if value.get("instanceId").and_then(Value::as_str).is_some() =>
+            {
                 Value::Object(value)
             }
             _ => return,
         };
-        let window_hidden = app
-            .get_webview_window("pet")
-            .and_then(|window| window.is_visible().ok())
-            == Some(false);
+        let reset_baseline = reset || parsed.get("reset") == Some(&Value::Bool(true));
         let (cues, origin, candidates) = if let Ok(mut runtime) = self.runtime.lock() {
-            let (candidates, effects) = select_notification_candidates(
-                &runtime.settings,
+            let settings = runtime.settings.clone();
+            let app_in_background = runtime.app_in_background;
+            let mut transition_runtime = std::mem::take(&mut runtime.transition_runtime);
+            let (candidates, effects) = select_notification_candidates_with_runtime(
+                &settings,
                 &parsed,
-                reset || parsed.get("reset") == Some(&Value::Bool(true)),
-                window_hidden,
+                reset_baseline,
+                app_in_background,
                 now_ms(),
+                &mut transition_runtime,
             );
+            runtime.transition_runtime = transition_runtime;
             runtime.settings.notified_transition_ids = effects.notified_transition_ids;
             runtime.settings.sounded_transition_ids = effects.sounded_transition_ids.clone();
             runtime.snapshot = Some(parsed);
@@ -233,6 +248,12 @@ impl AppState {
         }
     }
 
+    pub fn set_app_in_background(&self, app_in_background: bool) {
+        if let Ok(mut runtime) = self.runtime.lock() {
+            runtime.app_in_background = app_in_background;
+        }
+    }
+
     pub fn emit_view(&self, app: &AppHandle) -> Result<Value, String> {
         let view = self
             .runtime
@@ -242,9 +263,9 @@ impl AppState {
         if let Ok(mut runtime) = self.runtime.lock() {
             runtime.reset = false;
         }
+        crate::tray_controller::refresh_tray(app).map_err(|error| error.to_string())?;
         app.emit(STATE_CHANGED_EVENT, &view)
             .map_err(|error| error.to_string())?;
-        let _ = crate::tray_controller::refresh_tray(app);
         Ok(view)
     }
 
@@ -320,15 +341,22 @@ impl AppState {
         }
 
         if let Some(always_on_top) = patch.get("alwaysOnTop").and_then(Value::as_bool) {
-            let _ = window.set_always_on_top(always_on_top);
+            window
+                .set_always_on_top(always_on_top)
+                .map_err(|error| error.to_string())?;
         }
         if let Some(click_through) = patch.get("clickThrough").and_then(Value::as_bool) {
-            let _ = window_controller::set_click_through(window, click_through);
+            window_controller::set_click_through(window, click_through)?;
         }
 
         let port_changed = (previous.port != next.port).then_some(next.port);
-        let launch_at_login = (previous.launch_at_login != next.launch_at_login)
-            .then_some(next.launch_at_login);
+        let launch_at_login =
+            (previous.launch_at_login != next.launch_at_login).then_some(next.launch_at_login);
+        if let Some(enabled) = launch_at_login {
+            if !crate::native::apply_launch_at_login(enabled) {
+                return Err("failed to update launch-at-login state".to_string());
+            }
+        }
         {
             let mut runtime = self
                 .runtime
@@ -347,14 +375,15 @@ impl AppState {
             self.client.set_port(port);
             let _ = self.client.retry(now_ms());
         }
-        if let Some(enabled) = launch_at_login {
-            let _ = crate::native::apply_launch_at_login(enabled);
-        }
         self.persist();
         self.current_view()
     }
 
-    pub fn set_click_through_pref(&self, click_through: bool, window: &WebviewWindow) -> Result<Value, String> {
+    pub fn set_click_through_pref(
+        &self,
+        click_through: bool,
+        window: &WebviewWindow,
+    ) -> Result<Value, String> {
         self.apply_prefs(json!({ "clickThrough": click_through }), window)
     }
 
@@ -448,6 +477,37 @@ impl AppState {
         self.persist();
     }
 
+    pub fn restore_default_window(&self, window: &WebviewWindow) -> Result<Value, String> {
+        let layout = window_controller::restore_default_layout(window)?;
+        {
+            let mut runtime = self
+                .runtime
+                .lock()
+                .map_err(|_| "runtime lock poisoned".to_string())?;
+            runtime.settings.pet_scale = "medium".to_string();
+            runtime.settings.activity_tray_open = false;
+            runtime.settings.window_position = Some(crate::activity_view::WindowPosition {
+                x: layout.bounds.x,
+                y: layout.bounds.y,
+            });
+            runtime.tray_anchor = layout.tray_anchor;
+        }
+        self.persist();
+        self.current_view()
+    }
+
+    pub fn recover_window_position(&self, window: &WebviewWindow) -> Result<bool, String> {
+        let Some(bounds) = window_controller::recover_to_visible_work_areas(window)? else {
+            return Ok(false);
+        };
+        self.persist_window_position(bounds.x, bounds.y);
+        Ok(true)
+    }
+
+    pub fn is_stopped(&self) -> bool {
+        self.stopped.load(Ordering::SeqCst)
+    }
+
     pub fn restore_saved_position(&self, window: &WebviewWindow) {
         let position = self
             .runtime
@@ -517,11 +577,20 @@ impl AppState {
     pub fn rescan_custom_pets(&self, app: &AppHandle) -> Result<Value, String> {
         let next = scan_pet_catalog(&resolve_snail_root(), &resolve_codex_root());
         let payload = renderer_catalog_payload(&next)?;
+        let selection_changed = self
+            .runtime
+            .lock()
+            .map(|mut runtime| normalize_selected_pet(&mut runtime.settings, &next))
+            .unwrap_or(false);
         if let Ok(mut catalog) = self.catalog.lock() {
             *catalog = next;
         }
+        if selection_changed {
+            self.persist();
+        }
         app.emit(CUSTOM_PETS_CHANGED_EVENT, &payload)
             .map_err(|error| error.to_string())?;
+        self.emit_view(app)?;
         Ok(payload)
     }
 

@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
@@ -620,6 +622,11 @@ fn sound_cue_for(presentation: &str) -> Option<&'static str> {
     }
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct TransitionRuntimeState {
+    pub last_sound_played_at: BTreeMap<String, i64>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TransitionPolicyResult {
@@ -637,6 +644,24 @@ pub fn select_transition_effects(
     app_in_background: bool,
     now: i64,
 ) -> TransitionPolicyResult {
+    select_transition_effects_with_runtime(
+        settings,
+        snapshot,
+        reset_baseline,
+        app_in_background,
+        now,
+        &mut TransitionRuntimeState::default(),
+    )
+}
+
+pub fn select_transition_effects_with_runtime(
+    settings: &DesktopPetSettings,
+    snapshot: &Value,
+    reset_baseline: bool,
+    app_in_background: bool,
+    now: i64,
+    runtime: &mut TransitionRuntimeState,
+) -> TransitionPolicyResult {
     let transitions = snapshot
         .get("recentTransitions")
         .and_then(Value::as_array)
@@ -647,7 +672,6 @@ pub fn select_transition_effects(
     let mut notify_presentations = Vec::new();
     let mut notify_transition_ids = Vec::new();
     let mut sound_cues = Vec::new();
-    let mut last_played: std::collections::BTreeMap<&str, i64> = std::collections::BTreeMap::new();
 
     let consume = |ids: &mut Vec<String>, id: &str| {
         if id.is_empty() || ids.iter().any(|existing| existing == id) {
@@ -718,7 +742,8 @@ pub fn select_transition_effects(
                 } else {
                     !settings.sound.completion
                 };
-            let cooldown_suppressed = last_played
+            let cooldown_suppressed = runtime
+                .last_sound_played_at
                 .get(kind)
                 .is_some_and(|played| *played + SOUND_COOLDOWN_MS > now);
             if should_suppress_dnd(settings.dnd_enabled, presentation)
@@ -728,7 +753,7 @@ pub fn select_transition_effects(
                 consume(&mut sounded, &id);
                 continue;
             }
-            last_played.insert(kind, now);
+            runtime.last_sound_played_at.insert(kind.to_string(), now);
             consume(&mut sounded, &id);
             sound_cues.push(kind.to_string());
         }

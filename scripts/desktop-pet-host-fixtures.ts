@@ -158,6 +158,21 @@ export type TransitionFixtureFile = {
       soundedTransitionIds: string[];
     };
   }>;
+  sequences?: Array<{
+    id: string;
+    settings: Record<string, unknown>;
+    steps: Array<{
+      now: number;
+      appInBackground: boolean;
+      snapshot: Record<string, unknown>;
+      expected: {
+        notifyTransitionIds: string[];
+        soundCues: string[];
+      };
+    }>;
+    expectedNotifiedTransitionIds: string[];
+    expectedSoundedTransitionIds: string[];
+  }>;
 };
 
 export function publicConnectionState(state: {

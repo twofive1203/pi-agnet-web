@@ -1,7 +1,8 @@
 use serde_json::{json, Value};
 use snail_pi_pet_tauri_preview_lib::activity_view::{
     assert_renderer_view_safe, build_activity_view, default_desktop_settings, overlay_settings,
-    project_view_summary, select_transition_effects, BuildViewInput,
+    project_view_summary, select_transition_effects, select_transition_effects_with_runtime,
+    BuildViewInput, TransitionRuntimeState,
 };
 use snail_pi_pet_tauri_preview_lib::connection_state::DesktopConnectionState;
 
@@ -11,7 +12,9 @@ fn read_fixture(name: &str) -> Value {
         .join(name);
     let raw = std::fs::read_to_string(&path).expect("read fixture");
     assert!(
-        !raw.contains("\"token\":") && !raw.contains("\"accessKey\":") && !raw.contains("\"firstMessage\":"),
+        !raw.contains("\"token\":")
+            && !raw.contains("\"accessKey\":")
+            && !raw.contains("\"firstMessage\":"),
         "{} must not embed secrets",
         name
     );
@@ -53,6 +56,44 @@ fn activity_view_fixtures_match_electron_summary() {
             case["expected"],
             "view {}",
             case["id"]
+        );
+    }
+}
+
+#[test]
+fn sound_cooldown_survives_consecutive_snapshots() {
+    let fixtures = read_fixture("transition-cases.json");
+    for sequence in fixtures["sequences"].as_array().expect("sequences") {
+        let mut settings = overlay_settings(default_desktop_settings(), &sequence["settings"]);
+        let mut runtime = TransitionRuntimeState::default();
+        for step in sequence["steps"].as_array().expect("steps") {
+            let effects = select_transition_effects_with_runtime(
+                &settings,
+                &step["snapshot"],
+                false,
+                step["appInBackground"].as_bool().unwrap_or(false),
+                step["now"].as_i64().unwrap_or(0),
+                &mut runtime,
+            );
+            assert_eq!(
+                json!({
+                    "notifyTransitionIds": effects.notify_transition_ids.clone(),
+                    "soundCues": effects.sound_cues.clone(),
+                }),
+                step["expected"],
+                "sequence {}",
+                sequence["id"]
+            );
+            settings.notified_transition_ids = effects.notified_transition_ids;
+            settings.sounded_transition_ids = effects.sounded_transition_ids;
+        }
+        assert_eq!(
+            json!(settings.notified_transition_ids),
+            sequence["expectedNotifiedTransitionIds"]
+        );
+        assert_eq!(
+            json!(settings.sounded_transition_ids),
+            sequence["expectedSoundedTransitionIds"]
         );
     }
 }

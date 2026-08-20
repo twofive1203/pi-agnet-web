@@ -7,7 +7,7 @@ use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use serde_json::{json, Value};
 
-use crate::activity_view::assert_renderer_view_safe;
+use crate::activity_view::{assert_renderer_view_safe, DesktopPetSettings};
 use crate::settings::{is_custom_pet_id, is_pet_key};
 
 pub const CUSTOM_PET_MAX_COUNT: usize = 16;
@@ -136,6 +136,22 @@ pub fn scan_pet_catalog(snail_root: &Path, codex_root: &Path) -> PetCatalogState
             .truncate(CUSTOM_PET_MAX_COUNT + CODEX_PET_MAX_COUNT + 8);
     }
     state
+}
+
+pub fn normalize_selected_pet(
+    settings: &mut DesktopPetSettings,
+    catalog: &PetCatalogState,
+) -> bool {
+    let selected_is_builtin = settings
+        .selected_pet_key
+        .strip_prefix("snail:")
+        .is_some_and(|id| BUILTIN_PET_IDS.contains(&id));
+    if selected_is_builtin || catalog.locators.contains_key(&settings.selected_pet_key) {
+        return false;
+    }
+    settings.selected_pet_key = "snail:snail-default".to_string();
+    settings.selected_pet_id = "snail-default".to_string();
+    true
 }
 
 pub fn renderer_catalog_payload(state: &PetCatalogState) -> Result<Value, String> {

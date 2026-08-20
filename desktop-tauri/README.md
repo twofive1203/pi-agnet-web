@@ -39,7 +39,7 @@ npm run test:desktop-tauri-view-parity
 npm run test:desktop-tauri-package
 ```
 
-`desktop:tauri:dev` / `desktop:tauri:build` 的 before hook 会把现有 `desktop/renderer` 与 `tauri-bridge.ts` 打进 `desktop-tauri/dist`。现有 `desktop:build/dev/package/make` 命令仍只操作 Electron。
+`desktop:tauri:dev` / `desktop:tauri:build` 的 before hook 会先删除并重建 `desktop-tauri/dist`，再把现有 `desktop/renderer` 与 `tauri-bridge.ts` 打入固定 allowlist；额外文件、目录或 source map 会使构建失败。现有 `desktop:build/dev/package/make` 命令仍只操作 Electron。
 
 ## Phase C 行为
 
@@ -67,6 +67,8 @@ npm run test:desktop-tauri-package
 签名只通过 `tauri.conf.json` 的 `certificateThumbprint` / `digestAlgorithm` / `timestampUrl` 占位配置；不要把证书或密码提交进仓库。未签名包仅供工程验收，SmartScreen 可能警告。
 
 卸载 Preview 只应删除 Preview 安装目录和 Preview app-data，不得删除 Electron 设置或 `~/.pi/agent`。
+
+`DESKTOP_TAURI_PACKAGE_OUT` 只扫描 NSIS 外层并输出 `BUNDLE_OUTER_SCAN_OK`，不能证明压缩包内部 pet-only。资格验证必须先把 NSIS 解包或静默安装到隔离临时目录，再设置 `DESKTOP_TAURI_EXPANDED_APP_DIR`；脚本扫描真实应用树后才会输出 `ARTIFACT_SCAN_OK`，同时检查应用目录不超过 30 MB。未提供展开目录时明确输出 `ARTIFACT_SCAN_SKIPPED`。
 
 同机基准（完整进程树，而不是只看 Rust host）：
 

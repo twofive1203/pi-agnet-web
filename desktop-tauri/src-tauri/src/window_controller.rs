@@ -69,6 +69,8 @@ pub struct WorkArea {
     pub height: u32,
 }
 
+pub type MonitorTopologySignature = Vec<(i32, i32, u32, u32, u64)>;
+
 pub fn clamp_bounds(bounds: WindowBounds, work_area: WorkArea) -> WindowBounds {
     let min_x = work_area.x;
     let min_y = work_area.y;
@@ -86,6 +88,30 @@ pub fn clamp_bounds(bounds: WindowBounds, work_area: WorkArea) -> WindowBounds {
         x: bounds.x.clamp(min_x, max_x),
         y: bounds.y.clamp(min_y, max_y),
         ..bounds
+    }
+}
+
+pub fn default_window_layout(work_area: WorkArea, spec: PetLayoutSpec) -> WindowLayout {
+    let bounds = clamp_bounds(
+        WindowBounds {
+            x: work_area
+                .x
+                .saturating_add(work_area.width as i32)
+                .saturating_sub(spec.collapsed_width as i32)
+                .saturating_sub(24),
+            y: work_area
+                .y
+                .saturating_add(work_area.height as i32)
+                .saturating_sub(spec.collapsed_height as i32)
+                .saturating_sub(24),
+            width: spec.collapsed_width,
+            height: spec.collapsed_height,
+        },
+        work_area,
+    );
+    WindowLayout {
+        bounds,
+        tray_anchor: TrayLayoutAnchor::TopLeft,
     }
 }
 
@@ -352,34 +378,107 @@ fn work_area_for_window(window: &WebviewWindow) -> Result<WorkArea, String> {
     Err("no monitor is available".to_string())
 }
 
-pub fn recover_to_visible_work_area(window: &WebviewWindow) -> Result<(), String> {
-    let work_area = work_area_for_window(window)?;
-    let current = current_bounds(window)?;
-    let clamped = clamp_bounds(current, work_area);
-    let fully_offscreen = current.x.saturating_add(current.width as i32) <= work_area.x
-        || current.y.saturating_add(current.height as i32) <= work_area.y
-        || current.x >= work_area.x.saturating_add(work_area.width as i32)
-        || current.y >= work_area.y.saturating_add(work_area.height as i32);
-    let target = if fully_offscreen {
-        WindowBounds {
-            x: work_area
-                .x
-                .saturating_add(work_area.width as i32)
-                .saturating_sub(current.width as i32)
-                .saturating_sub(24),
-            y: work_area
-                .y
-                .saturating_add(work_area.height as i32)
-                .saturating_sub(current.height as i32)
-                .saturating_sub(24),
-            ..current
-        }
-    } else {
-        clamped
-    };
+pub fn recover_bounds_to_nearest_work_area(
+    bounds: WindowBounds,
+    work_areas: &[WorkArea],
+) -> Option<WindowBounds> {
+    if work_areas.is_empty() {
+        return None;
+    }
+    if work_areas
+        .iter()
+        .any(|work_area| bounds_fit_work_area(bounds, *work_area))
+    {
+        return Some(bounds);
+    }
+    let center_x = f64::from(bounds.x) + f64::from(bounds.width) / 2.0;
+    let center_y = f64::from(bounds.y) + f64::from(bounds.height) / 2.0;
+    let nearest = work_areas.iter().min_by(|left, right| {
+        let score = |area: &&WorkArea| {
+            let area_x = f64::from(area.x) + f64::from(area.width) / 2.0;
+            let area_y = f64::from(area.y) + f64::from(area.height) / 2.0;
+            (center_x - area_x).powi(2) + (center_y - area_y).powi(2)
+        };
+        score(left)
+            .partial_cmp(&score(right))
+            .unwrap_or(std::cmp::Ordering::Equal)
+    })?;
+    Some(clamp_bounds(bounds, *nearest))
+}
+
+pub fn available_work_areas(window: &WebviewWindow) -> Result<Vec<WorkArea>, String> {
     window
-        .set_position(PhysicalPosition::new(target.x, target.y))
+        .available_monitors()
         .map_err(|error| error.to_string())
+        .map(|monitors| monitors.iter().map(monitor_work_area).collect())
+}
+
+pub fn recover_to_visible_work_areas(
+    window: &WebviewWindow,
+) -> Result<Option<WindowBounds>, String> {
+    let current = current_bounds(window)?;
+    let work_areas = available_work_areas(window)?;
+    let target = recover_bounds_to_nearest_work_area(current, &work_areas)
+        .ok_or_else(|| "no monitor is available".to_string())?;
+    if target == current {
+        return Ok(None);
+    }
+    set_position_inactive(window, target.x, target.y)?;
+    Ok(Some(target))
+}
+
+#[cfg(windows)]
+fn set_position_inactive(window: &WebviewWindow, x: i32, y: i32) -> Result<(), String> {
+    use windows::Win32::UI::WindowsAndMessaging::{
+        SetWindowPos, SWP_NOACTIVATE, SWP_NOSIZE, SWP_NOZORDER,
+    };
+
+    let hwnd = window.hwnd().map_err(|error| error.to_string())?;
+    unsafe {
+        SetWindowPos(
+            hwnd,
+            None,
+            x,
+            y,
+            0,
+            0,
+            SWP_NOACTIVATE | SWP_NOSIZE | SWP_NOZORDER,
+        )
+        .map_err(|error| error.to_string())
+    }
+}
+
+#[cfg(not(windows))]
+fn set_position_inactive(window: &WebviewWindow, x: i32, y: i32) -> Result<(), String> {
+    window
+        .set_position(PhysicalPosition::new(x, y))
+        .map_err(|error| error.to_string())
+}
+
+pub fn recover_to_visible_work_area(window: &WebviewWindow) -> Result<(), String> {
+    recover_to_visible_work_areas(window).map(|_| ())
+}
+
+pub fn monitor_topology_signature(
+    window: &WebviewWindow,
+) -> Result<MonitorTopologySignature, String> {
+    let mut signature = window
+        .available_monitors()
+        .map_err(|error| error.to_string())?
+        .into_iter()
+        .map(|monitor| {
+            let area = monitor_work_area(&monitor);
+            (
+                area.x,
+                area.y,
+                area.width,
+                area.height,
+                monitor.scale_factor().to_bits(),
+            )
+        })
+        .collect::<Vec<_>>();
+    signature.sort_unstable();
+    Ok(signature)
 }
 
 #[cfg(windows)]
@@ -450,6 +549,15 @@ pub fn initialize_window_layout(
         tray_anchor: TrayLayoutAnchor::TopLeft,
     };
     apply_window_layout(window, logical_spec, layout, expanded)
+}
+
+pub fn restore_default_layout(window: &WebviewWindow) -> Result<WindowLayout, String> {
+    let work_area = work_area_for_window(window)?;
+    let logical_spec = pet_layout_spec("medium");
+    let scale_factor = window.scale_factor().map_err(|error| error.to_string())?;
+    let physical_spec = scale_layout_spec(logical_spec, scale_factor);
+    let layout = default_window_layout(work_area, physical_spec);
+    apply_window_layout(window, logical_spec, layout, false)
 }
 
 pub fn resize_window(

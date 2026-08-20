@@ -8,8 +8,8 @@ use snail_pi_pet_tauri_preview_lib::access_key::{
     AccessKeyCodec, MemoryAccessKeyCodec, ELECTRON_ACCESS_KEY_FILE_NAME, TAURI_ACCESS_KEY_FILE_NAME,
 };
 use snail_pi_pet_tauri_preview_lib::custom_pets::{
-    is_strict_child, read_pet_asset, renderer_catalog_payload, scan_pet_catalog, resolve_codex_root,
-    resolve_snail_root,
+    is_strict_child, normalize_selected_pet, read_pet_asset, renderer_catalog_payload,
+    scan_pet_catalog, resolve_codex_root, resolve_snail_root,
 };
 use snail_pi_pet_tauri_preview_lib::settings::{
     electron_settings_file_path, load_desktop_settings, map_electron_settings_preview,
@@ -248,6 +248,28 @@ fn custom_pet_catalog_is_path_free_and_rejects_escapes() {
 
     assert!(!is_strict_child(&root, &root));
     assert!(is_strict_child(&root, &root.join("custom-snail")));
+}
+
+#[test]
+fn stale_custom_pet_selection_falls_back_to_builtin_default() {
+    let root = temp_dir("stale-selected-pet");
+    write_snail_pack(&root, "selected-pet", "sheet.png");
+    let empty_codex = temp_dir("stale-selected-codex");
+    let catalog = scan_pet_catalog(&root, &empty_codex);
+    let settings_dir = temp_dir("stale-selected-settings");
+    let mut settings = load_desktop_settings(&settings_dir);
+    settings.selected_pet_key = "snail:selected-pet".to_string();
+    settings.selected_pet_id = "selected-pet".to_string();
+    assert!(!normalize_selected_pet(&mut settings, &catalog));
+
+    fs::remove_dir_all(root.join("selected-pet")).expect("remove selected pet");
+    let rescanned = scan_pet_catalog(&root, &empty_codex);
+    assert!(normalize_selected_pet(&mut settings, &rescanned));
+    assert_eq!(settings.selected_pet_key, "snail:snail-default");
+    assert_eq!(settings.selected_pet_id, "snail-default");
+    save_desktop_settings(&settings_dir, &settings).expect("persist fallback");
+    let reloaded = load_desktop_settings(&settings_dir);
+    assert_eq!(reloaded.selected_pet_key, "snail:snail-default");
 }
 
 #[test]

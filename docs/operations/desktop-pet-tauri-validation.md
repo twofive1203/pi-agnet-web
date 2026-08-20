@@ -26,7 +26,12 @@ cargo check --manifest-path desktop-tauri/src-tauri/Cargo.toml
 | Command regression | Electron `desktop:*` 命令保持原语义，Forge 不读取 Tauri 输出 | 自动覆盖 |
 | Capability minimum | 无 shell/process/fs/http/opener 或 wildcard；WebView `connect-src 'none'` | 自动覆盖 |
 | Geometry | 负坐标 clamp、屏幕角锚点、虚拟桌面 union | Rust 自动覆盖 |
-| Recovery | Tray 始终包含“取消鼠标穿透”和 Preview-only Quit | Rust/静态自动覆盖 |
+| Recovery | Tray 始终包含“取消鼠标穿透”和 Preview-only Quit；左键主动 reveal，右键菜单 | Rust/静态自动覆盖 |
+| Runtime parity | 焦点/后台状态驱动 `background-only`；声音冷却跨 Snapshot 保持 | 共享 sequence fixture + Rust 自动覆盖 |
+| Host state sync | Tray DND/声音/穿透动作完成后 emit view 并刷新 checked state | Rust/静态自动覆盖 |
+| Display recovery | 负坐标/屏幕移除选择最近 work area；拓扑 watcher 被动恢复且不激活 | Rust 纯几何 + 静态自动覆盖 |
+| Custom pet fallback | 已选自定义宠物消失后回退并持久化内置默认 key | Rust 自动覆盖 |
+| Clean frontend | UI build 清空 `dist` 并拒绝 allowlist 外文件/目录/source map | 构建 + package smoke 自动覆盖 |
 | Attach-only | Phase A 无 child process/PID/signal/service control | 静态自动覆盖 |
 
 **本次工程验证：** `desktop:tauri:build-ui`、Tauri contract smoke、7 个 Rust integration tests、`cargo check`、`cargo clippy -D warnings`、项目 TypeScript/ESLint、Electron `desktop:build` 与 `test:desktop-package` 均通过。`tauri build --debug --no-bundle` 已生成独立 `target/debug/snail-pi-pet-tauri-preview.exe`；该编译结果不等同于下方实机视觉矩阵 Pass。
@@ -49,7 +54,7 @@ cargo check --manifest-path desktop-tauri/src-tauri/Cargo.toml
 | --- | --- | --- | --- | --- | --- |
 | TA-A1 | 首次显示/透明 | 冷启动 Preview，观察首帧和背景 | 无持续白底/黑底；透明无边框窗口可见 | **未执行** | **未执行** |
 | TA-A2 | 被动不抢焦点 | 让另一应用保持输入焦点后启动 Preview | Preview 可见但不获得焦点、不切换应用 | **未执行** | **未执行** |
-| TA-A3 | Tray 显示/隐藏/退出 | 依次使用隐藏、显示、退出 | 用户显示会激活；退出只结束 Preview，不影响 Electron/`spi` | **未执行** | **未执行** |
+| TA-A3 | Tray 显示/隐藏/退出 | 依次使用隐藏、左键 Tray 显示、右键菜单、退出 | 左键直接激活桌宠、右键保留菜单；退出只结束 Preview，不影响 Electron/`spi` | **未执行** | **未执行** |
 | TA-A4 | 拖动 | 从宠物主体连续拖动、快速拖动 | 位置连续，无明显抖动/丢失，点击仍可用 | **未执行** | **未执行** |
 | TA-A5 | 动态尺寸锚点 | 在四个屏幕角展开/收起 | 宠物视觉锚点稳定，窗口不跳离可见区 | **未执行** | **未执行** |
 | TA-A6 | 点击穿透恢复 | 开启点击穿透，再用 Tray 取消 | 桌面点击可穿透；Tray 始终可恢复交互 | **未执行** | **未执行** |
@@ -72,7 +77,8 @@ cargo check --manifest-path desktop-tauri/src-tauri/Cargo.toml
 | TA-D5 | 主屏 150% → 副屏 200% | 跨屏双向移动，展开/收起锚点稳定 | **未执行** |
 | TA-D6 | 副屏位于主屏左侧（负 X） | 可进入负坐标屏并从 Tray 恢复 | **未执行** |
 | TA-D7 | 副屏位于主屏上方（负 Y） | 可进入负坐标屏并从 Tray 恢复 | **未执行** |
-| TA-D8 | 运行时拔除/停用当前显示器 | 窗口回到剩余可见 work area | **未执行** |
+| TA-D8 | 运行时拔除/停用当前显示器 | 窗口回到剩余可见 work area，隐藏状态与前台应用焦点不变 | **未执行** |
+| TA-D9 | 从 large/展开/负坐标状态恢复默认位置和大小 | 恢复 medium、收起 tray，并停靠当前显示器右下 24px | **未执行** |
 
 ## Stop conditions
 
@@ -144,7 +150,7 @@ cargo test --manifest-path desktop-tauri/src-tauri/Cargo.toml
 | TA-C1 | 设置重启恢复 | Preview 重启后恢复 petScale/DND/选中宠物；Electron 设置文件内容与时间戳不变 | **未执行** |
 | TA-C2 | Access Key | server-mode 输入密钥后连接；落盘文件无明文；清除后重连 | **未执行** |
 | TA-C3 | 自定义宠物 | 合法 Snail/Codex 包列出并显示；越界/坏包不崩溃 | **未执行** |
-| TA-C4 | 通知/DND/声音 | Ready/Needs input/Blocked 按设置通知一次；DND 不重放；声音走 renderer cue | **未执行** |
+| TA-C4 | 聚焦/可见失焦/隐藏状态下触发 Ready，连续触发同类 cue，并切换 DND/声音 | `background-only` 只在后台通知且历史不重放；10 秒冷却跨 Snapshot；Tray 与 Renderer 状态立即一致 | **未执行** |
 | TA-C5 | Deep Link | 点击活动打开已验证 origin；绝对 URL 被拒绝 | **未执行** |
 | TA-C6 | 开机启动 | Preview 登录启动切换不修改 Electron 项，也不启动 `spi` | **未执行** |
 | TA-C7 | 快速会话 | local 与 loopback server-mode 各成功创建一次；退出 Preview 不结束 session | **未执行** |
@@ -162,12 +168,16 @@ npm run test:desktop-package
 powershell -File scripts/benchmark-desktop-runtimes.ps1 -Scenario connected-idle
 ```
 
-生成安装包后再扫真实产物：
+生成安装包后先检查外层 bundle，再把 NSIS 解包或静默安装到隔离临时目录并扫描真实展开内容：
 
 ```powershell
 npm run desktop:tauri:build
 $env:DESKTOP_TAURI_PACKAGE_OUT = "desktop-tauri/src-tauri/target/release/bundle"
-npm run test:desktop-tauri-package
+npm run test:desktop-tauri-package # 仅输出 BUNDLE_OUTER_SCAN_OK
+
+# <expanded-temp-dir> 必须是隔离的解包/临时安装目录，不得指向正式 user-data。
+$env:DESKTOP_TAURI_EXPANDED_APP_DIR = "<expanded-temp-dir>"
+npm run test:desktop-tauri-package # 检查真实内容后才输出 ARTIFACT_SCAN_OK
 ```
 
 只读设置迁移预演默认使用 `scripts/fixtures/desktop-pet-host/electron-settings-import.json`。若要解析本机 Electron 设置，只设 `DESKTOP_TAURI_ELECTRON_SETTINGS`；脚本不得写 Electron 或 Preview 正式设置文件。
@@ -176,7 +186,7 @@ npm run test:desktop-tauri-package
 | --- | --- | --- |
 | Isolated installer identity | Preview product/identifier/exe/Start Menu 与 Electron 不同；NSIS current-user；无 updater artifact | 自动覆盖 |
 | WebView2 mode | 默认 `embedBootstrapper`；`downloadBootstrapper` 可作为体积对照；`offlineInstaller` / `fixedRuntime` 不得当作达标结果 | 自动覆盖 |
-| Pet-only artifact | 包内无 `.next` / Next / pi SDK / Node / Electron / Forge / node-pty / Automation / `bin/pi-web.js` / fixture / Electron 设置或密钥 | 配置自动覆盖；真实 bundle **未执行** |
+| Pet-only artifact | 包内无 `.next` / Next / pi SDK / Node / Electron / Forge / node-pty / Automation / `bin/pi-web.js` / fixture / Electron 设置或密钥 | 配置/外层 bundle 自动覆盖；真实 expanded app **未执行** |
 | Settings rehearsal | 只读映射 Electron 设置并输出匿名化 diff；不写双方正式文件 | 自动覆盖 |
 | Signing placeholders | `certificateThumbprint` 为空，`digestAlgorithm=sha256`；证书不入库 | 自动覆盖 |
 | Electron regression | `desktop:*` 与 `test:desktop-package` 不读取 Tauri 输出 | 自动覆盖 |
@@ -226,6 +236,6 @@ npm run test:desktop-tauri-package
 
 ## Gate D conclusion
 
-**Extend。** U8 自动契约（隔离身份、NSIS/Evergreen 配置、只读设置预演、文档门槛、Electron 回归入口）已落地；真实 NSIS 安装包扫描、同机体积/内存/启动、clean-profile、签名和 AE1–AE13 / QS1–QS5 实机行仍为 **未执行**。Electron 保持默认发行物，无需回滚。
+**Extend。** U8 自动契约（隔离身份、NSIS/Evergreen 配置、只读设置预演、clean `dist`、外层 bundle 检查、expanded scan 入口、Electron 回归入口）已落地；真实 expanded NSIS 应用扫描、同机体积/内存/启动、clean-profile、签名和 AE1–AE13 / QS1–QS5 实机行仍为 **未执行**。Electron 保持默认发行物，无需回滚。
 
 若后续实测体积达标而完整进程树内存未降 30%，可继续 Extend，但必须公布 WebView2 子进程数据，不得只展示 Rust host。Proceed 需要独立切换计划，不能在本文件把 Preview 改成正式 `SnailPiPet`。

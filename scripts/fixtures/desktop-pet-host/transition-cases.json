@@ -426,5 +426,51 @@
         "soundedTransitionIds": ["t-needs"]
       }
     }
+  ],
+  "sequences": [
+    {
+      "id": "focus-and-cross-snapshot-sound-state",
+      "settings": {
+        "dndEnabled": false,
+        "notification": { "needsInput": true, "blocked": true, "completion": "background-only" },
+        "sound": { "masterEnabled": true, "needsInput": true, "completion": true },
+        "notifiedTransitionIds": [],
+        "soundedTransitionIds": []
+      },
+      "steps": [
+        {
+          "now": 1000,
+          "appInBackground": true,
+          "snapshot": {
+            "instanceId": "inst-sequence",
+            "recentTransitions": [{ "transitionId": "ready-1", "presentation": "ready" }],
+            "projects": []
+          },
+          "expected": { "notifyTransitionIds": ["ready-1"], "soundCues": ["completion"] }
+        },
+        {
+          "now": 5000,
+          "appInBackground": false,
+          "snapshot": {
+            "instanceId": "inst-sequence",
+            "recentTransitions": [{ "transitionId": "ready-2", "presentation": "ready" }],
+            "projects": []
+          },
+          "expected": { "notifyTransitionIds": [], "soundCues": [] }
+        },
+        {
+          "now": 11001,
+          "appInBackground": true,
+          "snapshot": {
+            "instanceId": "inst-sequence",
+            "recentTransitions": [{ "transitionId": "ready-3", "presentation": "ready" }],
+            "projects": []
+          },
+          "expected": { "notifyTransitionIds": ["ready-3"], "soundCues": ["completion"] }
+        }
+      ],
+      "expectedNotifiedTransitionIds": ["ready-1", "ready-2", "ready-3"],
+      "expectedSoundedTransitionIds": ["ready-1", "ready-2", "ready-3"]
+    }
   ]
 }

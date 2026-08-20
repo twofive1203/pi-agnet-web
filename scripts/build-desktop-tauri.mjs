@@ -1,4 +1,12 @@
-import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import * as esbuild from "esbuild";
@@ -7,6 +15,13 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const rendererRoot = path.join(ROOT, "desktop", "renderer");
 const sourceRoot = path.join(ROOT, "desktop-tauri", "src");
 const outputRoot = path.join(ROOT, "desktop-tauri", "dist");
+const OUTPUT_ALLOWLIST = new Set([
+  ".phase-b-build.json",
+  "index.html",
+  "pet-app.js",
+  "pet.css",
+  "tauri-bridge.js",
+]);
 
 function injectBridge(html) {
   if (html.includes("tauri-bridge.js")) return html;
@@ -19,7 +34,22 @@ function injectBridge(html) {
   );
 }
 
+function assertCleanOutput() {
+  const entries = readdirSync(outputRoot).sort();
+  for (const entry of entries) {
+    const fullPath = path.join(outputRoot, entry);
+    if (statSync(fullPath).isDirectory() || !OUTPUT_ALLOWLIST.has(entry) || entry.endsWith(".map")) {
+      throw new Error(`desktop-tauri/dist contains unexpected build output: ${entry}`);
+    }
+  }
+  const missing = [...OUTPUT_ALLOWLIST].filter((entry) => !entries.includes(entry));
+  if (missing.length > 0) {
+    throw new Error(`desktop-tauri/dist is missing expected output: ${missing.join(", ")}`);
+  }
+}
+
 async function build() {
+  rmSync(outputRoot, { recursive: true, force: true });
   mkdirSync(outputRoot, { recursive: true });
 
   const rendererHtml = readFileSync(path.join(rendererRoot, "index.html"), "utf8");
@@ -65,7 +95,8 @@ async function build() {
     )}\n`,
     "utf8",
   );
-  console.log("desktop-tauri Phase B renderer+bridge build ok");
+  assertCleanOutput();
+  console.log("desktop-tauri Phase B renderer+bridge clean build ok");
 }
 
 build().catch((error) => {

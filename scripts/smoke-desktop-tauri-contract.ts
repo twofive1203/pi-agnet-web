@@ -162,6 +162,9 @@ assert.match(rendererHtml, /pet-app\.js/);
 assert.match(buildScript, /desktop\/renderer/);
 assert.match(buildScript, /tauri-bridge/);
 assert.match(buildScript, /desktop-tauri["'],\s*["']dist/);
+assert.match(buildScript, /rmSync\(outputRoot,\s*\{\s*recursive:\s*true,\s*force:\s*true\s*\}\)/);
+assert.match(buildScript, /OUTPUT_ALLOWLIST/);
+assert.match(buildScript, /unexpected build output/);
 assert.match(connectionState, /127\.0\.0\.1/);
 assert.match(observerClient, /is_loopback_observer_url/);
 assert.match(activityView, /assert_renderer_view_safe/);
@@ -202,10 +205,15 @@ for (const [label, source] of [
   assertNoServiceControl(source, label);
 }
 assert.match(rustLib, /tauri_plugin_single_instance::init/);
+assert.match(rustLib, /WindowEvent::Focused/);
+assert.match(rustLib, /spawn_monitor_watcher/);
 assert.match(windowController, /set_ignore_cursor_events/);
 assert.match(windowController, /show_inactive/);
 assert.match(trayController, /disable-click-through/);
 assert.match(trayController, /quit-preview/);
+assert.match(trayController, /show_menu_on_left_click\(false\)/);
+assert.match(trayController, /on_tray_icon_event/);
+assert.match(trayController, /emit_view/);
 
 for (const ignored of [
   "/desktop-tauri/node_modules/",
@@ -227,7 +235,9 @@ const packageSmoke = read("scripts/smoke-desktop-tauri-package.mjs");
 const benchmark = read("scripts/benchmark-desktop-runtimes.ps1");
 const adr = read("docs/architecture/decisions/desktop-pet-tauri-migration.md");
 assert.match(packageSmoke, /SETTINGS_REHEARSAL_OK/);
-assert.match(packageSmoke, /ARTIFACT_SCAN/);
+assert.match(packageSmoke, /BUNDLE_OUTER_SCAN_OK/);
+assert.match(packageSmoke, /DESKTOP_TAURI_EXPANDED_APP_DIR/);
+assert.match(packageSmoke, /ARTIFACT_SCAN_OK/);
 assert.match(benchmark, /privateWorkingSet/i);
 assert.match(adr, /com\.twofive\.snail-pi-pet\.tauri-preview/);
 assert.match(validation, /Gate A/);

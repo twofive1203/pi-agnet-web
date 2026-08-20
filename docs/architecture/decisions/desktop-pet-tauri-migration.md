@@ -51,7 +51,15 @@ WebView2 candidates for size qualification:
 
 Unsigned engineering QA is the default. Authenticode uses `bundle.windows.certificateThumbprint` / `digestAlgorithm` / `timestampUrl` placeholders and must not commit certificate material. SmartScreen warnings on unsigned Preview builds are expected.
 
-Artifact scans must prove the bundle contains no `.next`, Next/pi SDK, Node, Electron, Forge, node-pty, Automation workers, `bin/pi-web.js`, test fixtures, Electron settings, or Access Key files.
+Artifact scans must prove the bundle contains no `.next`, Next/pi SDK, Node, Electron, Forge, node-pty, Automation workers, `bin/pi-web.js`, test fixtures, Electron settings, or Access Key files. The UI build deletes and recreates `desktop-tauri/dist` and accepts only the fixed renderer/bridge allowlist. NSIS outer-file inspection is reported separately as `BUNDLE_OUTER_SCAN_OK`; only an unpacked or isolated temporary-install application tree may produce `ARTIFACT_SCAN_OK`.
+
+## Runtime parity hardening
+
+Rust keeps window focus/background state and per-sound-kind cooldown timestamps in process memory. Persisted settings continue to contain only transition LRUs, so focus changes and 10-second cooldown timestamps never become durable user data. `WindowEvent::Focused` updates policy state without showing the pet.
+
+Tray mutations complete through the same host boundary that persists settings, emits the renderer view, and refreshes checked/enabled menu state. Left click is an explicit user reveal; right click remains the context menu. Restore-default resets to medium/collapsed and docks at the current work area bottom-right. A stoppable low-frequency monitor-topology watcher plus scale-factor events passively clamp the window to the nearest remaining work area without focus activation.
+
+Custom-pet scans validate the persisted selected key in Rust. If a selected Snail/Codex entry disappears or becomes invalid, Preview persists `snail:snail-default`; renderer fallback is no longer the source of truth.
 
 ## Settings migration
 

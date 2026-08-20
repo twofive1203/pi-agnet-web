@@ -2,7 +2,7 @@ use serde_json::Value;
 use tauri::{
     image::Image,
     menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem},
-    tray::{TrayIconBuilder, TrayIconId},
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent, TrayIconId},
     AppHandle, Manager,
 };
 
@@ -84,13 +84,19 @@ pub struct TrayModelInput<'a> {
 
 pub fn tray_model_from_view(view: &Value, click_through: bool) -> Vec<TrayMenuItem> {
     build_tray_menu_model(TrayModelInput {
-        presentation: view.get("presentation").and_then(Value::as_str).unwrap_or("idle"),
+        presentation: view
+            .get("presentation")
+            .and_then(Value::as_str)
+            .unwrap_or("idle"),
         connection_status: view
             .get("connectionStatus")
             .and_then(Value::as_str)
             .unwrap_or("probing"),
         click_through,
-        dnd_enabled: view.get("dndEnabled").and_then(Value::as_bool).unwrap_or(false),
+        dnd_enabled: view
+            .get("dndEnabled")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
         sound_master_enabled: view
             .get("sound")
             .and_then(|sound| sound.get("masterEnabled"))
@@ -162,8 +168,20 @@ pub fn refresh_tray(app: &AppHandle) -> tauri::Result<()> {
         .icon(icon)
         .tooltip(&tooltip)
         .menu(&menu)
-        .show_menu_on_left_click(true)
+        .show_menu_on_left_click(false)
         .on_menu_event(|app, event| handle_menu_action(app, event.id().as_ref()))
+        .on_tray_icon_event(|tray, event| {
+            if matches!(
+                event,
+                TrayIconEvent::Click {
+                    button: MouseButton::Left,
+                    button_state: MouseButtonState::Up,
+                    ..
+                }
+            ) {
+                reveal_from_tray(tray.app_handle());
+            }
+        })
         .build(app)?;
     Ok(())
 }
@@ -174,32 +192,45 @@ enum TrayOwned {
     Separator(PredefinedMenuItem<tauri::Wry>),
 }
 
+fn reveal_from_tray(app: &AppHandle) {
+    let Some(window) = app.get_webview_window("pet") else {
+        return;
+    };
+    if window_controller::show_user(&window).is_err() {
+        return;
+    }
+    if let Some(store) = app.try_state::<ShellStateStore>() {
+        if let Ok(mut state) = store.0.lock() {
+            state.visible = true;
+            state.click_through = false;
+        }
+    }
+    if let Some(app_state) = app.try_state::<std::sync::Arc<AppState>>() {
+        if app_state.set_click_through_pref(false, &window).is_ok() {
+            app_state.set_app_in_background(false);
+            let _ = app_state.emit_view(app);
+        }
+    }
+}
+
 fn handle_menu_action(app: &AppHandle, id: &str) {
     let Some(window) = app.get_webview_window("pet") else {
         return;
     };
     match id {
-        SHOW_PREVIEW | DISABLE_CLICK_THROUGH => {
-            if window_controller::show_user(&window).is_ok() {
-                if let Some(store) = app.try_state::<ShellStateStore>() {
-                    if let Ok(mut state) = store.0.lock() {
-                        state.visible = true;
-                        state.click_through = false;
-                    }
-                }
-                if let Some(app_state) = app.try_state::<std::sync::Arc<AppState>>() {
-                    let _ = app_state.set_click_through_pref(false, &window);
-                }
-            }
-        }
+        SHOW_PREVIEW | DISABLE_CLICK_THROUGH => reveal_from_tray(app),
         TOGGLE_DND => {
             if let Some(app_state) = app.try_state::<std::sync::Arc<AppState>>() {
-                let _ = app_state.toggle_dnd(&window);
+                if app_state.toggle_dnd(&window).is_ok() {
+                    let _ = app_state.emit_view(app);
+                }
             }
         }
         TOGGLE_SOUND => {
             if let Some(app_state) = app.try_state::<std::sync::Arc<AppState>>() {
-                let _ = app_state.toggle_sound(&window);
+                if app_state.toggle_sound(&window).is_ok() {
+                    let _ = app_state.emit_view(app);
+                }
             }
         }
         RETRY => {
@@ -225,7 +256,12 @@ fn handle_menu_action(app: &AppHandle, id: &str) {
     }
 }
 
-fn item(id: &'static str, label: impl Into<String>, enabled: bool, checked: Option<bool>) -> TrayMenuItem {
+fn item(
+    id: &'static str,
+    label: impl Into<String>,
+    enabled: bool,
+    checked: Option<bool>,
+) -> TrayMenuItem {
     TrayMenuItem {
         id,
         label: label.into(),
@@ -263,10 +299,7 @@ fn build_tooltip(view: &Value) -> String {
         .get("presentation")
         .and_then(Value::as_str)
         .unwrap_or("idle");
-    let mut parts = vec![format!(
-        "蜗牛派桌宠 · {}",
-        presentation_label(presentation)
-    )];
+    let mut parts = vec![format!("蜗牛派桌宠 · {}", presentation_label(presentation))];
     if let Some(active) = view.get("activeCount").and_then(Value::as_u64) {
         if active > 0 {
             parts.push(format!("活动 {active}"));

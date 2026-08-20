@@ -138,6 +138,46 @@ for (const testCase of transitionFixtures.cases) {
   );
 }
 
+for (const sequence of transitionFixtures.sequences ?? []) {
+  let settings = normalizeDesktopSettings({
+    ...createDefaultDesktopSettings(),
+    ...sequence.settings,
+  });
+  let lastPlayedAt = {};
+  for (const step of sequence.steps) {
+    const snapshot = step.snapshot as never;
+    const notifications = selectNotifications({
+      settings,
+      snapshot,
+      resetBaseline: false,
+      appInBackground: step.appInBackground,
+    });
+    const sounds = selectSoundCues({
+      settings,
+      snapshot,
+      resetBaseline: false,
+      now: step.now,
+      lastPlayedAt,
+    });
+    assert.deepEqual(
+      {
+        notifyTransitionIds: notifications.toNotify.map((item) => item.transitionId),
+        soundCues: sounds.cues,
+      },
+      step.expected,
+      `transition sequence ${sequence.id}`,
+    );
+    settings = {
+      ...settings,
+      notifiedTransitionIds: notifications.notifiedTransitionIds,
+      soundedTransitionIds: sounds.soundedTransitionIds,
+    };
+    lastPlayedAt = sounds.lastPlayedAt;
+  }
+  assert.deepEqual(settings.notifiedTransitionIds, sequence.expectedNotifiedTransitionIds);
+  assert.deepEqual(settings.soundedTransitionIds, sequence.expectedSoundedTransitionIds);
+}
+
 const bridge = readFileSync(path.join(process.cwd(), "desktop-tauri", "src", "tauri-bridge.ts"), "utf8");
 assert.match(bridge, /window\.snailPet/);
 assert.match(bridge, /onStateChanged/);

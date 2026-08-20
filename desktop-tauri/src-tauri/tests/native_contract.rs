@@ -5,8 +5,9 @@ use snail_pi_pet_tauri_preview_lib::{
     notifications::select_notification_candidates,
     tray_controller::{build_tray_menu_model, DISABLE_CLICK_THROUGH, QUIT_PREVIEW, TrayModelInput},
     window_controller::{
-        clamp_bounds, pet_layout_spec, pet_stack_rect, transition_window_layout,
-        union_work_areas, TrayLayoutAnchor, WindowBounds, WorkArea,
+        clamp_bounds, default_window_layout, pet_layout_spec, pet_stack_rect,
+        recover_bounds_to_nearest_work_area, transition_window_layout, union_work_areas,
+        TrayLayoutAnchor, WindowBounds, WorkArea,
     },
     activity_view::default_desktop_settings,
 };
@@ -133,6 +134,50 @@ fn bottom_right_tray_expands_up_and_left_without_moving_the_pet() {
     );
     assert_eq!(expanded.tray_anchor, TrayLayoutAnchor::BottomRight);
     assert_eq!(pet_stack_rect(expanded.bounds, expanded.tray_anchor, spec), stack);
+}
+
+#[test]
+fn restore_default_uses_medium_collapsed_bottom_right_layout() {
+    let work_area = WorkArea {
+        x: -1920,
+        y: -200,
+        width: 1920,
+        height: 1080,
+    };
+    let layout = default_window_layout(work_area, pet_layout_spec("medium"));
+    assert_eq!(layout.tray_anchor, TrayLayoutAnchor::TopLeft);
+    assert_eq!(layout.bounds.width, 197);
+    assert_eq!(layout.bounds.height, 235);
+    assert_eq!(layout.bounds.x, -221);
+    assert_eq!(layout.bounds.y, 621);
+}
+
+#[test]
+fn display_recovery_selects_nearest_remaining_work_area() {
+    let current = WindowBounds {
+        x: -1800,
+        y: 100,
+        width: 197,
+        height: 235,
+    };
+    let remaining = [WorkArea {
+        x: 0,
+        y: 0,
+        width: 1920,
+        height: 1080,
+    }];
+    let recovered = recover_bounds_to_nearest_work_area(current, &remaining).expect("recovered");
+    assert_eq!(recovered.x, 0);
+    assert_eq!(recovered.y, 100);
+    assert_eq!(recovered.width, current.width);
+    assert_eq!(recovered.height, current.height);
+
+    let already_visible = WindowBounds { x: 50, y: 50, ..current };
+    assert_eq!(
+        recover_bounds_to_nearest_work_area(already_visible, &remaining),
+        Some(already_visible)
+    );
+    assert_eq!(recover_bounds_to_nearest_work_area(current, &[]), None);
 }
 
 #[test]

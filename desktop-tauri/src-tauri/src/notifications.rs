@@ -1,6 +1,9 @@
 use serde_json::{json, Value};
 
-use crate::activity_view::{select_transition_effects, DesktopPetSettings, TransitionPolicyResult};
+use crate::activity_view::{
+    select_transition_effects, select_transition_effects_with_runtime, DesktopPetSettings,
+    TransitionPolicyResult, TransitionRuntimeState,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DesktopNotificationCandidate {
@@ -29,7 +32,35 @@ pub fn select_notification_candidates(
     app_in_background: bool,
     now: i64,
 ) -> (Vec<DesktopNotificationCandidate>, TransitionPolicyResult) {
-    let effects = select_transition_effects(settings, snapshot, reset_baseline, app_in_background, now);
+    let effects =
+        select_transition_effects(settings, snapshot, reset_baseline, app_in_background, now);
+    build_notification_candidates(snapshot, reset_baseline, effects)
+}
+
+pub fn select_notification_candidates_with_runtime(
+    settings: &DesktopPetSettings,
+    snapshot: &Value,
+    reset_baseline: bool,
+    app_in_background: bool,
+    now: i64,
+    runtime: &mut TransitionRuntimeState,
+) -> (Vec<DesktopNotificationCandidate>, TransitionPolicyResult) {
+    let effects = select_transition_effects_with_runtime(
+        settings,
+        snapshot,
+        reset_baseline,
+        app_in_background,
+        now,
+        runtime,
+    );
+    build_notification_candidates(snapshot, reset_baseline, effects)
+}
+
+fn build_notification_candidates(
+    snapshot: &Value,
+    reset_baseline: bool,
+    effects: TransitionPolicyResult,
+) -> (Vec<DesktopNotificationCandidate>, TransitionPolicyResult) {
     if reset_baseline {
         return (Vec::new(), effects);
     }
@@ -47,14 +78,16 @@ pub fn select_notification_candidates(
         let title = activity
             .and_then(|row| row.get("title").and_then(Value::as_str))
             .or_else(|| {
-                find_transition(snapshot, id).and_then(|row| row.get("taskKey").and_then(Value::as_str))
+                find_transition(snapshot, id)
+                    .and_then(|row| row.get("taskKey").and_then(Value::as_str))
             })
             .unwrap_or("任务")
             .to_string();
         let project_name = activity
             .and_then(|row| row.get("projectName").and_then(Value::as_str))
             .or_else(|| {
-                find_transition(snapshot, id).and_then(|row| row.get("projectKey").and_then(Value::as_str))
+                find_transition(snapshot, id)
+                    .and_then(|row| row.get("projectKey").and_then(Value::as_str))
             })
             .unwrap_or("")
             .to_string();
@@ -65,7 +98,8 @@ pub fn select_notification_candidates(
         let activity_id = activity
             .and_then(|row| row.get("activityId").and_then(Value::as_str))
             .or_else(|| {
-                find_transition(snapshot, id).and_then(|row| row.get("activityId").and_then(Value::as_str))
+                find_transition(snapshot, id)
+                    .and_then(|row| row.get("activityId").and_then(Value::as_str))
             })
             .unwrap_or("")
             .to_string();

@@ -93,8 +93,10 @@ Shared logic lives under `lib/`. Prefer adding behavior here when it is used by 
 | `forge.config.ts` | Pet-only Electron Forge config + `DESKTOP_PACKAGE_CONTRACT` / `DESKTOP_FORBIDDEN_BUNDLE_PATHS` (no Next/pi/node-pty/`spi` runtime; signing env placeholders). |
 | `desktop/package.json` | Private `snail-pi-pet` package metadata; not published with npm `spi`. |
 | `scripts/smoke-desktop-package.mjs` | Packaging contract smoke: npm `files` exclusion, Forge pet-only ignore, no service-control source, validation doc AE gates, and optional `DESKTOP_PACKAGE_OUT` deep scan across expanded resources, ASAR entries, and Squirrel NUPKG paths. |
-| `scripts/smoke-desktop-tauri-package.mjs` | Isolated Tauri Preview packaging smoke: Preview identity, NSIS/Evergreen-only WebView2, capability/attach-only source, read-only Electron settings rehearsal, and optional `DESKTOP_TAURI_PACKAGE_OUT` bundle scan. |
+| `scripts/smoke-desktop-tauri-package.mjs` | Isolated Tauri Preview packaging smoke: Preview identity, NSIS/Evergreen-only WebView2, capability/attach-only source, read-only Electron settings rehearsal, clean frontend allowlist, outer-bundle scan, and optional `DESKTOP_TAURI_EXPANDED_APP_DIR` real-tree pet-only/size qualification. |
 | `scripts/benchmark-desktop-runtimes.ps1` | Same-machine Electron/Tauri disk and full process-tree Private Working Set sampler. Writes gitignored reports under `desktop-tauri/.benchmark/`; does not treat debug/`target` trees or Offline/Fixed WebView2 as qualification. |
+| `desktop-tauri/src-tauri/src/app_state.rs` | Long-lived Preview runtime: focus/background policy state, cross-Snapshot sound cooldown, safe view emission, settings/catalog normalization, and Observer/Quick Session orchestration. |
+| `desktop-tauri/src-tauri/src/window_controller.rs` | Shared Tauri window geometry and Windows no-activate host operations: tray/scale transitions, medium/default dock restore, nearest-work-area recovery, and monitor-topology signatures. |
 | `desktop-tauri/src-tauri/src/settings.rs` | Preview settings load/save plus `map_electron_settings_preview`, a read-only Electron import mapper that never writes official files. |
 | `lib/unified-diff.ts` | Wrapper around the `diff` package for bounded unified diff generation and addition/deletion counting. |
 | `lib/agent-client.ts` | Client-side helper for `POST /api/agent/[id]`. |

@@ -15,8 +15,10 @@ import assert from "node:assert/strict";
 import {
   existsSync,
   mkdirSync,
+  mkdtempSync,
   readdirSync,
   readFileSync,
+  rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
@@ -40,6 +42,8 @@ const FORBIDDEN_BUNDLE_NEEDLES = [
   ".next",
   ".preview",
   "bin/pi-web.js",
+  "node_modules",
+  "node.exe",
   "node_modules/next",
   "node_modules/@lydell/node-pty",
   "node_modules/@earendil-works/pi-coding-agent",
@@ -53,7 +57,16 @@ const FORBIDDEN_BUNDLE_NEEDLES = [
   "activity-view-cases.json",
   "transition-cases.json",
   "electron-settings-import.json",
+  "fixtures",
+  "automation",
 ];
+const FRONTEND_DIST_ALLOWLIST = new Set([
+  ".phase-b-build.json",
+  "index.html",
+  "pet-app.js",
+  "pet.css",
+  "tauri-bridge.js",
+]);
 const FORBIDDEN_SETTINGS_KEYS = [
   "token",
   "observerToken",
@@ -80,7 +93,6 @@ const COMPLETION_POLICIES = new Set(["never", "background-only", "always"]);
 function walkFiles(dir, out = []) {
   if (!existsSync(dir)) return out;
   for (const name of readdirSync(dir)) {
-    if (name === "node_modules" || name === ".git" || name === "target") continue;
     const full = path.join(dir, name);
     let st;
     try {
@@ -299,7 +311,56 @@ function rehearseSettingsMigration() {
   return mapped;
 }
 
-function scanBundle(outDir) {
+function assertFrontendDist(distDir) {
+  assert.ok(existsSync(distDir), "desktop-tauri/dist must exist after the UI build");
+  const entries = readdirSync(distDir).sort();
+  for (const entry of entries) {
+    const full = path.join(distDir, entry);
+    assert.equal(statSync(full).isDirectory(), false, `frontend dist must not contain directory: ${entry}`);
+    assert.ok(FRONTEND_DIST_ALLOWLIST.has(entry), `frontend dist contains unexpected file: ${entry}`);
+    assert.equal(entry.endsWith(".map"), false, `frontend dist must not contain source map: ${entry}`);
+  }
+  assert.deepEqual(new Set(entries), FRONTEND_DIST_ALLOWLIST);
+  console.log(`FRONTEND_DIST_OK files=${entries.length}`);
+}
+
+function assertExpandedAppTree(appDir, { emit = true } = {}) {
+  const files = walkFiles(appDir);
+  assert.ok(files.length > 0, `expanded app tree is empty: ${appDir}`);
+  const entries = files.map((file) => normalizedRelative(appDir, file).toLowerCase().replace(/\\/g, "/"));
+  for (const forbidden of FORBIDDEN_BUNDLE_NEEDLES) {
+    const needle = forbidden.toLowerCase();
+    const hit = entries.some(
+      (entry) => entry.includes(`/${needle}`) || entry.includes(needle) || entry.endsWith(needle),
+    );
+    assert.equal(hit, false, `expanded Tauri app must not contain ${forbidden}`);
+  }
+  assert.ok(
+    entries.some((entry) => entry.endsWith(`${PREVIEW_EXECUTABLE}.exe`) || entry.endsWith(PREVIEW_EXECUTABLE)),
+    `expanded app must contain ${PREVIEW_EXECUTABLE}`,
+  );
+  const totalBytes = files.reduce((sum, file) => sum + statSync(file).size, 0);
+  const megabytes = totalBytes / (1024 * 1024);
+  assert.ok(megabytes <= 30, `expanded Preview app must be <= 30 MB: ${megabytes.toFixed(2)} MB`);
+  if (emit) {
+    console.log(`ARTIFACT_SCAN_OK dir=${appDir} files=${files.length} appMb=${megabytes.toFixed(2)}`);
+  }
+}
+
+function characterizeExpandedScan() {
+  const scratch = mkdtempSync(path.join(os.tmpdir(), "snail-tauri-expanded-scan-"));
+  try {
+    writeFileSync(path.join(scratch, `${PREVIEW_EXECUTABLE}.exe`), "preview");
+    assert.doesNotThrow(() => assertExpandedAppTree(scratch, { emit: false }));
+    mkdirSync(path.join(scratch, ".next"));
+    writeFileSync(path.join(scratch, ".next", "server.js"), "forbidden");
+    assert.throws(() => assertExpandedAppTree(scratch, { emit: false }), /must not contain \.next/);
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
+}
+
+function scanBundleOuter(outDir) {
   const files = walkFiles(outDir);
   const entries = files.map((file) => normalizedRelative(outDir, file).toLowerCase().replace(/\\/g, "/"));
   for (const forbidden of FORBIDDEN_BUNDLE_NEEDLES) {
@@ -338,7 +399,7 @@ function scanBundle(outDir) {
     console.log(`INSTALLER_SIZE_OK file=${rel(setup)} mb=${megabytes.toFixed(2)} limit=20`);
     assert.ok(megabytes <= 20, `Preview installer must be <= 20 MB under Evergreen bootstrapper: ${rel(setup)}`);
   }
-  console.log(`ARTIFACT_SCAN_OK dir=${rel(outDir)} files=${files.length} setups=${previewSetups.length}`);
+  console.log(`BUNDLE_OUTER_SCAN_OK dir=${rel(outDir)} files=${files.length} setups=${previewSetups.length}`);
 }
 
 function main() {
@@ -468,6 +529,13 @@ function main() {
   assert.ok(/Tauri Preview|desktop-tauri/i.test(troubleshooting), "troubleshooting must mention Tauri Preview");
 
   rehearseSettingsMigration();
+  const frontendDist = path.join(ROOT, "desktop-tauri", "dist");
+  if (existsSync(frontendDist)) {
+    assertFrontendDist(frontendDist);
+  } else {
+    console.log("FRONTEND_DIST_SKIPPED run desktop:tauri:build-ui to generate the clean allowlisted dist");
+  }
+  characterizeExpandedScan();
 
   const defaultBundle = path.join(ROOT, "desktop-tauri", "src-tauri", "target", "release", "bundle");
   const outCandidates = process.env.DESKTOP_TAURI_PACKAGE_OUT
@@ -478,10 +546,18 @@ function main() {
   for (const outDir of outCandidates) {
     if (!existsSync(outDir)) continue;
     scannedArtifact = true;
-    scanBundle(outDir);
+    scanBundleOuter(outDir);
   }
   if (!scannedArtifact) {
-    console.log("ARTIFACT_SCAN_SKIPPED no Tauri bundle directory (expected until desktop:tauri:build)");
+    console.log("BUNDLE_OUTER_SCAN_SKIPPED no Tauri bundle directory (expected until desktop:tauri:build)");
+  }
+
+  const expandedAppDir = process.env.DESKTOP_TAURI_EXPANDED_APP_DIR;
+  if (expandedAppDir) {
+    assert.ok(existsSync(expandedAppDir), `expanded Tauri app directory missing: ${expandedAppDir}`);
+    assertExpandedAppTree(expandedAppDir);
+  } else {
+    console.log("ARTIFACT_SCAN_SKIPPED no expanded Tauri application tree; set DESKTOP_TAURI_EXPANDED_APP_DIR after unpack/install");
   }
 
   console.log(

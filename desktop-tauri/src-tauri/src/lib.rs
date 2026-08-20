@@ -13,6 +13,8 @@ pub mod tray_controller;
 pub mod window_controller;
 
 use std::sync::Mutex;
+use std::thread;
+use std::time::Duration;
 
 use serde_json::{json, Value};
 use tauri::{Manager, State, WebviewWindow, WindowEvent};
@@ -162,6 +164,7 @@ fn hide_to_tray(
         app.persist_window_position(bounds.x, bounds.y);
     }
     window.hide().map_err(|error| error.to_string())?;
+    app.set_app_in_background(true);
     store
         .0
         .lock()
@@ -189,7 +192,10 @@ fn show_preview(
 }
 
 #[tauri::command]
-fn quit_preview(window: WebviewWindow, app: State<'_, std::sync::Arc<AppState>>) -> Result<(), String> {
+fn quit_preview(
+    window: WebviewWindow,
+    app: State<'_, std::sync::Arc<AppState>>,
+) -> Result<(), String> {
     let window = pet_window(&window)?;
     app.quit_network();
     window.app_handle().exit(0);
@@ -197,7 +203,10 @@ fn quit_preview(window: WebviewWindow, app: State<'_, std::sync::Arc<AppState>>)
 }
 
 #[tauri::command]
-fn get_state(window: WebviewWindow, app: State<'_, std::sync::Arc<AppState>>) -> Result<Value, String> {
+fn get_state(
+    window: WebviewWindow,
+    app: State<'_, std::sync::Arc<AppState>>,
+) -> Result<Value, String> {
     pet_window(&window)?;
     app.current_view()
 }
@@ -303,12 +312,12 @@ fn restore_default_position(
     app: State<'_, std::sync::Arc<AppState>>,
 ) -> Result<(), String> {
     let window = pet_window(&window)?;
-    let _ = app.apply_prefs(json!({ "activityTrayOpen": false }), &window)?;
-    window_controller::recover_to_visible_work_area(&window)?;
+    let _ = app.restore_default_window(&window)?;
     if let Ok(mut shell) = store.0.lock() {
         shell.expanded = false;
+        shell.bounds = window_controller::current_bounds(&window).ok();
     }
-    let _ = app.emit_view(window.app_handle());
+    app.emit_view(window.app_handle())?;
     Ok(())
 }
 
@@ -429,6 +438,28 @@ fn create_quick_session(
     Ok(app.create_quick_session(input))
 }
 
+fn spawn_monitor_watcher(window: WebviewWindow, state: std::sync::Arc<AppState>) {
+    thread::Builder::new()
+        .name("snail-pi-tauri-monitors".to_string())
+        .spawn(move || {
+            let mut previous = window_controller::monitor_topology_signature(&window).ok();
+            while !state.is_stopped() {
+                thread::sleep(Duration::from_secs(2));
+                if state.is_stopped() {
+                    break;
+                }
+                let Ok(current) = window_controller::monitor_topology_signature(&window) else {
+                    continue;
+                };
+                if previous.as_ref() != Some(&current) {
+                    let _ = state.recover_window_position(&window);
+                    previous = Some(current);
+                }
+            }
+        })
+        .expect("monitor watcher thread");
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
@@ -489,7 +520,8 @@ pub fn run() {
                 )
             });
             if let Some((pet_scale, expanded)) = initial_layout {
-                let layout = window_controller::initialize_window_layout(&window, &pet_scale, expanded)?;
+                let layout =
+                    window_controller::initialize_window_layout(&window, &pet_scale, expanded)?;
                 if let Ok(mut runtime) = state.runtime.lock() {
                     runtime.tray_anchor = layout.tray_anchor;
                     runtime.settings.window_position = Some(crate::activity_view::WindowPosition {
@@ -500,7 +532,8 @@ pub fn run() {
             }
             if let Ok(runtime) = state.runtime.lock() {
                 let _ = window.set_always_on_top(runtime.settings.always_on_top);
-                let _ = window_controller::set_click_through(&window, runtime.settings.click_through);
+                let _ =
+                    window_controller::set_click_through(&window, runtime.settings.click_through);
                 let _ = crate::native::apply_launch_at_login(runtime.settings.launch_at_login);
                 if let Some(store) = app.try_state::<ShellStateStore>() {
                     if let Ok(mut shell) = store.0.lock() {
@@ -520,20 +553,32 @@ pub fn run() {
                     if let Some(window) = app_handle.get_webview_window("pet") {
                         let _ = window.hide();
                     }
+                    if let Some(state) = app_handle.try_state::<std::sync::Arc<AppState>>() {
+                        state.set_app_in_background(true);
+                    }
                     if let Some(store) = app_handle.try_state::<ShellStateStore>() {
                         if let Ok(mut state) = store.0.lock() {
                             state.visible = false;
                         }
                     }
                 }
+                WindowEvent::Focused(focused) => {
+                    if let Some(state) = app_handle.try_state::<std::sync::Arc<AppState>>() {
+                        state.set_app_in_background(!focused);
+                    }
+                }
                 WindowEvent::ScaleFactorChanged { .. } => {
-                    if let Some(window) = app_handle.get_webview_window("pet") {
-                        let _ = window_controller::recover_to_visible_work_area(&window);
+                    if let (Some(window), Some(state)) = (
+                        app_handle.get_webview_window("pet"),
+                        app_handle.try_state::<std::sync::Arc<AppState>>(),
+                    ) {
+                        let _ = state.recover_window_position(&window);
                     }
                 }
                 _ => {}
             });
 
+            spawn_monitor_watcher(window.clone(), state.clone());
             window_controller::show_inactive(&window)?;
             Ok(())
         })
