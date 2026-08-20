@@ -1,0 +1,48 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "SnailPiPet Tauri Preview",
+  "version": "0.1.0",
+  "identifier": "com.twofive.snail-pi-pet.tauri-preview",
+  "build": {
+    "beforeDevCommand": "node ../scripts/build-desktop-tauri.mjs",
+    "beforeBuildCommand": "node ../scripts/build-desktop-tauri.mjs",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "windows": [
+      {
+        "label": "pet",
+        "title": "Snail Pi Pet — Tauri Preview",
+        "width": 180,
+        "height": 220,
+        "minWidth": 180,
+        "minHeight": 220,
+        "transparent": true,
+        "decorations": false,
+        "alwaysOnTop": true,
+        "resizable": false,
+        "visible": false,
+        "focus": false,
+        "shadow": false,
+        "skipTaskbar": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; frame-src 'none'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "icon": [
+      "../../desktop/assets/icons/icon.png",
+      "../../desktop/assets/icons/icon.ico"
+    ],
+    "windows": {
+      "webviewInstallMode": {
+        "type": "embedBootstrapper"
+      }
+    }
+  }
+}

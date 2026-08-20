@@ -1,0 +1,17 @@
+{
+  "name": "snail-pi-pet-tauri-preview",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Isolated Tauri 2 shell feasibility preview for the Snail Pi desktop pet.",
+  "scripts": {
+    "build:ui": "node ../scripts/build-desktop-tauri.mjs",
+    "dev": "tauri dev",
+    "build": "tauri build"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "2.11.1"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.11.4"
+  }
+}

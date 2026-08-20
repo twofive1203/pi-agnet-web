@@ -30,6 +30,12 @@
 /desktop/.preview/
 /desktop/out/
 
+# isolated Tauri desktop pet Preview (generated)
+/desktop-tauri/node_modules/
+/desktop-tauri/dist/
+/desktop-tauri/src-tauri/target/
+/desktop-tauri/src-tauri/gen/
+
 # misc
 .DS_Store
 *.pem

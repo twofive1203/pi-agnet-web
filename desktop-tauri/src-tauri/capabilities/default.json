@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "phase-a-pet-shell",
+  "description": "Minimal Phase A pet-window capability; privileged behavior stays in allowlisted Rust commands.",
+  "windows": ["pet"],
+  "permissions": ["core:default"]
+}

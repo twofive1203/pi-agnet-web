@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; frame-src 'none'"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Snail Pi Pet — Tauri Preview</title>
+    <style>
+      :root { color-scheme: light dark; font-family: "Segoe UI", sans-serif; }
+      * { box-sizing: border-box; }
+      html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: transparent; }
+      body { padding: 8px; user-select: none; }
+      button, input { font: inherit; }
+      .shell {
+        width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center;
+        justify-content: flex-end; gap: 7px; padding: 10px; border: 2px solid #664829;
+        border-radius: 28px; background: rgba(255, 244, 210, .94); color: #352719;
+        box-shadow: 0 8px 28px rgba(34, 22, 12, .24);
+      }
+      .preview-badge { position: absolute; top: 7px; left: 12px; font-size: 10px; font-weight: 800; letter-spacing: .05em; }
+      .pet { width: 116px; height: 106px; position: relative; cursor: grab; touch-action: none; }
+      .pet.is-dragging { cursor: grabbing; }
+      .shell-body { position: absolute; width: 91px; height: 58px; left: 9px; bottom: 3px; border: 3px solid #543d26; border-radius: 52% 48% 42% 32%; background: #efaa50; }
+      .shell-spiral { position: absolute; width: 47px; height: 47px; left: 25px; bottom: 27px; border: 3px solid #543d26; border-radius: 50%; background: #ffd17b; }
+      .shell-spiral::after { content: ""; position: absolute; inset: 9px; border: 3px solid #80582c; border-radius: 50%; border-left-color: transparent; }
+      .head { position: absolute; right: 0; bottom: 16px; width: 40px; height: 43px; border: 3px solid #543d26; border-radius: 48% 48% 42% 42%; background: #efaa50; }
+      .eye { position: absolute; top: 11px; width: 5px; height: 7px; border-radius: 50%; background: #352719; }
+      .eye.one { left: 10px; } .eye.two { right: 10px; }
+      .antenna { position: absolute; width: 3px; height: 25px; top: -19px; background: #543d26; transform-origin: bottom; }
+      .antenna.one { left: 10px; transform: rotate(-20deg); } .antenna.two { right: 10px; transform: rotate(20deg); }
+      .antenna::before { content: ""; position: absolute; width: 8px; height: 8px; top: -4px; left: -3px; border-radius: 50%; background: #543d26; }
+      .controls { display: flex; flex-wrap: wrap; justify-content: center; gap: 5px; }
+      .controls button, .toggle {
+        min-height: 28px; padding: 4px 8px; border: 1px solid #765536; border-radius: 999px;
+        background: #fff8df; color: inherit; cursor: pointer;
+      }
+      .controls button:focus-visible, .toggle:focus-within { outline: 2px solid #3d6fa8; outline-offset: 2px; }
+      .toggle { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; }
+      .details { display: none; width: 100%; padding: 10px; border: 1px solid rgba(84,61,38,.35); border-radius: 14px; background: rgba(255,255,255,.42); }
+      .is-expanded .details { display: block; }
+      .details h1 { margin: 0 0 5px; font-size: 15px; }
+      .details p { margin: 4px 0; font-size: 11px; line-height: 1.4; }
+      #shell-status { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; opacity: .78; }
+      #recovery-hint { color: #8c321e; font-weight: 700; }
+      @media (prefers-reduced-motion: no-preference) { .pet { animation: breathe 2.7s ease-in-out infinite; } }
+      @keyframes breathe { 50% { transform: translateY(-3px) rotate(-1deg); } }
+    </style>
+  </head>
+  <body>
+    <main id="phase-a-panel" class="shell" aria-label="Tauri 桌宠可行性预览">
+      <span class="preview-badge">TAURI PREVIEW · PHASE A</span>
+      <div id="pet-drag-surface" class="pet" role="button" tabindex="0" aria-label="拖动桌宠窗口">
+        <div class="shell-body"></div><div class="shell-spiral"></div>
+        <div class="head"><i class="antenna one"></i><i class="antenna two"></i><i class="eye one"></i><i class="eye two"></i></div>
+      </div>
+      <section class="details" aria-label="Phase A 说明">
+        <h1>Windows Shell Spike</h1>
+        <p>此 Preview 不连接、启动或管理 spi；当前仅验证透明窗口、拖动、动态尺寸、Tray、焦点和点击穿透。</p>
+        <p id="recovery-hint" hidden>已开启点击穿透。请从系统托盘选择“取消鼠标穿透”恢复。</p>
+      </section>
+      <div class="controls">
+        <button id="toggle-size" type="button">展开 / 收起</button>
+        <button id="enable-click-through" type="button">开启穿透</button>
+        <button id="hide-preview" type="button">隐藏</button>
+        <label class="toggle"><input id="always-on-top" type="checkbox" checked />置顶</label>
+      </div>
+      <output id="shell-status" aria-live="polite">初始化…</output>
+    </main>
+    <script src="./tauri-bridge.js" defer></script>
+  </body>
+</html>
