@@ -22,7 +22,9 @@ export type SnailPetBridge = {
   toggleTray: () => void;
   /** Close affordance: hide window to tray (does not quit). */
   hideToTray: () => void;
-  /** Move frameless window by screen-pixel delta (custom pet-body drag). */
+  /** Tauri-only native drag path; Electron keeps the renderer delta fallback. */
+  startDragging?: () => void;
+  /** Move frameless window by screen-pixel delta (Electron fallback). */
   moveBy: (dx: number, dy: number) => void;
   selectActivity: (activityId: string) => void;
   markRead: (activityId: string) => void;

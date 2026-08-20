@@ -2199,6 +2199,7 @@ export function renderPetApp(root: Document = document): {
   let petLastScreenX = 0;
   let petLastScreenY = 0;
   let petDragging = false;
+  let petNativeDragging = false;
 
   // Hover play: pupils track the cursor and the head tilts toward it. Both use
   // the independent `translate`/`rotate` CSS properties so they never fight the
@@ -2407,6 +2408,7 @@ export function renderPetApp(root: Document = document): {
     const wasDragging = petDragging;
     petPointerId = null;
     petDragging = false;
+    petNativeDragging = false;
     if (dragClip) {
       dragClip = null;
       if (current) update(current);
@@ -2450,6 +2452,7 @@ export function renderPetApp(root: Document = document): {
     petLastScreenX = event.screenX;
     petLastScreenY = event.screenY;
     petDragging = false;
+    petNativeDragging = false;
     resetEyeFollow();
     // Drop any running mini-act so the duck pose wins over its keyframes.
     petAvatar?.classList.remove("idle-act-look", "idle-act-sleepy", "idle-act-stretch");
@@ -2483,6 +2486,11 @@ export function renderPetApp(root: Document = document): {
       petButton.classList.add("is-dragging");
       petAvatar?.classList.remove("is-pressed");
       petAvatar?.classList.add("is-dragging");
+      // WebView screen coordinates change logical basis while crossing mixed-DPI
+      // monitors. Let the Tauri host delegate the gesture to Windows instead;
+      // Electron keeps the existing renderer-delta fallback.
+      petNativeDragging = typeof bridge?.startDragging === "function";
+      if (petNativeDragging) bridge?.startDragging?.();
     }
     if (!petDragging) return;
     const dx = event.screenX - petLastScreenX;
@@ -2490,7 +2498,7 @@ export function renderPetApp(root: Document = document): {
     petLastScreenX = event.screenX;
     petLastScreenY = event.screenY;
     if (dx !== 0 || dy !== 0) {
-      bridge?.moveBy(dx, dy);
+      if (!petNativeDragging) bridge?.moveBy(dx, dy);
       const profile = currentPetProfile();
       if (profile?.capabilities.directionalRun && current && canApplyDragOverlay(current.presentation)) {
         const nextDrag = resolveCodexDragClip(dx, dy, dragClip);
@@ -2526,6 +2534,7 @@ export function renderPetApp(root: Document = document): {
     if (petPointerId !== event.pointerId) return;
     petPointerId = null;
     petDragging = false;
+    petNativeDragging = false;
     dragClip = null;
     petButton.classList.remove("is-dragging");
     petAvatar?.classList.remove("is-pressed", "is-dragging");

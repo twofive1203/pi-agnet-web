@@ -30,6 +30,7 @@ cargo check --manifest-path desktop-tauri/src-tauri/Cargo.toml
 | Runtime parity | 焦点/后台状态驱动 `background-only`；声音冷却跨 Snapshot 保持 | 共享 sequence fixture + Rust 自动覆盖 |
 | Host state sync | Tray DND/声音/穿透动作完成后 emit view 并刷新 checked state | Rust/静态自动覆盖 |
 | Display recovery | 负坐标/屏幕移除选择最近 work area；拓扑 watcher 被动恢复且不激活 | Rust 纯几何 + 静态自动覆盖 |
+| Mixed-DPI drag path | Tauri 经过点击阈值后调用原生 OS window drag；renderer 不再用跨屏 `screenX`/`screenY` delta 驱动 Tauri 窗口 | Rust/bridge/renderer 静态契约自动覆盖；跟随效果仍需实机 |
 | Custom pet fallback | 已选自定义宠物消失后回退并持久化内置默认 key | Rust 自动覆盖 |
 | Clean frontend | UI build 清空 `dist` 并拒绝 allowlist 外文件/目录/source map | 构建 + package smoke 自动覆盖 |
 | Attach-only | Phase A 无 child process/PID/signal/service control | 静态自动覆盖 |
@@ -73,7 +74,7 @@ cargo check --manifest-path desktop-tauri/src-tauri/Cargo.toml
 | TA-D1 | 单屏 100% | 尺寸/拖动/锚点正常 | **未执行** |
 | TA-D2 | 单屏 150% | 无缩放跳变或模糊导致的不可用 | **未执行** |
 | TA-D3 | 单屏 200% | 控件可用，窗口不超出 work area | **未执行** |
-| TA-D4 | 主屏 100% → 副屏 150% | 跨屏双向移动，scale 更新；经过屏幕接缝及目标屏右下角时桌宠保持跟随鼠标，不被可见区恢复逻辑夹回 | **未执行** |
+| TA-D4 | 主屏 100% → 副屏 150% | 跨屏双向移动，scale 更新；原生 OS drag 在两个方向都保持鼠标抓取点，不向右上/下方漂移，且不被可见区恢复逻辑夹回 | **未执行** |
 | TA-D5 | 主屏 150% → 副屏 200% | 跨屏双向移动；经过屏幕接缝及目标屏右下角时桌宠保持跟随鼠标，展开/收起锚点稳定 | **未执行** |
 | TA-D6 | 副屏位于主屏左侧（负 X） | 可进入负坐标屏并从 Tray 恢复 | **未执行** |
 | TA-D7 | 副屏位于主屏上方（负 Y） | 可进入负坐标屏并从 Tray 恢复 | **未执行** |

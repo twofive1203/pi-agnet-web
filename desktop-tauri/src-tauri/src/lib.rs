@@ -88,6 +88,12 @@ fn get_shell_state(
 }
 
 #[tauri::command]
+fn start_dragging(window: WebviewWindow) -> Result<(), String> {
+    let window = pet_window(&window)?;
+    window.start_dragging().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 fn move_by(
     window: WebviewWindow,
     store: State<'_, ShellStateStore>,
@@ -477,6 +483,7 @@ pub fn run() {
         .manage(ShellStateStore(Mutex::new(ShellState::default())))
         .invoke_handler(tauri::generate_handler![
             get_shell_state,
+            start_dragging,
             move_by,
             toggle_expanded,
             toggle_tray,
@@ -565,6 +572,19 @@ pub fn run() {
                 WindowEvent::Focused(focused) => {
                     if let Some(state) = app_handle.try_state::<std::sync::Arc<AppState>>() {
                         state.set_app_in_background(!focused);
+                    }
+                }
+                WindowEvent::Moved(position) => {
+                    if let Some(state) = app_handle.try_state::<std::sync::Arc<AppState>>() {
+                        state.persist_window_position(position.x, position.y);
+                    }
+                    if let Some(store) = app_handle.try_state::<ShellStateStore>() {
+                        if let Ok(mut shell) = store.0.lock() {
+                            if let Some(bounds) = shell.bounds.as_mut() {
+                                bounds.x = position.x;
+                                bounds.y = position.y;
+                            }
+                        }
                     }
                 }
                 _ => {}

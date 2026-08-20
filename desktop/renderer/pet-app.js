@@ -4324,6 +4324,7 @@
     let petLastScreenX = 0;
     let petLastScreenY = 0;
     let petDragging = false;
+    let petNativeDragging = false;
     const resetEyeFollow = () => {
       if (!(petAvatar instanceof HTMLElement)) return;
       petAvatar.style.removeProperty("--eye-shift-x");
@@ -4501,6 +4502,7 @@
       const wasDragging = petDragging;
       petPointerId = null;
       petDragging = false;
+      petNativeDragging = false;
       if (dragClip) {
         dragClip = null;
         if (current) update(current);
@@ -4536,6 +4538,7 @@
       petLastScreenX = event.screenX;
       petLastScreenY = event.screenY;
       petDragging = false;
+      petNativeDragging = false;
       resetEyeFollow();
       petAvatar?.classList.remove("idle-act-look", "idle-act-sleepy", "idle-act-stretch");
       petAvatar?.classList.add("is-pressed");
@@ -4561,6 +4564,8 @@
         petButton.classList.add("is-dragging");
         petAvatar?.classList.remove("is-pressed");
         petAvatar?.classList.add("is-dragging");
+        petNativeDragging = typeof bridge?.startDragging === "function";
+        if (petNativeDragging) bridge?.startDragging?.();
       }
       if (!petDragging) return;
       const dx = event.screenX - petLastScreenX;
@@ -4568,7 +4573,7 @@
       petLastScreenX = event.screenX;
       petLastScreenY = event.screenY;
       if (dx !== 0 || dy !== 0) {
-        bridge?.moveBy(dx, dy);
+        if (!petNativeDragging) bridge?.moveBy(dx, dy);
         const profile = currentPetProfile();
         if (profile?.capabilities.directionalRun && current && canApplyDragOverlay(current.presentation)) {
           const nextDrag = resolveCodexDragClip(dx, dy, dragClip);
@@ -4597,6 +4602,7 @@
       if (petPointerId !== event.pointerId) return;
       petPointerId = null;
       petDragging = false;
+      petNativeDragging = false;
       dragClip = null;
       petButton.classList.remove("is-dragging");
       petAvatar?.classList.remove("is-pressed", "is-dragging");

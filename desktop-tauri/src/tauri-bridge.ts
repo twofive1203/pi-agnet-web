@@ -13,6 +13,7 @@ type SnailPetBridge = {
   onStateChanged: (handler: (view: unknown) => void) => () => void;
   toggleTray: () => void;
   hideToTray: () => void;
+  startDragging: () => void;
   moveBy: (dx: number, dy: number) => void;
   selectActivity: (activityId: string) => void;
   markRead: (activityId: string) => void;
@@ -73,6 +74,9 @@ const bridge: SnailPetBridge = {
   },
   hideToTray: () => {
     void invoke("hide_to_tray");
+  },
+  startDragging: () => {
+    void invoke("start_dragging");
   },
   moveBy: (dx, dy) => {
     void invoke("move_by", { dx, dy });

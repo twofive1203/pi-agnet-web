@@ -211,6 +211,21 @@ fn mixed_dpi_crossing_does_not_run_display_topology_recovery() {
 }
 
 #[test]
+fn mixed_dpi_drag_uses_native_os_window_dragging() {
+    let host_source = include_str!("../src/lib.rs");
+    let bridge_source = include_str!("../../src/tauri-bridge.ts");
+    let renderer_source = include_str!("../../../desktop/renderer/pet-app.js");
+
+    assert!(host_source.contains("fn start_dragging("));
+    assert!(host_source.contains("window.start_dragging()"));
+    assert!(host_source.contains("WindowEvent::Moved"));
+    assert!(bridge_source.contains("startDragging"));
+    assert!(bridge_source.contains("invoke(\"start_dragging\")"));
+    assert!(renderer_source.contains("typeof bridge?.startDragging === \"function\""));
+    assert!(renderer_source.contains("petNativeDragging"));
+}
+
+#[test]
 fn tray_always_has_click_through_recovery_and_preview_only_quit() {
     assert_eq!(DISABLE_CLICK_THROUGH, "disable-click-through");
     assert_eq!(QUIT_PREVIEW, "quit-preview");

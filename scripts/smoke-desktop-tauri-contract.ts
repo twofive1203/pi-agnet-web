@@ -75,6 +75,7 @@ const native = read("desktop-tauri/src-tauri/src/native.rs");
 const quickSession = read("desktop-tauri/src-tauri/src/quick_session_client.rs");
 const bridge = read("desktop-tauri/src/tauri-bridge.ts");
 const rendererHtml = read("desktop/renderer/index.html");
+const rendererApp = read("desktop/renderer/pet-app.js");
 const buildScript = read("scripts/build-desktop-tauri.mjs");
 const gitignore = read(".gitignore");
 const forgeConfig = read("forge.config.ts");
@@ -154,6 +155,10 @@ assert.match(bridge, /Object\.freeze/);
 assert.match(bridge, /window\.snailPet/);
 assert.match(bridge, /onStateChanged/);
 assert.match(bridge, /getState/);
+assert.match(bridge, /startDragging/);
+assert.match(bridge, /invoke\("start_dragging"\)/);
+assert.match(rendererApp, /typeof bridge\?\.startDragging === "function"/);
+assert.match(rendererApp, /if \(!petNativeDragging\) bridge\?\.moveBy/);
 assert.doesNotMatch(bridge, /__TAURI_INTERNALS__|__TAURI__/, "bridge must not depend on a global generic invoke surface");
 assert.match(rendererHtml, /Content-Security-Policy/);
 assert.match(rendererHtml, /connect-src 'none'/);
@@ -206,6 +211,8 @@ for (const [label, source] of [
 }
 assert.match(rustLib, /tauri_plugin_single_instance::init/);
 assert.match(rustLib, /WindowEvent::Focused/);
+assert.match(rustLib, /WindowEvent::Moved/);
+assert.match(rustLib, /window\.start_dragging\(\)/);
 assert.match(rustLib, /spawn_monitor_watcher/);
 assert.match(windowController, /set_ignore_cursor_events/);
 assert.match(windowController, /show_inactive/);
