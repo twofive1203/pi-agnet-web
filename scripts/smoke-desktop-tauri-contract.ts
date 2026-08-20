@@ -131,7 +131,13 @@ assert.equal(petWindow.alwaysOnTop, true);
 assert.equal(petWindow.visible, false);
 assert.equal(petWindow.focus, false);
 assert.equal(petWindow.resizable, false);
-assert.match(config.app?.security?.csp ?? "", /connect-src\s+'none'/);
+const tauriCsp = config.app?.security?.csp ?? "";
+assert.match(tauriCsp, /connect-src\s+'none'/);
+assert.match(
+  tauriCsp,
+  /img-src\s+[^;]*\bblob:/,
+  "Tauri CSP must allow renderer-created Blob URLs for custom Snail/Codex pet sheets",
+);
 
 assert.match(capabilities.identifier, /phase-[a-c]-/);
 assert.deepEqual(capabilities.windows, ["pet"]);
@@ -147,6 +153,7 @@ assert.match(bridge, /getState/);
 assert.doesNotMatch(bridge, /__TAURI_INTERNALS__|__TAURI__/, "bridge must not depend on a global generic invoke surface");
 assert.match(rendererHtml, /Content-Security-Policy/);
 assert.match(rendererHtml, /connect-src 'none'/);
+assert.match(rendererHtml, /img-src\s+[^;]*\bblob:/);
 assert.match(rendererHtml, /pet-app\.js/);
 assert.match(buildScript, /desktop\/renderer/);
 assert.match(buildScript, /tauri-bridge/);
