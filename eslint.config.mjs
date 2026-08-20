@@ -23,6 +23,7 @@ const eslintConfig = [
       "desktop-tauri/dist/**",
       "desktop-tauri/src-tauri/target/**",
       "desktop-tauri/src-tauri/gen/**",
+      "desktop-tauri/.benchmark/**",
       // Plain runtime companion checked in for file:// loading without a bundler step.
       // Keep lint on pet-app.tsx / pet-state.ts instead.
       "desktop/renderer/pet-app.js",

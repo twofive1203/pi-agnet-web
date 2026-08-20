@@ -42,7 +42,14 @@ const config = readJson<{
     security?: { csp?: string };
   };
   bundle?: {
-    windows?: { webviewInstallMode?: { type?: string } };
+    targets?: string[];
+    createUpdaterArtifacts?: boolean;
+    windows?: {
+      certificateThumbprint?: string | null;
+      digestAlgorithm?: string;
+      webviewInstallMode?: { type?: string };
+      nsis?: { installMode?: string; startMenuFolder?: string };
+    };
   };
 }>("desktop-tauri/src-tauri/tauri.conf.json");
 const capabilities = readJson<{
@@ -91,6 +98,7 @@ for (const command of [
   "desktop:tauri:dev",
   "desktop:tauri:build",
   "test:desktop-tauri-contract",
+  "test:desktop-tauri-package",
 ]) {
   assert.ok(rootPackage.scripts?.[command], `root package must define ${command}`);
 }
@@ -106,7 +114,15 @@ assert.doesNotMatch(forgeConfig, /desktop-tauri|tauri-preview/i,
 assert.equal(config.build?.frontendDist, "../dist");
 assert.match(config.build?.beforeDevCommand ?? "", /build-desktop-tauri/);
 assert.match(config.build?.beforeBuildCommand ?? "", /build-desktop-tauri/);
+assert.deepEqual(config.bundle?.targets, ["nsis"]);
+assert.equal(config.bundle?.createUpdaterArtifacts, false);
 assert.equal(config.bundle?.windows?.webviewInstallMode?.type, "embedBootstrapper");
+assert.notEqual(config.bundle?.windows?.webviewInstallMode?.type, "offlineInstaller");
+assert.notEqual(config.bundle?.windows?.webviewInstallMode?.type, "fixedRuntime");
+assert.equal(config.bundle?.windows?.certificateThumbprint ?? null, null);
+assert.equal(config.bundle?.windows?.digestAlgorithm, "sha256");
+assert.equal(config.bundle?.windows?.nsis?.installMode, "currentUser");
+assert.match(String(config.bundle?.windows?.nsis?.startMenuFolder ?? ""), /Preview/);
 const petWindow = config.app?.windows?.find((candidate) => candidate.label === "pet");
 assert.ok(petWindow, "Tauri config must define the pet window");
 assert.equal(petWindow.transparent, true);
@@ -188,9 +204,17 @@ for (const ignored of [
   "desktop-tauri/dist/**",
   "desktop-tauri/src-tauri/target/**",
   "desktop-tauri/src-tauri/gen/**",
+  "desktop-tauri/.benchmark/**",
 ]) {
   assert.ok(eslintConfig.includes(ignored), `ESLint must ignore generated Tauri output: ${ignored}`);
 }
+const packageSmoke = read("scripts/smoke-desktop-tauri-package.mjs");
+const benchmark = read("scripts/benchmark-desktop-runtimes.ps1");
+const adr = read("docs/architecture/decisions/desktop-pet-tauri-migration.md");
+assert.match(packageSmoke, /SETTINGS_REHEARSAL_OK/);
+assert.match(packageSmoke, /ARTIFACT_SCAN/);
+assert.match(benchmark, /privateWorkingSet/i);
+assert.match(adr, /com\.twofive\.snail-pi-pet\.tauri-preview/);
 assert.match(validation, /Gate A/);
 assert.match(validation, /未执行/);
 assert.match(validation, /100%/);
@@ -200,5 +224,6 @@ assert.match(validation, /点击穿透/);
 assert.match(validation, /虚拟桌面/);
 assert.match(validation, /Windows 10/);
 assert.match(validation, /Windows 11/);
+assert.match(validation, /Gate D/);
 
 console.log("smoke-desktop-tauri-contract: ok");

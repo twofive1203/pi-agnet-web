@@ -283,6 +283,26 @@ The scripts call the repository-pinned `@electron-forge/cli` directly (never the
 
 > Do not publish the pet inside the npm `spi` tarball. Do not bundle Next/pi/Automation workers/node-pty into the pet installer.
 
+### Isolated Tauri Preview (not the default product)
+
+`desktop-tauri/` is a parallel Windows Preview. It keeps a different App ID, executable, install directory, settings directory, Access Key file, single-instance domain, and autostart name. It still only attaches to an already running `spi` and never replaces Electron `SnailPiPet`.
+
+```powershell
+npm run desktop:tauri:build-ui
+npm run desktop:tauri:dev      # does not start spi
+npm run desktop:tauri:build    # Preview NSIS under desktop-tauri/src-tauri/target/release/bundle
+npm run test:desktop-tauri-package
+```
+
+- Identity: `com.twofive.snail-pi-pet.tauri-preview` / `snail-pi-pet-tauri-preview`.
+- WebView2: default `embedBootstrapper`. `downloadBootstrapper` is an allowed size comparison; Offline/Fixed Runtime must not be used to claim the 20 MB installer target.
+- Settings/secrets stay in the Preview app-data directory (`tauri-preview-settings.json`, DPAPI `tauri-preview-access-key.json`). Custom pets are read-only scans of the existing user folders.
+- Read-only Electron settings rehearsal: `npm run test:desktop-tauri-package`. Optional live parse via `DESKTOP_TAURI_ELECTRON_SETTINGS`; the smoke never writes Electron or Preview official files.
+- Same-machine size/memory/start samples: `scripts/benchmark-desktop-runtimes.ps1`. Reports land in gitignored `desktop-tauri/.benchmark/`.
+- Validation and Gate D: [`docs/operations/desktop-pet-tauri-validation.md`](../operations/desktop-pet-tauri-validation.md). Decision record: [`docs/architecture/decisions/desktop-pet-tauri-migration.md`](../architecture/decisions/desktop-pet-tauri-migration.md).
+
+Uninstalling Preview must leave `spi`, Electron, and `~/.pi/agent` intact. Do not publish `desktop-tauri/` in the npm `spi` tarball.
+
 ## npm Package Release
 
 Before publishing, authenticate and validate the release bundle:

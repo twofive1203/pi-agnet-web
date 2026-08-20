@@ -143,7 +143,7 @@ Narrow write API for the desktop pet first-message composer. **Not a public or c
 
 Implementation: `lib/desktop-control-access.ts`, `lib/desktop-project-catalog.ts`, `lib/desktop-quick-session.ts`, `lib/desktop-quick-session-models.ts`, `lib/new-agent-session.ts`. Smoke: `npm run test:desktop-quick-session`.
 
-**Desktop client packaging** is separate from this API and from npm `spi`: Electron pet sources live under `desktop/`, pack contract in `forge.config.ts`, validation in `docs/operations/desktop-pet-validation.md`, smoke `npm run test:desktop-package`. The pet consumes these routes from main only (token never reaches the renderer).
+**Desktop client packaging** is separate from this API and from npm `spi`: Electron pet sources live under `desktop/`, pack contract in `forge.config.ts`, validation in `docs/operations/desktop-pet-validation.md`, smoke `npm run test:desktop-package`. Isolated Tauri Preview lives under `desktop-tauri/`, validation in `docs/operations/desktop-pet-tauri-validation.md`, smoke `npm run test:desktop-tauri-package`. Both clients consume these routes from the host process only (token never reaches the renderer).
 
 ## Automation routes
 

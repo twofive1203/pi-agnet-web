@@ -29,11 +29,55 @@ fn preview_identity_and_writable_state_are_isolated_from_electron() {
     .expect("parse tauri config");
     assert_eq!(config["identifier"], TAURI_PREVIEW_IDENTIFIER);
     assert_ne!(config["productName"], "SnailPiPet");
+    assert!(config["productName"]
+        .as_str()
+        .unwrap_or_default()
+        .contains("Preview"));
     assert_eq!(config["build"]["frontendDist"], "../dist");
+    assert_eq!(config["bundle"]["targets"], serde_json::json!(["nsis"]));
+    assert_eq!(config["bundle"]["createUpdaterArtifacts"], false);
     assert_eq!(
         config["bundle"]["windows"]["webviewInstallMode"]["type"],
         "embedBootstrapper"
     );
+    assert_ne!(
+        config["bundle"]["windows"]["webviewInstallMode"]["type"],
+        "offlineInstaller"
+    );
+    assert_ne!(
+        config["bundle"]["windows"]["webviewInstallMode"]["type"],
+        "fixedRuntime"
+    );
+    assert!(config["bundle"]["windows"]["certificateThumbprint"].is_null());
+    assert_eq!(config["bundle"]["windows"]["digestAlgorithm"], "sha256");
+    assert_eq!(config["bundle"]["windows"]["nsis"]["installMode"], "currentUser");
+    assert_ne!(
+        config["bundle"]["windows"]["nsis"]["startMenuFolder"],
+        "SnailPiPet"
+    );
+}
+
+#[test]
+fn preview_bundle_keeps_electron_and_server_runtime_out_of_config() {
+    let config_text =
+        fs::read_to_string(manifest_dir().join("tauri.conf.json")).expect("read tauri config");
+    for forbidden in [
+        ".next",
+        "bin/pi-web.js",
+        "node_modules",
+        "electron",
+        "forge.config",
+        "pi-coding-agent",
+        "node-pty",
+        "desktop-pet-settings.json",
+        "offlineInstaller",
+        "fixedRuntime",
+    ] {
+        assert!(
+            !config_text.contains(forbidden),
+            "tauri.conf.json must not reference {forbidden}"
+        );
+    }
 }
 
 #[test]

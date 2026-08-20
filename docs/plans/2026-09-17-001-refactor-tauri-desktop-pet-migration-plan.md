@@ -588,7 +588,7 @@ flowchart TB
 
 ---
 
-- [ ] U8. **Package, rehearse migration, benchmark, and qualify the release candidate**
+- [x] U8. **Package, rehearse migration, benchmark, and qualify the release candidate**
 
 **Goal:** 生成隔离的 Windows 安装包，执行 pet-only artifact 扫描、只读设置迁移预演、Electron/Tauri 同机基准与完整验收，输出是否进入正式切换计划的证据。
 

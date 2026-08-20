@@ -60,6 +60,20 @@
 - **npm `spi` install pulled Electron?** it must not; pet packaging is separate. Report if `npm pack` contents include `desktop/`.
 - **Validation / packaging contracts:** `npm run test:desktop-observer`, `npm run test:desktop-package`, and `docs/operations/desktop-pet-validation.md`.
 
+## Windows desktop pet — Tauri Preview
+
+Tauri Preview is an isolated companion (`com.twofive.snail-pi-pet.tauri-preview`). It does not replace Electron and does not start `spi`.
+
+- **How to run from source:** start `spi --no-open` or `npm run dev`, then `npm run desktop:tauri:dev`. UI build only: `npm run desktop:tauri:build-ui`. See `desktop-tauri/README.md`.
+- **Preview and Electron both running:** expected. They use different App IDs, settings files, and single-instance locks. Closing one does not quit the other.
+- **Settings did not come from Electron:** expected. Preview writes `tauri-preview-settings.json` only. The U8 rehearsal can parse Electron settings read-only; it never imports them automatically.
+- **Access key not remembered:** Preview stores ciphertext with Windows DPAPI. If encryption is unavailable the key stays in memory and is not written as plaintext. Clear/re-enter after a failed decrypt.
+- **WebView2 missing / install failed offline:** Preview uses Evergreen `embedBootstrapper` by default. Offline/Fixed Runtime is not the supported Preview path. Install Evergreen WebView2 or retry with network.
+- **Unsigned Preview Setup triggers SmartScreen:** expected for engineering-QA artifacts. Signing uses `certificateThumbprint` in `desktop-tauri/src-tauri/tauri.conf.json`; do not commit certificates.
+- **Uninstalled Preview and sessions disappeared?** should not happen. Agent data stays under `~/.pi/agent`. If Preview leftovers remain, remove only the Preview app-data directory, not `%APPDATA%\SnailPiPet`.
+- **Need size/memory numbers:** `powershell -File scripts/benchmark-desktop-runtimes.ps1 -Scenario connected-idle`. Do not treat `src-tauri/target/debug` as a release result.
+- **Validation / packaging contracts:** `npm run test:desktop-tauri-contract`, `npm run test:desktop-tauri-package`, and `docs/operations/desktop-pet-tauri-validation.md`.
+
 ## Development Safety
 
 - Use `npm run dev` during development.

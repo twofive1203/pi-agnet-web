@@ -35,13 +35,31 @@
   "bundle": {
     "active": true,
     "targets": ["nsis"],
+    "createUpdaterArtifacts": false,
+    "publisher": "TwoFive",
+    "copyright": "Copyright TwoFive. Preview artifact; not the default SnailPiPet product.",
+    "category": "Utility",
+    "shortDescription": "Isolated Tauri Preview of the Snail Pi desktop pet.",
+    "longDescription": "Attach-only Windows Preview that connects to an already running spi service. It does not replace Electron SnailPiPet, does not start or stop spi, and uses a separate application identity, install directory, settings directory, and autostart entry.",
     "icon": [
       "../../desktop/assets/icons/icon.png",
       "../../desktop/assets/icons/icon.ico"
     ],
     "windows": {
+      "certificateThumbprint": null,
+      "digestAlgorithm": "sha256",
+      "timestampUrl": "",
+      "tsp": false,
+      "allowDowngrades": true,
       "webviewInstallMode": {
-        "type": "embedBootstrapper"
+        "type": "embedBootstrapper",
+        "silent": true
+      },
+      "nsis": {
+        "installMode": "currentUser",
+        "displayLanguageSelector": false,
+        "startMenuFolder": "SnailPiPet Tauri Preview",
+        "installerIcon": "../../desktop/assets/icons/icon.ico"
       }
     }
   }

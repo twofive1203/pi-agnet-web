@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "port": 62666,
+  "selectedPetId": "snail-classic",
+  "petScale": 1.5,
+  "bubbleTheme": "night",
+  "alwaysOnTop": true,
+  "clickThrough": false,
+  "launchAtLogin": true,
+  "activityTrayOpen": false,
+  "showContextMeter": true,
+  "rightClickAggregatedMenu": false,
+  "dndEnabled": true,
+  "windowPosition": { "x": 120, "y": -40 },
+  "notification": {
+    "needsInput": false,
+    "blocked": true,
+    "completion": "always"
+  },
+  "sound": {
+    "masterEnabled": true,
+    "needsInput": true,
+    "completion": false
+  },
+  "acknowledgedTransitionIds": ["ae-ready-1", "ae-ready-1", ""],
+  "notifiedTransitionIds": ["ae-ready-1", "ae-blocked-2"],
+  "soundedTransitionIds": ["ae-ready-1"]
+}

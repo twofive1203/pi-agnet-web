@@ -38,8 +38,9 @@ npm run dev     # http://localhost:62666
 | `npm run desktop:tauri:build-ui` | Bundle the shared renderer plus Tauri `window.snailPet` bridge into `desktop-tauri/dist`. |
 | `npm run desktop:tauri:dev` | Isolated Tauri Preview (`tauri dev`); does not start or stop `spi`. |
 | `npm run desktop:tauri:build` | Isolated Tauri Preview installer/app build. |
-| `npm run test:desktop-tauri-contract` | Tauri isolation/capability/attach-only contract + shared fixture parity + Rust tests. |
+| `npm run test:desktop-tauri-contract` | Tauri isolation/capability/attach-only contract + shared fixture parity + package smoke + Rust tests. |
 | `npm run test:desktop-tauri-view-parity` | Electron/Tauri shared activity-view and transition fixture smoke. |
+| `npm run test:desktop-tauri-package` | Isolated Tauri Preview packaging contract (NSIS/Evergreen, pet-only artifact scan, read-only settings rehearsal). |
 | `npm run test:scale-baseline` | Usage/allowed-roots/session-index/long-JSONL scale baseline + accelerated-path correctness smoke. |
 | `npm run test:usage` | Usage timeline projection + parent/subagent/archive accounting smoke suite. |
 | `npm run test:session-tabs` | Same-session multi-tab write-lock coordination pure smoke. |
@@ -118,7 +119,7 @@ npm run dev     # http://localhost:62666
 | WebUI-owned SnFlow tasks/runs | `lib/workflow-store.ts`, `lib/workflow-chat-lifecycle.ts`, `lib/workflow-run-manager.ts`, `app/api/workflows/**`, `components/WorkflowPanel.tsx` | `docs/modules/api.md`, `docs/modules/library.md`, `docs/modules/frontend.md` |
 | Scheduled Agent Automation | `lib/automation-service.ts`, `lib/automation-scheduler.ts`, `lib/automation-runner.ts`, `app/api/automations/**`, `components/AutomationPanel.tsx`, `instrumentation.ts` | `docs/architecture/decisions/automation-scheduler.md`, `docs/modules/api.md`, `docs/modules/library.md`, `docs/modules/frontend.md` |
 | Chrome tab debugging (local bridge + extension) | `lib/browser-*.ts`, `app/api/browser/**`, `components/BrowserBindingPanel.tsx`, `extensions/chrome-tab-debug/` | `docs/modules/api.md`, `docs/modules/library.md`, `docs/modules/frontend.md`, `docs/operations/troubleshooting.md`, `extensions/chrome-tab-debug/README.md` |
-| Desktop pet observer + quick session | `lib/desktop-observer-*.ts`, `lib/desktop-control-*.ts`, `lib/desktop-project-catalog.ts`, `lib/desktop-quick-session.ts`, `app/api/desktop-observer/**`, `app/api/desktop-control/**`, `desktop/` | `docs/architecture/decisions/desktop-pet-task-observer.md`, `docs/architecture/decisions/desktop-pet-quick-session.md`, `docs/modules/api.md`, `docs/modules/library.md`, `docs/modules/frontend.md` |
+| Desktop pet observer + quick session | `lib/desktop-observer-*.ts`, `lib/desktop-control-*.ts`, `lib/desktop-project-catalog.ts`, `lib/desktop-quick-session.ts`, `app/api/desktop-observer/**`, `app/api/desktop-control/**`, `desktop/`, `desktop-tauri/` | `docs/architecture/decisions/desktop-pet-task-observer.md`, `docs/architecture/decisions/desktop-pet-quick-session.md`, `docs/architecture/decisions/desktop-pet-tauri-migration.md`, `docs/modules/api.md`, `docs/modules/library.md`, `docs/modules/frontend.md` |
 | Project quick commands (one-shot task runner + output dock) | `lib/quick-command-*.ts`, `app/api/quick-commands/**`, `hooks/useQuickCommands.ts`, `components/QuickCommand*.tsx` | `docs/modules/api.md`, `docs/modules/library.md`, `docs/modules/frontend.md`, `docs/brainstorms/2026-08-12-project-quick-commands-requirements.md` |
 
 ## Project Invariants
@@ -186,6 +187,7 @@ node_modules/.bin/tsc --noEmit
 | Project quick commands | `<cwd>/.pi/quick-commands.json` (definitions); `~/.pi/agent/quick-command-trust.json` (executable digests only); runs are in-memory per process |
 | Automation tasks/runs/sessions | `~/.pi/agent/automations/` (`tasks.json`, locks, claims, runs, promotions, audit, sessions); default cwd `~/pi-automation-cwd` (canonical path persisted once) |
 | Custom desktop pets (folder drop-in) | `~/.pi/agent/desktop-pets/<pet-id>/` (Snail `manifest.json` + PNG/WebP, or Codex `pet.json` + `spritesheet.webp`; overrides `SNAIL_PET_CUSTOM_PETS_DIR`, `PI_CODING_AGENT_DIR/desktop-pets`). Codex hatch-pet output is also discovered from `${CODEX_HOME:-~/.codex}/pets` |
+| Tauri Preview desktop pet settings / Access Key | Preview app-data derived from `com.twofive.snail-pi-pet.tauri-preview` (`tauri-preview-settings.json`, DPAPI `tauri-preview-access-key.json`). Isolated from Electron `desktop-pet-*.json`; not published with npm `spi`. |
 
 ## Archive Rules
 
@@ -209,6 +211,7 @@ Current docs index:
 
 - `docs/architecture/overview.md` — runtime flow, invariants, session JSONL format.
 - `docs/architecture/decisions/README.md` — archive location for durable technical decisions.
+- `docs/architecture/decisions/desktop-pet-tauri-migration.md` — isolated Tauri Preview identity, Rust/WebView boundary, WebView2 packaging, and Gate D.
 - `docs/modules/api.md` — API route map and route implementation pointers.
 - `docs/modules/frontend.md` — component/hook/style map.
 - `docs/modules/library.md` — shared `lib/` module map and reuse rules.

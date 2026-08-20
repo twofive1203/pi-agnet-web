@@ -1,9 +1,10 @@
-# Tauri Desktop Pet Preview — Phase A Validation
+# Tauri Desktop Pet Preview — Validation
 
 - **Date:** 2026-09-17
 - **Plan:** `docs/plans/2026-09-17-001-refactor-tauri-desktop-pet-migration-plan.md`
-- **Scope:** Gate A Windows shell viability（U1–U2）、Gate B secure observer / renderer reuse（U3–U4）、Gate C feature parity（U5–U7）
+- **Scope:** Gate A Windows shell viability（U1–U2）、Gate B secure observer / renderer reuse（U3–U4）、Gate C feature parity（U5–U7）、Gate D package / migration rehearsal / qualification（U8）
 - **Product:** `SnailPiPet Tauri Preview` / `com.twofive.snail-pi-pet.tauri-preview`
+- **ADR:** `docs/architecture/decisions/desktop-pet-tauri-migration.md`
 
 本矩阵独立于 Electron 的 `desktop-pet-validation.md`。自动测试只证明配置隔离、权限静态契约和纯几何；真实 WebView2 窗口、Tray、焦点、点击穿透、多显示器/DPI 和虚拟桌面必须保留实机证据。未实际执行的行必须保持 **未执行**，不能继承 Electron 结果。
 
@@ -151,3 +152,80 @@ cargo test --manifest-path desktop-tauri/src-tauri/Cargo.toml
 ## Gate C conclusion
 
 **Pending / 自动契约已完成，实机未执行。** 残余只允许明确记录的签名、clean-profile 或低优先级外观问题。
+
+## Phase D — 打包、迁移预演与候选验收
+
+```powershell
+npm run test:desktop-tauri-package
+npm run test:desktop-tauri-contract
+npm run test:desktop-package
+powershell -File scripts/benchmark-desktop-runtimes.ps1 -Scenario connected-idle
+```
+
+生成安装包后再扫真实产物：
+
+```powershell
+npm run desktop:tauri:build
+$env:DESKTOP_TAURI_PACKAGE_OUT = "desktop-tauri/src-tauri/target/release/bundle"
+npm run test:desktop-tauri-package
+```
+
+只读设置迁移预演默认使用 `scripts/fixtures/desktop-pet-host/electron-settings-import.json`。若要解析本机 Electron 设置，只设 `DESKTOP_TAURI_ELECTRON_SETTINGS`；脚本不得写 Electron 或 Preview 正式设置文件。
+
+| Contract | Expected | Status |
+| --- | --- | --- |
+| Isolated installer identity | Preview product/identifier/exe/Start Menu 与 Electron 不同；NSIS current-user；无 updater artifact | 自动覆盖 |
+| WebView2 mode | 默认 `embedBootstrapper`；`downloadBootstrapper` 可作为体积对照；`offlineInstaller` / `fixedRuntime` 不得当作达标结果 | 自动覆盖 |
+| Pet-only artifact | 包内无 `.next` / Next / pi SDK / Node / Electron / Forge / node-pty / Automation / `bin/pi-web.js` / fixture / Electron 设置或密钥 | 配置自动覆盖；真实 bundle **未执行** |
+| Settings rehearsal | 只读映射 Electron 设置并输出匿名化 diff；不写双方正式文件 | 自动覆盖 |
+| Signing placeholders | `certificateThumbprint` 为空，`digestAlgorithm=sha256`；证书不入库 | 自动覆盖 |
+| Electron regression | `desktop:*` 与 `test:desktop-package` 不读取 Tauri 输出 | 自动覆盖 |
+
+## AE / QS 功能等价（Tauri 独立证据）
+
+不得把 Electron `desktop-pet-validation.md` 的 Pass 继承为 Tauri Pass。
+
+| ID | Scenario | Automated | Manual Windows | Status |
+| --- | --- | --- | --- | --- |
+| AE1 | 多项目 Agent/Automation/Quick Command 在关闭浏览器后可见 | Partial（共享 fixture / view parity） | 真实 SSE 三源 | **未执行** |
+| AE2 | Ready 只通知一次；SSE replay 不重复 | Partial（transition fixture） | 系统 toast 一次 | **未执行** |
+| AE3 | Subagent 嵌套且不重复计数 | Partial（共享 observer fixture） | Activity 子行 | **未执行** |
+| AE4 | Snapshot / bridge 无禁止字段 | Yes（view/privacy smokes） | DevTools 抽查 | **Automated OK** |
+| AE5 | 关闭窗口进 Tray；点击穿透可恢复 | Partial（native contract） | 真实 Tray | **未执行** |
+| AE6 | 通知/活动打开 allowlisted WebUI；任意 URL 拒绝 | Yes（deep-link smoke） | 默认浏览器 | **未执行** |
+| AE7 | 端口拒绝 → 服务未启动 + 复制命令；无子进程；Retry | Yes（connection + attach-only） | E2E | **未执行** |
+| AE8 | 未授权 observer 拒绝；payload 隐私 | Yes（observer/privacy） | — | **Automated OK** |
+| AE9 | instanceId 变化建 baseline，不刷成功通知 | Yes（connection + transition） | 实机重启服务 | **未执行** |
+| AE10 | 退出 Preview 不影响 `spi`/任务 | Yes（静态 attach-only） | 任务运行中退出 | **未执行** |
+| AE11 | Needs input > Blocked > Ready > Running；已读仅本地 | Yes（view parity） | UI 标记已读 | **未执行** |
+| AE12 | 减弱动画静态帧；宠物/位置持久化 | Partial（settings normalize） | OS reduced-motion | **未执行** |
+| AE13 | 未知/不兼容/server-mode 诊断；loopback access key | Yes（connection/auth） | 错端口与密钥 | **未执行** |
+| QS1 | 已连接且具备 capability 时启动一次会话 | Partial（Rust/TS quick-session） | local/server-mode | **未执行** |
+| QS2 | 超时后同 requestId 不创建第二个会话 | Yes（idempotency） | 实机超时 | **未执行** |
+| QS3 | catalog/success/error 无 cwd/Prompt/token | Yes（privacy） | DevTools | **Automated OK** |
+| QS4 | catalog 之后项目被删则提交失败 | Yes（resolver） | 实机删除目录 | **未执行** |
+| QS5 | 旧服务隐藏 composer，observer 仍可用 | Yes（capability fallback） | 新旧 `spi` 混用 | **未执行** |
+
+## 隔离 / WebView2 / 卸载矩阵
+
+| ID | 场景 | Pass criteria | Status |
+| --- | --- | --- | --- |
+| TA-D-P1 | Preview 安装 | 安装只创建 Preview 目录/开始菜单/单实例域；Electron 可执行文件与设置时间戳不变 | **未执行** |
+| TA-D-P2 | 覆盖升级 Preview | 只替换 Preview；Electron 与 `~/.pi/agent` 不变 | **未执行** |
+| TA-D-P3 | 卸载 Preview | 删除 Preview 应用与 Preview app-data；`spi`、Electron、`~/.pi/agent` 仍在 | **未执行** |
+| TA-D-P4 | 双安装共存 | 同时安装并分别启动；开机启动项互不影响 | **未执行** |
+| TA-D-P5 | 已有 WebView2 | 安装后直接启动，不强制再装 Runtime | **未执行** |
+| TA-D-P6 | 缺失 WebView2 | embed/download Bootstrapper 给出可理解结果；离线失败不得伪装成功 | **未执行** |
+| TA-D-P7 | 体积口径 | installer ≤20 MB、应用专属目录 ≤30 MB；WebView2 共享 Runtime 与用户 cache 单列 | **未执行** |
+| TA-D-P8 | 内存口径 | connected-idle 完整进程树 private working set 中位数；相对 Electron 至少 -30% 或记录实测偏差 | **未执行** |
+| TA-D-P9 | 启动口径 | 冷/暖启动多次采样；不得用 `target/debug` 或未压缩 `target` 代表发行结果 | **未执行** |
+| TA-D-P10 | 签名 / SmartScreen | 未签名工程包可安装但可能警告；正式分发才使用证书占位字段 | **未执行** |
+| TA-D-P11 | clean profile | 新 Windows 用户安装 Preview，不读取/写入 Electron userData | **未执行** |
+
+同机基准脚本：`scripts/benchmark-desktop-runtimes.ps1`。报告必须包含日期、Windows/WebView2/CPU/RAM、场景、进程口径和 artifact 路径。缺测行保持 **未执行**，不得改口径后宣称达标。
+
+## Gate D conclusion
+
+**Extend。** U8 自动契约（隔离身份、NSIS/Evergreen 配置、只读设置预演、文档门槛、Electron 回归入口）已落地；真实 NSIS 安装包扫描、同机体积/内存/启动、clean-profile、签名和 AE1–AE13 / QS1–QS5 实机行仍为 **未执行**。Electron 保持默认发行物，无需回滚。
+
+若后续实测体积达标而完整进程树内存未降 30%，可继续 Extend，但必须公布 WebView2 子进程数据，不得只展示 Rust host。Proceed 需要独立切换计划，不能在本文件把 Preview 改成正式 `SnailPiPet`。

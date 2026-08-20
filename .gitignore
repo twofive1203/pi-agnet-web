@@ -35,6 +35,7 @@
 /desktop-tauri/dist/
 /desktop-tauri/src-tauri/target/
 /desktop-tauri/src-tauri/gen/
+/desktop-tauri/.benchmark/
 
 # misc
 .DS_Store
