@@ -1,6 +1,7 @@
 use std::{fs, path::PathBuf};
 
 use serde_json::Value;
+use snail_pi_pet_tauri_preview_lib::access_key::TAURI_ACCESS_KEY_FILE_NAME;
 use snail_pi_pet_tauri_preview_lib::{
     TAURI_PREVIEW_EXECUTABLE, TAURI_PREVIEW_IDENTIFIER, TAURI_SETTINGS_FILE_NAME,
 };
@@ -18,6 +19,7 @@ fn preview_identity_and_writable_state_are_isolated_from_electron() {
     assert_ne!(TAURI_PREVIEW_IDENTIFIER, ELECTRON_IDENTIFIER);
     assert_ne!(TAURI_PREVIEW_EXECUTABLE, ELECTRON_EXECUTABLE);
     assert_ne!(TAURI_SETTINGS_FILE_NAME, ELECTRON_SETTINGS_FILE);
+    assert_ne!(TAURI_ACCESS_KEY_FILE_NAME, "desktop-pet-access-key.json");
     assert!(TAURI_PREVIEW_IDENTIFIER.ends_with("tauri-preview"));
     assert!(TAURI_PREVIEW_EXECUTABLE.ends_with("tauri-preview"));
 

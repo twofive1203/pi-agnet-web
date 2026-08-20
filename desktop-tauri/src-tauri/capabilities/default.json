@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
-  "identifier": "phase-b-secure-observer",
-  "description": "Phase B pet-window capability; Observer HTTP/SSE and tokens stay in allowlisted Rust commands.",
+  "identifier": "phase-c-feature-parity",
+  "description": "Phase C pet-window capability; privileged network, secrets, filesystem and opener stay in allowlisted Rust commands.",
   "windows": ["pet"],
   "permissions": ["core:default"]
 }

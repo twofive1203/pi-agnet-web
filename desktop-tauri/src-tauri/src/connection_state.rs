@@ -372,7 +372,6 @@ pub fn public_connection_state(state: &DesktopConnectionState) -> serde_json::Va
 
 fn clamp_detail(detail: Option<&str>) -> Option<String> {
     let trimmed = detail?
-        .trim()
         .split_whitespace()
         .collect::<Vec<_>>()
         .join(" ");

@@ -112,6 +112,12 @@ impl LoopbackTransport {
     }
 }
 
+impl Default for LoopbackTransport {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DesktopTransport for LoopbackTransport {
     fn fetch(&self, request: HttpRequest) -> Result<HttpResponse, String> {
         let mut req = match request.method.as_str() {
@@ -601,6 +607,13 @@ impl<T: DesktopTransport> ObserverClient<T> {
     pub fn set_access_key(&self, access_key: Option<String>) {
         if let Ok(mut slot) = self.access_key.lock() {
             *slot = normalize_access_key(access_key.as_deref());
+        }
+    }
+
+    pub fn set_port(&self, port: u16) {
+        if let Ok(mut state) = self.state.lock() {
+            state.port = port;
+            state.origin = build_desktop_origin(port);
         }
     }
 

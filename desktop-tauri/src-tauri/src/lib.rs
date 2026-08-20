@@ -1,7 +1,14 @@
+pub mod access_key;
 pub mod activity_view;
 pub mod app_state;
 pub mod connection_state;
+pub mod custom_pets;
+pub mod deep_links;
+pub mod native;
+pub mod notifications;
 pub mod observer_client;
+pub mod quick_session_client;
+pub mod settings;
 pub mod tray_controller;
 pub mod window_controller;
 
@@ -82,11 +89,13 @@ fn get_shell_state(
 fn move_by(
     window: WebviewWindow,
     store: State<'_, ShellStateStore>,
+    app: State<'_, std::sync::Arc<AppState>>,
     dx: f64,
     dy: f64,
 ) -> Result<ShellState, String> {
     let window = pet_window(&window)?;
-    window_controller::move_window_by(&window, dx, dy)?;
+    let bounds = window_controller::move_window_by(&window, dx, dy)?;
+    app.persist_window_position(bounds.x, bounds.y);
     snapshot(&window, &store)
 }
 
@@ -104,7 +113,7 @@ fn toggle_expanded(
             .and_then(Value::as_bool)
             .unwrap_or(false);
     }
-    let _ = app.emit_view(&window.app_handle());
+    let _ = app.emit_view(window.app_handle());
     Ok(view)
 }
 
@@ -146,8 +155,12 @@ fn set_always_on_top(
 fn hide_to_tray(
     window: WebviewWindow,
     store: State<'_, ShellStateStore>,
+    app: State<'_, std::sync::Arc<AppState>>,
 ) -> Result<ShellState, String> {
     let window = pet_window(&window)?;
+    if let Ok(bounds) = window_controller::current_bounds(&window) {
+        app.persist_window_position(bounds.x, bounds.y);
+    }
     window.hide().map_err(|error| error.to_string())?;
     store
         .0
@@ -206,7 +219,7 @@ fn select_activity(
 ) -> Result<Value, String> {
     pet_window(&window)?;
     let view = app.select_activity(activity_id)?;
-    let _ = app.emit_view(&window.app_handle());
+    let _ = app.emit_view(window.app_handle());
     Ok(view)
 }
 
@@ -218,7 +231,7 @@ fn mark_read(
 ) -> Result<Value, String> {
     pet_window(&window)?;
     let view = app.mark_read(&activity_id)?;
-    let _ = app.emit_view(&window.app_handle());
+    let _ = app.emit_view(window.app_handle());
     Ok(view)
 }
 
@@ -229,23 +242,28 @@ fn mark_all_read(
 ) -> Result<Value, String> {
     pet_window(&window)?;
     let view = app.mark_all_read()?;
-    let _ = app.emit_view(&window.app_handle());
+    let _ = app.emit_view(window.app_handle());
     Ok(view)
 }
 
 #[tauri::command]
-fn open_activity(window: WebviewWindow, _activity_id: String) -> Result<Value, String> {
+fn open_activity(
+    window: WebviewWindow,
+    app: State<'_, std::sync::Arc<AppState>>,
+    activity_id: String,
+) -> Result<Value, String> {
     pet_window(&window)?;
-    Ok(json!({ "ok": false, "reason": "phase_c" }))
+    Ok(app.open_activity(&activity_id))
 }
 
 #[tauri::command]
-fn open_external_url(window: WebviewWindow, href: String) -> Result<Value, String> {
+fn open_external_url(
+    window: WebviewWindow,
+    app: State<'_, std::sync::Arc<AppState>>,
+    href: String,
+) -> Result<Value, String> {
     pet_window(&window)?;
-    if href.starts_with("http://") || href.starts_with("https://") {
-        return Ok(json!({ "ok": false, "reason": "absolute_url_rejected" }));
-    }
-    Ok(json!({ "ok": false, "reason": "phase_c" }))
+    Ok(app.open_external_url(&href))
 }
 
 #[tauri::command]
@@ -258,7 +276,12 @@ fn retry(window: WebviewWindow, app: State<'_, std::sync::Arc<AppState>>) -> Res
 #[tauri::command]
 fn copy_start_command(window: WebviewWindow) -> Result<Value, String> {
     pet_window(&window)?;
-    Ok(json!({ "ok": true, "copied": false, "text": crate::connection_state::DESKTOP_START_COMMAND }))
+    let copied = crate::native::copy_start_command();
+    Ok(json!({
+        "ok": copied,
+        "copied": copied,
+        "command": crate::connection_state::DESKTOP_START_COMMAND
+    }))
 }
 
 #[tauri::command]
@@ -269,7 +292,7 @@ fn set_prefs(
 ) -> Result<Value, String> {
     let window = pet_window(&window)?;
     let view = app.apply_prefs(patch, &window)?;
-    app.emit_view(&window.app_handle())?;
+    app.emit_view(window.app_handle())?;
     Ok(view)
 }
 
@@ -291,7 +314,7 @@ fn set_reduced_motion(
     if let Ok(mut runtime) = app.runtime.lock() {
         runtime.reduced_motion = value;
     }
-    let _ = app.emit_view(&window.app_handle());
+    let _ = app.emit_view(window.app_handle());
     Ok(())
 }
 
@@ -302,8 +325,9 @@ fn set_access_key(
     access_key: String,
 ) -> Result<Value, String> {
     pet_window(&window)?;
-    app.set_access_key(Some(access_key));
-    Ok(json!({ "ok": true }))
+    let result = app.set_access_key(Some(access_key));
+    let _ = app.emit_view(window.app_handle());
+    Ok(result)
 }
 
 #[tauri::command]
@@ -312,50 +336,89 @@ fn clear_access_key(
     app: State<'_, std::sync::Arc<AppState>>,
 ) -> Result<Value, String> {
     pet_window(&window)?;
-    app.set_access_key(None);
-    Ok(json!({ "ok": true }))
+    let result = app.set_access_key(None);
+    let _ = app.emit_view(window.app_handle());
+    Ok(result)
 }
 
 #[tauri::command]
-fn get_custom_pets(window: WebviewWindow) -> Result<Value, String> {
+fn get_custom_pets(
+    window: WebviewWindow,
+    app: State<'_, std::sync::Arc<AppState>>,
+) -> Result<Value, String> {
     pet_window(&window)?;
-    Ok(json!({ "pets": [], "diagnostics": [] }))
+    app.custom_pets_payload()
 }
 
 #[tauri::command]
-fn open_custom_pets_dir(window: WebviewWindow) -> Result<Value, String> {
+fn open_custom_pets_dir(
+    window: WebviewWindow,
+    app: State<'_, std::sync::Arc<AppState>>,
+) -> Result<Value, String> {
     pet_window(&window)?;
-    Ok(json!({ "ok": false, "reason": "phase_c" }))
+    Ok(app.open_custom_pets_dir())
 }
 
 #[tauri::command]
-fn rescan_custom_pets(window: WebviewWindow) -> Result<(), String> {
+fn rescan_custom_pets(
+    window: WebviewWindow,
+    app: State<'_, std::sync::Arc<AppState>>,
+) -> Result<(), String> {
     pet_window(&window)?;
+    let _ = app.rescan_custom_pets(window.app_handle())?;
     Ok(())
 }
 
 #[tauri::command]
-fn get_pet_asset(window: WebviewWindow, _pet_key: String) -> Result<Value, String> {
+fn get_pet_asset(
+    window: WebviewWindow,
+    app: State<'_, std::sync::Arc<AppState>>,
+    pet_key: String,
+) -> Result<Value, String> {
     pet_window(&window)?;
-    Ok(json!({ "ok": false, "reason": "phase_c" }))
+    Ok(app.get_pet_asset(&pet_key))
 }
 
 #[tauri::command]
-fn list_quick_session_projects(window: WebviewWindow) -> Result<Value, String> {
+fn list_quick_session_projects(
+    window: WebviewWindow,
+    app: State<'_, std::sync::Arc<AppState>>,
+) -> Result<Value, String> {
     pet_window(&window)?;
-    Ok(json!({ "available": false, "projects": [] }))
+    Ok(app.list_quick_session_projects())
 }
 
 #[tauri::command]
-fn list_quick_session_models(window: WebviewWindow, _project_ref: String) -> Result<Value, String> {
+fn list_quick_session_models(
+    window: WebviewWindow,
+    app: State<'_, std::sync::Arc<AppState>>,
+    project_ref: String,
+) -> Result<Value, String> {
     pet_window(&window)?;
-    Ok(json!({ "available": false, "models": [] }))
+    Ok(app.list_quick_session_models(&project_ref))
 }
 
 #[tauri::command]
-fn create_quick_session(window: WebviewWindow) -> Result<Value, String> {
+fn create_quick_session(
+    window: WebviewWindow,
+    app: State<'_, std::sync::Arc<AppState>>,
+    project_ref: String,
+    message: String,
+    request_id: String,
+    provider: Option<String>,
+    model_id: Option<String>,
+) -> Result<Value, String> {
     pet_window(&window)?;
-    Ok(json!({ "ok": false, "code": "unavailable" }))
+    let mut input = json!({
+        "projectRef": project_ref,
+        "message": message,
+        "requestId": request_id,
+    });
+    if let (Some(provider), Some(model_id)) = (provider, model_id) {
+        input["provider"] = json!(provider);
+        input["modelId"] = json!(model_id);
+    }
+    Ok(app.create_quick_session(input))
 }
 
 pub fn run() {
@@ -408,11 +471,22 @@ pub fn run() {
             let window = app
                 .get_webview_window("pet")
                 .ok_or_else(|| "pet window is missing".to_string())?;
-            window_controller::recover_to_visible_work_area(&window)?;
-            tray_controller::build_phase_a_tray(app.handle())?;
-
             let state = AppState::start(app.handle().clone())?;
             app.manage(state.clone());
+            state.restore_saved_position(&window);
+            window_controller::recover_to_visible_work_area(&window)?;
+            if let Ok(runtime) = state.runtime.lock() {
+                let _ = window.set_always_on_top(runtime.settings.always_on_top);
+                let _ = window_controller::set_click_through(&window, runtime.settings.click_through);
+                let _ = crate::native::apply_launch_at_login(runtime.settings.launch_at_login);
+                if let Some(store) = app.try_state::<ShellStateStore>() {
+                    if let Ok(mut shell) = store.0.lock() {
+                        shell.always_on_top = runtime.settings.always_on_top;
+                        shell.click_through = runtime.settings.click_through;
+                    }
+                }
+            }
+            tray_controller::build_phase_a_tray(app.handle())?;
             state.spawn();
 
             let app_handle = app.handle().clone();

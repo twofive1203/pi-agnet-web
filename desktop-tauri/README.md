@@ -1,6 +1,6 @@
 # Snail Pi Pet — Tauri Preview
 
-这是与现有 Electron `desktop/` 完全隔离的 Tauri 2 Windows Preview。Phase A 验证透明窗口/Tray/拖动/穿透恢复；Phase B 在 Rust 后端接入真实 `spi` Observer，并通过兼容桥复用现有 `desktop/renderer/`。**不启动、停止或监督 `spi`**，也不替代 Electron 发行物。
+这是与现有 Electron `desktop/` 完全隔离的 Tauri 2 Windows Preview。Phase A 验证透明窗口/Tray/拖动/穿透恢复；Phase B 在 Rust 后端接入真实 `spi` Observer，并通过兼容桥复用现有 `desktop/renderer/`；Phase C 补齐独立设置/密钥/自定义宠物、原生集成和快速会话。**不启动、停止或监督 `spi`**，也不替代 Electron 发行物。
 
 ## 独立身份
 
@@ -9,10 +9,12 @@
 | Identifier / 单实例域 | `com.twofive.snail-pi-pet.tauri-preview` | `com.twofive.snail-pi-pet` |
 | Product | `SnailPiPet Tauri Preview` | `SnailPiPet` |
 | Executable crate | `snail-pi-pet-tauri-preview` | `snail-pi-pet` |
-| 设置文件（后续阶段） | `tauri-preview-settings.json` | `desktop-pet-settings.json` |
+| 设置文件 | `tauri-preview-settings.json` | `desktop-pet-settings.json` |
+| Access Key 文件 | `tauri-preview-access-key.json`（DPAPI 密文） | `desktop-pet-access-key.json` |
+| 开机启动项 | `SnailPiPetTauriPreview` | Electron 独立登录项 |
 | 构建输出 | `desktop-tauri/dist`, `desktop-tauri/src-tauri/target` | `desktop/out` |
 
-Tauri 的 app-data/config 目录由 Preview identifier 派生。Phase B 设置只在内存中；不得写 Electron 的 userData 文件。两个实现可以并行安装和运行，并可同时 attach 同一个 `spi`。
+Tauri 的 app-data/config 目录由 Preview identifier 派生。设置、Access Key 密文和窗口位置只写 Preview 目录；不得写 Electron 的 userData 文件。自定义宠物只只读扫描既有用户目录。两个实现可以并行安装和运行，并可同时 attach 同一个 `spi`。
 
 ## Windows 前置
 
@@ -37,12 +39,15 @@ npm run test:desktop-tauri-view-parity
 
 `desktop:tauri:dev` / `desktop:tauri:build` 的 before hook 会把现有 `desktop/renderer` 与 `tauri-bridge.ts` 打进 `desktop-tauri/dist`。现有 `desktop:build/dev/package/make` 命令仍只操作 Electron。
 
-## Phase B 行为
+## Phase C 行为
 
-- Rust 只连接 `http://127.0.0.1:<port>`；Observer Token / Access Key 只留在后端内存；
-- WebView CSP 仍是 `connect-src 'none'`，前端只消费 `window.snailPet` 安全视图；
-- 现有 renderer 展示 Idle / Running / Needs input / Ready / Blocked 与 Activity tray；
-- 设置、自定义宠物、Deep Link、剪贴板、快速会话写入仍是 Phase C 范围（当前为安全 stub）。
+- Rust 只连接 `http://127.0.0.1:<port>`；Observer Token / Control Token / Access Key 只留在后端；
+- Access Key 用 Windows DPAPI 落盘；加密不可用时只留内存，不写明文；
+- 设置重启后从 Preview 目录恢复；Electron 设置文件不被读取或写入；
+- 自定义 Snail/Codex 宠物只读扫描，catalog/asset 不回传绝对路径；
+- Tray 提供显示、关闭穿透、DND、声音、Retry、打开 WebUI、复制 `spi --no-open`、退出 Preview；
+- Deep Link 仅打开二次校验后的 loopback 相对 allowlist；
+- 快速会话使用独立 Control Token；renderer 只发送 projectRef / message / requestId / 可选模型。
 
 启动 Preview 前请先自行运行 `spi`。关闭 Preview 只断开自己的 HTTP/SSE，不影响 Electron 或服务任务。
 
@@ -62,4 +67,4 @@ npm run test:desktop-connection
 npm run test:desktop-tauri-contract
 ```
 
-Gate B 实机证据与未执行项维护在 [`../docs/operations/desktop-pet-tauri-validation.md`](../docs/operations/desktop-pet-tauri-validation.md)。
+Gate A–C 实机证据与未执行项维护在 [`../docs/operations/desktop-pet-tauri-validation.md`](../docs/operations/desktop-pet-tauri-validation.md)。

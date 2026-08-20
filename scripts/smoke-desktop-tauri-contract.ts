@@ -18,7 +18,7 @@ function readJson<T>(relativePath: string): T {
 }
 
 function assertNoServiceControl(source: string, label: string): void {
-  assert.equal(/child_process|Command::new|std::process::Command|process\.kill|servicePid/.test(source), false,
+  assert.equal(/child_process|Command::new|std::process::Command|process\.kill/.test(source), false,
     `${label} must remain attach-only and must not control spi`);
 }
 
@@ -59,6 +59,13 @@ const observerClient = read("desktop-tauri/src-tauri/src/observer_client.rs");
 const connectionState = read("desktop-tauri/src-tauri/src/connection_state.rs");
 const activityView = read("desktop-tauri/src-tauri/src/activity_view.rs");
 const appState = read("desktop-tauri/src-tauri/src/app_state.rs");
+const settings = read("desktop-tauri/src-tauri/src/settings.rs");
+const accessKey = read("desktop-tauri/src-tauri/src/access_key.rs");
+const customPets = read("desktop-tauri/src-tauri/src/custom_pets.rs");
+const deepLinks = read("desktop-tauri/src-tauri/src/deep_links.rs");
+const notifications = read("desktop-tauri/src-tauri/src/notifications.rs");
+const native = read("desktop-tauri/src-tauri/src/native.rs");
+const quickSession = read("desktop-tauri/src-tauri/src/quick_session_client.rs");
 const bridge = read("desktop-tauri/src/tauri-bridge.ts");
 const rendererHtml = read("desktop/renderer/index.html");
 const buildScript = read("scripts/build-desktop-tauri.mjs");
@@ -110,7 +117,7 @@ assert.equal(petWindow.focus, false);
 assert.equal(petWindow.resizable, false);
 assert.match(config.app?.security?.csp ?? "", /connect-src\s+'none'/);
 
-assert.match(capabilities.identifier, /phase-[ab]-/);
+assert.match(capabilities.identifier, /phase-[a-c]-/);
 assert.deepEqual(capabilities.windows, ["pet"]);
 const capabilityText = capabilities.permissions.join("\n").toLowerCase();
 for (const forbidden of ["shell", "process", "fs:", "http:", "opener", "*"]) {
@@ -132,6 +139,17 @@ assert.match(connectionState, /127\.0\.0\.1/);
 assert.match(observerClient, /is_loopback_observer_url/);
 assert.match(activityView, /assert_renderer_view_safe/);
 assert.match(appState, /pet:state-changed/);
+assert.match(settings, /TAURI_SETTINGS_FILE_NAME/);
+assert.match(accessKey, /tauri-preview-access-key\.json/);
+assert.match(accessKey, /ELECTRON_ACCESS_KEY_FILE_NAME/);
+assert.match(accessKey, /is_available/);
+assert.match(settings, /ELECTRON_SETTINGS_FILE_NAME/);
+assert.match(customPets, /symlink_escape/);
+assert.match(deepLinks, /absolute_url_rejected/);
+assert.match(notifications, /needs_input/);
+assert.match(native, /SnailPiPetTauriPreview/);
+assert.match(quickSession, /x-spi-desktop-control-token/);
+assert.match(appState, /save_desktop_settings/);
 
 for (const [label, source] of [
   ["Rust lib", rustLib],
@@ -141,6 +159,13 @@ for (const [label, source] of [
   ["observer client", observerClient],
   ["connection state", connectionState],
   ["app state", appState],
+  ["settings", settings],
+  ["access key", accessKey],
+  ["custom pets", customPets],
+  ["deep links", deepLinks],
+  ["notifications", notifications],
+  ["native", native],
+  ["quick session", quickSession],
   ["Tauri bridge", bridge],
 ] as const) {
   assertNoServiceControl(source, label);

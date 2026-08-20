@@ -455,7 +455,7 @@ flowchart TB
 
 ---
 
-- [ ] U5. **Migrate isolated settings, OS-bound secrets, and custom pet catalog**
+- [x] U5. **Migrate isolated settings, OS-bound secrets, and custom pet catalog**
 
 **Goal:** 在 Tauri Preview 独立数据目录中实现设置、LRU、Access Key 和 Snail/Codex 自定义宠物能力，不读写 Electron 的可写状态。
 
@@ -498,7 +498,7 @@ flowchart TB
 
 ---
 
-- [ ] U6. **Complete native desktop integration parity**
+- [x] U6. **Complete native desktop integration parity**
 
 **Goal:** 补齐动态 Tray、通知点击、声音、DND、剪贴板、外部 Deep Link、开机启动、单实例和窗口持久化等宿主能力。
 
@@ -545,7 +545,7 @@ flowchart TB
 
 ---
 
-- [ ] U7. **Migrate quick-session behavior without widening renderer privileges**
+- [x] U7. **Migrate quick-session behavior without widening renderer privileges**
 
 **Goal:** 在 Tauri Rust 后端实现 path-free 项目/模型 catalog、独立 Control Token 和幂等首条消息创建，复用现有 Activity tray composer。
 

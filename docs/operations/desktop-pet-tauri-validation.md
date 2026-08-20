@@ -2,7 +2,7 @@
 
 - **Date:** 2026-09-17
 - **Plan:** `docs/plans/2026-09-17-001-refactor-tauri-desktop-pet-migration-plan.md`
-- **Scope:** Gate A Windows shell viability（U1–U2）and Gate B secure observer / renderer reuse（U3–U4）
+- **Scope:** Gate A Windows shell viability（U1–U2）、Gate B secure observer / renderer reuse（U3–U4）、Gate C feature parity（U5–U7）
 - **Product:** `SnailPiPet Tauri Preview` / `com.twofive.snail-pi-pet.tauri-preview`
 
 本矩阵独立于 Electron 的 `desktop-pet-validation.md`。自动测试只证明配置隔离、权限静态契约和纯几何；真实 WebView2 窗口、Tray、焦点、点击穿透、多显示器/DPI 和虚拟桌面必须保留实机证据。未实际执行的行必须保持 **未执行**，不能继承 Electron 结果。
@@ -118,3 +118,36 @@ npm run desktop:tauri:build-ui
 ## Gate B conclusion
 
 **Pending / 自动契约已完成，实机未执行。** 不得把 Electron 证据继承为 Tauri Pass。
+
+## Phase C — 功能等价
+
+```powershell
+npm run test:desktop-tauri-contract
+cargo test --manifest-path desktop-tauri/src-tauri/Cargo.toml
+```
+
+| Contract | Expected | Status |
+| --- | --- | --- |
+| Isolated settings | Preview 设置文件名/目录与 Electron 不同；缺字段/非法枚举按 Electron 规则归一化 | 自动覆盖 |
+| Secrets | Access Key 落盘无明文；加密不可用或损坏时不泄漏并要求重输 | 自动覆盖 |
+| Custom pets | 合法 Snail/Codex 可列出；越界路径/坏 manifest 失败；catalog/asset 无绝对路径 | 自动覆盖 |
+| Deep links | 相对 allowlist 通过；绝对 URL / cwd / token query 拒绝 | 自动覆盖 |
+| Tray / DND | 菜单含穿透恢复、DND、声音、Retry、WebUI、Preview-only Quit；DND 消费不重放 | 自动覆盖 |
+| Quick session | path-free catalog、同 requestId 幂等、旧服务隐藏 composer、payload 无 cwd/token | 自动覆盖 |
+| Capability | 仍无 shell/process/fs/http/opener 通配；打开 URL/目录走 Rust ShellExecuteW | 自动覆盖 |
+
+## Windows Gate C 矩阵
+
+| ID | 场景 | Pass criteria | Status |
+| --- | --- | --- | --- |
+| TA-C1 | 设置重启恢复 | Preview 重启后恢复 petScale/DND/选中宠物；Electron 设置文件内容与时间戳不变 | **未执行** |
+| TA-C2 | Access Key | server-mode 输入密钥后连接；落盘文件无明文；清除后重连 | **未执行** |
+| TA-C3 | 自定义宠物 | 合法 Snail/Codex 包列出并显示；越界/坏包不崩溃 | **未执行** |
+| TA-C4 | 通知/DND/声音 | Ready/Needs input/Blocked 按设置通知一次；DND 不重放；声音走 renderer cue | **未执行** |
+| TA-C5 | Deep Link | 点击活动打开已验证 origin；绝对 URL 被拒绝 | **未执行** |
+| TA-C6 | 开机启动 | Preview 登录启动切换不修改 Electron 项，也不启动 `spi` | **未执行** |
+| TA-C7 | 快速会话 | local 与 loopback server-mode 各成功创建一次；退出 Preview 不结束 session | **未执行** |
+
+## Gate C conclusion
+
+**Pending / 自动契约已完成，实机未执行。** 残余只允许明确记录的签名、clean-profile 或低优先级外观问题。
