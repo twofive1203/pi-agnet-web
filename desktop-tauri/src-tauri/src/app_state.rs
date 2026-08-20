@@ -31,7 +31,7 @@ use crate::observer_client::{
 };
 use crate::quick_session_client::QuickSessionClient;
 use crate::settings::{apply_settings_patch, load_desktop_settings, save_desktop_settings};
-use crate::window_controller;
+use crate::window_controller::{self, TrayLayoutAnchor};
 
 pub const STATE_CHANGED_EVENT: &str = "pet:state-changed";
 pub const SOUND_CUE_EVENT: &str = "pet:sound-cue";
@@ -46,6 +46,7 @@ pub struct PetRuntime {
     pub stale: bool,
     pub reset: bool,
     pub access_key: Option<String>,
+    pub tray_anchor: TrayLayoutAnchor,
 }
 
 impl PetRuntime {
@@ -61,6 +62,7 @@ impl PetRuntime {
             stale: false,
             reset: true,
             access_key,
+            tray_anchor: TrayLayoutAnchor::TopLeft,
         }
     }
 
@@ -74,7 +76,7 @@ impl PetRuntime {
             selected_activity_id: self.selected_activity_id.clone(),
             stale: self.stale,
             has_access_key: self.access_key.is_some(),
-            tray_anchor: Some("top-left"),
+            tray_anchor: Some(self.tray_anchor.as_str()),
             reset: self.reset,
         });
         assert_renderer_view_safe(&view)?;
@@ -114,7 +116,7 @@ impl AppState {
             access_key.clone(),
             Some(Arc::new(move |state| {
                 if let Some(store) = app_for_state.try_state::<Arc<AppState>>() {
-                    store.apply_connection(state);
+                    store.apply_connection(&app_for_state, state);
                     let _ = store.emit_view(&app_for_state);
                 }
             })),
@@ -147,17 +149,45 @@ impl AppState {
         }
     }
 
-    pub fn apply_connection(&self, state: DesktopConnectionState) {
+    pub fn apply_connection(&self, app: &AppHandle, state: DesktopConnectionState) {
         self.quick_session.set_connection(&state);
+        let needs_auth_tray = matches!(
+            state.reason_code,
+            Some(DesktopConnectionReasonCode::AuthRequired | DesktopConnectionReasonCode::AuthInvalid)
+        );
+        if needs_auth_tray {
+            let layout_input = self.runtime.lock().ok().and_then(|runtime| {
+                if runtime.settings.activity_tray_open {
+                    None
+                } else {
+                    Some((runtime.settings.pet_scale.clone(), runtime.tray_anchor))
+                }
+            });
+            if let (Some((pet_scale, tray_anchor)), Some(window)) =
+                (layout_input, app.get_webview_window("pet"))
+            {
+                if let Ok(layout) = crate::window_controller::resize_window(
+                    &window,
+                    &pet_scale,
+                    false,
+                    tray_anchor,
+                    &pet_scale,
+                    true,
+                ) {
+                    if let Ok(mut runtime) = self.runtime.lock() {
+                        runtime.settings.activity_tray_open = true;
+                        runtime.settings.window_position = Some(crate::activity_view::WindowPosition {
+                            x: layout.bounds.x,
+                            y: layout.bounds.y,
+                        });
+                        runtime.tray_anchor = layout.tray_anchor;
+                    }
+                }
+            }
+        }
         if let Ok(mut runtime) = self.runtime.lock() {
             if state.status != crate::connection_state::DesktopConnectionStatus::Connected {
                 runtime.stale = runtime.snapshot.is_some();
-            }
-            if matches!(
-                state.reason_code,
-                Some(DesktopConnectionReasonCode::AuthRequired | DesktopConnectionReasonCode::AuthInvalid)
-            ) {
-                runtime.settings.activity_tray_open = true;
             }
             runtime.connection = state;
         }
@@ -260,30 +290,57 @@ impl AppState {
     }
 
     pub fn apply_prefs(&self, patch: Value, window: &WebviewWindow) -> Result<Value, String> {
-        let mut port_changed = None;
-        let mut launch_at_login = None;
+        let (previous, current_anchor) = {
+            let runtime = self
+                .runtime
+                .lock()
+                .map_err(|_| "runtime lock poisoned".to_string())?;
+            (runtime.settings.clone(), runtime.tray_anchor)
+        };
+        let mut next = apply_settings_patch(previous.clone(), &patch);
+        let layout_changed = previous.pet_scale != next.pet_scale
+            || previous.activity_tray_open != next.activity_tray_open;
+        let layout = if layout_changed {
+            Some(crate::window_controller::resize_window(
+                window,
+                &previous.pet_scale,
+                previous.activity_tray_open,
+                current_anchor,
+                &next.pet_scale,
+                next.activity_tray_open,
+            )?)
+        } else {
+            None
+        };
+        if let Some(layout) = layout {
+            next.window_position = Some(crate::activity_view::WindowPosition {
+                x: layout.bounds.x,
+                y: layout.bounds.y,
+            });
+        }
+
+        if let Some(always_on_top) = patch.get("alwaysOnTop").and_then(Value::as_bool) {
+            let _ = window.set_always_on_top(always_on_top);
+        }
+        if let Some(click_through) = patch.get("clickThrough").and_then(Value::as_bool) {
+            let _ = window_controller::set_click_through(window, click_through);
+        }
+
+        let port_changed = (previous.port != next.port).then_some(next.port);
+        let launch_at_login = (previous.launch_at_login != next.launch_at_login)
+            .then_some(next.launch_at_login);
         {
             let mut runtime = self
                 .runtime
                 .lock()
                 .map_err(|_| "runtime lock poisoned".to_string())?;
-            runtime.settings = apply_settings_patch(runtime.settings.clone(), &patch);
-            if let Some(always_on_top) = patch.get("alwaysOnTop").and_then(Value::as_bool) {
-                let _ = window.set_always_on_top(always_on_top);
+            runtime.settings = next;
+            if let Some(layout) = layout {
+                runtime.tray_anchor = layout.tray_anchor;
             }
-            if let Some(click_through) = patch.get("clickThrough").and_then(Value::as_bool) {
-                let _ = window_controller::set_click_through(window, click_through);
-            }
-            if let Some(port) = patch.get("port").and_then(Value::as_u64) {
-                if port > 0 && port <= 65535 {
-                    let port = port as u16;
-                    runtime.connection.port = port;
-                    runtime.connection.origin = build_desktop_origin(port);
-                    port_changed = Some(port);
-                }
-            }
-            if let Some(enabled) = patch.get("launchAtLogin").and_then(Value::as_bool) {
-                launch_at_login = Some(enabled);
+            if let Some(port) = port_changed {
+                runtime.connection.port = port;
+                runtime.connection.origin = build_desktop_origin(port);
             }
         }
         if let Some(port) = port_changed {
@@ -322,15 +379,37 @@ impl AppState {
     }
 
     pub fn toggle_tray(&self, window: &WebviewWindow) -> Result<Value, String> {
-        let expanded = {
+        let (pet_scale, expanded, tray_anchor) = {
+            let runtime = self
+                .runtime
+                .lock()
+                .map_err(|_| "runtime lock poisoned".to_string())?;
+            (
+                runtime.settings.pet_scale.clone(),
+                runtime.settings.activity_tray_open,
+                runtime.tray_anchor,
+            )
+        };
+        let layout = window_controller::resize_window(
+            window,
+            &pet_scale,
+            expanded,
+            tray_anchor,
+            &pet_scale,
+            !expanded,
+        )?;
+        {
             let mut runtime = self
                 .runtime
                 .lock()
                 .map_err(|_| "runtime lock poisoned".to_string())?;
-            runtime.settings.activity_tray_open = !runtime.settings.activity_tray_open;
-            runtime.settings.activity_tray_open
-        };
-        window_controller::resize_window(window, expanded)?;
+            runtime.settings.activity_tray_open = !expanded;
+            runtime.settings.window_position = Some(crate::activity_view::WindowPosition {
+                x: layout.bounds.x,
+                y: layout.bounds.y,
+            });
+            runtime.tray_anchor = layout.tray_anchor;
+        }
         self.persist();
         self.current_view()
     }

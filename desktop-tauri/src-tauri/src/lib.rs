@@ -297,10 +297,18 @@ fn set_prefs(
 }
 
 #[tauri::command]
-fn restore_default_position(window: WebviewWindow) -> Result<(), String> {
+fn restore_default_position(
+    window: WebviewWindow,
+    store: State<'_, ShellStateStore>,
+    app: State<'_, std::sync::Arc<AppState>>,
+) -> Result<(), String> {
     let window = pet_window(&window)?;
+    let _ = app.apply_prefs(json!({ "activityTrayOpen": false }), &window)?;
     window_controller::recover_to_visible_work_area(&window)?;
-    let _ = window_controller::resize_window(&window, false);
+    if let Ok(mut shell) = store.0.lock() {
+        shell.expanded = false;
+    }
+    let _ = app.emit_view(window.app_handle());
     Ok(())
 }
 
@@ -474,7 +482,22 @@ pub fn run() {
             let state = AppState::start(app.handle().clone())?;
             app.manage(state.clone());
             state.restore_saved_position(&window);
-            window_controller::recover_to_visible_work_area(&window)?;
+            let initial_layout = state.runtime.lock().ok().map(|runtime| {
+                (
+                    runtime.settings.pet_scale.clone(),
+                    runtime.settings.activity_tray_open,
+                )
+            });
+            if let Some((pet_scale, expanded)) = initial_layout {
+                let layout = window_controller::initialize_window_layout(&window, &pet_scale, expanded)?;
+                if let Ok(mut runtime) = state.runtime.lock() {
+                    runtime.tray_anchor = layout.tray_anchor;
+                    runtime.settings.window_position = Some(crate::activity_view::WindowPosition {
+                        x: layout.bounds.x,
+                        y: layout.bounds.y,
+                    });
+                }
+            }
             if let Ok(runtime) = state.runtime.lock() {
                 let _ = window.set_always_on_top(runtime.settings.always_on_top);
                 let _ = window_controller::set_click_through(&window, runtime.settings.click_through);
@@ -483,6 +506,7 @@ pub fn run() {
                     if let Ok(mut shell) = store.0.lock() {
                         shell.always_on_top = runtime.settings.always_on_top;
                         shell.click_through = runtime.settings.click_through;
+                        shell.expanded = runtime.settings.activity_tray_open;
                     }
                 }
             }

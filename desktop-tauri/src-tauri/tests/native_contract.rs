@@ -5,8 +5,8 @@ use snail_pi_pet_tauri_preview_lib::{
     notifications::select_notification_candidates,
     tray_controller::{build_tray_menu_model, DISABLE_CLICK_THROUGH, QUIT_PREVIEW, TrayModelInput},
     window_controller::{
-        clamp_bounds, nearest_corner_anchor, resize_from_anchor, union_work_areas, CornerAnchor,
-        WindowBounds, WorkArea,
+        clamp_bounds, pet_layout_spec, pet_stack_rect, transition_window_layout,
+        union_work_areas, TrayLayoutAnchor, WindowBounds, WorkArea,
     },
     activity_view::default_desktop_settings,
 };
@@ -33,32 +33,106 @@ fn clamp_supports_negative_monitor_coordinates() {
 }
 
 #[test]
-fn resizing_preserves_the_nearest_visual_corner() {
+fn tauri_sizes_match_the_shared_renderer_layout_at_every_pet_scale() {
+    let small = pet_layout_spec("small");
+    assert_eq!((small.collapsed_width, small.collapsed_height), (164, 196));
+    assert_eq!((small.tray_width, small.tray_height), (360, 480));
+
+    let medium = pet_layout_spec("medium");
+    assert_eq!((medium.collapsed_width, medium.collapsed_height), (197, 235));
+    assert_eq!((medium.tray_width, medium.tray_height), (432, 576));
+
+    let large = pet_layout_spec("large");
+    assert_eq!((large.collapsed_width, large.collapsed_height), (246, 294));
+    assert_eq!((large.tray_width, large.tray_height), (540, 720));
+}
+
+#[test]
+fn tray_and_scale_transitions_keep_the_pet_stack_screen_position() {
     let work_area = WorkArea {
         x: 0,
         y: 0,
         width: 1920,
         height: 1080,
     };
+    let medium = pet_layout_spec("medium");
     let collapsed = WindowBounds {
-        x: 1716,
-        y: 836,
-        width: 180,
-        height: 220,
+        x: 800,
+        y: 300,
+        width: medium.collapsed_width,
+        height: medium.collapsed_height,
     };
-    assert_eq!(
-        nearest_corner_anchor(collapsed, work_area),
-        CornerAnchor::BottomRight
+    let initial_stack = pet_stack_rect(collapsed, TrayLayoutAnchor::TopLeft, medium);
+
+    let large = pet_layout_spec("large");
+    let scaled = transition_window_layout(
+        collapsed,
+        medium,
+        false,
+        TrayLayoutAnchor::TopLeft,
+        large,
+        false,
+        work_area,
     );
-    let expanded = resize_from_anchor(collapsed, 360, 480, work_area);
-    assert_eq!(
-        expanded.x + expanded.width as i32,
-        collapsed.x + collapsed.width as i32
+    let scaled_stack = pet_stack_rect(scaled.bounds, scaled.tray_anchor, large);
+    assert_eq!((scaled_stack.x, scaled_stack.y), (initial_stack.x, initial_stack.y));
+
+    let expanded = transition_window_layout(
+        scaled.bounds,
+        large,
+        false,
+        scaled.tray_anchor,
+        large,
+        true,
+        work_area,
     );
-    assert_eq!(
-        expanded.y + expanded.height as i32,
-        collapsed.y + collapsed.height as i32
+    let expanded_stack = pet_stack_rect(expanded.bounds, expanded.tray_anchor, large);
+    assert_eq!((expanded_stack.x, expanded_stack.y), (scaled_stack.x, scaled_stack.y));
+
+    let collapsed_again = transition_window_layout(
+        expanded.bounds,
+        large,
+        true,
+        expanded.tray_anchor,
+        large,
+        false,
+        work_area,
     );
+    let final_stack = pet_stack_rect(
+        collapsed_again.bounds,
+        collapsed_again.tray_anchor,
+        large,
+    );
+    assert_eq!((final_stack.x, final_stack.y), (scaled_stack.x, scaled_stack.y));
+}
+
+#[test]
+fn bottom_right_tray_expands_up_and_left_without_moving_the_pet() {
+    let work_area = WorkArea {
+        x: 0,
+        y: 0,
+        width: 1920,
+        height: 1080,
+    };
+    let spec = pet_layout_spec("medium");
+    let collapsed = WindowBounds {
+        x: 1920 - spec.collapsed_width as i32 - 24,
+        y: 1080 - spec.collapsed_height as i32 - 24,
+        width: spec.collapsed_width,
+        height: spec.collapsed_height,
+    };
+    let stack = pet_stack_rect(collapsed, TrayLayoutAnchor::TopLeft, spec);
+    let expanded = transition_window_layout(
+        collapsed,
+        spec,
+        false,
+        TrayLayoutAnchor::TopLeft,
+        spec,
+        true,
+        work_area,
+    );
+    assert_eq!(expanded.tray_anchor, TrayLayoutAnchor::BottomRight);
+    assert_eq!(pet_stack_rect(expanded.bounds, expanded.tray_anchor, spec), stack);
 }
 
 #[test]
@@ -99,6 +173,7 @@ fn click_through_uses_tauri_api_without_global_input_hooks() {
     let source = include_str!("../src/window_controller.rs");
     assert!(source.contains("set_ignore_cursor_events"));
     assert!(source.contains("show_inactive"));
+    assert!(source.contains("SetWindowPos"));
     assert!(!source.contains("SetWindowsHookEx"));
     assert!(!source.contains("WH_MOUSE"));
 }
