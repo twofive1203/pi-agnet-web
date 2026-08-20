@@ -48,7 +48,7 @@ Native form controls follow `color-scheme: light` so checkboxes and selects matc
 - No new fonts (CSP `font-src 'self' data:`).
 - Reduced-motion still collapses the pop animation through the existing global gate.
 - Hover/focus on `.pet-stack` hides the caption and foot label so the intent chips are the only chrome.
-- Running/Retrying keep the task caption visible in a Codex-style two-line card: explicit task/session title first, then a safe action/tool summary. Hover/focus still hides it so the intent chips remain unobstructed.
+- Running/Retrying keep the task caption visible in a Codex-style two-line card: explicit task/session title first, then a safe action/tool summary. While that card is visible, the compact top-right state label is hidden to avoid duplicate status; the label remains a fallback when the card is absent or suppressed by DND. Hover/focus still hides both so the intent chips remain unobstructed.
 - The pet body does not use a native `title` tooltip. Transparent frameless windows clip it over the sprite. Shortcuts live in the settings 操作 hint and the button `aria-label`.
 
 ## Non-goals

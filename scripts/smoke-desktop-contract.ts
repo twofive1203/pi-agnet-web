@@ -3468,6 +3468,7 @@ async function main() {
   assert.ok(css.includes(".pet-stack:focus-within .pet-intent-menu"));
   assert.ok(css.includes(".pet-stack:hover .pet-caption"));
   assert.ok(css.includes(".pet-stack:focus-within .pet-label"));
+  assert.ok(css.includes(".pet-stage:has(.pet-caption:not([hidden])) .pet-label"));
   assert.ok(css.includes("pet-label-breathe"));
   assert.ok(css.includes(".settings-hint"));
   assert.ok(css.includes("--pet-intent-gutter"));

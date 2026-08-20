@@ -497,6 +497,13 @@ select {
   visibility: hidden;
 }
 
+/* The two-line activity card already carries the state. Keep the compact
+   label only as a fallback when the card is absent or suppressed by DND. */
+.pet-stage:has(.pet-caption:not([hidden])) .pet-label {
+  opacity: 0;
+  visibility: hidden;
+}
+
 .pet-caption[data-bubble-mode="transient"],
 .pet-stage:has(.frame-running) .pet-caption,
 .pet-stage:has(.frame-retrying) .pet-caption {
