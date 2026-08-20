@@ -1,7 +1,7 @@
 use serde_json::Value;
 use tauri::{
     image::Image,
-    menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem},
+    menu::{CheckMenuItem, IconMenuItem, Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent, TrayIconId},
     AppHandle, Manager,
 };
@@ -30,11 +30,11 @@ pub struct TrayMenuItem {
 
 pub fn build_tray_menu_model(input: TrayModelInput<'_>) -> Vec<TrayMenuItem> {
     let status_label = match input.connection_status {
-        "service-not-running" | "service_not_running" => "状态：蜗牛派服务未启动".to_string(),
-        "incompatible" => "状态：服务不兼容".to_string(),
-        "reconnecting" => "状态：重连中".to_string(),
-        "probing" => "状态：探测中".to_string(),
-        _ => format!("状态：{}", presentation_label(input.presentation)),
+        "service-not-running" | "service_not_running" => "蜗牛派桌宠 · 服务未启动".to_string(),
+        "incompatible" => "蜗牛派桌宠 · 服务不兼容".to_string(),
+        "reconnecting" => "蜗牛派桌宠 · 重连中".to_string(),
+        "probing" => "蜗牛派桌宠 · 探测中".to_string(),
+        _ => format!("蜗牛派桌宠 · {}", presentation_label(input.presentation)),
     };
     let mut items = vec![
         item("status", status_label, false, None),
@@ -58,15 +58,7 @@ pub fn build_tray_menu_model(input: TrayModelInput<'_>) -> Vec<TrayMenuItem> {
         item(OPEN_WEBUI, "打开 WebUI", true, None),
     ];
     if input.can_copy_start_command {
-        items.push(item(
-            COPY_START_COMMAND,
-            format!(
-                "复制启动命令 ({})",
-                crate::connection_state::DESKTOP_START_COMMAND
-            ),
-            true,
-            None,
-        ));
+        items.push(item(COPY_START_COMMAND, "复制启动命令", true, None));
     }
     items.push(separator());
     items.push(item(QUIT_PREVIEW, "退出 Tauri Preview", true, None));
@@ -123,13 +115,23 @@ pub fn refresh_tray(app: &AppHandle) -> tauri::Result<()> {
         .and_then(|state| state.current_view().ok())
         .unwrap_or(serde_json::json!({}));
     let model = tray_model_from_view(&view, click_through);
+    let icon = Image::from_bytes(include_bytes!("../../../desktop/assets/tray/tray-icon.png"))?;
     let mut owned = Vec::new();
     for item in &model {
         if item.separator {
             owned.push(TrayOwned::Separator(PredefinedMenuItem::separator(app)?));
             continue;
         }
-        if let Some(checked) = item.checked {
+        if item.id == SHOW_PREVIEW {
+            owned.push(TrayOwned::Icon(IconMenuItem::with_id(
+                app,
+                item.id,
+                &item.label,
+                item.enabled,
+                Some(icon.clone()),
+                None::<&str>,
+            )?));
+        } else if let Some(checked) = item.checked {
             owned.push(TrayOwned::Check(CheckMenuItem::with_id(
                 app,
                 item.id,
@@ -152,18 +154,23 @@ pub fn refresh_tray(app: &AppHandle) -> tauri::Result<()> {
         .iter()
         .map(|item| match item {
             TrayOwned::Normal(item) => item as &dyn tauri::menu::IsMenuItem<tauri::Wry>,
+            TrayOwned::Icon(item) => item as &dyn tauri::menu::IsMenuItem<tauri::Wry>,
             TrayOwned::Check(item) => item as &dyn tauri::menu::IsMenuItem<tauri::Wry>,
             TrayOwned::Separator(item) => item as &dyn tauri::menu::IsMenuItem<tauri::Wry>,
         })
         .collect();
     let menu = Menu::with_items(app, &refs)?;
+    let default_position = model
+        .iter()
+        .position(|item| item.id == SHOW_PREVIEW)
+        .unwrap_or_default() as u32;
+    polish_native_menu(&menu, default_position);
     let tooltip = build_tooltip(&view);
     if let Some(tray) = app.tray_by_id(TRAY_ID) {
         let _ = tray.set_menu(Some(menu));
         let _ = tray.set_tooltip(Some(tooltip));
         return Ok(());
     }
-    let icon = Image::from_bytes(include_bytes!("../../../desktop/assets/tray/tray-icon.png"))?;
     TrayIconBuilder::with_id(TrayIconId::new(TRAY_ID))
         .icon(icon)
         .tooltip(&tooltip)
@@ -188,9 +195,41 @@ pub fn refresh_tray(app: &AppHandle) -> tauri::Result<()> {
 
 enum TrayOwned {
     Normal(MenuItem<tauri::Wry>),
+    Icon(IconMenuItem<tauri::Wry>),
     Check(CheckMenuItem<tauri::Wry>),
     Separator(PredefinedMenuItem<tauri::Wry>),
 }
+
+#[cfg(windows)]
+fn polish_native_menu(menu: &Menu<tauri::Wry>, default_position: u32) {
+    use std::{ffi::c_void, mem::size_of};
+    use tauri::menu::ContextMenu;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetMenuInfo, SetMenuDefaultItem, SetMenuInfo, HMENU, MENUINFO, MIM_STYLE, MNS_CHECKORBMP,
+    };
+
+    let Ok(raw_menu) = menu.hpopupmenu() else {
+        return;
+    };
+    let menu_handle = HMENU(raw_menu as *mut c_void);
+    let mut menu_info = MENUINFO {
+        cbSize: size_of::<MENUINFO>() as u32,
+        fMask: MIM_STYLE,
+        ..Default::default()
+    };
+    unsafe {
+        // Keep checkbox state and the branded action icon in one compact rail.
+        if GetMenuInfo(menu_handle, &mut menu_info).is_ok() {
+            menu_info.dwStyle |= MNS_CHECKORBMP;
+            let _ = SetMenuInfo(menu_handle, &menu_info);
+        }
+        // Left click performs the same action, so emphasize it as the menu default.
+        let _ = SetMenuDefaultItem(menu_handle, default_position, 1);
+    }
+}
+
+#[cfg(not(windows))]
+fn polish_native_menu(_menu: &Menu<tauri::Wry>, _default_position: u32) {}
 
 fn reveal_from_tray(app: &AppHandle) {
     let Some(window) = app.get_webview_window("pet") else {

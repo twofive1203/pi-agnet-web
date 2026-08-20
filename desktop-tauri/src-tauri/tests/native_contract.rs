@@ -271,8 +271,24 @@ fn tray_model_covers_dnd_sound_retry_and_preview_only_quit() {
     let quit = items.iter().find(|item| item.id == QUIT_PREVIEW).expect("quit");
     assert_eq!(quit.label, "退出 Tauri Preview");
     assert!(!quit.label.contains("任务"));
-    let copy = items.iter().find(|item| item.id == "copy-start-command").expect("copy");
-    assert!(copy.label.contains("spi --no-open"));
+    let status = items
+        .iter()
+        .find(|item| item.id == "status")
+        .expect("status");
+    assert_eq!(status.label, "蜗牛派桌宠 · 需要输入");
+    let copy = items
+        .iter()
+        .find(|item| item.id == "copy-start-command")
+        .expect("copy");
+    assert_eq!(copy.label, "复制启动命令");
+}
+
+#[test]
+fn tray_menu_uses_compact_native_visual_hierarchy() {
+    let source = include_str!("../src/tray_controller.rs");
+    assert!(source.contains("IconMenuItem::with_id"));
+    assert!(source.contains("MNS_CHECKORBMP"));
+    assert!(source.contains("SetMenuDefaultItem"));
 }
 
 #[test]
