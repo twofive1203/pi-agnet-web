@@ -1,9 +1,10 @@
 /**
  * Server-side ordinary Agent prompt activity observation (desktop pet U2).
  *
- * Pure state machine driven by wrapper lifecycle edges. Emits only safe fields
- * suitable for TaskObserverActivityInput — never cwd, prompt text, tool args,
- * raw errors, or file paths.
+ * Pure state machine driven by wrapper lifecycle edges. Emits only bounded fields
+ * suitable for TaskObserverActivityInput — never cwd, full message records, tool
+ * args, raw errors, or file paths. An unnamed Agent may use a short first-user
+ * message preview as its activity title.
  */
 
 import { createHash } from "node:crypto";
@@ -11,6 +12,7 @@ import { classifyChatProviderError } from "./chat-provider-errors";
 import { getAgentLifecycleDirective } from "./agent-lifecycle";
 import { buildAgentDeepLink } from "./desktop-deep-link";
 import { isSubagentToolName } from "./subagent-runs";
+import { stripVisualEvidenceFromMessage } from "./vision-resolver";
 import { getPathBaseName } from "./workspace-title";
 import {
   buildAgentActivityId,
@@ -69,6 +71,8 @@ export type AgentObserverIdentity = {
   /** Canonical cwd used only to derive path-free projectKey/displayName. */
   cwd: string;
   explicitTitle?: string | null;
+  /** Existing session's first user message, already treated as title-only metadata. */
+  inferredTitle?: string | null;
 };
 
 type ActiveTool = {
@@ -144,6 +148,44 @@ export function buildAgentFallbackTitle(sessionId: string): string {
   return `Agent #${digest.toUpperCase()}`;
 }
 
+const AGENT_INFERRED_TITLE_MAX_CHARS = 50;
+
+/** Match the Web sidebar's unnamed-session title without forwarding a message record. */
+export function inferAgentTitleFromUserMessage(message: unknown): string | null {
+  if (typeof message !== "string") return null;
+  const normalized = stripVisualEvidenceFromMessage(message).replace(/\s+/g, " ").trim();
+  return normalized ? normalized.slice(0, AGENT_INFERRED_TITLE_MAX_CHARS) : null;
+}
+
+/** Recover the first user title when attaching an observer to an existing session. */
+export function inferAgentTitleFromEntries(entries: readonly unknown[]): string | null {
+  for (const rawEntry of entries) {
+    if (!rawEntry || typeof rawEntry !== "object") continue;
+    const entry = rawEntry as {
+      type?: unknown;
+      message?: { role?: unknown; content?: unknown };
+    };
+    if (entry.type !== "message" || entry.message?.role !== "user") continue;
+    const content = entry.message.content;
+    if (typeof content === "string") {
+      const title = inferAgentTitleFromUserMessage(content);
+      if (title) return title;
+      continue;
+    }
+    if (!Array.isArray(content)) continue;
+    const text = content.find(
+      (block): block is { type: "text"; text: string } =>
+        !!block &&
+        typeof block === "object" &&
+        (block as { type?: unknown }).type === "text" &&
+        typeof (block as { text?: unknown }).text === "string",
+    )?.text;
+    const title = inferAgentTitleFromUserMessage(text);
+    if (title) return title;
+  }
+  return null;
+}
+
 /** Map provider/SDK failure text to a stable observer reason code (no raw text). */
 export function classifyObserverReasonCode(error: unknown): AgentObserverReasonCode {
   if (error == null) return "prompt_error";
@@ -199,6 +241,7 @@ export class AgentTaskObserver {
   private promptEpoch = 0;
   private current: InternalActivity | null = null;
   private explicitTitle: string | null;
+  private inferredTitle: string | null;
   private activeModel: TaskObserverActiveModel | undefined;
   private sessionResources: TaskObserverSessionResources | undefined;
   private readonly clock: () => number;
@@ -208,6 +251,7 @@ export class AgentTaskObserver {
     options?: { clock?: () => number },
   ) {
     this.explicitTitle = identity.explicitTitle?.trim() || null;
+    this.inferredTitle = inferAgentTitleFromUserMessage(identity.inferredTitle);
     this.clock = options?.clock ?? Date.now;
   }
 
@@ -237,7 +281,10 @@ export class AgentTaskObserver {
    * User-initiated prompt boundary (wrapper send "prompt").
    * Starts a new activity epoch; unfinished prior work is marked interrupted.
    */
-  beginUserPrompt(): void {
+  beginUserPrompt(message?: unknown): void {
+    if (!this.inferredTitle) {
+      this.inferredTitle = inferAgentTitleFromUserMessage(message);
+    }
     if (this.current && this.current.executionState !== "settled") {
       this.forceSettle("interrupted", "interrupted");
     }
@@ -451,7 +498,7 @@ export class AgentTaskObserver {
       projectName,
       title: resolveSafeTitle(
         "agent",
-        this.explicitTitle ?? buildAgentFallbackTitle(sessionId),
+        this.explicitTitle ?? this.inferredTitle ?? buildAgentFallbackTitle(sessionId),
       ),
       executionState: activity.executionState,
       outcome: activity.outcome,

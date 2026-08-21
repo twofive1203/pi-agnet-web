@@ -31,7 +31,10 @@ import {
   recordSubagentMetric,
 } from "./subagent-observability";
 import { getProcessInstanceId } from "./process-runtime";
-import { AgentTaskObserver } from "./task-observer-agent";
+import {
+  AgentTaskObserver,
+  inferAgentTitleFromEntries,
+} from "./task-observer-agent";
 import { notifyTaskObserverSourceChange } from "./task-observer-invalidate";
 import type {
   TaskObserverActivityInput,
@@ -181,11 +184,18 @@ export class AgentSessionWrapper {
       typeof this.inner.sessionManager?.getSessionName === "function"
         ? this.inner.sessionManager.getSessionName()
         : undefined;
+    let inferredTitle: string | null = null;
+    try {
+      inferredTitle = inferAgentTitleFromEntries(this.inner.sessionManager.getEntries());
+    } catch {
+      // Existing-session title recovery is best-effort; activity fallback remains available.
+    }
     this.taskObserver = new AgentTaskObserver({
       instanceId: getProcessInstanceId(),
       sessionId: this.inner.sessionId,
       cwd: this.cwd,
       explicitTitle: sessionName ?? null,
+      inferredTitle,
     });
     this.latestSessionPerformance = readSessionPerformanceSummary(this.inner.sessionId);
     this.refreshTaskObserverResources();
@@ -579,7 +589,7 @@ export class AgentSessionWrapper {
         // agent_start/agent_end — emit prompt_settled so the browser can clear the spinner.
         this.syncBrowserToolAvailability();
         try {
-          this.taskObserver.beginUserPrompt();
+          this.taskObserver.beginUserPrompt(command.message);
           // New prompt must surface promptly as Running in the pet Activity tray.
           this.notifyTaskObserverChanged(true);
         } catch {

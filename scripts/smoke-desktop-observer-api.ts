@@ -320,7 +320,7 @@ async function main() {
   );
   assert.match(
     rpcSource,
-    /beginUserPrompt\(\)[\s\S]{0,200}notifyTaskObserverChanged/,
+    /beginUserPrompt\(command\.message\)[\s\S]{0,200}notifyTaskObserverChanged/,
     "prompt dispatch must invalidate the observer hub",
   );
 

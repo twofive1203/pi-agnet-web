@@ -174,7 +174,7 @@ Each activity contains only:
 | `taskKey`, `activityId` | Stable entity and execution identities. |
 | `source` | `agent`, `snflow`, `automation`, or `quick_command`. |
 | `projectKey`, `projectName` | Path-free project grouping and display. |
-| `title` | Explicit user/task/command name or content-free `Agent #XXXXXX` fallback; never first Prompt. |
+| `title` | Explicit user/task/command name; unnamed Agents use the first user message as a bounded 50-character title preview, then fall back to content-free `Agent #XXXXXX`. |
 | `executionState`, `outcome`, `attention` | Three-axis state. |
 | `phase`, `reasonCode` | Bounded safe codes, not arbitrary model/error text. |
 | `progress` | Real counters/steps or indeterminate. |
@@ -185,7 +185,7 @@ Each activity contains only:
 | `deepLink` | Allowlisted relative WebUI path. |
 | `lastTransitionId` | Notification/read dedupe identity. |
 
-The payload omits cwd, Prompt/firstMessage, messages/output, tool arguments, file paths/content, Quick Command text/env and raw errors.
+The payload omits cwd, Prompt/firstMessage fields and message records, messages/output, tool arguments, file paths/content, Quick Command text/env and raw errors. For parity with the Web session list, the Agent `title` field may contain a bounded 50-character preview derived from the first user message; it is the only observer field allowed to carry that preview.
 
 ### Transition identity and reset
 
@@ -204,7 +204,7 @@ Only meaningful source changes increment revision. Heartbeats and wall-clock ela
 
 | Source | Top-level activity | Authority | Notes |
 | --- | --- | --- | --- |
-| Ordinary Agent | Current prompt activity per live wrapper | New wrapper-owned lifecycle projection | Subagents nested; explicit session name or content-free short identifier; active model and current session resources are cached at lifecycle boundaries. |
+| Ordinary Agent | Current prompt activity per live wrapper | New wrapper-owned lifecycle projection | Subagents nested; explicit session name, otherwise bounded first-user title preview, otherwise content-free short identifier; active model and current session resources are cached at lifecycle boundaries. |
 | SnFlow | Active/bounded recent terminal run | SnFlow store and terminal reducer | Matching ordinary host suppressed. |
 | Automation | Active/bounded recent terminal run | Persistent run record + active registry | Preserve blocked/ambiguous meaning. |
 | Quick Command | Active/bounded in-memory recent run | Quick Command registry | Exclude command/output/env/path; no restart recovery. |
@@ -469,7 +469,7 @@ Auto-update remains outside v1.
 - entity/activity/transition identities, including two prompts in one session;
 - three-axis mapping and desktop priority;
 - SnFlow host dedupe;
-- serialization proving no cwd/firstMessage/prompt/error/command/env/output;
+- serialization proving no cwd/firstMessage/prompt/error/command/env/output fields or full message records; Agent `title` alone may carry the bounded first-user preview;
 - stable transition dedupe and local acknowledgement;
 - connection-state machine for connected/not-running/incompatible/reconnecting;
 - deep-link allowlist and settings validation;

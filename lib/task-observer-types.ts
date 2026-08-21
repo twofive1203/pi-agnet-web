@@ -1,10 +1,11 @@
 /**
  * Desktop pet task-observer public domain contract.
  *
- * Privacy boundary: public types intentionally omit cwd, Prompt/firstMessage,
- * model/tool output, tool args, file paths/content, Quick Command command/env,
- * session paths, secrets, and raw provider errors. Adapters must project into
- * these shapes rather than spreading source records.
+ * Privacy boundary: public types intentionally omit cwd, message records and
+ * firstMessage/prompt fields, model/tool output, tool args, file paths/content,
+ * Quick Command command/env, session paths, secrets, and raw provider errors.
+ * An Agent title may contain a bounded first-user-message preview. Adapters must
+ * project into these shapes rather than spreading source records.
  */
 
 /** Wire protocol version for /api/desktop-observer compatibility. */
@@ -156,7 +157,7 @@ export type TaskObserverActivity = {
   source: TaskObserverSource;
   projectKey: string;
   projectName: string;
-  /** Explicit user/task/command name or generic fallback — never firstMessage (R21). */
+  /** Explicit name, bounded Agent first-user preview, task/command name, or generic fallback. */
   title: string;
   executionState: TaskObserverExecutionState;
   outcome: TaskObserverOutcome;

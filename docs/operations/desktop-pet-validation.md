@@ -15,7 +15,7 @@ Completed P0 engineering run, prepared artifacts, SHA-256 values, and residual v
 | --- | --- |
 | Attach-only | Pet never spawns/stops/restarts/signals/supervises `spi`. |
 | Loopback only | Connects only through direct `http://127.0.0.1:<port>`. Ordinary local mode needs no auth; current server mode is attachable only on the same proven loopback boundary with an access key. Remote/multi-instance aggregation remains rejected. |
-| Privacy | Observer payload has no cwd, Prompt/firstMessage, tool args, paths, command/output/env, secrets, raw provider errors. |
+| Privacy | Observer payload has no cwd, Prompt/firstMessage fields or message records, tool args, paths, command/output/env, secrets, or raw provider errors. The bounded Agent `title` preview derived from the first user message is the sole content-bearing exception. |
 | Deep links | Main validates allowlisted relative paths before `shell.openExternal`. |
 | Data isolation | Uninstalling the pet must not delete `~/.pi/agent` or remove npm `spi`. |
 | Package isolation | Pet installer must not embed Next/`.next`, pi SDK, Automation workers, node-pty, or `bin/pi-web.js`. |

@@ -632,6 +632,8 @@ async function main() {
     buildProjectKeyFromCwd,
     canScheduleAgentIdleTeardown,
     classifyObserverReasonCode,
+    inferAgentTitleFromEntries,
+    inferAgentTitleFromUserMessage,
     isBlockingExtensionUiMethod,
   } = await import("../lib/task-observer-agent");
 
@@ -648,6 +650,22 @@ async function main() {
   assert.equal(buildProjectDisplayNameFromCwd("D:\\work\\demo-app"), "demo-app");
   assert.match(buildAgentFallbackTitle("sess-u2"), /^Agent #[A-F0-9]{6}$/);
   assert.equal(buildAgentFallbackTitle("sess-u2"), buildAgentFallbackTitle("sess-u2"));
+  assert.equal(
+    inferAgentTitleFromUserMessage("  优化桌宠\n会话标题  "),
+    "优化桌宠 会话标题",
+  );
+  assert.equal(inferAgentTitleFromUserMessage("   "), null);
+  assert.equal(
+    inferAgentTitleFromEntries([
+      { type: "message", message: { role: "assistant", content: "not the title" } },
+      {
+        type: "message",
+        message: { role: "user", content: [{ type: "text", text: "First user title" }] },
+      },
+      { type: "message", message: { role: "user", content: "Later title" } },
+    ]),
+    "First user title",
+  );
   assert.notEqual(projectKey, "D:\\work\\demo-app");
   assert.equal(
     buildProjectKeyFromCwd("D:\\work\\demo-app"),
@@ -694,6 +712,28 @@ async function main() {
   assert.notEqual(secondRunning.activityId, first.activityId);
   assert.equal(secondRunning.executionState, "running");
   assert.equal(observer.getPromptEpoch(), 2);
+
+  // --- Unnamed sessions use the first user message and keep it across turns ---
+  const inferredObserver = new AgentTaskObserver({
+    instanceId: "inst-inferred",
+    sessionId: "sess-inferred",
+    cwd: "D:\\work\\demo-app",
+    explicitTitle: null,
+  });
+  inferredObserver.beginUserPrompt("Implement the desktop pet title");
+  assert.equal(inferredObserver.toActivityInput()?.title, "Implement the desktop pet title");
+  inferredObserver.observeEvent({ type: "agent_settled" });
+  inferredObserver.beginUserPrompt("This later prompt must not replace the title");
+  assert.equal(inferredObserver.toActivityInput()?.title, "Implement the desktop pet title");
+
+  const restoredObserver = new AgentTaskObserver({
+    instanceId: "inst-restored",
+    sessionId: "sess-restored",
+    cwd: "D:\\work\\demo-app",
+    inferredTitle: "Historical first user message",
+  });
+  restoredObserver.beginUserPrompt("Current follow-up");
+  assert.equal(restoredObserver.toActivityInput()?.title, "Historical first user message");
 
   // --- Retry remains active across agent_end ---
   observer.observeEvent({ type: "agent_end", willRetry: true });
@@ -825,7 +865,7 @@ async function main() {
   assertPublicActivityShape(projectActivity(failed));
   assert.equal(observer.getIdleEligibility(0).canSchedule, true);
 
-  // --- Explicit session title preferred; firstMessage never consulted ---
+  // --- Explicit session title overrides the inferred first-user title ---
   observer.setExplicitTitle("My feature work");
   observer.beginUserPrompt();
   observer.observeEvent({ type: "agent_start" });
