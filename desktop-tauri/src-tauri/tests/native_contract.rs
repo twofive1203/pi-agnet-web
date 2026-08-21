@@ -240,12 +240,15 @@ fn tray_always_has_click_through_recovery_and_preview_only_quit() {
 }
 
 #[test]
-fn hide_to_tray_uses_the_windows_native_visibility_path() {
+fn tray_visibility_uses_symmetric_windows_native_paths() {
     let window_source = include_str!("../src/window_controller.rs");
     let host_source = include_str!("../src/lib.rs");
     assert!(window_source.contains("SW_HIDE"));
     assert!(window_source.contains("pub fn hide_to_tray"));
+    assert!(window_source.contains("let _ = ShowWindow(hwnd, SW_SHOW);"));
+    assert!(window_source.contains("window remained hidden after native show"));
     assert!(host_source.contains("window_controller::hide_to_tray(&window)"));
+    assert!(host_source.contains("window_controller::show_user(&window)"));
 }
 
 #[test]

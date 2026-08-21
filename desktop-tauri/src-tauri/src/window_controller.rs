@@ -650,6 +650,26 @@ pub fn hide_to_tray(window: &WebviewWindow) -> Result<(), String> {
     window.hide().map_err(|error| error.to_string())
 }
 
+#[cfg(windows)]
+pub fn show_user(window: &WebviewWindow) -> Result<(), String> {
+    use windows::Win32::UI::WindowsAndMessaging::{ShowWindow, SW_SHOW};
+
+    set_click_through(window, false)?;
+    window.unminimize().map_err(|error| error.to_string())?;
+    let hwnd = window.hwnd().map_err(|error| error.to_string())?;
+    // Native tray hiding bypasses Tao's cached VISIBLE flag. Calling Tauri
+    // `show()` afterward sees that stale true flag and skips the matching
+    // ShowWindow call, so restore through the same HWND boundary as hide.
+    unsafe {
+        let _ = ShowWindow(hwnd, SW_SHOW);
+    }
+    if !window.is_visible().unwrap_or(false) {
+        return Err("window remained hidden after native show".to_string());
+    }
+    window.set_focus().map_err(|error| error.to_string())
+}
+
+#[cfg(not(windows))]
 pub fn show_user(window: &WebviewWindow) -> Result<(), String> {
     set_click_through(window, false)?;
     window.unminimize().map_err(|error| error.to_string())?;
