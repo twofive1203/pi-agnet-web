@@ -12,6 +12,11 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { getAgentLifecycleDirective } from "../lib/agent-lifecycle";
 import {
+  agentMessageText,
+  normalizeFollowUpQueue,
+  removedFollowUpItems,
+} from "../lib/chat-follow-up-queue";
+import {
   ChatPromptLifecycleHarness,
   applyChatPromptEvent,
   beginLocalPrompt,
@@ -327,6 +332,37 @@ function checkCompactionDoesNotSettle(): void {
   assertRunning(harness, false, "settled after compaction path");
 }
 
+/** 8) Follow-up queue snapshots stay separate from the persisted chat timeline. */
+function checkFollowUpQueueProjection(): void {
+  assert.deepEqual(
+    normalizeFollowUpQueue(["first", 2, null, "second"]),
+    ["first", "second"],
+    "queue snapshots keep string messages only",
+  );
+  assert.deepEqual(
+    removedFollowUpItems(["same", "same", "last"], ["same"]),
+    ["same", "last"],
+    "queue removal preserves duplicate counts and delivery order",
+  );
+  assert.equal(
+    agentMessageText({ role: "user", content: "plain", timestamp: 1 }),
+    "plain",
+    "plain user message text is readable",
+  );
+  assert.equal(
+    agentMessageText({
+      role: "user",
+      content: [
+        { type: "text", text: "queued" },
+        { type: "image", source: { type: "base64", media_type: "image/png", data: "AA==" } },
+      ],
+      timestamp: 1,
+    }),
+    "queued",
+    "attachment messages correlate by their text content",
+  );
+}
+
 /** Source contract: useAgentSession must still settle on agent_settled, not bare agent_end. */
 function checkHookSourceContract(): void {
   const source = readFileSync(join(ROOT, "hooks", "useAgentSession.ts"), "utf8");
@@ -341,6 +377,15 @@ function checkHookSourceContract(): void {
   assert.match(source, /case "auto_retry_end":/, "hook handles auto_retry_end");
   assert.match(source, /case "prompt_error":/, "hook handles prompt_error");
   assert.match(source, /willRetry === true/, "hook keeps running on willRetry");
+  assert.match(source, /case "queue_update":/, "hook consumes authoritative queue snapshots");
+  assert.match(source, /pendingFollowUps, followUpError/, "hook exposes the separate follow-up queue state");
+
+  const followUpBlock = source.match(/const handleFollowUp = useCallback\([\s\S]*?\n  }, \[\]\);/);
+  assert.ok(followUpBlock, "hook defines follow-up submission");
+  assert.ok(
+    !followUpBlock![0].includes("setMessages"),
+    "queue submission must not append an optimistic user message",
+  );
 
   // agent_end case must not setAgentRunning(false)
   const agentEndBlock = source.match(/case "agent_end":([\s\S]*?)case "agent_settled":/);
@@ -350,8 +395,16 @@ function checkHookSourceContract(): void {
     "agent_end must not clear agentRunning",
   );
 
+  const inputSource = readFileSync(join(ROOT, "components", "ChatInput.tsx"), "utf8");
+  assert.match(
+    inputSource,
+    /if \(accepted !== false\) clearEditor\(\)/,
+    "Composer clears queued input only after server acceptance",
+  );
+
   const rpc = readFileSync(join(ROOT, "lib", "rpc-manager.ts"), "utf8");
   assert.match(rpc, /AgentEventThrottler/, "rpc-manager throttles agent events");
+  assert.match(rpc, /followUpMessages: \[\.\.\.this\.inner\.getFollowUpMessages\(\)\]/, "live state exposes reconnect queue snapshot");
   assert.match(rpc, /type: "prompt_settled"/, "rpc-manager emits prompt_settled for slash commands");
   assert.match(rpc, /type: "prompt_error"/, "rpc-manager emits prompt_error on prompt failure");
 }
@@ -379,6 +432,7 @@ function main(): void {
   checkAbortDestroyAndBuffer();
   checkPromptSettledRules();
   checkCompactionDoesNotSettle();
+  checkFollowUpQueueProjection();
   checkHookSourceContract();
   checkPureHelpers();
   console.log("chat lifecycle integration smoke checks passed");

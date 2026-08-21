@@ -14,8 +14,8 @@ API routes live under `app/api/`. When adding, removing, or changing routes, upd
 | `sessions/[id]/export/` | GET | Export session as Markdown. |
 | `sessions/new/` | 410 | Deprecated route kept for compatibility. |
 | `agent/new/` | POST | Create a new session and send the first message. |
-| `agent/[id]/` | GET/POST | Get agent state or send a command. |
-| `agent/[id]/events/` | GET | SSE event stream. Ordinary subagent progress is coalesced per tool call to 300 ms and carries bounded summary metadata only (no partial output); terminal/failure/timeout/attention states remain immediate. Terminal result text is capped to an 8k preview; full bounded detail remains in session artifacts. |
+| `agent/[id]/` | GET/POST | Get agent state or send a command. Live state includes the actual pending-message count and follow-up queue snapshot so reconnecting Composer UI can restore “Send later” items. |
+| `agent/[id]/events/` | GET | SSE event stream, including authoritative `queue_update` snapshots for pending steering/follow-up messages. Ordinary subagent progress is coalesced per tool call to 300 ms and carries bounded summary metadata only (no partial output); terminal/failure/timeout/attention states remain immediate. Terminal result text is capped to an 8k preview; full bounded detail remains in session artifacts. |
 | `agent/subagent-children/` | GET | On-demand direct-child/detail projection for a native `session.jsonl` artifact under the canonical sessions root. Requires depth 1–3, performs bounded async head/tail parsing, caps children/output, returns truncation/fingerprint metadata, supports ETag/304, and never recursively scans descendants. |
 | `files/[...path]/` | GET/PUT | List/read/watch/preview workspace files for the file viewer and safely save existing editable text files. |
 | `files/search/` | GET | Bounded async filename search for Composer `@` mentions and future quick-open surfaces. Breadth-first traversal ignores dependency/build directories, honors request cancellation, and stops at fixed result, entry, or time budgets; additive `truncated` / `scannedEntries` fields report partial scans. |

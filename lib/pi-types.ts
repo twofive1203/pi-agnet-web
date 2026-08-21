@@ -126,6 +126,7 @@ export interface AgentSessionLike {
   readonly isCompacting: boolean;
   readonly autoCompactionEnabled: boolean;
   readonly autoRetryEnabled: boolean;
+  readonly pendingMessageCount: number;
   readonly model: ModelLike | undefined;
   /** pi 0.80.10+ canonical model/auth facade. */
   readonly modelRuntime: {
@@ -158,6 +159,7 @@ export interface AgentSessionLike {
   setAutoRetryEnabled(enabled: boolean): void;
   steer(text: string, images?: Array<{ type: "image"; data: string; mimeType: string }>): Promise<void>;
   followUp(text: string, images?: Array<{ type: "image"; data: string; mimeType: string }>): Promise<void>;
+  getFollowUpMessages(): readonly string[];
   getAllTools(): ToolInfo[];
   getActiveToolNames(): string[];
   setActiveToolsByName(names: string[]): void;

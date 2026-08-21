@@ -626,7 +626,8 @@ export class AgentSessionWrapper {
           autoRetryEnabled: this.inner.autoRetryEnabled,
           model: model ? { id: model.id, provider: model.provider } : undefined,
           messageCount: 0,
-          pendingMessageCount: 0,
+          pendingMessageCount: this.inner.pendingMessageCount,
+          followUpMessages: [...this.inner.getFollowUpMessages()],
           contextUsage: contextUsage
             ? { percent: contextUsage.percent, contextWindow: contextUsage.contextWindow, tokens: contextUsage.tokens }
             : null,

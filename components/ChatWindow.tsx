@@ -30,8 +30,8 @@ import type { PackageUpdateCheckResult } from "@/lib/package-update-check";
 
 /**
  * Stable React keys for chat rows.
- * Prefer persisted JSONL entry ids; optimistic/steer/follow-up rows without an
- * entry id keep a WeakMap-backed local id for the message object lifetime.
+ * Prefer persisted JSONL entry ids; optimistic/steer/delivered follow-up rows
+ * without an entry id keep a WeakMap-backed local id for the message lifetime.
  */
 function useStableMessageKeys(messages: AgentMessage[], entryIds: string[]) {
   const localKeyMapRef = useRef(new WeakMap<object, string>());
@@ -169,7 +169,7 @@ export const ChatWindow = memo(function ChatWindow({ session, newSessionCwd, onA
     retryInfo, agentFailure, contextUsage, forkingEntryId,
     isCompacting, compactError, displayModel: displayModelValue, sessionStats,
     sessionPerformance,
-    agentPhase, sessionChangesRefreshKey,
+    agentPhase, pendingFollowUps, followUpError, sessionChangesRefreshKey,
     extensionStatuses, extensionWidgets, extensionDialog, extensionToasts,
     isNew,
     messagesEndRef, scrollContainerRef,
@@ -425,6 +425,46 @@ export const ChatWindow = memo(function ChatWindow({ session, newSessionCwd, onA
     />
   );
 
+  const followUpQueueElement = pendingFollowUps.length > 0 || followUpError ? (
+    <div className="chat-follow-up-queue-shell" aria-live="polite">
+      <section className="chat-follow-up-queue" aria-label={t("chat.followUpQueueTitle")}>
+        {pendingFollowUps.length > 0 && (
+          <>
+            <div className="chat-follow-up-queue-header">
+              <span>{t("chat.followUpQueueTitle")}</span>
+              <span className="chat-follow-up-queue-count">
+                {t("chat.followUpQueueCount", { count: pendingFollowUps.length })}
+              </span>
+            </div>
+            <ol className="chat-follow-up-queue-list">
+              {pendingFollowUps.map((message, index) => (
+                <li className="chat-follow-up-queue-item" key={`${index}:${message}`}>
+                  <svg className="chat-follow-up-queue-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                    <circle cx="12" cy="12" r="9" />
+                    <path d="M12 7v5l3 2" />
+                  </svg>
+                  <div className="chat-follow-up-queue-copy">
+                    <div className="chat-follow-up-queue-message">
+                      {message.trim() || t("chat.followUpQueueAttachmentOnly")}
+                    </div>
+                    <div className="chat-follow-up-queue-meta">
+                      {t("chat.followUpQueueStatus")} · {t("chat.followUpQueueHint")}
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          </>
+        )}
+        {followUpError && (
+          <div className="chat-follow-up-queue-error" role="alert">
+            {t("chat.followUpQueueError", { details: followUpError })}
+          </div>
+        )}
+      </section>
+    </div>
+  ) : null;
+
   if (loading) {
     return (
       <div className="chat-window-state">{t("chat.loadingSession")}</div>
@@ -544,6 +584,7 @@ export const ChatWindow = memo(function ChatWindow({ session, newSessionCwd, onA
               items={visibleExtensionWidgets.filter((item) => item.placement === "aboveEditor")}
             />
             {composerTopSlot}
+            {followUpQueueElement}
             {chatInputElement}
             <ExtensionWidgetStack
               items={visibleExtensionWidgets.filter((item) => item.placement === "belowEditor")}
@@ -715,6 +756,7 @@ export const ChatWindow = memo(function ChatWindow({ session, newSessionCwd, onA
           items={visibleExtensionWidgets.filter((item) => item.placement === "aboveEditor")}
         />
         {composerTopSlot}
+        {followUpQueueElement}
         {chatInputElement}
         <ExtensionWidgetStack
           items={visibleExtensionWidgets.filter((item) => item.placement === "belowEditor")}

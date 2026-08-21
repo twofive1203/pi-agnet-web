@@ -37,8 +37,8 @@ interface Props {
   onSend: (message: string, images?: AttachedImage[]) => void;
   cwd?: string | null;
   onAbort: () => void;
-  onSteer?: (message: string, images?: AttachedImage[]) => void;
-  onFollowUp?: (message: string, images?: AttachedImage[]) => void;
+  onSteer?: (message: string, images?: AttachedImage[]) => boolean | void | Promise<boolean | void>;
+  onFollowUp?: (message: string, images?: AttachedImage[]) => boolean | void | Promise<boolean | void>;
   isStreaming: boolean;
   model?: { provider: string; modelId: string } | null;
   modelNames?: Record<string, string>;
@@ -413,6 +413,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
   const [uploadingFiles, setUploadingFiles] = useState(false);
   const [fileUploadError, setFileUploadError] = useState<string | null>(null);
+  const [queueActionPending, setQueueActionPending] = useState(false);
   const [gitBranch, setGitBranch] = useState<GitBranchDisplay | null>(null);
 
   const inputRef = useRef<HTMLDivElement>(null);
@@ -954,16 +955,20 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     clearEditor();
   }, [sendActive, isStreaming, sendBlocked, onSend, attachedImages, buildFinalMessage, clearEditor]);
 
-  const sendQueued = useCallback((mode: "steer" | "followup") => {
-    if (!sendActive()) return;
+  const sendQueued = useCallback(async (mode: "steer" | "followup") => {
+    if (!sendActive() || queueActionPending) return;
+    const callback = mode === "steer" ? onSteer : onFollowUp;
+    if (!callback) return;
+
     const finalMsg = buildFinalMessage();
-    if (mode === "steer" && onSteer) {
-      onSteer(finalMsg, attachedImages.length ? attachedImages : undefined);
-    } else if (mode === "followup" && onFollowUp) {
-      onFollowUp(finalMsg, attachedImages.length ? attachedImages : undefined);
+    setQueueActionPending(true);
+    try {
+      const accepted = await callback(finalMsg, attachedImages.length ? attachedImages : undefined);
+      if (accepted !== false) clearEditor();
+    } finally {
+      setQueueActionPending(false);
     }
-    clearEditor();
-  }, [sendActive, onSteer, onFollowUp, attachedImages, buildFinalMessage, clearEditor]);
+  }, [sendActive, queueActionPending, onSteer, onFollowUp, attachedImages, buildFinalMessage, clearEditor]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -1044,7 +1049,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         e.preventDefault();
         if (isStreaming && (onSteer || onFollowUp)) {
           // Default Enter sends as steer if available, else followup
-          sendQueued(onSteer ? "steer" : "followup");
+          void sendQueued(onSteer ? "steer" : "followup");
         } else if (!sendBlocked) {
           handleSend();
         }
@@ -1638,8 +1643,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             <div className="chat-input-send-row">
               {onSteer && (
                 <button
-                  onClick={() => sendQueued("steer")}
-                  disabled={!hasPendingMessage}
+                  onClick={() => { void sendQueued("steer"); }}
+                  disabled={!hasPendingMessage || queueActionPending}
                   title={t("chat.steerTitle")}
                   className="chat-input-action-button is-steer"
                 >
@@ -1651,8 +1656,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               )}
               {onFollowUp && (
                 <button
-                  onClick={() => sendQueued("followup")}
-                  disabled={!hasPendingMessage}
+                  onClick={() => { void sendQueued("followup"); }}
+                  disabled={!hasPendingMessage || queueActionPending}
                   title={t("chat.followUpTitle")}
                   className="chat-input-action-button is-followup"
                 >

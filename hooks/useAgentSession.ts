@@ -31,6 +31,11 @@ import {
 } from "@/lib/chat-provider-errors";
 import type { ErrorCode } from "@/lib/i18n/error-codes";
 import { getChatSendBlockReason } from "@/lib/chat-send-readiness";
+import {
+  agentMessageText,
+  normalizeFollowUpQueue,
+  removedFollowUpItems,
+} from "@/lib/chat-follow-up-queue";
 import type { ToolEntry, ToolPreset } from "@/components/ToolPanel";
 import {
   boundSubagentOutput,
@@ -280,6 +285,11 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [isCompacting, setIsCompacting] = useState(false);
   const [compactError, setCompactError] = useState<string | null>(null);
   const [agentPhase, setAgentPhase] = useState<AgentPhase>(null);
+  const [pendingFollowUps, setPendingFollowUps] = useState<string[]>([]);
+  const [followUpError, setFollowUpError] = useState<string | null>(null);
+  const pendingFollowUpsRef = useRef<string[]>([]);
+  const deliveringFollowUpsRef = useRef<string[]>([]);
+  const followUpQueueEventVersionRef = useRef(0);
   const subagentRunsRef = useRef<SubagentRun[]>([]);
   const subagentFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const subagentChangeRef = useRef(onSubagentChange);
@@ -374,9 +384,20 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   }, [messages]);
   const sessionStats = data?.sessionStats ?? currentContextStats;
 
+  const applyFollowUpQueueSnapshot = useCallback((value: unknown) => {
+    const next = normalizeFollowUpQueue(value);
+    const removed = removedFollowUpItems(pendingFollowUpsRef.current, next);
+    if (removed.length > 0) {
+      deliveringFollowUpsRef.current = [...deliveringFollowUpsRef.current, ...removed];
+    }
+    pendingFollowUpsRef.current = next;
+    setPendingFollowUps(next);
+  }, []);
+
   const loadSession = useCallback(async (sid: string, showLoading = false, includeState = false) => {
     const requestId = ++sessionLoadRequestRef.current;
     const requestedAt = Date.now();
+    const followUpQueueEventVersion = followUpQueueEventVersionRef.current;
     ++contextLoadRequestRef.current;
     try {
       if (showLoading) setLoading(true);
@@ -396,7 +417,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         return null;
       }
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const d = await res.json() as SessionData & { agentState?: { running: boolean; state?: { isStreaming?: boolean; isCompacting?: boolean; contextUsage?: { percent: number | null; contextWindow: number; tokens: number | null } | null; systemPrompt?: string; thinkingLevel?: string } } };
+      const d = await res.json() as SessionData & { agentState?: { running: boolean; state?: { isStreaming?: boolean; isCompacting?: boolean; contextUsage?: { percent: number | null; contextWindow: number; tokens: number | null } | null; systemPrompt?: string; thinkingLevel?: string; followUpMessages?: unknown } } };
       if (requestId !== sessionLoadRequestRef.current || sid !== sessionIdRef.current) return null;
       setData(d);
       setSessionPerformance((current) => selectLatestSessionPerformance(
@@ -417,6 +438,12 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       if (!d.agentState?.state?.thinkingLevel && d.context.thinkingLevel && d.context.thinkingLevel !== "off") {
         setThinkingLevel(d.context.thinkingLevel as ThinkingLevelOption);
       }
+      if (
+        d.agentState?.state?.followUpMessages !== undefined
+        && followUpQueueEventVersion === followUpQueueEventVersionRef.current
+      ) {
+        applyFollowUpQueueSnapshot(d.agentState.state.followUpMessages);
+      }
       return d.agentState ?? null;
     } catch (e) {
       if (requestId === sessionLoadRequestRef.current && sid === sessionIdRef.current) {
@@ -426,7 +453,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     } finally {
       if (showLoading && requestId === sessionLoadRequestRef.current) setLoading(false);
     }
-  }, [updateSubagentRuns]);
+  }, [applyFollowUpQueueSnapshot, updateSubagentRuns]);
 
   const loadContext = useCallback(async (sid: string, leafId: string | null) => {
     ++sessionLoadRequestRef.current;
@@ -567,6 +594,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         dispatch({ type: "end" });
         break;
       case "prompt_error": {
+        deliveringFollowUpsRef.current = [];
         const errorMessage = typeof event.errorMessage === "string"
           ? event.errorMessage
           : typeof event.error === "string"
@@ -595,6 +623,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         if (event.willRetry === true) setAgentRunning(true);
         break;
       case "agent_settled":
+        pendingFollowUpsRef.current = [];
+        deliveringFollowUpsRef.current = [];
+        setPendingFollowUps([]);
         setAgentRunning(false);
         setAgentPhase(null);
         setRetryInfo(null);
@@ -615,15 +646,34 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         }
         onAgentEnd?.();
         break;
-      case "message_start":
-      case "message_update": {
-        const msg = resolveStreamingMessage(event);
-        if (msg?.role === "user") {
+      case "queue_update": {
+        followUpQueueEventVersionRef.current += 1;
+        applyFollowUpQueueSnapshot(event.followUp);
+        break;
+      }
+      case "message_start": {
+        const started = event.message as AgentMessage | undefined;
+        if (started?.role === "user") {
+          const text = agentMessageText(started);
+          const deliveryIndex = deliveringFollowUpsRef.current.indexOf(text);
+          if (deliveryIndex !== -1) {
+            deliveringFollowUpsRef.current = deliveringFollowUpsRef.current.filter((_, index) => index !== deliveryIndex);
+            setMessages((prev) => [...prev, started]);
+          } else {
+            // Ordinary prompts are already optimistic; discard stale delivery markers.
+            deliveringFollowUpsRef.current = [];
+          }
           break;
         }
-        if (msg) {
-          dispatch({ type: "update", message: normalizeToolCalls(msg as AgentMessage) });
-        }
+        const msg = resolveStreamingMessage(event);
+        if (msg) dispatch({ type: "update", message: normalizeToolCalls(msg as AgentMessage) });
+        setAgentPhase(null);
+        break;
+      }
+      case "message_update": {
+        const msg = resolveStreamingMessage(event);
+        if (msg?.role === "user") break;
+        if (msg) dispatch({ type: "update", message: normalizeToolCalls(msg as AgentMessage) });
         setAgentPhase(null);
         break;
       }
@@ -852,7 +902,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         break;
     }
     recordSubagentClientDuration("eventHandlerMs", handlerStartedAt);
-  }, [currentModel, handleExtensionUiRequest, loadSession, onAgentEnd, updateSubagentRuns]);
+  }, [applyFollowUpQueueSnapshot, currentModel, handleExtensionUiRequest, loadSession, onAgentEnd, updateSubagentRuns]);
   handleAgentEventRef.current = handleAgentEvent;
 
   const handleSend = useCallback(async (message: string, images?: AttachedImage[]) => {
@@ -1047,10 +1097,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     }
   }, [isCompacting, loadSession]);
 
-  const handleSteer = useCallback(async (message: string, images?: AttachedImage[]) => {
+  const handleSteer = useCallback(async (message: string, images?: AttachedImage[]): Promise<boolean> => {
     const sid = sessionIdRef.current;
-    if (!sid) return;
-    setMessages((prev) => [...prev, { role: "user", content: `[steer] ${message}`, timestamp: Date.now() } as AgentMessage]);
+    if (!sid) return false;
     const piImages = images?.map((img) => ({ type: "image" as const, data: img.data, mimeType: img.mimeType }));
     try {
       await sendAgentCommand(sid, {
@@ -1058,15 +1107,18 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         message,
         ...(piImages?.length ? { images: piImages } : {}),
       });
+      setMessages((prev) => [...prev, { role: "user", content: `[steer] ${message}`, timestamp: Date.now() } as AgentMessage]);
+      return true;
     } catch (e) {
       console.error("Failed to steer:", e);
+      return false;
     }
   }, []);
 
-  const handleFollowUp = useCallback(async (message: string, images?: AttachedImage[]) => {
+  const handleFollowUp = useCallback(async (message: string, images?: AttachedImage[]): Promise<boolean> => {
     const sid = sessionIdRef.current;
-    if (!sid) return;
-    setMessages((prev) => [...prev, { role: "user", content: message, timestamp: Date.now() } as AgentMessage]);
+    if (!sid) return false;
+    setFollowUpError(null);
     const piImages = images?.map((img) => ({ type: "image" as const, data: img.data, mimeType: img.mimeType }));
     try {
       await sendAgentCommand(sid, {
@@ -1074,8 +1126,12 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         message,
         ...(piImages?.length ? { images: piImages } : {}),
       });
+      return true;
     } catch (e) {
+      const errorMessage = e instanceof Error ? e.message : String(e);
+      setFollowUpError(errorMessage);
       console.error("Failed to follow up:", e);
+      return false;
     }
   }, []);
 
@@ -1161,6 +1217,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         eventReconnectTimerRef.current = null;
       }
       hiddenMessageUpdateRef.current = null;
+      pendingFollowUpsRef.current = [];
+      deliveringFollowUpsRef.current = [];
       if (hiddenMessageUpdateTimerRef.current) {
         clearTimeout(hiddenMessageUpdateTimerRef.current);
         hiddenMessageUpdateTimerRef.current = null;
@@ -1289,6 +1347,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     isCompacting, compactError, currentModel, displayModel, sessionStats,
     sessionPerformance,
     agentPhase, subagentRuns: subagentRunsRef.current,
+    pendingFollowUps, followUpError,
     sessionChangesRefreshKey,
     extensionStatuses,
     extensionWidgets,
