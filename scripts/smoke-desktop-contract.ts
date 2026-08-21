@@ -4231,7 +4231,7 @@ async function main() {
   );
   assert.equal(resolveCodexDragClip(8, 1, null), "running-right");
   assert.equal(resolveCodexDragClip(-8, 1, null), "running-left");
-  assert.equal(resolveCodexDragClip(1, 8, "running-right"), "running-right");
+  assert.equal(resolveCodexDragClip(-1, 8, "running-right"), "running-left");
   assert.equal(resolveCodexDragClip(0, 0, null), null);
 
   if (v2Meta.ok) {

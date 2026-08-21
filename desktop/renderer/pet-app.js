@@ -1067,7 +1067,7 @@
   }
   function resolveCodexDragClip(dx, dy, last) {
     if (!Number.isFinite(dx) || !Number.isFinite(dy)) return last;
-    if (Math.abs(dx) <= Math.abs(dy) || Math.abs(dx) < 0.5) return last;
+    if (Math.abs(dx) < 0.5) return last;
     return dx > 0 ? "running-right" : "running-left";
   }
 
@@ -4358,6 +4358,8 @@
     let petDragOriginY = 0;
     let petLastScreenX = 0;
     let petLastScreenY = 0;
+    let petLastNativeWindowX = null;
+    let petLastNativeWindowY = null;
     let petDragging = false;
     let petNativeDragging = false;
     const resetEyeFollow = () => {
@@ -4374,6 +4376,25 @@
           selectedPetId: current.selectedPetId
         })
       );
+    };
+    const applyDragDirection = (dx, dy) => {
+      const profile = currentPetProfile();
+      if (!profile?.capabilities.directionalRun || !current) return;
+      if (!canApplyDragOverlay(current.presentation)) return;
+      const nextDrag = resolveCodexDragClip(dx, dy, dragClip);
+      if (nextDrag === dragClip) return;
+      dragClip = nextDrag;
+      lookDirection = null;
+      update(current);
+    };
+    const applyNativeWindowMove = (position) => {
+      if (!petNativeDragging || !petDragging) return;
+      const previousX = petLastNativeWindowX;
+      const previousY = petLastNativeWindowY;
+      petLastNativeWindowX = position.x;
+      petLastNativeWindowY = position.y;
+      if (previousX == null || previousY == null) return;
+      applyDragDirection(position.x - previousX, position.y - previousY);
     };
     const clearLookReleaseTimer = () => {
       if (lookReleaseTimer) {
@@ -4538,6 +4559,8 @@
       petPointerId = null;
       petDragging = false;
       petNativeDragging = false;
+      petLastNativeWindowX = null;
+      petLastNativeWindowY = null;
       if (dragClip) {
         dragClip = null;
         if (current) update(current);
@@ -4572,6 +4595,8 @@
       petDragOriginY = event.screenY;
       petLastScreenX = event.screenX;
       petLastScreenY = event.screenY;
+      petLastNativeWindowX = null;
+      petLastNativeWindowY = null;
       petDragging = false;
       petNativeDragging = false;
       resetEyeFollow();
@@ -4609,15 +4634,7 @@
       petLastScreenY = event.screenY;
       if (dx !== 0 || dy !== 0) {
         if (!petNativeDragging) bridge?.moveBy(dx, dy);
-        const profile = currentPetProfile();
-        if (profile?.capabilities.directionalRun && current && canApplyDragOverlay(current.presentation)) {
-          const nextDrag = resolveCodexDragClip(dx, dy, dragClip);
-          if (nextDrag !== dragClip) {
-            dragClip = nextDrag;
-            lookDirection = null;
-            update(current);
-          }
-        }
+        applyDragDirection(dx, dy);
       }
     });
     petButton?.addEventListener("pointerup", (event) => {
@@ -4638,6 +4655,8 @@
       petPointerId = null;
       petDragging = false;
       petNativeDragging = false;
+      petLastNativeWindowX = null;
+      petLastNativeWindowY = null;
       dragClip = null;
       petButton.classList.remove("is-dragging");
       petAvatar?.classList.remove("is-pressed", "is-dragging");
@@ -5048,6 +5067,7 @@
     let unsubscribe;
     let unsubscribeSoundCue;
     let unsubscribeCustomPets;
+    let unsubscribeNativeWindowMoved;
     if (bridge) {
       unsubscribe = bridge.onStateChanged((view) => {
         update(view);
@@ -5058,6 +5078,7 @@
       unsubscribeCustomPets = bridge.onCustomPetsChanged((payload) => {
         syncCustomPetsPayload(payload);
       });
+      unsubscribeNativeWindowMoved = bridge.onNativeWindowMoved?.(applyNativeWindowMove);
       void bridge.getState().then((view) => {
         if (view) update(view);
       });
@@ -5104,6 +5125,7 @@
         unsubscribe?.();
         unsubscribeSoundCue?.();
         unsubscribeCustomPets?.();
+        unsubscribeNativeWindowMoved?.();
         soundPlayer.destroy();
       }
     };

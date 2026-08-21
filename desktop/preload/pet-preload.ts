@@ -24,6 +24,8 @@ export type SnailPetBridge = {
   hideToTray: () => void;
   /** Tauri-only native drag path; Electron keeps the renderer delta fallback. */
   startDragging?: () => void;
+  /** Physical native-window positions emitted while Tauri owns the OS drag loop. */
+  onNativeWindowMoved?: (handler: (position: { x: number; y: number }) => void) => () => void;
   /** Move frameless window by screen-pixel delta (Electron fallback). */
   moveBy: (dx: number, dy: number) => void;
   selectActivity: (activityId: string) => void;

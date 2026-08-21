@@ -219,10 +219,14 @@ fn mixed_dpi_drag_uses_native_os_window_dragging() {
     assert!(host_source.contains("fn start_dragging("));
     assert!(host_source.contains("window.start_dragging()"));
     assert!(host_source.contains("WindowEvent::Moved"));
+    assert!(host_source.contains("pet:native-window-moved"));
+    assert!(host_source.contains("app_handle.emit_to("));
     assert!(bridge_source.contains("startDragging"));
     assert!(bridge_source.contains("invoke(\"start_dragging\")"));
+    assert!(bridge_source.contains("onNativeWindowMoved"));
     assert!(renderer_source.contains("typeof bridge?.startDragging === \"function\""));
     assert!(renderer_source.contains("petNativeDragging"));
+    assert!(renderer_source.contains("onNativeWindowMoved"));
 }
 
 #[test]

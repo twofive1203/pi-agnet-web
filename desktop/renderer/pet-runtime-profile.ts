@@ -388,8 +388,12 @@ export function isCodexLookPointerInBounds(
 }
 
 /**
- * Horizontal drag chooses locomotion. Vertical / tiny increments keep the
+ * Horizontal drag chooses locomotion. Tiny horizontal increments keep the
  * last determined direction (or null → caller uses the business clip).
+ *
+ * Direction updates require meaningful horizontal movement (>= 0.5px),
+ * but we don't gate on vertical dominance — a diagonal drag still shows
+ * the horizontal heading so direction changes mid-drag are visible.
  */
 export function resolveCodexDragClip(
   dx: number,
@@ -397,7 +401,7 @@ export function resolveCodexDragClip(
   last: PetDragClipName | null,
 ): PetDragClipName | null {
   if (!Number.isFinite(dx) || !Number.isFinite(dy)) return last;
-  if (Math.abs(dx) <= Math.abs(dy) || Math.abs(dx) < 0.5) return last;
+  if (Math.abs(dx) < 0.5) return last;
   return dx > 0 ? "running-right" : "running-left";
 }
 

@@ -7,6 +7,7 @@ import { isSoundCueKind, type SoundCueKind } from "../../desktop/main/sound-cue"
 const STATE_CHANGED = "pet:state-changed";
 const SOUND_CUE = "pet:sound-cue";
 const CUSTOM_PETS_CHANGED = "pet:custom-pets-changed";
+const NATIVE_WINDOW_MOVED = "pet:native-window-moved";
 
 type SnailPetBridge = {
   getState: () => Promise<unknown>;
@@ -14,6 +15,7 @@ type SnailPetBridge = {
   toggleTray: () => void;
   hideToTray: () => void;
   startDragging: () => void;
+  onNativeWindowMoved: (handler: (position: { x: number; y: number }) => void) => () => void;
   moveBy: (dx: number, dy: number) => void;
   selectActivity: (activityId: string) => void;
   markRead: (activityId: string) => void;
@@ -78,6 +80,14 @@ const bridge: SnailPetBridge = {
   startDragging: () => {
     void invoke("start_dragging");
   },
+  onNativeWindowMoved: (handler) =>
+    subscribe(NATIVE_WINDOW_MOVED, (payload) => {
+      if (!payload || typeof payload !== "object") return;
+      const { x, y } = payload as { x?: unknown; y?: unknown };
+      if (typeof x !== "number" || !Number.isFinite(x)) return;
+      if (typeof y !== "number" || !Number.isFinite(y)) return;
+      handler({ x, y });
+    }),
   moveBy: (dx, dy) => {
     void invoke("move_by", { dx, dy });
   },

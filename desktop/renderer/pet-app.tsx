@@ -2205,6 +2205,8 @@ export function renderPetApp(root: Document = document): {
   let petDragOriginY = 0;
   let petLastScreenX = 0;
   let petLastScreenY = 0;
+  let petLastNativeWindowX: number | null = null;
+  let petLastNativeWindowY: number | null = null;
   let petDragging = false;
   let petNativeDragging = false;
 
@@ -2226,6 +2228,27 @@ export function renderPetApp(root: Document = document): {
         selectedPetId: current.selectedPetId,
       }),
     );
+  };
+
+  const applyDragDirection = (dx: number, dy: number) => {
+    const profile = currentPetProfile();
+    if (!profile?.capabilities.directionalRun || !current) return;
+    if (!canApplyDragOverlay(current.presentation)) return;
+    const nextDrag = resolveCodexDragClip(dx, dy, dragClip);
+    if (nextDrag === dragClip) return;
+    dragClip = nextDrag;
+    lookDirection = null;
+    update(current);
+  };
+
+  const applyNativeWindowMove = (position: { x: number; y: number }) => {
+    if (!petNativeDragging || !petDragging) return;
+    const previousX = petLastNativeWindowX;
+    const previousY = petLastNativeWindowY;
+    petLastNativeWindowX = position.x;
+    petLastNativeWindowY = position.y;
+    if (previousX == null || previousY == null) return;
+    applyDragDirection(position.x - previousX, position.y - previousY);
   };
 
   const clearLookReleaseTimer = () => {
@@ -2416,6 +2439,8 @@ export function renderPetApp(root: Document = document): {
     petPointerId = null;
     petDragging = false;
     petNativeDragging = false;
+    petLastNativeWindowX = null;
+    petLastNativeWindowY = null;
     if (dragClip) {
       dragClip = null;
       if (current) update(current);
@@ -2458,6 +2483,8 @@ export function renderPetApp(root: Document = document): {
     petDragOriginY = event.screenY;
     petLastScreenX = event.screenX;
     petLastScreenY = event.screenY;
+    petLastNativeWindowX = null;
+    petLastNativeWindowY = null;
     petDragging = false;
     petNativeDragging = false;
     resetEyeFollow();
@@ -2506,15 +2533,7 @@ export function renderPetApp(root: Document = document): {
     petLastScreenY = event.screenY;
     if (dx !== 0 || dy !== 0) {
       if (!petNativeDragging) bridge?.moveBy(dx, dy);
-      const profile = currentPetProfile();
-      if (profile?.capabilities.directionalRun && current && canApplyDragOverlay(current.presentation)) {
-        const nextDrag = resolveCodexDragClip(dx, dy, dragClip);
-        if (nextDrag !== dragClip) {
-          dragClip = nextDrag;
-          lookDirection = null;
-          update(current);
-        }
-      }
+      applyDragDirection(dx, dy);
     }
   });
 
@@ -2542,6 +2561,8 @@ export function renderPetApp(root: Document = document): {
     petPointerId = null;
     petDragging = false;
     petNativeDragging = false;
+    petLastNativeWindowX = null;
+    petLastNativeWindowY = null;
     dragClip = null;
     petButton.classList.remove("is-dragging");
     petAvatar?.classList.remove("is-pressed", "is-dragging");
@@ -3026,6 +3047,7 @@ export function renderPetApp(root: Document = document): {
   let unsubscribe: (() => void) | undefined;
   let unsubscribeSoundCue: (() => void) | undefined;
   let unsubscribeCustomPets: (() => void) | undefined;
+  let unsubscribeNativeWindowMoved: (() => void) | undefined;
   if (bridge) {
     unsubscribe = bridge.onStateChanged((view) => {
       update(view as DesktopActivityView);
@@ -3038,6 +3060,7 @@ export function renderPetApp(root: Document = document): {
     unsubscribeCustomPets = bridge.onCustomPetsChanged((payload) => {
       syncCustomPetsPayload(payload);
     });
+    unsubscribeNativeWindowMoved = bridge.onNativeWindowMoved?.(applyNativeWindowMove);
     void bridge.getState().then((view) => {
       if (view) update(view as DesktopActivityView);
     });
@@ -3085,6 +3108,7 @@ export function renderPetApp(root: Document = document): {
       unsubscribe?.();
       unsubscribeSoundCue?.();
       unsubscribeCustomPets?.();
+      unsubscribeNativeWindowMoved?.();
       soundPlayer.destroy();
     },
   };

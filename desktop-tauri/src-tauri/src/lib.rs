@@ -17,13 +17,14 @@ use std::thread;
 use std::time::Duration;
 
 use serde_json::{json, Value};
-use tauri::{Manager, State, WebviewWindow, WindowEvent};
+use tauri::{Emitter, Manager, State, WebviewWindow, WindowEvent};
 
 use crate::app_state::AppState;
 
 pub const TAURI_PREVIEW_IDENTIFIER: &str = "com.twofive.snail-pi-pet.tauri-preview";
 pub const TAURI_SETTINGS_FILE_NAME: &str = "tauri-preview-settings.json";
 pub const TAURI_PREVIEW_EXECUTABLE: &str = "snail-pi-pet-tauri-preview";
+const NATIVE_WINDOW_MOVED_EVENT: &str = "pet:native-window-moved";
 
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -586,6 +587,18 @@ pub fn run() {
                             }
                         }
                     }
+                    // Native window dragging owns the Windows move loop, so WebView
+                    // pointermove stops until mouse-up. Forward physical positions
+                    // through the narrow bridge so renderer-only direction can still
+                    // react when the user reverses during the same drag.
+                    let _ = app_handle.emit_to(
+                        "pet",
+                        NATIVE_WINDOW_MOVED_EVENT,
+                        json!({
+                            "x": position.x,
+                            "y": position.y,
+                        }),
+                    );
                 }
                 _ => {}
             });
