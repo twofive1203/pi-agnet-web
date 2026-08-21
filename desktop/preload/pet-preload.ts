@@ -73,6 +73,11 @@ export type SnailPetBridge = {
     provider?: string;
     modelId?: string;
   }) => Promise<unknown>;
+  /** Tauri-only optional server profile commands. Electron does not implement these. */
+  listServerProfiles?: () => Promise<unknown>;
+  saveServerProfile?: (patch: Record<string, unknown>) => Promise<unknown>;
+  deleteServerProfile?: (id: string) => Promise<unknown>;
+  switchServerProfile?: (id: string) => Promise<unknown>;
 };
 
 function send(channel: string, ...args: unknown[]): void {

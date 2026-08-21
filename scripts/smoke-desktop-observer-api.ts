@@ -8,6 +8,7 @@ import { withTestRemoteAddress } from "../lib/automation-connection-context";
 import {
   assertDesktopObserverLocalAccess,
   assertDesktopObserverLoopback,
+  assertDesktopObserverNetworkAccess,
   assertDesktopObserverSessionOrigin,
   assertDesktopObserverToken,
   buildDesktopObserverProtocolPayload,
@@ -58,7 +59,7 @@ async function main() {
   assert.equal(protocol.mode, "local");
   assert.equal(protocol.compatible, true);
   assert.equal(protocol.reasonCode, null);
-  assert.deepEqual(protocol.capabilities, ["quick_session"]);
+  assert.deepEqual(protocol.capabilities, ["quick_session", "remote_attach"]);
 
   const serverProtocol = buildDesktopObserverProtocolPayload({ PI_WEB_SERVER_MODE: "1" });
   assert.equal(serverProtocol.mode, "server");
@@ -246,6 +247,92 @@ async function main() {
         error instanceof DesktopObserverAccessError && error.status === 401,
     );
   });
+
+  // --- Remote attach: local mode still rejects non-loopback ---
+  {
+    const prevMode = process.env.PI_WEB_SERVER_MODE;
+    process.env.PI_WEB_SERVER_MODE = "0";
+    try {
+      withTestRemoteAddress("203.0.113.10", () => {
+        assert.throws(
+          () =>
+            assertDesktopObserverNetworkAccess(
+              req("https://203.0.113.10:8443/api/desktop-observer/protocol", {
+                headers: { host: "203.0.113.10:8443" },
+              }),
+            ),
+          (error: unknown) => error instanceof DesktopObserverAccessError,
+        );
+      });
+    } finally {
+      if (prevMode === undefined) delete process.env.PI_WEB_SERVER_MODE;
+      else process.env.PI_WEB_SERVER_MODE = prevMode;
+    }
+  }
+
+  const prevServer = process.env.PI_WEB_SERVER_MODE;
+  const prevInsecure = process.env.PI_WEB_ALLOW_INSECURE_HTTP;
+  process.env.PI_WEB_SERVER_MODE = "1";
+  delete process.env.PI_WEB_ALLOW_INSECURE_HTTP;
+  try {
+    withTestRemoteAddress("203.0.113.10", () => {
+      const identity = assertDesktopObserverNetworkAccess(
+        req("https://203.0.113.10:8443/api/desktop-observer/protocol", {
+          headers: { host: "203.0.113.10:8443" },
+        }),
+      );
+      assert.equal(identity.kind, "remote_direct");
+      assert.equal(identity.bindKey, "direct:203.0.113.10");
+
+      assert.throws(
+        () =>
+          assertDesktopObserverNetworkAccess(
+            req("http://203.0.113.10:62666/api/desktop-observer/protocol", {
+              headers: { host: "203.0.113.10:62666" },
+            }),
+          ),
+        (error: unknown) =>
+          error instanceof DesktopObserverAccessError && error.code === "insecure_http",
+      );
+
+      resetDesktopObserverTokensForTests();
+      const minted = issueDesktopObserverToken({
+        remote: identity.remote,
+        identity,
+        ttlMs: 60_000,
+      });
+      const ok = assertDesktopObserverToken(
+        req("https://203.0.113.10:8443/api/desktop-observer/snapshot", {
+          headers: {
+            host: "203.0.113.10:8443",
+            [DESKTOP_OBSERVER_TOKEN_HEADER]: minted.token,
+          },
+        }),
+      );
+      assert.equal(ok.instanceId, minted.instanceId);
+
+      withTestRemoteAddress("198.51.100.20", () => {
+        assert.throws(
+          () =>
+            assertDesktopObserverToken(
+              req("https://203.0.113.10:8443/api/desktop-observer/snapshot", {
+                headers: {
+                  host: "203.0.113.10:8443",
+                  [DESKTOP_OBSERVER_TOKEN_HEADER]: minted.token,
+                  "x-forwarded-for": "203.0.113.10",
+                },
+              }),
+            ),
+          (error: unknown) => error instanceof DesktopObserverAccessError,
+        );
+      });
+    });
+  } finally {
+    if (prevServer === undefined) delete process.env.PI_WEB_SERVER_MODE;
+    else process.env.PI_WEB_SERVER_MODE = prevServer;
+    if (prevInsecure === undefined) delete process.env.PI_WEB_ALLOW_INSECURE_HTTP;
+    else process.env.PI_WEB_ALLOW_INSECURE_HTTP = prevInsecure;
+  }
 
   // --- Hub: snapshot budgets, privacy, revision stability (inject empty collectors; no pi SDK) ---
   const emptyCollectors: TaskObserverCollectors = {

@@ -1,6 +1,6 @@
 use serde_json::{json, Value};
 
-use crate::connection_state::is_loopback_observer_url;
+use crate::server_profiles::is_origin_scoped_url;
 
 const ID_PATTERN_MAX: usize = 128;
 const ALLOWED_QUERY: [&str; 5] = ["session", "inspector", "task", "panel", "run"];
@@ -95,26 +95,17 @@ pub fn resolve_desktop_deep_link(origin: &str, relative_href: &str) -> DeepLinkR
             reason: "origin_protocol".to_string(),
         };
     }
-    let host = origin_trimmed
-        .split_once("://")
-        .map(|(_, rest)| rest.split('/').next().unwrap_or(rest))
-        .unwrap_or_default();
-    let hostname = host.split(':').next().unwrap_or(host);
-    if hostname != "127.0.0.1" {
+    if origin_trimmed.contains('@') || origin_trimmed.contains([' ', '\r', '\n', '"']) {
         return DeepLinkResult::Err {
-            reason: "origin_not_loopback".to_string(),
+            reason: "origin_invalid".to_string(),
         };
     }
     match parse_desktop_deep_link(relative_href) {
         Ok(href) => {
             let url = format!("{origin_trimmed}{href}");
-            let port = host
-                .split_once(':')
-                .and_then(|(_, port)| port.parse::<u16>().ok())
-                .unwrap_or(80);
-            if !is_loopback_observer_url(&url, port) && !url.starts_with("http://127.0.0.1") {
+            if !is_origin_scoped_url(&url, origin_trimmed) {
                 return DeepLinkResult::Err {
-                    reason: "origin_not_loopback".to_string(),
+                    reason: "origin_mismatch".to_string(),
                 };
             }
             DeepLinkResult::Ok { url }
@@ -141,7 +132,7 @@ pub fn open_validated_deep_link(origin: &str, relative_href: &str) -> DeepLinkRe
         };
     }
     match resolve_desktop_deep_link(origin, href) {
-        DeepLinkResult::Ok { url } => match crate::native::open_https_or_loopback_url(&url) {
+        DeepLinkResult::Ok { url } => match crate::native::open_configured_origin_url(origin, &url) {
             Ok(()) => DeepLinkResult::Ok { url },
             Err(_) => DeepLinkResult::Err {
                 reason: "open_failed".to_string(),

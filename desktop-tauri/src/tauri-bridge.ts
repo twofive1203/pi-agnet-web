@@ -44,6 +44,10 @@ type SnailPetBridge = {
     provider?: string;
     modelId?: string;
   }) => Promise<unknown>;
+  listServerProfiles?: () => Promise<unknown>;
+  saveServerProfile?: (patch: Record<string, unknown>) => Promise<unknown>;
+  deleteServerProfile?: (id: string) => Promise<unknown>;
+  switchServerProfile?: (id: string) => Promise<unknown>;
 };
 
 const listeners = new Map<string, Set<(payload: unknown) => void>>();
@@ -136,6 +140,10 @@ const bridge: SnailPetBridge = {
   listQuickSessionProjects: () => invoke("list_quick_session_projects"),
   listQuickSessionModels: (projectRef) => invoke("list_quick_session_models", { projectRef }),
   createQuickSession: (input) => invoke("create_quick_session", { ...input }),
+  listServerProfiles: () => invoke("list_server_profiles"),
+  saveServerProfile: (patch) => invoke("save_server_profile", { patch }),
+  deleteServerProfile: (id) => invoke("delete_server_profile", { id }),
+  switchServerProfile: (id) => invoke("switch_server_profile", { id }),
 };
 
 Object.defineProperty(window, "snailPet", {

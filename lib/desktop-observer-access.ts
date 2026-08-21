@@ -1,20 +1,17 @@
 /**
- * Local-only access gate for /api/desktop-observer/**.
+ * Access gate for /api/desktop-observer/**.
  *
- * Compatibility facade over the shared desktop companion loopback / Host /
+ * Compatibility facade over the shared desktop companion network / Host /
  * Origin / access-key helpers. Observer tokens stay in an independent hashed
  * store and are never accepted by desktop-control routes.
  *
- * Attach-only desktop pet: direct IPv4 loopback + short-lived hashed observer
- * tokens. Non-loopback peers and non-loopback forwarded identity are always
- * rejected. Server mode is allowed only on proven loopback; when global
- * access-key auth is on, session mint additionally verifies the access key.
- * Root server-access auth never relaxes the loopback gate.
+ * Local attach stays proven IPv4 loopback. Remote attach is server-mode only,
+ * HTTPS by default, Access Key mint, and short-lived hashed observer tokens
+ * bound to identity + credential generation. Cookie-free is not public.
  */
 
 import { createHash, randomBytes, timingSafeEqual } from "crypto";
 import {
-  getAutomationRemoteAddress,
   isLoopbackIp,
   normalizeIp,
 } from "./automation-connection-context";
@@ -32,10 +29,13 @@ import {
   assertDesktopCompanionAccessKey,
   assertDesktopCompanionLocalAccess,
   assertDesktopCompanionLoopback,
+  assertDesktopCompanionNetworkAccess,
   assertDesktopCompanionSessionOrigin,
   DesktopLocalAccessError,
   isDesktopCompanionServerMode,
+  type DesktopCompanionIdentity,
 } from "./desktop-local-access";
+import { getServerAccessCredentialGeneration } from "./server-access-auth";
 import { getProcessInstanceId } from "./process-runtime";
 import { TASK_OBSERVER_PROTOCOL_VERSION } from "./task-observer-types";
 
@@ -69,6 +69,8 @@ type ObserverTokenEntry = {
   expiresAt: number;
   instanceId: string;
   boundRemote: string;
+  bindKey: string;
+  credentialGeneration: number;
 };
 
 declare global {
@@ -118,6 +120,14 @@ export function assertDesktopObserverLocalAccess(req: Request): string {
   }
 }
 
+export function assertDesktopObserverNetworkAccess(req: Request): DesktopCompanionIdentity {
+  try {
+    return assertDesktopCompanionNetworkAccess(req);
+  } catch (error) {
+    wrapLocalError(error);
+  }
+}
+
 /**
  * When server auth is on, verify the desktop-provided access key before minting
  * an observer token. Local mode is a no-op. Uses the login attempt budget so
@@ -126,9 +136,10 @@ export function assertDesktopObserverLocalAccess(req: Request): string {
 export async function assertDesktopObserverAccessKey(
   req: Request,
   accessKey: unknown,
+  identity?: DesktopCompanionIdentity,
 ): Promise<void> {
   try {
-    await assertDesktopCompanionAccessKey(req, accessKey);
+    await assertDesktopCompanionAccessKey(req, accessKey, identity);
   } catch (error) {
     wrapLocalError(error);
   }
@@ -138,9 +149,12 @@ export async function assertDesktopObserverAccessKey(
  * Session mint origin policy: exact same-origin when Origin present;
  * missing Origin allowed for Electron main (not browsers with spoofed referer alone).
  */
-export function assertDesktopObserverSessionOrigin(req: Request): void {
+export function assertDesktopObserverSessionOrigin(
+  req: Request,
+  identity?: DesktopCompanionIdentity,
+): void {
   try {
-    assertDesktopCompanionSessionOrigin(req);
+    assertDesktopCompanionSessionOrigin(req, identity);
   } catch (error) {
     wrapLocalError(error);
   }
@@ -150,8 +164,11 @@ export function issueDesktopObserverToken(options: {
   remote: string;
   ttlMs?: number;
   instanceId?: string;
+  identity?: DesktopCompanionIdentity;
 }): { token: string; expiresAt: number; instanceId: string; ttlMs: number } {
-  if (!isLoopbackIp(options.remote)) {
+  const remote = normalizeIp(options.remote) ?? options.remote;
+  const identity = options.identity;
+  if (!identity && !isLoopbackIp(remote)) {
     throw new DesktopObserverAccessError("Token mint requires loopback remote", 403, "security");
   }
 
@@ -161,11 +178,18 @@ export function issueDesktopObserverToken(options: {
   const secret = randomBytes(24).toString("base64url");
   const token = `${id}.${secret}`;
   const expiresAt = Date.now() + ttlMs;
+  const bindKey = identity?.bindKey ?? `local:${remote}`;
+  const credentialGeneration = getServerAccessCredentialGeneration();
+  if (credentialGeneration < 0) {
+    throw new DesktopObserverAccessError("Authentication unavailable", 503, "auth_unavailable");
+  }
   tokenStore().set(id, {
     tokenHash: hashToken(secret),
     expiresAt,
     instanceId,
-    boundRemote: normalizeIp(options.remote) ?? options.remote,
+    boundRemote: remote,
+    bindKey,
+    credentialGeneration,
   });
   pruneExpiredTokens();
   return { token, expiresAt, instanceId, ttlMs };
@@ -182,7 +206,7 @@ export function assertDesktopObserverToken(req: Request): {
   instanceId: string;
   expiresAt: number;
 } {
-  assertDesktopObserverLocalAccess(req);
+  const identity = assertDesktopObserverNetworkAccess(req);
   const raw = readDesktopObserverToken(req);
   if (!raw || !raw.includes(".")) {
     throw new DesktopObserverAccessError("Missing desktop observer token", 401, "unauthorized");
@@ -210,8 +234,12 @@ export function assertDesktopObserverToken(req: Request): {
       "instance_mismatch",
     );
   }
-  const remote = getAutomationRemoteAddress();
-  if (!remote || !isLoopbackIp(remote) || !isLoopbackIp(entry.boundRemote)) {
+  const generation = getServerAccessCredentialGeneration();
+  if (generation < 0 || entry.credentialGeneration !== generation) {
+    tokenStore().delete(id);
+    throw new DesktopObserverAccessError("Desktop observer token expired", 401, "unauthorized");
+  }
+  if (entry.bindKey !== identity.bindKey) {
     throw new DesktopObserverAccessError(
       "Desktop observer token remote binding failed",
       401,

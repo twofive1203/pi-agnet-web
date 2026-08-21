@@ -49,6 +49,9 @@ fn activity_view_fixtures_match_electron_summary() {
                 .unwrap_or(false),
             tray_anchor: Some("top-left"),
             reset: case.get("reset").and_then(Value::as_bool).unwrap_or(false),
+            active_server_id: Some("local"),
+            active_server_name: Some("本机"),
+            active_server_generation: 0,
         });
         assert_renderer_view_safe(&view).expect("safe view");
         assert_eq!(

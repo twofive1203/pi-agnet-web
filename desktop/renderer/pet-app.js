@@ -1750,20 +1750,33 @@
     return activityIds[(index - 1 + activityIds.length) % activityIds.length];
   }
   function connectionBannerText(input) {
+    const target = input.serverName?.trim() || input.origin || "\u670D\u52A1\u5668";
     if (input.connectionStatus === "service-not-running") {
-      return `\u8717\u725B\u6D3E\u670D\u52A1\u672A\u542F\u52A8 \u2014 \u590D\u5236 \`${input.startCommand}\` \u540E\u5728\u7EC8\u7AEF\u542F\u52A8\uFF0C\u7136\u540E\u91CD\u8BD5`;
+      if (input.canCopyStartCommand) {
+        return `\u8717\u725B\u6D3E\u670D\u52A1\u672A\u542F\u52A8 \u2014 \u590D\u5236 \`${input.startCommand}\` \u540E\u5728\u7EC8\u7AEF\u542F\u52A8\uFF0C\u7136\u540E\u91CD\u8BD5`;
+      }
+      return `\u65E0\u6CD5\u8FDE\u63A5 ${target} \u2014 \u8BF7\u786E\u8BA4\u8BE5\u670D\u52A1\u5668\u5728\u7EBF\u540E\u91CD\u8BD5`;
     }
     if (input.connectionStatus === "incompatible") {
       if (input.reasonCode === "auth_required") {
-        return "\u670D\u52A1\u5DF2\u5F00\u542F\u8BBF\u95EE\u5BC6\u94A5 \u2014 \u8BF7\u5728\u684C\u5BA0\u8BBE\u7F6E\u4E2D\u7C98\u8D34\u5BC6\u94A5\u540E\u8FDE\u63A5";
+        return `${target} \u9700\u8981\u8BBF\u95EE\u5BC6\u94A5 \u2014 \u8BF7\u5728\u684C\u5BA0\u8BBE\u7F6E\u4E2D\u7C98\u8D34\u5BC6\u94A5\u540E\u8FDE\u63A5`;
       }
       if (input.reasonCode === "auth_invalid") {
-        return "\u8BBF\u95EE\u5BC6\u94A5\u65E0\u6548 \u2014 \u8BF7\u5728\u684C\u5BA0\u8BBE\u7F6E\u4E2D\u91CD\u65B0\u586B\u5199";
+        return `${target} \u7684\u8BBF\u95EE\u5BC6\u94A5\u65E0\u6548 \u2014 \u8BF7\u5728\u684C\u5BA0\u8BBE\u7F6E\u4E2D\u91CD\u65B0\u586B\u5199`;
       }
-      return `\u4E0D\u517C\u5BB9\u7684\u670D\u52A1${input.reasonCode ? ` (${input.reasonCode})` : ""} \u2014 \u8BF7\u68C0\u67E5\u7AEF\u53E3\u540E\u91CD\u8BD5`;
+      if (input.reasonCode === "tls_error") {
+        return `${target} \u7684\u8BC1\u4E66\u65E0\u6CD5\u9A8C\u8BC1 \u2014 \u8BF7\u5B89\u88C5\u53D7\u4FE1\u4EFB\u8BC1\u4E66\uFF0C\u684C\u5BA0\u4E0D\u4F1A\u8DF3\u8FC7\u6821\u9A8C`;
+      }
+      if (input.reasonCode === "remote_unsupported") {
+        return `${target} \u4E0D\u652F\u6301\u8FDC\u7A0B\u684C\u5BA0 \u2014 \u8BF7\u5347\u7EA7\u8717\u725B\u6D3E\u6216\u6539\u7528\u672C\u673A\u6863\u6848`;
+      }
+      if (input.reasonCode === "insecure_http_rejected") {
+        return "\u670D\u52A1\u5668\u62D2\u7EDD\u4E0D\u5B89\u5168 HTTP \u2014 \u8BF7\u6539\u7528 HTTPS\uFF0C\u6216\u8BA9\u670D\u52A1\u7AEF\u663E\u5F0F\u5141\u8BB8 HTTP";
+      }
+      return `\u4E0D\u517C\u5BB9\u7684\u670D\u52A1${input.reasonCode ? ` (${input.reasonCode})` : ""} \u2014 \u8BF7\u68C0\u67E5\u5730\u5740\u540E\u91CD\u8BD5`;
     }
     if (input.connectionStatus === "reconnecting" || input.connectionStatus === "probing") {
-      return input.connectionStatus === "probing" ? "\u6B63\u5728\u8FDE\u63A5\u672C\u5730\u670D\u52A1\u2026" : "\u8FDE\u63A5\u4E2D\u65AD\uFF0C\u6B63\u5728\u91CD\u8FDE\u2026";
+      return input.connectionStatus === "probing" ? `\u6B63\u5728\u8FDE\u63A5 ${target}\u2026` : `\u4E0E ${target} \u7684\u8FDE\u63A5\u4E2D\u65AD\uFF0C\u6B63\u5728\u91CD\u8FDE\u2026`;
     }
     return null;
   }
@@ -2616,6 +2629,14 @@
           success: null,
           openPicker: "none"
         };
+      case "server_switched": {
+        const keepOpen = state.phase !== "closed";
+        return {
+          ...createInitialQuickSessionState(),
+          draft: state.draft,
+          phase: keepOpen ? "loading" : "closed"
+        };
+      }
       default:
         return state;
     }
@@ -2648,6 +2669,18 @@
     const accessKeyInput = root.getElementById("access-key-input");
     const btnSaveKey = root.getElementById("btn-save-key");
     const btnClearKey = root.getElementById("btn-clear-key");
+    const serverProfilesCard = root.getElementById("server-profiles-card");
+    const serverProfileList = root.getElementById("server-profile-list");
+    const serverProfileForm = root.getElementById("server-profile-form");
+    const serverProfileName = root.getElementById("server-profile-name");
+    const serverProfileAddress = root.getElementById("server-profile-address");
+    const serverProfileKey = root.getElementById("server-profile-key");
+    const serverProfileKeyStatus = root.getElementById("server-profile-key-status");
+    const serverProfileInsecure = root.getElementById("server-profile-insecure");
+    const serverProfileInsecureNote = root.getElementById("server-profile-insecure-note");
+    const serverProfileError = root.getElementById("server-profile-error");
+    const btnNewServerProfile = root.getElementById("btn-new-server-profile");
+    const btnClearServerKey = root.getElementById("btn-clear-server-key");
     const btnMarkAll = root.getElementById("btn-mark-all");
     const btnRetry = root.getElementById("btn-retry");
     const btnTrayMore = root.getElementById("btn-tray-more");
@@ -2720,6 +2753,7 @@
     };
     const TRANSITION_ACTION_MS = 620;
     let current = null;
+    let lastServerGeneration = null;
     let settingsOpen = false;
     let pendingTrayPanel = null;
     let quickSession = createInitialQuickSessionState();
@@ -3438,6 +3472,11 @@
     function update(view) {
       const previousView = current;
       current = view;
+      const nextGeneration = view.activeServer?.generation;
+      if (typeof nextGeneration === "number" && lastServerGeneration != null && nextGeneration !== lastServerGeneration) {
+        applyQuickSession({ type: "server_switched" });
+      }
+      if (typeof nextGeneration === "number") lastServerGeneration = nextGeneration;
       const previewSettingsOpen = view.settingsOpen;
       if (!bridge && typeof previewSettingsOpen === "boolean") {
         settingsOpen = previewSettingsOpen;
@@ -3579,7 +3618,9 @@
         connectionStatus: view.connectionStatus,
         canCopyStartCommand: view.canCopyStartCommand,
         startCommand: view.startCommand,
-        reasonCode: view.connectionReasonCode
+        reasonCode: view.connectionReasonCode,
+        origin: view.activeServer?.origin ?? view.origin,
+        serverName: view.activeServer?.name
       });
       const captionTitle = primary?.title ?? "\u8717\u725B\u6D3E";
       const captionDetail = primary ? formatPetActivityDetail(primary, state, runningCue) : connectionDetail ?? displayLabel;
@@ -3755,7 +3796,9 @@
         connectionStatus: view.connectionStatus,
         canCopyStartCommand: view.canCopyStartCommand,
         startCommand: view.startCommand,
-        reasonCode: view.connectionReasonCode
+        reasonCode: view.connectionReasonCode,
+        origin: view.activeServer?.origin ?? view.origin,
+        serverName: view.activeServer?.name
       });
       if (banner) {
         if (bannerText) {
@@ -4746,6 +4789,190 @@
     btnClearKey?.addEventListener("click", () => {
       void bridge?.clearAccessKey();
     });
+    const canManageServers = typeof bridge?.listServerProfiles === "function" && typeof bridge?.saveServerProfile === "function" && typeof bridge?.deleteServerProfile === "function" && typeof bridge?.switchServerProfile === "function";
+    let editingServerId = null;
+    let serverClearKey = false;
+    let serverProfiles = [];
+    const showServerError = (message) => {
+      if (!serverProfileError) return;
+      if (!message) {
+        serverProfileError.hidden = true;
+        serverProfileError.textContent = "";
+        return;
+      }
+      serverProfileError.hidden = false;
+      serverProfileError.textContent = message;
+    };
+    const reasonText = (reason) => {
+      switch (reason) {
+        case "duplicate_origin":
+          return "\u5DF2\u5B58\u5728\u76F8\u540C\u5730\u5740\u7684\u670D\u52A1\u5668";
+        case "insecure_http_not_allowed":
+          return "\u8FDC\u7A0B HTTP \u9700\u8981\u52FE\u9009\u4E0D\u5B89\u5168\u517C\u5BB9";
+        case "invalid_address":
+          return "\u5730\u5740\u683C\u5F0F\u65E0\u6548";
+        case "cannot_delete_active":
+          return "\u8BF7\u5148\u5207\u6362\u5230\u5176\u4ED6\u670D\u52A1\u5668\u518D\u5220\u9664\u5F53\u524D\u6863\u6848";
+        case "cannot_delete_last":
+          return "\u81F3\u5C11\u9700\u8981\u4FDD\u7559\u4E00\u4E2A\u670D\u52A1\u5668\u6863\u6848";
+        case "too_many_profiles":
+          return "\u670D\u52A1\u5668\u6863\u6848\u6570\u91CF\u5DF2\u8FBE\u4E0A\u9650";
+        default:
+          return reason ? `\u4FDD\u5B58\u5931\u8D25\uFF08${reason}\uFF09` : "\u4FDD\u5B58\u5931\u8D25";
+      }
+    };
+    const resetServerForm = (profile) => {
+      editingServerId = profile?.id ?? null;
+      serverClearKey = false;
+      if (serverProfileName) serverProfileName.value = profile?.name ?? "";
+      if (serverProfileAddress) serverProfileAddress.value = profile?.origin ?? "";
+      if (serverProfileKey) serverProfileKey.value = "";
+      if (serverProfileInsecure) serverProfileInsecure.checked = profile?.insecure === true;
+      if (serverProfileKeyStatus) {
+        serverProfileKeyStatus.hidden = profile?.hasAccessKey !== true;
+        serverProfileKeyStatus.textContent = profile?.keyPersisted === false ? "\u5BC6\u94A5\u4EC5\u5728\u5185\u5B58\u4E2D\uFF0C\u91CD\u542F\u540E\u9700\u91CD\u65B0\u8F93\u5165" : "\u5DF2\u914D\u7F6E\u5BC6\u94A5";
+      }
+      if (btnClearServerKey) btnClearServerKey.hidden = profile?.hasAccessKey !== true;
+      if (serverProfileInsecureNote) serverProfileInsecureNote.hidden = profile?.insecure !== true;
+      showServerError(null);
+    };
+    const renderServerProfiles = () => {
+      if (!serverProfileList) return;
+      serverProfileList.replaceChildren();
+      for (const profile of serverProfiles) {
+        const row = root.createElement("li");
+        row.className = "server-profile-row";
+        row.tabIndex = 0;
+        if (profile.isActive) row.setAttribute("aria-current", "true");
+        const meta = root.createElement("div");
+        meta.className = "server-profile-meta";
+        const title = root.createElement("strong");
+        title.textContent = profile.name?.trim() || profile.origin;
+        const origin = root.createElement("div");
+        origin.className = "server-profile-origin";
+        origin.textContent = profile.origin;
+        const badges = root.createElement("div");
+        badges.className = "server-profile-badges";
+        badges.textContent = [
+          profile.isActive ? "\u5F53\u524D" : null,
+          profile.insecure ? "HTTP \u98CE\u9669" : "HTTPS",
+          profile.hasAccessKey ? profile.keyPersisted === false ? "\u5BC6\u94A5\u4EC5\u5185\u5B58" : "\u5DF2\u914D\u7F6E\u5BC6\u94A5" : "\u672A\u914D\u7F6E\u5BC6\u94A5"
+        ].filter(Boolean).join(" \xB7 ");
+        meta.append(title, origin, badges);
+        const switchBtn = root.createElement("button");
+        switchBtn.type = "button";
+        switchBtn.className = "tray-btn";
+        switchBtn.textContent = profile.isActive ? "\u5DF2\u8FDE\u63A5" : "\u5207\u6362";
+        switchBtn.disabled = profile.isActive === true;
+        switchBtn.addEventListener("click", () => {
+          void bridge?.switchServerProfile?.(profile.id).then((result) => {
+            const payload = result;
+            if (payload?.ok === false) {
+              showServerError(reasonText(payload.reason));
+              return;
+            }
+            if (Array.isArray(payload?.profiles)) {
+              serverProfiles = payload.profiles;
+              renderServerProfiles();
+            }
+          });
+        });
+        const editBtn = root.createElement("button");
+        editBtn.type = "button";
+        editBtn.className = "tray-btn";
+        editBtn.textContent = "\u7F16\u8F91";
+        editBtn.addEventListener("click", () => resetServerForm(profile));
+        const deleteBtn = root.createElement("button");
+        deleteBtn.type = "button";
+        deleteBtn.className = "tray-btn";
+        deleteBtn.textContent = "\u5220\u9664";
+        deleteBtn.disabled = profile.isActive === true || serverProfiles.length <= 1;
+        deleteBtn.title = deleteBtn.disabled ? "\u8BF7\u5148\u5207\u6362\u5230\u5176\u4ED6\u670D\u52A1\u5668" : "\u5220\u9664\u6B64\u6863\u6848";
+        deleteBtn.addEventListener("click", () => {
+          void bridge?.deleteServerProfile?.(profile.id).then((result) => {
+            const payload = result;
+            if (payload?.ok === false) {
+              showServerError(reasonText(payload.reason));
+              return;
+            }
+            if (Array.isArray(payload?.profiles)) {
+              serverProfiles = payload.profiles;
+              renderServerProfiles();
+              resetServerForm();
+            }
+          });
+        });
+        row.append(meta, switchBtn, editBtn, deleteBtn);
+        row.addEventListener("keydown", (event) => {
+          if (event.key === "Enter") resetServerForm(profile);
+        });
+        serverProfileList.append(row);
+      }
+    };
+    const loadServerProfiles = () => {
+      if (!canManageServers) return;
+      void bridge?.listServerProfiles?.().then((result) => {
+        const payload = result;
+        if (payload?.ok === false || !Array.isArray(payload?.profiles)) return;
+        serverProfiles = payload.profiles;
+        renderServerProfiles();
+      });
+    };
+    if (canManageServers && serverProfilesCard) {
+      serverProfilesCard.hidden = false;
+      loadServerProfiles();
+      serverProfileForm?.addEventListener("submit", (event) => {
+        event.preventDefault();
+        const address = serverProfileAddress?.value.trim() ?? "";
+        if (!address) {
+          showServerError("\u8BF7\u586B\u5199\u670D\u52A1\u5668\u5730\u5740");
+          return;
+        }
+        const insecure = serverProfileInsecure?.checked === true;
+        if (address.startsWith("http://") && !insecure && !/^http:\/\/(127\.|\[::1\])/i.test(address)) {
+          showServerError("\u8FDC\u7A0B HTTP \u9700\u8981\u52FE\u9009\u4E0D\u5B89\u5168\u517C\u5BB9");
+          return;
+        }
+        const key = serverProfileKey?.value.trim() ?? "";
+        const patch = {
+          address,
+          name: serverProfileName?.value.trim() ?? "",
+          allowInsecureHttp: insecure,
+          accessKeyAction: serverClearKey ? "clear" : key ? "replace" : "preserve"
+        };
+        if (editingServerId) patch.id = editingServerId;
+        if (key) patch.accessKey = key;
+        void bridge?.saveServerProfile?.(patch).then((result) => {
+          const payload = result;
+          if (payload?.ok === false) {
+            showServerError(reasonText(payload.reason));
+            return;
+          }
+          if (serverProfileKey) serverProfileKey.value = "";
+          serverClearKey = false;
+          if (Array.isArray(payload?.profiles)) {
+            serverProfiles = payload.profiles;
+            renderServerProfiles();
+            const saved = editingServerId ? payload.profiles.find((item) => item.id === editingServerId) : payload.profiles[payload.profiles.length - 1];
+            resetServerForm(saved);
+          }
+        });
+      });
+      btnNewServerProfile?.addEventListener("click", () => resetServerForm());
+      btnClearServerKey?.addEventListener("click", () => {
+        serverClearKey = true;
+        if (serverProfileKey) serverProfileKey.value = "";
+        if (serverProfileKeyStatus) serverProfileKeyStatus.hidden = true;
+      });
+      serverProfileInsecure?.addEventListener("change", () => {
+        if (serverProfileInsecureNote) {
+          serverProfileInsecureNote.hidden = serverProfileInsecure.checked !== true;
+        }
+      });
+      root.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && editingServerId) resetServerForm();
+      });
+    }
     btnCopy?.addEventListener("click", () => {
       void bridge?.copyStartCommand();
     });

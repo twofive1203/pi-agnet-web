@@ -31,6 +31,9 @@ pub enum DesktopConnectionReasonCode {
     TokenRejected,
     InstanceChanged,
     StreamError,
+    TlsError,
+    RemoteUnsupported,
+    InsecureHttpRejected,
     Unknown,
 }
 
@@ -48,6 +51,31 @@ pub struct DesktopConnectionState {
     pub reset_notification_baseline: bool,
     pub quick_session_available: bool,
     pub updated_at: i64,
+    #[serde(default, skip_serializing)]
+    pub generation: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConnectionTarget {
+    pub profile_id: String,
+    pub origin: String,
+    pub port: u16,
+    pub allow_insecure_http: bool,
+    pub generation: u64,
+}
+
+impl ConnectionTarget {
+    pub fn is_loopback(&self) -> bool {
+        crate::server_profiles::is_loopback_origin(&self.origin)
+    }
+
+    pub fn is_remote(&self) -> bool {
+        !self.is_loopback()
+    }
+
+    pub fn http_allowed(&self) -> bool {
+        self.origin.starts_with("https://") || self.is_loopback() || self.allow_insecure_http
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -101,17 +129,40 @@ pub fn build_desktop_origin(port: u16) -> String {
 }
 
 pub fn is_loopback_observer_url(url: &str, port: u16) -> bool {
-    let expected = build_desktop_origin(port);
-    url == expected || url.starts_with(&format!("{expected}/"))
+    crate::server_profiles::is_origin_scoped_url(url, &build_desktop_origin(port))
+}
+
+pub fn is_target_scoped_url(url: &str, origin: &str) -> bool {
+    crate::server_profiles::is_origin_scoped_url(url, origin)
 }
 
 pub fn create_initial_connection_state(port: u16, now: i64) -> DesktopConnectionState {
-    let port = sanitize_port(port);
+    create_initial_connection_state_for_target(
+        &ConnectionTarget {
+            profile_id: crate::server_profiles::LOCAL_PROFILE_ID.to_string(),
+            origin: build_desktop_origin(port),
+            port: sanitize_port(port),
+            allow_insecure_http: false,
+            generation: 0,
+        },
+        now,
+    )
+}
+
+pub fn create_initial_connection_state_for_target(
+    target: &ConnectionTarget,
+    now: i64,
+) -> DesktopConnectionState {
+    let loopback = target.is_loopback();
     DesktopConnectionState {
         status: DesktopConnectionStatus::Probing,
-        origin: build_desktop_origin(port),
-        port,
-        start_command: DESKTOP_START_COMMAND.to_string(),
+        origin: target.origin.clone(),
+        port: sanitize_port(target.port),
+        start_command: if loopback {
+            DESKTOP_START_COMMAND.to_string()
+        } else {
+            String::new()
+        },
         instance_id: None,
         reason_code: None,
         detail: None,
@@ -119,6 +170,7 @@ pub fn create_initial_connection_state(port: u16, now: i64) -> DesktopConnection
         reset_notification_baseline: true,
         quick_session_available: false,
         updated_at: now,
+        generation: target.generation,
     }
 }
 
@@ -128,23 +180,16 @@ fn with_meta(
     now: i64,
 ) -> DesktopConnectionState {
     DesktopConnectionState {
-        origin: build_desktop_origin(patch.port),
-        start_command: DESKTOP_START_COMMAND.to_string(),
+        origin: state.origin.clone(),
+        port: state.port,
+        start_command: if crate::server_profiles::is_loopback_origin(&state.origin) {
+            DESKTOP_START_COMMAND.to_string()
+        } else {
+            String::new()
+        },
+        generation: state.generation,
         updated_at: now,
         ..patch
-    }
-    .with_port(state, patch.port)
-}
-
-trait WithPort {
-    fn with_port(self, previous: &DesktopConnectionState, port: u16) -> Self;
-}
-
-impl WithPort for DesktopConnectionState {
-    fn with_port(mut self, previous: &DesktopConnectionState, port: u16) -> Self {
-        self.port = if port == 0 { previous.port } else { port };
-        self.origin = build_desktop_origin(self.port);
-        self
     }
 }
 
@@ -349,10 +394,11 @@ pub fn acknowledge_connection_baseline(
 }
 
 pub fn can_copy_start_command(state: &DesktopConnectionState) -> bool {
-    matches!(
-        state.status,
-        DesktopConnectionStatus::ServiceNotRunning | DesktopConnectionStatus::Incompatible
-    )
+    crate::server_profiles::is_loopback_origin(&state.origin)
+        && matches!(
+            state.status,
+            DesktopConnectionStatus::ServiceNotRunning | DesktopConnectionStatus::Incompatible
+        )
 }
 
 pub fn public_connection_state(state: &DesktopConnectionState) -> serde_json::Value {

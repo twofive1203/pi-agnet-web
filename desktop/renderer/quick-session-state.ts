@@ -41,7 +41,8 @@ export type QuickSessionErrorCode =
   | "bad_request"
   | "request_conflict"
   | "start_failed"
-  | "result_unknown";
+  | "result_unknown"
+  | "stale_target";
 
 export type QuickSessionProject = {
   projectRef: string;
@@ -118,7 +119,8 @@ export type QuickSessionEvent =
   | { type: "retry" }
   | { type: "close" }
   | { type: "cancel" }
-  | { type: "start_another" };
+  | { type: "start_another" }
+  | { type: "server_switched" };
 
 export function createInitialQuickSessionState(): QuickSessionState {
   return {
@@ -515,6 +517,14 @@ export function reduceQuickSessionState(
         success: null,
         openPicker: "none",
       };
+    case "server_switched": {
+      const keepOpen = state.phase !== "closed";
+      return {
+        ...createInitialQuickSessionState(),
+        draft: state.draft,
+        phase: keepOpen ? "loading" : "closed",
+      };
+    }
     default:
       return state;
   }

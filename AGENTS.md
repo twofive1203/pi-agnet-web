@@ -187,7 +187,7 @@ node_modules/.bin/tsc --noEmit
 | Project quick commands | `<cwd>/.pi/quick-commands.json` (definitions); `~/.pi/agent/quick-command-trust.json` (executable digests only); runs are in-memory per process |
 | Automation tasks/runs/sessions | `~/.pi/agent/automations/` (`tasks.json`, locks, claims, runs, promotions, audit, sessions); default cwd `~/pi-automation-cwd` (canonical path persisted once) |
 | Custom desktop pets (folder drop-in) | `~/.pi/agent/desktop-pets/<pet-id>/` (Snail `manifest.json` + PNG/WebP, or Codex `pet.json` + `spritesheet.webp`; overrides `SNAIL_PET_CUSTOM_PETS_DIR`, `PI_CODING_AGENT_DIR/desktop-pets`). Codex hatch-pet output is also discovered from `${CODEX_HOME:-~/.codex}/pets` |
-| Tauri Preview desktop pet settings / Access Key | Preview app-data derived from `com.twofive.snail-pi-pet.tauri-preview` (`tauri-preview-settings.json`, DPAPI `tauri-preview-access-key.json`). Isolated from Electron `desktop-pet-*.json`; not published with npm `spi`. |
+| Tauri Preview desktop pet settings / Access Key | Preview app-data derived from `com.twofive.snail-pi-pet.tauri-preview` (`tauri-preview-settings.json`, versioned `tauri-preview-server-profiles.json` with per-profile DPAPI ciphertext; legacy `tauri-preview-access-key.json` migrates once). Isolated from Electron `desktop-pet-*.json`; not published with npm `spi`. |
 
 ## Archive Rules
 

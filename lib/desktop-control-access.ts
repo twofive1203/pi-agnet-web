@@ -1,14 +1,13 @@
 /**
- * Local-only access gate for /api/desktop-control/**.
+ * Access gate for /api/desktop-control/**.
  *
  * Independent hashed control tokens with limited scopes. Observer tokens are
  * never accepted here, and control tokens are never accepted by observer
- * routes. Tokens stay in process memory, bound to instance + loopback remote.
+ * routes. Tokens stay in process memory, bound to instance + attach identity.
  */
 
 import { createHash, randomBytes, timingSafeEqual } from "crypto";
 import {
-  getAutomationRemoteAddress,
   isLoopbackIp,
   normalizeIp,
 } from "./automation-connection-context";
@@ -23,11 +22,14 @@ import {
   assertDesktopCompanionAccessKey,
   assertDesktopCompanionLocalAccess,
   assertDesktopCompanionLoopback,
+  assertDesktopCompanionNetworkAccess,
   assertDesktopCompanionSessionOrigin,
   DesktopLocalAccessError,
   isDesktopCompanionServerMode,
+  type DesktopCompanionIdentity,
 } from "./desktop-local-access";
 import { getProcessInstanceId } from "./process-runtime";
+import { getServerAccessCredentialGeneration } from "./server-access-auth";
 
 export {
   DESKTOP_CONTROL_SCOPE_QUICK_SESSION,
@@ -61,6 +63,8 @@ type ControlTokenEntry = {
   expiresAt: number;
   instanceId: string;
   boundRemote: string;
+  bindKey: string;
+  credentialGeneration: number;
   scopes: readonly DesktopControlScope[];
 };
 
@@ -101,20 +105,32 @@ export function assertDesktopControlLocalAccess(req: Request): string {
   }
 }
 
-export async function assertDesktopControlAccessKey(
-  req: Request,
-  accessKey: unknown,
-): Promise<void> {
+export function assertDesktopControlNetworkAccess(req: Request): DesktopCompanionIdentity {
   try {
-    await assertDesktopCompanionAccessKey(req, accessKey);
+    return assertDesktopCompanionNetworkAccess(req);
   } catch (error) {
     wrapLocalError(error);
   }
 }
 
-export function assertDesktopControlSessionOrigin(req: Request): void {
+export async function assertDesktopControlAccessKey(
+  req: Request,
+  accessKey: unknown,
+  identity?: DesktopCompanionIdentity,
+): Promise<void> {
   try {
-    assertDesktopCompanionSessionOrigin(req);
+    await assertDesktopCompanionAccessKey(req, accessKey, identity);
+  } catch (error) {
+    wrapLocalError(error);
+  }
+}
+
+export function assertDesktopControlSessionOrigin(
+  req: Request,
+  identity?: DesktopCompanionIdentity,
+): void {
+  try {
+    assertDesktopCompanionSessionOrigin(req, identity);
   } catch (error) {
     wrapLocalError(error);
   }
@@ -143,6 +159,7 @@ export function issueDesktopControlToken(options: {
   ttlMs?: number;
   instanceId?: string;
   scopes?: readonly DesktopControlScope[];
+  identity?: DesktopCompanionIdentity;
 }): {
   token: string;
   expiresAt: number;
@@ -150,7 +167,9 @@ export function issueDesktopControlToken(options: {
   ttlMs: number;
   scopes: DesktopControlScope[];
 } {
-  if (!isLoopbackIp(options.remote)) {
+  const remote = normalizeIp(options.remote) ?? options.remote;
+  const identity = options.identity;
+  if (!identity && !isLoopbackIp(remote)) {
     throw new DesktopControlAccessError("Token mint requires loopback remote", 403, "security");
   }
 
@@ -161,11 +180,17 @@ export function issueDesktopControlToken(options: {
   const secret = randomBytes(24).toString("base64url");
   const token = `${id}.${secret}`;
   const expiresAt = Date.now() + ttlMs;
+  const credentialGeneration = getServerAccessCredentialGeneration();
+  if (credentialGeneration < 0) {
+    throw new DesktopControlAccessError("Authentication unavailable", 503, "auth_unavailable");
+  }
   tokenStore().set(id, {
     tokenHash: hashToken(secret),
     expiresAt,
     instanceId,
-    boundRemote: normalizeIp(options.remote) ?? options.remote,
+    boundRemote: remote,
+    bindKey: identity?.bindKey ?? `local:${remote}`,
+    credentialGeneration,
     scopes,
   });
   pruneExpiredTokens();
@@ -187,7 +212,7 @@ export function assertDesktopControlToken(
   expiresAt: number;
   scopes: DesktopControlScope[];
 } {
-  assertDesktopControlLocalAccess(req);
+  const identity = assertDesktopControlNetworkAccess(req);
   const raw = readDesktopControlToken(req);
   if (!raw || !raw.includes(".")) {
     throw new DesktopControlAccessError("Missing desktop control token", 401, "unauthorized");
@@ -215,8 +240,12 @@ export function assertDesktopControlToken(
       "instance_mismatch",
     );
   }
-  const remote = getAutomationRemoteAddress();
-  if (!remote || !isLoopbackIp(remote) || !isLoopbackIp(entry.boundRemote)) {
+  const generation = getServerAccessCredentialGeneration();
+  if (generation < 0 || entry.credentialGeneration !== generation) {
+    tokenStore().delete(id);
+    throw new DesktopControlAccessError("Desktop control token expired", 401, "unauthorized");
+  }
+  if (entry.bindKey !== identity.bindKey) {
     throw new DesktopControlAccessError(
       "Desktop control token remote binding failed",
       401,

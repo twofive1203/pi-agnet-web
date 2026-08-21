@@ -1,7 +1,8 @@
 use serde_json::{json, Value};
 use snail_pi_pet_tauri_preview_lib::connection_state::{
     acknowledge_connection_baseline, create_initial_connection_state, is_loopback_observer_url,
-    public_connection_state, reduce_connection_state, DesktopConnectionEvent,
+    is_target_scoped_url, public_connection_state, reduce_connection_state, ConnectionTarget,
+    DesktopConnectionEvent, DesktopConnectionReasonCode,
 };
 use snail_pi_pet_tauri_preview_lib::observer_client::{
     classify_fetch_failure, interpret_health_payload, interpret_protocol_payload,
@@ -240,4 +241,41 @@ fn observer_sources_stay_attach_only() {
             "{file} must remain attach-only"
         );
     }
+}
+
+#[test]
+fn remote_http_without_flag_is_rejected_before_fetch() {
+    let client = ObserverClient::with_target(
+        ConnectionTarget {
+            profile_id: "srv_ab".to_string(),
+            origin: "http://10.0.0.8:62666".to_string(),
+            port: 62666,
+            allow_insecure_http: false,
+            generation: 2,
+        },
+        1,
+        ScriptedTransport::new(vec![]),
+        None,
+        None,
+        None,
+    );
+    match client.probe() {
+        ProbeResult::Err(DesktopConnectionEvent::Incompatible { reason_code, .. }) => {
+            assert_eq!(reason_code, DesktopConnectionReasonCode::InsecureHttpRejected);
+        }
+        other => panic!("expected insecure rejection, got {other:?}"),
+    }
+}
+
+#[test]
+fn target_url_allowlist_is_origin_scoped() {
+    assert!(is_target_scoped_url(
+        "https://10.0.0.8:8443/api/health",
+        "https://10.0.0.8:8443"
+    ));
+    assert!(!is_target_scoped_url(
+        "https://10.0.0.9:8443/api/health",
+        "https://10.0.0.8:8443"
+    ));
+    assert!(!is_loopback_observer_url("https://10.0.0.8:8443/api/health", 8443));
 }

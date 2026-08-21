@@ -48,7 +48,7 @@ npm run test:desktop-tauri-package
 - 设置重启后从 Preview 目录恢复；Electron 设置文件不被读取或写入；
 - 自定义 Snail/Codex 宠物只读扫描，catalog/asset 不回传绝对路径；
 - Tray 提供显示、关闭穿透、DND、声音、Retry、打开 WebUI、复制 `spi --no-open`、退出桌宠；
-- Deep Link 仅打开二次校验后的 loopback 相对 allowlist；
+- Deep Link 仅打开二次校验后的当前活动 origin + 相对 allowlist；Tauri 可保存多个服务器档案但同一时间只连接一个；
 - 快速会话使用独立 Control Token；renderer 只发送 projectRef / message / requestId / 可选模型。
 
 启动 Preview 前请先自行运行 `spi`。关闭 Preview 只断开自己的 HTTP/SSE，不影响 Electron 或服务任务。

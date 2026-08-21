@@ -8,6 +8,7 @@ pub mod native;
 pub mod notifications;
 pub mod observer_client;
 pub mod quick_session_client;
+pub mod server_profiles;
 pub mod settings;
 pub mod tray_controller;
 pub mod window_controller;
@@ -366,6 +367,51 @@ fn clear_access_key(
 }
 
 #[tauri::command]
+fn list_server_profiles(
+    window: WebviewWindow,
+    app: State<'_, std::sync::Arc<AppState>>,
+) -> Result<Value, String> {
+    pet_window(&window)?;
+    Ok(app.list_server_profiles())
+}
+
+#[tauri::command]
+fn save_server_profile(
+    window: WebviewWindow,
+    app: State<'_, std::sync::Arc<AppState>>,
+    patch: Value,
+) -> Result<Value, String> {
+    pet_window(&window)?;
+    let result = app.save_server_profile_command(patch);
+    let _ = app.emit_view(window.app_handle());
+    Ok(result)
+}
+
+#[tauri::command]
+fn delete_server_profile(
+    window: WebviewWindow,
+    app: State<'_, std::sync::Arc<AppState>>,
+    id: String,
+) -> Result<Value, String> {
+    pet_window(&window)?;
+    let result = app.delete_server_profile_command(id);
+    let _ = app.emit_view(window.app_handle());
+    Ok(result)
+}
+
+#[tauri::command]
+fn switch_server_profile(
+    window: WebviewWindow,
+    app: State<'_, std::sync::Arc<AppState>>,
+    id: String,
+) -> Result<Value, String> {
+    pet_window(&window)?;
+    let result = app.switch_server_profile_command(id);
+    let _ = app.emit_view(window.app_handle());
+    Ok(result)
+}
+
+#[tauri::command]
 fn get_custom_pets(
     window: WebviewWindow,
     app: State<'_, std::sync::Arc<AppState>>,
@@ -512,7 +558,11 @@ pub fn run() {
             get_pet_asset,
             list_quick_session_projects,
             list_quick_session_models,
-            create_quick_session
+            create_quick_session,
+            list_server_profiles,
+            save_server_profile,
+            delete_server_profile,
+            switch_server_profile
         ])
         .setup(|app| {
             let window = app

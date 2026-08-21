@@ -6,7 +6,7 @@
 
 import {
   assertDesktopObserverAccessKey,
-  assertDesktopObserverLocalAccess,
+  assertDesktopObserverNetworkAccess,
   assertDesktopObserverSessionOrigin,
   DESKTOP_OBSERVER_TOKEN_HEADER,
   DesktopObserverAccessError,
@@ -85,8 +85,8 @@ async function readBoundedJsonBody(req: Request): Promise<SessionBody | null> {
 
 export async function POST(req: Request): Promise<Response> {
   try {
-    const remote = assertDesktopObserverLocalAccess(req);
-    assertDesktopObserverSessionOrigin(req);
+    const identity = assertDesktopObserverNetworkAccess(req);
+    assertDesktopObserverSessionOrigin(req, identity);
 
     const contentType = req.headers.get("content-type") ?? "";
     // Empty body is allowed in local mode; server mode rejects missing key later.
@@ -102,9 +102,9 @@ export async function POST(req: Request): Promise<Response> {
       body = parsed;
     }
 
-    await assertDesktopObserverAccessKey(req, body.accessKey);
+    await assertDesktopObserverAccessKey(req, body.accessKey, identity);
 
-    const issued = issueDesktopObserverToken({ remote });
+    const issued = issueDesktopObserverToken({ remote: identity.remote, identity });
     return new Response(
       JSON.stringify({
         token: issued.token,

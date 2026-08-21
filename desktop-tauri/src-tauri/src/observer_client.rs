@@ -5,14 +5,17 @@ use std::time::Duration;
 use serde_json::Value;
 
 use crate::connection_state::{
-    build_desktop_origin, is_loopback_observer_url, reduce_connection_state,
-    DesktopConnectionEvent, DesktopConnectionReasonCode, DesktopConnectionState,
+    build_desktop_origin, create_initial_connection_state_for_target, is_target_scoped_url,
+    reduce_connection_state, ConnectionTarget, DesktopConnectionEvent,
+    DesktopConnectionReasonCode, DesktopConnectionState,
 };
+use crate::server_profiles::LOCAL_PROFILE_ID;
 
 pub const DESKTOP_OBSERVER_PRODUCT: &str = "snail-pi-web";
 pub const TASK_OBSERVER_PROTOCOL_VERSION: u64 = 1;
 pub const DESKTOP_OBSERVER_TOKEN_HEADER: &str = "x-spi-desktop-observer-token";
 pub const DESKTOP_PROTOCOL_CAPABILITY_QUICK_SESSION: &str = "quick_session";
+pub const DESKTOP_PROTOCOL_CAPABILITY_REMOTE_ATTACH: &str = "remote_attach";
 
 #[derive(Debug, Clone)]
 pub struct HttpRequest {
@@ -118,13 +121,30 @@ impl Default for LoopbackTransport {
     }
 }
 
+impl LoopbackTransport {
+    pub fn agent(timeout: Duration) -> ureq::Agent {
+        let builder = ureq::AgentBuilder::new().timeout(timeout);
+        #[cfg(windows)]
+        {
+            if let Ok(connector) = native_tls::TlsConnector::builder()
+                .danger_accept_invalid_certs(false)
+                .danger_accept_invalid_hostnames(false)
+                .build()
+            {
+                return builder.tls_connector(std::sync::Arc::new(connector)).build();
+            }
+        }
+        builder.build()
+    }
+}
+
 impl DesktopTransport for LoopbackTransport {
     fn fetch(&self, request: HttpRequest) -> Result<HttpResponse, String> {
+        let agent = Self::agent(Duration::from_secs(15));
         let mut req = match request.method.as_str() {
-            "POST" => ureq::post(&request.url),
-            _ => ureq::get(&request.url),
+            "POST" => agent.request("POST", &request.url),
+            _ => agent.request("GET", &request.url),
         };
-        req = req.timeout(Duration::from_secs(15));
         for (key, value) in &request.headers {
             req = req.set(key, value);
         }
@@ -160,7 +180,8 @@ impl DesktopTransport for LoopbackTransport {
     }
 
     fn sse(&self, request: HttpRequest) -> Result<SseTransportResult, String> {
-        let mut req = ureq::get(&request.url).timeout(Duration::from_secs(30));
+        let agent = Self::agent(Duration::from_secs(30));
+        let mut req = agent.request("GET", &request.url);
         for (key, value) in &request.headers {
             req = req.set(key, value);
         }
@@ -217,6 +238,7 @@ pub struct ProtocolOk {
     pub instance_id: String,
     pub auth_required: bool,
     pub quick_session_available: bool,
+    pub remote_attach_available: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -245,6 +267,19 @@ pub struct UnwrappedSse {
 
 pub fn classify_fetch_failure(message: &str) -> DesktopConnectionEvent {
     let lower = message.to_ascii_lowercase();
+    if lower.contains("certificate")
+        || lower.contains("cert ")
+        || lower.contains("tls")
+        || lower.contains("ssl")
+        || lower.contains("hostname mismatch")
+        || lower.contains("unknown issuer")
+        || lower.contains("not valid for name")
+    {
+        return DesktopConnectionEvent::Incompatible {
+            reason_code: DesktopConnectionReasonCode::TlsError,
+            detail: Some("tls_verify_failed".to_string()),
+        };
+    }
     if lower.contains("econnrefused") || lower.contains("connection refused") {
         return DesktopConnectionEvent::ConnectionRefused;
     }
@@ -292,14 +327,18 @@ pub fn interpret_health_payload(payload: &Value, http_status: u16) -> Option<Des
     }
 }
 
-pub fn protocol_has_quick_session_capability(capabilities: Option<&Value>) -> bool {
+pub fn protocol_has_capability(capabilities: Option<&Value>, name: &str) -> bool {
     capabilities
         .and_then(Value::as_array)
-        .is_some_and(|items| {
-            items.iter().any(|item| {
-                item.as_str() == Some(DESKTOP_PROTOCOL_CAPABILITY_QUICK_SESSION)
-            })
-        })
+        .is_some_and(|items| items.iter().any(|item| item.as_str() == Some(name)))
+}
+
+pub fn protocol_has_quick_session_capability(capabilities: Option<&Value>) -> bool {
+    protocol_has_capability(capabilities, DESKTOP_PROTOCOL_CAPABILITY_QUICK_SESSION)
+}
+
+pub fn protocol_has_remote_attach_capability(capabilities: Option<&Value>) -> bool {
+    protocol_has_capability(capabilities, DESKTOP_PROTOCOL_CAPABILITY_REMOTE_ATTACH)
 }
 
 pub fn interpret_protocol_payload(payload: &Value, http_status: u16) -> ProtocolResult {
@@ -378,6 +417,7 @@ pub fn interpret_protocol_payload(payload: &Value, http_status: u16) -> Protocol
         instance_id: instance_id.to_string(),
         auth_required,
         quick_session_available: protocol_has_quick_session_capability(record.get("capabilities")),
+        remote_attach_available: protocol_has_remote_attach_capability(record.get("capabilities")),
     })
 }
 
@@ -559,11 +599,13 @@ pub fn unwrap_observer_sse_data(raw_data: &str) -> UnwrappedSse {
 pub struct SnapshotMeta {
     pub reset: bool,
     pub instance_id: Option<String>,
+    pub generation: u64,
 }
 
 pub struct ObserverClient<T: DesktopTransport> {
     transport: Arc<T>,
     state: Mutex<DesktopConnectionState>,
+    target: Mutex<ConnectionTarget>,
     access_key: Mutex<Option<String>>,
     token: Mutex<Option<String>>,
     stopped: Mutex<bool>,
@@ -580,17 +622,51 @@ impl<T: DesktopTransport> ObserverClient<T> {
         on_state: Option<Arc<dyn Fn(DesktopConnectionState) + Send + Sync>>,
         on_snapshot: Option<Arc<dyn Fn(String, SnapshotMeta) + Send + Sync>>,
     ) -> Self {
+        Self::with_target(
+            ConnectionTarget {
+                profile_id: LOCAL_PROFILE_ID.to_string(),
+                origin: build_desktop_origin(port),
+                port,
+                allow_insecure_http: false,
+                generation: 0,
+            },
+            now,
+            transport,
+            access_key,
+            on_state,
+            on_snapshot,
+        )
+    }
+
+    pub fn with_target(
+        target: ConnectionTarget,
+        now: i64,
+        transport: T,
+        access_key: Option<String>,
+        on_state: Option<Arc<dyn Fn(DesktopConnectionState) + Send + Sync>>,
+        on_snapshot: Option<Arc<dyn Fn(String, SnapshotMeta) + Send + Sync>>,
+    ) -> Self {
         Self {
             transport: Arc::new(transport),
-            state: Mutex::new(crate::connection_state::create_initial_connection_state(
-                port, now,
-            )),
+            state: Mutex::new(create_initial_connection_state_for_target(&target, now)),
+            target: Mutex::new(target),
             access_key: Mutex::new(normalize_access_key(access_key.as_deref())),
             token: Mutex::new(None),
             stopped: Mutex::new(false),
             on_state,
             on_snapshot,
         }
+    }
+
+    pub fn current_target(&self) -> ConnectionTarget {
+        self.target
+            .lock()
+            .map(|target| target.clone())
+            .unwrap_or_else(|error| error.into_inner().clone())
+    }
+
+    pub fn generation(&self) -> u64 {
+        self.current_target().generation
     }
 
     pub fn get_state(&self) -> DesktopConnectionState {
@@ -611,9 +687,37 @@ impl<T: DesktopTransport> ObserverClient<T> {
     }
 
     pub fn set_port(&self, port: u16) {
+        let origin = build_desktop_origin(port);
+        if let Ok(mut target) = self.target.lock() {
+            target.port = port;
+            target.origin = origin.clone();
+            target.allow_insecure_http = false;
+        }
         if let Ok(mut state) = self.state.lock() {
             state.port = port;
-            state.origin = build_desktop_origin(port);
+            state.origin = origin;
+        }
+    }
+
+    pub fn set_target(&self, target: ConnectionTarget, access_key: Option<String>, now: i64) {
+        if let Ok(mut token) = self.token.lock() {
+            *token = None;
+        }
+        self.set_access_key(access_key);
+        if let Ok(mut current) = self.target.lock() {
+            *current = target.clone();
+        }
+        if let Ok(mut state) = self.state.lock() {
+            *state = create_initial_connection_state_for_target(&target, now);
+        }
+        if let Ok(mut stopped) = self.stopped.lock() {
+            *stopped = false;
+        }
+    }
+
+    pub fn clear_token(&self) {
+        if let Ok(mut token) = self.token.lock() {
+            *token = None;
         }
     }
 
@@ -689,8 +793,14 @@ impl<T: DesktopTransport> ObserverClient<T> {
     }
 
     pub fn probe(&self) -> ProbeResult {
-        let state = self.get_state();
-        let origin = build_desktop_origin(state.port);
+        let target = self.current_target();
+        if !target.http_allowed() && target.origin.starts_with("http://") {
+            return ProbeResult::Err(DesktopConnectionEvent::Incompatible {
+                reason_code: DesktopConnectionReasonCode::InsecureHttpRejected,
+                detail: Some("http_not_authorized".to_string()),
+            });
+        }
+        let origin = target.origin.clone();
         let health = match self.safe_fetch(format!("{origin}/api/health"), "GET", None, None) {
             Ok(response) => response,
             Err(event) => return ProbeResult::Err(event),
@@ -720,6 +830,12 @@ impl<T: DesktopTransport> ObserverClient<T> {
                 detail: Some("protocol".to_string()),
             });
         };
+        if target.is_remote() && !protocol_ok.remote_attach_available {
+            return ProbeResult::Err(DesktopConnectionEvent::Incompatible {
+                reason_code: DesktopConnectionReasonCode::RemoteUnsupported,
+                detail: Some("missing_remote_attach".to_string()),
+            });
+        }
 
         let access_key = self
             .access_key
@@ -858,6 +974,7 @@ impl<T: DesktopTransport> ObserverClient<T> {
                 SnapshotMeta {
                     reset: reset || self.get_state().reset_notification_baseline,
                     instance_id: self.get_state().instance_id,
+                    generation: self.generation(),
                 },
             );
         }
@@ -875,10 +992,13 @@ impl<T: DesktopTransport> ObserverClient<T> {
 
     pub fn attach_sse_if_token(&self, now: i64) -> Result<(), String> {
         let token = self.token_for_tests().ok_or_else(|| "missing token".to_string())?;
-        let state = self.get_state();
-        let url = format!("{}/api/desktop-observer/events", build_desktop_origin(state.port));
-        if !is_loopback_observer_url(&url, state.port) {
-            return Err("refusing non-loopback observer url".to_string());
+        let target = self.current_target();
+        let url = format!("{}/api/desktop-observer/events", target.origin);
+        if !is_target_scoped_url(&url, &target.origin) {
+            return Err("refusing off-target observer url".to_string());
+        }
+        if !target.http_allowed() && url.starts_with("http://") {
+            return Err("refusing unauthorized http".to_string());
         }
         let result = self.transport.sse(HttpRequest {
             method: "GET".to_string(),
@@ -928,11 +1048,17 @@ impl<T: DesktopTransport> ObserverClient<T> {
         headers: Option<Vec<(String, String)>>,
         body: Option<String>,
     ) -> Result<HttpResponse, DesktopConnectionEvent> {
-        let port = self.get_state().port;
-        if !is_loopback_observer_url(&url, port) {
+        let target = self.current_target();
+        if !is_target_scoped_url(&url, &target.origin) {
             return Err(DesktopConnectionEvent::Incompatible {
                 reason_code: DesktopConnectionReasonCode::ProtocolInvalid,
-                detail: Some("non_loopback_url".to_string()),
+                detail: Some("off_target_url".to_string()),
+            });
+        }
+        if url.starts_with("http://") && !target.http_allowed() {
+            return Err(DesktopConnectionEvent::Incompatible {
+                reason_code: DesktopConnectionReasonCode::InsecureHttpRejected,
+                detail: Some("http_not_authorized".to_string()),
             });
         }
         match self.transport.fetch(HttpRequest {

@@ -26,6 +26,7 @@ import {
 import {
   DESKTOP_CONTROL_API_PREFIX,
   DESKTOP_PROTOCOL_CAPABILITY_QUICK_SESSION,
+  DESKTOP_PROTOCOL_CAPABILITY_REMOTE_ATTACH,
 } from "../lib/desktop-control-constants";
 import {
   assertDesktopObserverAccessKey,
@@ -137,7 +138,10 @@ async function main() {
   const localProtocol = buildDesktopObserverProtocolPayload({ PI_WEB_SERVER_MODE: "0" });
   assert.equal(localProtocol.protocolVersion, TASK_OBSERVER_PROTOCOL_VERSION);
   assert.equal(localProtocol.compatible, true);
-  assert.deepEqual(localProtocol.capabilities, [DESKTOP_PROTOCOL_CAPABILITY_QUICK_SESSION]);
+  assert.deepEqual(localProtocol.capabilities, [
+    DESKTOP_PROTOCOL_CAPABILITY_QUICK_SESSION,
+    DESKTOP_PROTOCOL_CAPABILITY_REMOTE_ATTACH,
+  ]);
   assert.equal(protocolHasQuickSessionCapability(localProtocol), true);
 
   const serverProtocol = buildDesktopObserverProtocolPayload({ PI_WEB_SERVER_MODE: "1" });

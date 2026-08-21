@@ -2,8 +2,9 @@ use std::sync::Mutex;
 
 use serde_json::{json, Value};
 
-use crate::connection_state::{build_desktop_origin, DesktopConnectionState};
+use crate::connection_state::{build_desktop_origin, is_target_scoped_url, ConnectionTarget, DesktopConnectionState};
 use crate::observer_client::{classify_fetch_failure, DesktopTransport, HttpRequest, LoopbackTransport};
+use crate::server_profiles::LOCAL_PROFILE_ID;
 
 pub const DESKTOP_CONTROL_TOKEN_HEADER: &str = "x-spi-desktop-control-token";
 pub const DESKTOP_CONTROL_API_PREFIX: &str = "/api/desktop-control";
@@ -26,7 +27,7 @@ struct TokenState {
 
 pub struct QuickSessionClient<T: DesktopTransport> {
     transport: T,
-    port: Mutex<u16>,
+    target: Mutex<ConnectionTarget>,
     access_key: Mutex<Option<String>>,
     token: Mutex<TokenState>,
     connected: Mutex<bool>,
@@ -45,7 +46,13 @@ impl<T: DesktopTransport> QuickSessionClient<T> {
     pub fn new(port: u16, access_key: Option<String>, transport: T) -> Self {
         Self {
             transport,
-            port: Mutex::new(port),
+            target: Mutex::new(ConnectionTarget {
+                profile_id: LOCAL_PROFILE_ID.to_string(),
+                origin: build_desktop_origin(port),
+                port,
+                allow_insecure_http: false,
+                generation: 0,
+            }),
             access_key: Mutex::new(normalize_access_key(access_key.as_deref())),
             token: Mutex::new(TokenState {
                 token: None,
@@ -58,14 +65,50 @@ impl<T: DesktopTransport> QuickSessionClient<T> {
         }
     }
 
+    pub fn set_target(&self, target: ConnectionTarget, access_key: Option<String>) {
+        self.discard_token();
+        if let Ok(mut slot) = self.target.lock() {
+            *slot = target;
+        }
+        self.set_access_key(access_key);
+        if let Ok(mut slot) = self.connected.lock() {
+            *slot = false;
+        }
+        if let Ok(mut slot) = self.available.lock() {
+            *slot = false;
+        }
+        if let Ok(mut slot) = self.instance_id.lock() {
+            *slot = None;
+        }
+        if let Ok(mut stopped) = self.stopped.lock() {
+            *stopped = false;
+        }
+    }
+
     pub fn set_connection(&self, state: &DesktopConnectionState) {
+        let target_generation = self
+            .target
+            .lock()
+            .map(|target| target.generation)
+            .unwrap_or(0);
+        if state.generation != 0 && state.generation != target_generation {
+            self.discard_token();
+            if let Ok(mut slot) = self.connected.lock() {
+                *slot = false;
+            }
+            if let Ok(mut slot) = self.available.lock() {
+                *slot = false;
+            }
+            return;
+        }
         let connected = matches!(
             state.status,
             crate::connection_state::DesktopConnectionStatus::Connected
         );
         let available = connected && state.quick_session_available;
-        if let Ok(mut port) = self.port.lock() {
-            *port = state.port;
+        if let Ok(mut target) = self.target.lock() {
+            target.port = state.port;
+            target.origin = state.origin.clone();
         }
         let next_instance = state.instance_id.clone();
         if let Ok(mut current) = self.instance_id.lock() {
@@ -180,8 +223,10 @@ impl<T: DesktopTransport> QuickSessionClient<T> {
     }
 
     fn origin(&self) -> String {
-        let port = self.port.lock().map(|port| *port).unwrap_or(62666);
-        build_desktop_origin(port)
+        self.target
+            .lock()
+            .map(|target| target.origin.clone())
+            .unwrap_or_else(|_| build_desktop_origin(62666))
     }
 
     fn authed_json(
@@ -266,7 +311,11 @@ impl<T: DesktopTransport> QuickSessionClient<T> {
         token: Option<&str>,
         body: Option<&str>,
     ) -> Result<Value, &'static str> {
-        let url = format!("{}{pathname}", self.origin());
+        let origin = self.origin();
+        let url = format!("{origin}{pathname}");
+        if !is_target_scoped_url(&url, &origin) {
+            return Err("stale_target");
+        }
         let mut headers = Vec::new();
         if method == "POST" {
             headers.push(("content-type".to_string(), "application/json".to_string()));
@@ -383,6 +432,7 @@ fn classify_http(status: u16, payload: &Value) -> &'static str {
         "request_conflict" => "request_conflict",
         "start_failed" => "start_failed",
         "bad_request" => "bad_request",
+        "stale_target" => "stale_target",
         _ if status == 0 => "result_unknown",
         _ => "result_unknown",
     }

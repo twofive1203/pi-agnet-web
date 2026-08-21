@@ -67,6 +67,39 @@ pub fn normalize_access_key_input(value: Option<&str>) -> Option<String> {
     Some(key.to_string())
 }
 
+/// Encrypt a normalized access key. Never persist the result unless `is_available`.
+pub fn encrypt_access_key_ciphertext(
+    access_key: &str,
+    codec: &dyn AccessKeyCodec,
+) -> Result<String, String> {
+    let Some(key) = normalize_access_key_input(Some(access_key)) else {
+        return Err("invalid_key".to_string());
+    };
+    if !codec.is_available() {
+        return Err("codec_unavailable".to_string());
+    }
+    let ciphertext = codec.encrypt(&key)?;
+    if ciphertext.is_empty() || ciphertext.contains(&key) {
+        return Err("access key encryption produced an unsafe payload".to_string());
+    }
+    Ok(ciphertext)
+}
+
+pub fn decrypt_access_key_ciphertext(
+    ciphertext: &str,
+    codec: &dyn AccessKeyCodec,
+) -> Option<String> {
+    if !codec.is_available() {
+        return None;
+    }
+    let trimmed = ciphertext.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let plain = codec.decrypt(trimmed).ok()?;
+    normalize_access_key_input(Some(&plain))
+}
+
 pub fn load_desktop_access_key(
     data_dir: &Path,
     codec: &dyn AccessKeyCodec,

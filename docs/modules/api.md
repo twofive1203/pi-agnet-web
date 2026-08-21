@@ -123,8 +123,8 @@ Attach-only desktop pet API. **Direct IPv4 loopback (`127.0.0.1`) only** — Hos
 
 | Route | Methods | Purpose |
 | --- | --- | --- |
-| `desktop-observer/protocol/` | GET | Loopback protocol/product/mode probe. Reports `authRequired:true` in server mode; always `compatible:true` for loopback-capable builds. Additive `capabilities` may include `quick_session`. No token. |
-| `desktop-observer/session/` | POST | Mint short-lived observer token (`x-spi-desktop-observer-token`). Origin exact loopback match or absent (Electron main). Server mode body: `{ accessKey }`. |
+| `desktop-observer/protocol/` | GET | Protocol/product/mode probe. Local loopback or server-mode remote after the transport gate. Reports `authRequired:true` in server mode; additive `capabilities` include `quick_session` and `remote_attach`. Cookie-free is not public. No token. |
+| `desktop-observer/session/` | POST | Mint short-lived observer token (`x-spi-desktop-observer-token`). Origin exact match or absent (native pet). Remote mint always sends `{ accessKey }` and ignores `authBypassCidrs`. |
 | `desktop-observer/snapshot/` | GET | Current bounded multi-source snapshot (`?reset=1` for baseline). Token required. `Cache-Control: no-store`. |
 | `desktop-observer/events/` | GET | Full-snapshot SSE + heartbeat comments. Initial event is always `reset`. Token expiry closes the stream. |
 

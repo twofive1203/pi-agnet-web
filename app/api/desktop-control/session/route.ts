@@ -7,7 +7,7 @@
 
 import {
   assertDesktopControlAccessKey,
-  assertDesktopControlLocalAccess,
+  assertDesktopControlNetworkAccess,
   assertDesktopControlSessionOrigin,
   DESKTOP_CONTROL_TOKEN_HEADER,
   DesktopControlAccessError,
@@ -86,8 +86,8 @@ async function readBoundedJsonBody(req: Request): Promise<SessionBody | null> {
 
 export async function POST(req: Request): Promise<Response> {
   try {
-    const remote = assertDesktopControlLocalAccess(req);
-    assertDesktopControlSessionOrigin(req);
+    const identity = assertDesktopControlNetworkAccess(req);
+    assertDesktopControlSessionOrigin(req, identity);
 
     const contentType = req.headers.get("content-type") ?? "";
     // Empty body is allowed in local mode; server mode rejects missing key later.
@@ -103,9 +103,9 @@ export async function POST(req: Request): Promise<Response> {
       body = parsed;
     }
 
-    await assertDesktopControlAccessKey(req, body.accessKey);
+    await assertDesktopControlAccessKey(req, body.accessKey, identity);
 
-    const issued = issueDesktopControlToken({ remote });
+    const issued = issueDesktopControlToken({ remote: identity.remote, identity });
     return new Response(
       JSON.stringify({
         token: issued.token,

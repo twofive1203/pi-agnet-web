@@ -36,6 +36,7 @@ import {
   serviceUnavailableJson,
   unauthorizedJson,
 } from "./lib/server-access-policy";
+import { evaluateDesktopCompanionProxyGate } from "./lib/desktop-local-access";
 
 export const config = {
   // Login is fully self-gated and excluded so Proxy cannot pre-buffer an oversized
@@ -104,15 +105,28 @@ export async function proxy(request: NextRequest): Promise<NextResponse | Respon
     }
   }
 
-  // Desktop pet attaches from Electron main over http://127.0.0.1 and cannot carry a
-  // browser session cookie or satisfy same-origin/HTTPS unlock UX. Proven loopback peers
-  // skip the cookie/HTTPS gate here; route handlers still enforce Host 127.0.0.1 + loopback
-  // remote, and session mint verifies the access key when server auth is on.
+  // Desktop pet cannot carry a browser session cookie. Proxy only skips the cookie/HTTPS
+  // gate after a transport check; route handlers still mint with Access Key + namespace tokens.
+  // Never treat these paths as anonymously public.
   if (isDesktopObserverPath(pathname) || isDesktopControlPath(pathname)) {
     const remote = resolveSocketRemoteAddress();
-    if (isLoopbackClientAddress(remote)) {
+    const gate = evaluateDesktopCompanionProxyGate(request, remote);
+    if (gate.allow) {
       return NextResponse.next();
     }
+    if (gate.code === "insecure_http") {
+      return new NextResponse(
+        JSON.stringify({
+          error: "HTTPS required for remote desktop attach",
+          code: "insecure_http",
+        }),
+        {
+          status: 403,
+          headers: noStoreHeaders({ "Content-Type": "application/json; charset=utf-8" }),
+        },
+      );
+    }
+    return forbiddenJson();
   }
 
   // SameSite cookies still travel between sibling origins on the same site.

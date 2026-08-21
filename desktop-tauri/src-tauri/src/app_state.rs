@@ -8,16 +8,13 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, Manager, WebviewWindow};
 
-use crate::access_key::{
-    clear_desktop_access_key, default_codec, load_desktop_access_key, normalize_access_key_input,
-    save_desktop_access_key, AccessKeyCodec,
-};
+use crate::access_key::{default_codec, normalize_access_key_input, AccessKeyCodec};
 use crate::activity_view::{
     assert_renderer_view_safe, build_activity_view, find_last_transition_id, mark_activity_read,
     mark_all_terminal_read, BuildViewInput, DesktopPetSettings, TransitionRuntimeState,
 };
 use crate::connection_state::{
-    build_desktop_origin, is_loopback_observer_url, DesktopConnectionReasonCode,
+    build_desktop_origin, is_target_scoped_url, ConnectionTarget, DesktopConnectionReasonCode,
     DesktopConnectionState,
 };
 use crate::custom_pets::{
@@ -30,6 +27,11 @@ use crate::observer_client::{
     LoopbackTransport, ObserverClient, ProbeResult, DESKTOP_OBSERVER_TOKEN_HEADER,
 };
 use crate::quick_session_client::QuickSessionClient;
+use crate::server_profiles::{
+    assert_projection_safe, connection_fields_changed, delete_server_profile,
+    load_or_migrate_profile_store, parse_save_intent, profiles_projection_json, save_profile_store,
+    save_server_profile, switch_active_profile, ProfileError, RuntimeProfile, RuntimeProfileStore,
+};
 use crate::settings::{apply_settings_patch, load_desktop_settings, save_desktop_settings};
 use crate::window_controller::{self, TrayLayoutAnchor};
 
@@ -49,12 +51,16 @@ pub struct PetRuntime {
     pub tray_anchor: TrayLayoutAnchor,
     pub app_in_background: bool,
     pub transition_runtime: TransitionRuntimeState,
+    pub active_profile_id: String,
+    pub active_profile_name: Option<String>,
 }
 
 impl PetRuntime {
-    pub fn from_settings(settings: DesktopPetSettings, access_key: Option<String>) -> Self {
-        let connection =
-            crate::connection_state::create_initial_connection_state(settings.port, now_ms());
+    pub fn from_profile(settings: DesktopPetSettings, profile: &RuntimeProfile, generation: u64) -> Self {
+        let target = target_from_profile(profile, generation);
+        let mut connection =
+            crate::connection_state::create_initial_connection_state_for_target(&target, now_ms());
+        connection.generation = generation;
         Self {
             settings,
             snapshot: None,
@@ -63,10 +69,12 @@ impl PetRuntime {
             reduced_motion: false,
             stale: false,
             reset: true,
-            access_key,
+            access_key: profile.access_key.clone(),
             tray_anchor: TrayLayoutAnchor::TopLeft,
             app_in_background: true,
             transition_runtime: TransitionRuntimeState::default(),
+            active_profile_id: profile.id.clone(),
+            active_profile_name: profile.name.clone(),
         }
     }
 
@@ -82,6 +90,9 @@ impl PetRuntime {
             has_access_key: self.access_key.is_some(),
             tray_anchor: Some(self.tray_anchor.as_str()),
             reset: self.reset,
+            active_server_id: Some(self.active_profile_id.as_str()),
+            active_server_name: self.active_profile_name.as_deref(),
+            active_server_generation: self.connection.generation,
         });
         assert_renderer_view_safe(&view)?;
         Ok(view)
@@ -94,6 +105,8 @@ pub struct AppState {
     pub quick_session: QuickSessionClient<LoopbackTransport>,
     pub catalog: Mutex<PetCatalogState>,
     pub data_dir: PathBuf,
+    profiles: Mutex<RuntimeProfileStore>,
+    generation: std::sync::atomic::AtomicU64,
     codec: Box<dyn AccessKeyCodec>,
     stopped: Arc<AtomicBool>,
 }
@@ -106,18 +119,24 @@ impl AppState {
             .map_err(|error| error.to_string())?;
         let mut settings = load_desktop_settings(&data_dir);
         let codec = default_codec();
-        let access_key = load_desktop_access_key(&data_dir, codec.as_ref());
+        let profiles = load_or_migrate_profile_store(&data_dir, settings.port, codec.as_ref());
         let catalog = scan_pet_catalog(&resolve_snail_root(), &resolve_codex_root());
         if normalize_selected_pet(&mut settings, &catalog) {
             let _ = save_desktop_settings(&data_dir, &settings);
         }
-        let runtime = PetRuntime::from_settings(settings, access_key.clone());
-        let port = runtime.settings.port;
+        let generation = 1u64;
+        let active = profiles
+            .active()
+            .cloned()
+            .unwrap_or_else(|| profiles.profiles[0].clone());
+        let runtime = PetRuntime::from_profile(settings, &active, generation);
+        let target = target_from_profile(&active, generation);
+        let access_key = active.access_key.clone();
         let runtime = Mutex::new(runtime);
         let app_for_state = app.clone();
         let app_for_snapshot = app.clone();
-        let client = Arc::new(ObserverClient::new(
-            port,
+        let client = Arc::new(ObserverClient::with_target(
+            target.clone(),
             now_ms(),
             LoopbackTransport::new(),
             access_key.clone(),
@@ -129,18 +148,21 @@ impl AppState {
             })),
             Some(Arc::new(move |json, meta| {
                 if let Some(store) = app_for_snapshot.try_state::<Arc<AppState>>() {
-                    store.apply_snapshot(&app_for_snapshot, &json, meta.reset);
+                    store.apply_snapshot(&app_for_snapshot, &json, meta.reset, meta.generation);
                     let _ = store.emit_view(&app_for_snapshot);
                 }
             })),
         ));
-        let quick_session = QuickSessionClient::loopback(port, access_key);
+        let quick_session = QuickSessionClient::loopback(target.port, access_key.clone());
+        quick_session.set_target(target, access_key);
         Ok(Arc::new(Self {
             runtime,
             client,
             quick_session,
             catalog: Mutex::new(catalog),
             data_dir,
+            profiles: Mutex::new(profiles),
+            generation: std::sync::atomic::AtomicU64::new(generation),
             codec,
             stopped: Arc::new(AtomicBool::new(false)),
         }))
@@ -157,6 +179,9 @@ impl AppState {
     }
 
     pub fn apply_connection(&self, app: &AppHandle, state: DesktopConnectionState) {
+        if !self.generation_matches(state.generation) {
+            return;
+        }
         self.quick_session.set_connection(&state);
         let needs_auth_tray = matches!(
             state.reason_code,
@@ -204,7 +229,10 @@ impl AppState {
         }
     }
 
-    pub fn apply_snapshot(&self, app: &AppHandle, json: &str, reset: bool) {
+    pub fn apply_snapshot(&self, app: &AppHandle, json: &str, reset: bool, generation: u64) {
+        if !self.generation_matches(generation) {
+            return;
+        }
         let parsed = match serde_json::from_str::<Value>(json) {
             Ok(Value::Object(value))
                 if value.get("instanceId").and_then(Value::as_str).is_some() =>
@@ -291,23 +319,21 @@ impl AppState {
     }
 
     pub fn set_access_key(&self, access_key: Option<String>) -> Value {
-        let normalized = normalize_access_key_input(access_key.as_deref());
-        if access_key.is_some() && normalized.is_none() {
-            return json!({ "ok": false, "reason": "invalid_key" });
-        }
-        if let Ok(mut runtime) = self.runtime.lock() {
-            runtime.access_key = normalized.clone();
-        }
-        self.client.set_access_key(normalized.clone());
-        self.quick_session.set_access_key(normalized.clone());
-        let persisted = if let Some(key) = &normalized {
-            save_desktop_access_key(&self.data_dir, key, self.codec.as_ref()).unwrap_or(false)
+        let command = if let Some(raw) = access_key {
+            let Some(normalized) = normalize_access_key_input(Some(&raw)) else {
+                return json!({ "ok": false, "reason": "invalid_key" });
+            };
+            crate::server_profiles::AccessKeyCommand::Replace(normalized)
         } else {
-            clear_desktop_access_key(&self.data_dir);
-            false
+            crate::server_profiles::AccessKeyCommand::Clear
         };
-        let _ = self.client.retry(now_ms());
-        json!({ "ok": true, "persisted": persisted })
+        match self.mutate_active_profile_key(command) {
+            Ok(persisted) => {
+                let _ = self.reconnect_active();
+                json!({ "ok": true, "persisted": persisted })
+            }
+            Err(error) => json!({ "ok": false, "reason": error.code() }),
+        }
     }
 
     pub fn apply_prefs(&self, patch: Value, window: &WebviewWindow) -> Result<Value, String> {
@@ -349,7 +375,6 @@ impl AppState {
             window_controller::set_click_through(window, click_through)?;
         }
 
-        let port_changed = (previous.port != next.port).then_some(next.port);
         let launch_at_login =
             (previous.launch_at_login != next.launch_at_login).then_some(next.launch_at_login);
         if let Some(enabled) = launch_at_login {
@@ -366,14 +391,6 @@ impl AppState {
             if let Some(layout) = layout {
                 runtime.tray_anchor = layout.tray_anchor;
             }
-            if let Some(port) = port_changed {
-                runtime.connection.port = port;
-                runtime.connection.origin = build_desktop_origin(port);
-            }
-        }
-        if let Some(port) = port_changed {
-            self.client.set_port(port);
-            let _ = self.client.retry(now_ms());
         }
         self.persist();
         self.current_view()
@@ -608,6 +625,162 @@ impl AppState {
         }
     }
 
+    pub fn list_server_profiles(&self) -> Value {
+        let Ok(store) = self.profiles.lock() else {
+            return json!({ "ok": false, "reason": "persist_failed" });
+        };
+        let payload = profiles_projection_json(&store);
+        if assert_projection_safe(&payload).is_err() {
+            return json!({ "ok": false, "reason": "persist_failed" });
+        }
+        payload
+    }
+
+    pub fn save_server_profile_command(&self, patch: Value) -> Value {
+        let intent = match parse_save_intent(&patch) {
+            Ok(intent) => intent,
+            Err(error) => return json!({ "ok": false, "reason": error.code() }),
+        };
+        let previous = match self.profiles.lock() {
+            Ok(store) => store.clone(),
+            Err(_) => return json!({ "ok": false, "reason": "persist_failed" }),
+        };
+        let next = match save_server_profile(&previous, intent, self.codec.as_ref()) {
+            Ok(store) => store,
+            Err(error) => return json!({ "ok": false, "reason": error.code() }),
+        };
+        let persisted = match save_profile_store(&self.data_dir, &next, self.codec.as_ref()) {
+            Ok(store) => store,
+            Err(error) => return json!({ "ok": false, "reason": error.code() }),
+        };
+        let reconnect = should_reconnect_after_save(&previous, &persisted);
+        if let Ok(mut slot) = self.profiles.lock() {
+            *slot = persisted.clone();
+        }
+        if reconnect {
+            let _ = self.reconnect_active();
+        }
+        let payload = profiles_projection_json(&persisted);
+        if assert_projection_safe(&payload).is_err() {
+            return json!({ "ok": false, "reason": "persist_failed" });
+        }
+        payload
+    }
+
+    pub fn delete_server_profile_command(&self, id: String) -> Value {
+        let previous = match self.profiles.lock() {
+            Ok(store) => store.clone(),
+            Err(_) => return json!({ "ok": false, "reason": "persist_failed" }),
+        };
+        let next = match delete_server_profile(&previous, id.trim()) {
+            Ok(store) => store,
+            Err(error) => return json!({ "ok": false, "reason": error.code() }),
+        };
+        let persisted = match save_profile_store(&self.data_dir, &next, self.codec.as_ref()) {
+            Ok(store) => store,
+            Err(error) => return json!({ "ok": false, "reason": error.code() }),
+        };
+        if let Ok(mut slot) = self.profiles.lock() {
+            *slot = persisted.clone();
+        }
+        let payload = profiles_projection_json(&persisted);
+        if assert_projection_safe(&payload).is_err() {
+            return json!({ "ok": false, "reason": "persist_failed" });
+        }
+        payload
+    }
+
+    pub fn switch_server_profile_command(&self, id: String) -> Value {
+        let previous = match self.profiles.lock() {
+            Ok(store) => store.clone(),
+            Err(_) => return json!({ "ok": false, "reason": "persist_failed" }),
+        };
+        let next = match switch_active_profile(&previous, id.trim()) {
+            Ok(store) => store,
+            Err(error) => return json!({ "ok": false, "reason": error.code() }),
+        };
+        let persisted = match save_profile_store(&self.data_dir, &next, self.codec.as_ref()) {
+            Ok(store) => store,
+            Err(error) => return json!({ "ok": false, "reason": error.code() }),
+        };
+        if let Ok(mut slot) = self.profiles.lock() {
+            *slot = persisted.clone();
+        }
+        if let Err(error) = self.reconnect_active() {
+            return json!({ "ok": false, "reason": error.code() });
+        }
+        let payload = profiles_projection_json(&persisted);
+        if assert_projection_safe(&payload).is_err() {
+            return json!({ "ok": false, "reason": "persist_failed" });
+        }
+        payload
+    }
+
+    fn mutate_active_profile_key(
+        &self,
+        command: crate::server_profiles::AccessKeyCommand,
+    ) -> Result<bool, ProfileError> {
+        let mut store = self
+            .profiles
+            .lock()
+            .map_err(|_| ProfileError::PersistFailed)?
+            .clone();
+        let profile = store.active_mut().ok_or(ProfileError::NotFound)?;
+        match command {
+            crate::server_profiles::AccessKeyCommand::Replace(key) => {
+                profile.access_key = Some(key);
+                profile.key_persisted = self.codec.is_available();
+            }
+            crate::server_profiles::AccessKeyCommand::Clear => {
+                profile.access_key = None;
+                profile.key_persisted = false;
+            }
+            crate::server_profiles::AccessKeyCommand::Preserve => {}
+        }
+        let persisted = save_profile_store(&self.data_dir, &store, self.codec.as_ref())?;
+        let key_persisted = persisted.active().is_some_and(|profile| profile.key_persisted);
+        if let Ok(mut slot) = self.profiles.lock() {
+            *slot = persisted;
+        }
+        Ok(key_persisted)
+    }
+
+    fn reconnect_active(&self) -> Result<(), ProfileError> {
+        let store = self
+            .profiles
+            .lock()
+            .map_err(|_| ProfileError::PersistFailed)?
+            .clone();
+        let profile = store.active().cloned().ok_or(ProfileError::NotFound)?;
+        let generation = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
+        let target = target_from_profile(&profile, generation);
+        self.client.clear_token();
+        self.quick_session.set_target(target.clone(), profile.access_key.clone());
+        self.client
+            .set_target(target, profile.access_key.clone(), now_ms());
+        if let Ok(mut runtime) = self.runtime.lock() {
+            runtime.snapshot = None;
+            runtime.selected_activity_id = None;
+            runtime.stale = false;
+            runtime.reset = true;
+            runtime.transition_runtime = TransitionRuntimeState::default();
+            runtime.access_key = profile.access_key.clone();
+            runtime.active_profile_id = profile.id.clone();
+            runtime.active_profile_name = profile.name.clone();
+            runtime.connection =
+                crate::connection_state::create_initial_connection_state_for_target(
+                    &target_from_profile(&profile, generation),
+                    now_ms(),
+                );
+        }
+        let _ = self.client.start(now_ms());
+        Ok(())
+    }
+
+    fn generation_matches(&self, generation: u64) -> bool {
+        generation == 0 || generation == self.generation.load(Ordering::SeqCst)
+    }
+
     pub fn list_quick_session_projects(&self) -> Value {
         let payload = self.quick_session.list_projects(now_ms());
         sanitize_quick_payload(payload)
@@ -622,6 +795,29 @@ impl AppState {
         let payload = self.quick_session.create_session(&input, now_ms());
         sanitize_quick_payload(payload)
     }
+}
+
+fn target_from_profile(profile: &RuntimeProfile, generation: u64) -> ConnectionTarget {
+    ConnectionTarget {
+        profile_id: profile.id.clone(),
+        origin: profile.origin.clone(),
+        port: profile.port(),
+        allow_insecure_http: profile.allow_insecure_http,
+        generation,
+    }
+}
+
+fn should_reconnect_after_save(
+    previous: &RuntimeProfileStore,
+    next: &RuntimeProfileStore,
+) -> bool {
+    let Some(prev_active) = previous.active() else {
+        return true;
+    };
+    let Some(next_active) = next.active() else {
+        return true;
+    };
+    prev_active.id == next_active.id && connection_fields_changed(prev_active, next_active)
 }
 
 fn sanitize_quick_payload(payload: Value) -> Value {
@@ -680,26 +876,30 @@ fn stream_observer_sse(state: &AppState) {
     let Some(token) = state.client.token_for_tests() else {
         return;
     };
-    let connection = state.client.get_state();
-    let url = format!(
-        "{}/api/desktop-observer/events",
-        build_desktop_origin(connection.port)
-    );
-    if !is_loopback_observer_url(&url, connection.port) {
+    let generation = state.client.generation();
+    let origin = state.client.get_state().origin;
+    let url = format!("{origin}/api/desktop-observer/events");
+    if !is_target_scoped_url(&url, &origin) {
         return;
     }
-    let response = match ureq::get(&url)
-        .timeout(Duration::from_secs(60))
+    let agent = LoopbackTransport::agent(Duration::from_secs(60));
+    let response = match agent
+        .get(&url)
         .set("Accept", "text/event-stream")
         .set(DESKTOP_OBSERVER_TOKEN_HEADER, &token)
         .call()
     {
         Ok(response) => response,
         Err(ureq::Error::Status(401 | 403, _)) => {
-            state.client.handle_token_expiry(now_ms());
+            if state.generation_matches(generation) {
+                state.client.handle_token_expiry(now_ms());
+            }
             return;
         }
         Err(error) => {
+            if !state.generation_matches(generation) {
+                return;
+            }
             let classified = crate::observer_client::classify_fetch_failure(&error.to_string());
             if matches!(
                 classified,
@@ -714,16 +914,18 @@ fn stream_observer_sse(state: &AppState) {
     let reader = BufReader::new(response.into_reader());
     let mut block = String::new();
     for line in reader.lines() {
-        if state.stopped.load(Ordering::SeqCst) {
+        if state.stopped.load(Ordering::SeqCst) || !state.generation_matches(generation) {
             break;
         }
         let Ok(line) = line else {
             break;
         };
         if line.is_empty() {
-            state
-                .client
-                .consume_sse_text(&format!("{block}\n\n"), now_ms());
+            if state.generation_matches(generation) {
+                state
+                    .client
+                    .consume_sse_text(&format!("{block}\n\n"), now_ms());
+            }
             block.clear();
         } else {
             block.push_str(&line);

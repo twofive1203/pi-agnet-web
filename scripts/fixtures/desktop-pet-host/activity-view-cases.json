@@ -517,8 +517,13 @@
     },
     {
       "id": "rejects-non-loopback-url",
-      "payload": { "presentation": "idle", "origin": "https://example.com" },
+      "payload": { "presentation": "idle", "origin": "http://127.0.0.1:62666", "href": "http://8.8.8.8/phish" },
       "expectThrow": true
+    },
+    {
+      "id": "allows-remote-origin",
+      "payload": { "presentation": "idle", "origin": "https://10.0.0.8:8443", "projects": [] },
+      "expectThrow": false
     },
     {
       "id": "allows-loopback-origin",

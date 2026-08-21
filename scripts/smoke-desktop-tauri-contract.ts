@@ -73,7 +73,9 @@ const deepLinks = read("desktop-tauri/src-tauri/src/deep_links.rs");
 const notifications = read("desktop-tauri/src-tauri/src/notifications.rs");
 const native = read("desktop-tauri/src-tauri/src/native.rs");
 const quickSession = read("desktop-tauri/src-tauri/src/quick_session_client.rs");
+const serverProfiles = read("desktop-tauri/src-tauri/src/server_profiles.rs");
 const bridge = read("desktop-tauri/src/tauri-bridge.ts");
+const preload = read("desktop/preload/pet-preload.ts");
 const rendererHtml = read("desktop/renderer/index.html");
 const rendererApp = read("desktop/renderer/pet-app.js");
 const buildScript = read("scripts/build-desktop-tauri.mjs");
@@ -171,7 +173,17 @@ assert.match(buildScript, /rmSync\(outputRoot,\s*\{\s*recursive:\s*true,\s*force
 assert.match(buildScript, /OUTPUT_ALLOWLIST/);
 assert.match(buildScript, /unexpected build output/);
 assert.match(connectionState, /127\.0\.0\.1/);
-assert.match(observerClient, /is_loopback_observer_url/);
+assert.match(observerClient, /is_target_scoped_url/);
+assert.match(serverProfiles, /tauri-preview-server-profiles\.json/);
+assert.match(serverProfiles, /has_access_key/);
+assert.match(serverProfiles, /assert_projection_safe/);
+assert.match(bridge, /invoke\("list_server_profiles"\)/);
+assert.match(bridge, /invoke\("switch_server_profile"/);
+assert.match(preload, /listServerProfiles\?:/);
+assert.doesNotMatch(preload, /invoke\(PET_IPC_CHANNELS\.listServerProfiles/);
+assert.match(rendererHtml, /server-profiles-card/);
+assert.match(rendererApp, /canManageServers/);
+assert.match(rendererApp, /typeof bridge\?\.listServerProfiles === "function"/);
 assert.match(activityView, /assert_renderer_view_safe/);
 assert.match(appState, /pet:state-changed/);
 assert.match(appState, /runtime\.tray_anchor/);
@@ -205,6 +217,7 @@ for (const [label, source] of [
   ["notifications", notifications],
   ["native", native],
   ["quick session", quickSession],
+  ["server profiles", serverProfiles],
   ["Tauri bridge", bridge],
 ] as const) {
   assertNoServiceControl(source, label);

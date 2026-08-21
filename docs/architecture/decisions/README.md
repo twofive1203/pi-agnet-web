@@ -7,3 +7,4 @@ Record important technical decisions here when a change establishes a durable co
 - [`desktop-pet-quick-session.md`](desktop-pet-quick-session.md) — User-initiated first-message session start from the Activity tray, using a scoped desktop-control token separate from the read-only observer.
 - [`desktop-pet-bubble-chrome.md`](desktop-pet-bubble-chrome.md) — Q-version comic-bubble chrome for the caption, hover chips, Activity tray, and settings; presentation-only, no observer/window-size change.
 - [`desktop-pet-tauri-migration.md`](desktop-pet-tauri-migration.md) — Isolated Tauri 2 Preview beside Electron: identity, Rust/WebView permission boundary, Evergreen WebView2 packaging, and Gate D.
+- [`desktop-pet-remote-server-profiles.md`](desktop-pet-remote-server-profiles.md) — Tauri multi-server profiles, single-active switching, HTTPS-default remote Observer/Control attach, and Electron loopback-only isolation.

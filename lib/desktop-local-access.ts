@@ -1,17 +1,22 @@
 /**
- * Shared loopback / Host / Origin / access-key gate for desktop companion
+ * Shared network / Host / Origin / access-key gate for desktop companion
  * namespaces (observer + control). Token stores stay separate — this module
  * never mints or verifies observer or control tokens.
  *
- * Root server-access auth never relaxes the loopback gate. Non-loopback peers
- * and non-loopback forwarded identity are always rejected.
+ * Local attach remains proven IPv4 loopback. Remote attach is server-mode only,
+ * HTTPS by default, and never trusts X-Forwarded-For. Root cookie auth never
+ * substitutes for Access Key mint + namespace tokens.
  */
 
 import {
   assertDirectLoopbackConnection,
   AutomationAccessError,
 } from "./automation-local-access";
-import { getAutomationRemoteAddress, isLoopbackIp } from "./automation-connection-context";
+import {
+  getAutomationRemoteAddress,
+  isLoopbackIp,
+  normalizeIp,
+} from "./automation-connection-context";
 import {
   assertAccessKeyValid,
   consumeLoginAttempt,
@@ -20,9 +25,26 @@ import {
 } from "./server-access-auth";
 import {
   clientKeyFromRequest,
+  isLoopbackClientAddress,
+  isSecureTransportRequired,
   isServerAccessAuthEnabled,
+  isTrustProxyEnabled,
   MAX_ACCESS_KEY_LENGTH,
+  resolveEffectiveProtocol,
 } from "./server-access-policy";
+
+export type DesktopCompanionAttachKind =
+  | "local_loopback"
+  | "remote_direct"
+  | "remote_proxy";
+
+export type DesktopCompanionIdentity = {
+  kind: DesktopCompanionAttachKind;
+  remote: string;
+  bindKey: string;
+  host: string;
+  effectiveOrigin: string;
+};
 
 export class DesktopLocalAccessError extends Error {
   readonly status: number;
@@ -96,13 +118,136 @@ export function assertDesktopCompanionLoopback(req: Request): string {
   return remote;
 }
 
+function requestHost(req: Request): string {
+  return (req.headers.get("host") ?? "").trim();
+}
+
+function hostLabel(host: string): string {
+  if (host.startsWith("[")) {
+    const end = host.indexOf("]");
+    if (end > 0) return host.slice(1, end);
+  }
+  return host.split(":")[0] ?? host;
+}
+
+export function evaluateDesktopCompanionProxyGate(
+  req: Request,
+  remote: string | null | undefined,
+  env: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env,
+): { allow: true } | { allow: false; status: number; code: string } {
+  if (!remote) return { allow: false, status: 403, code: "security" };
+  const loopbackPeer = isLoopbackClientAddress(remote);
+  const host = requestHost(req);
+  const loopbackHost = host ? isIpv4LoopbackHostLabel(hostLabel(host)) : false;
+
+  if (loopbackPeer && (loopbackHost || !host)) {
+    return { allow: true };
+  }
+  if (!isServerAccessAuthEnabled(env)) {
+    return { allow: false, status: 403, code: "security" };
+  }
+  if (isSecureTransportRequired(req, env)) {
+    return { allow: false, status: 403, code: "insecure_http" };
+  }
+  if (loopbackPeer && isTrustProxyEnabled(env)) {
+    return { allow: true };
+  }
+  if (!loopbackPeer) {
+    return { allow: true };
+  }
+  return { allow: false, status: 403, code: "security" };
+}
+
+export function classifyDesktopCompanionIdentity(
+  req: Request,
+  env: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env,
+): DesktopCompanionIdentity {
+  const remoteRaw = getAutomationRemoteAddress();
+  if (!remoteRaw) {
+    throw new DesktopLocalAccessError("Missing remote address", 403, "security");
+  }
+  const remote = normalizeIp(remoteRaw) ?? remoteRaw;
+  const host = requestHost(req);
+  let url: URL;
+  try {
+    url = new URL(req.url);
+  } catch {
+    throw new DesktopLocalAccessError("Invalid request URL", 403, "security");
+  }
+  const loopbackPeer = isLoopbackIp(remote);
+  const loopbackHost = host
+    ? isIpv4LoopbackHostLabel(hostLabel(host))
+    : isIpv4LoopbackHostLabel(url.hostname);
+
+  if (loopbackPeer && loopbackHost) {
+    return {
+      kind: "local_loopback",
+      remote,
+      bindKey: `local:${remote}`,
+      host: host || url.host,
+      effectiveOrigin: url.origin,
+    };
+  }
+
+  if (!isDesktopCompanionServerMode(env)) {
+    throw new DesktopLocalAccessError(
+      "Desktop companion requires Host 127.0.0.1",
+      403,
+      "security",
+    );
+  }
+
+  if (isSecureTransportRequired(req, env)) {
+    throw new DesktopLocalAccessError(
+      "HTTPS required for remote desktop attach",
+      403,
+      "insecure_http",
+    );
+  }
+
+  if (loopbackPeer && isTrustProxyEnabled(env) && host && !loopbackHost) {
+    const proto = resolveEffectiveProtocol(req, env);
+    const effectiveOrigin = `${proto}://${host}`;
+    return {
+      kind: "remote_proxy",
+      remote,
+      bindKey: `proxy:${effectiveOrigin}`,
+      host,
+      effectiveOrigin,
+    };
+  }
+
+  if (!loopbackPeer) {
+    return {
+      kind: "remote_direct",
+      remote,
+      bindKey: `direct:${remote}`,
+      host: host || url.host,
+      effectiveOrigin: url.origin,
+    };
+  }
+
+  throw new DesktopLocalAccessError(
+    "Desktop companion remote attach rejected",
+    403,
+    "security",
+  );
+}
+
 /**
- * Full attach gate: proven loopback only.
- * Server mode is allowed on loopback; access-key check happens at session mint.
- * Returns normalized remote address.
+ * Network attach gate: local loopback or server-mode remote with valid transport.
+ */
+export function assertDesktopCompanionNetworkAccess(req: Request): DesktopCompanionIdentity {
+  return classifyDesktopCompanionIdentity(req);
+}
+
+/**
+ * Full attach gate: local loopback or authorized remote.
+ * Access-key check happens at session mint.
+ * Returns normalized remote address for mint binding.
  */
 export function assertDesktopCompanionLocalAccess(req: Request): string {
-  return assertDesktopCompanionLoopback(req);
+  return assertDesktopCompanionNetworkAccess(req).remote;
 }
 
 /**
@@ -114,10 +259,14 @@ export function assertDesktopCompanionLocalAccess(req: Request): string {
 export async function assertDesktopCompanionAccessKey(
   req: Request,
   accessKey: unknown,
+  identity?: DesktopCompanionIdentity,
 ): Promise<void> {
-  if (!isDesktopCompanionServerMode()) return;
+  const ident = identity ?? classifyDesktopCompanionIdentity(req);
+  const serverMode = isDesktopCompanionServerMode();
+  if (ident.kind === "local_loopback" && !serverMode) return;
+  // Remote mint always requires the instance access key; auth-bypass CIDRs never skip it.
 
-  const remote = getAutomationRemoteAddress();
+  const remote = ident.remote;
   const clientKey = clientKeyFromRequest(req, remote);
   const rate = consumeLoginAttempt(clientKey);
   if (!rate.allowed) {
@@ -165,12 +314,16 @@ export async function assertDesktopCompanionAccessKey(
  * Session mint origin policy: exact same-origin when Origin present;
  * missing Origin allowed for Electron main (not browsers with spoofed referer alone).
  */
-export function assertDesktopCompanionSessionOrigin(req: Request): void {
+export function assertDesktopCompanionSessionOrigin(
+  req: Request,
+  identity?: DesktopCompanionIdentity,
+): void {
   const origin = req.headers.get("origin");
   if (!origin) return;
-  let reqUrl: URL;
+  const ident = identity ?? classifyDesktopCompanionIdentity(req);
+  let expected: URL;
   try {
-    reqUrl = new URL(req.url);
+    expected = new URL(ident.effectiveOrigin);
   } catch {
     throw new DesktopLocalAccessError("Invalid request URL", 403, "security");
   }
@@ -180,17 +333,20 @@ export function assertDesktopCompanionSessionOrigin(req: Request): void {
   } catch {
     throw new DesktopLocalAccessError("Invalid Origin", 403, "security");
   }
-  // Compare host ignoring hostname label style — still require loopback origin.
-  if (originUrl.protocol !== reqUrl.protocol) {
+  if (originUrl.protocol !== expected.protocol) {
     throw new DesktopLocalAccessError("Cross-origin request blocked", 403, "security");
   }
-  const originHost = originUrl.hostname;
-  if (!isIpv4LoopbackHostLabel(originHost) && !isLoopbackIp(originHost)) {
-    throw new DesktopLocalAccessError("Origin is not loopback", 403, "security");
+  if (ident.kind === "local_loopback") {
+    const originHost = originUrl.hostname;
+    if (!isIpv4LoopbackHostLabel(originHost) && !isLoopbackIp(originHost)) {
+      throw new DesktopLocalAccessError("Origin is not loopback", 403, "security");
+    }
+  } else if (originUrl.hostname.toLowerCase() !== expected.hostname.toLowerCase()) {
+    throw new DesktopLocalAccessError("Cross-origin request blocked", 403, "security");
   }
-  const reqPort = reqUrl.port || (reqUrl.protocol === "https:" ? "443" : "80");
+  const expectedPort = expected.port || (expected.protocol === "https:" ? "443" : "80");
   const originPort = originUrl.port || (originUrl.protocol === "https:" ? "443" : "80");
-  if (reqPort !== originPort) {
+  if (expectedPort !== originPort) {
     throw new DesktopLocalAccessError("Cross-origin port mismatch", 403, "security");
   }
 }

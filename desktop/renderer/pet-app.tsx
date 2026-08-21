@@ -177,6 +177,18 @@ export function renderPetApp(root: Document = document): {
   const accessKeyInput = root.getElementById("access-key-input") as HTMLInputElement | null;
   const btnSaveKey = root.getElementById("btn-save-key");
   const btnClearKey = root.getElementById("btn-clear-key");
+  const serverProfilesCard = root.getElementById("server-profiles-card");
+  const serverProfileList = root.getElementById("server-profile-list");
+  const serverProfileForm = root.getElementById("server-profile-form") as HTMLFormElement | null;
+  const serverProfileName = root.getElementById("server-profile-name") as HTMLInputElement | null;
+  const serverProfileAddress = root.getElementById("server-profile-address") as HTMLInputElement | null;
+  const serverProfileKey = root.getElementById("server-profile-key") as HTMLInputElement | null;
+  const serverProfileKeyStatus = root.getElementById("server-profile-key-status");
+  const serverProfileInsecure = root.getElementById("server-profile-insecure") as HTMLInputElement | null;
+  const serverProfileInsecureNote = root.getElementById("server-profile-insecure-note");
+  const serverProfileError = root.getElementById("server-profile-error");
+  const btnNewServerProfile = root.getElementById("btn-new-server-profile");
+  const btnClearServerKey = root.getElementById("btn-clear-server-key") as HTMLButtonElement | null;
   const btnMarkAll = root.getElementById("btn-mark-all");
   const btnRetry = root.getElementById("btn-retry");
   const btnTrayMore = root.getElementById("btn-tray-more");
@@ -255,6 +267,7 @@ export function renderPetApp(root: Document = document): {
   const TRANSITION_ACTION_MS = 620;
 
   let current: DesktopActivityView | null = null;
+  let lastServerGeneration: number | null = null;
   let settingsOpen = false;
   /** Keep settings/quick-session intent across a collapsed-to-expanded tray toggle. */
   let pendingTrayPanel: "settings" | "quick-session" | null = null;
@@ -1116,6 +1129,15 @@ export function renderPetApp(root: Document = document): {
   function update(view: DesktopActivityView): void {
     const previousView = current;
     current = view;
+    const nextGeneration = view.activeServer?.generation;
+    if (
+      typeof nextGeneration === "number" &&
+      lastServerGeneration != null &&
+      nextGeneration !== lastServerGeneration
+    ) {
+      applyQuickSession({ type: "server_switched" });
+    }
+    if (typeof nextGeneration === "number") lastServerGeneration = nextGeneration;
     const previewSettingsOpen = (view as unknown as { settingsOpen?: unknown }).settingsOpen;
     if (!bridge && typeof previewSettingsOpen === "boolean") {
       settingsOpen = previewSettingsOpen;
@@ -1276,6 +1298,8 @@ export function renderPetApp(root: Document = document): {
       canCopyStartCommand: view.canCopyStartCommand,
       startCommand: view.startCommand,
       reasonCode: view.connectionReasonCode,
+      origin: view.activeServer?.origin ?? view.origin,
+      serverName: view.activeServer?.name,
     });
     const captionTitle = primary?.title ?? "蜗牛派";
     const captionDetail = primary
@@ -1485,6 +1509,8 @@ export function renderPetApp(root: Document = document): {
       canCopyStartCommand: view.canCopyStartCommand,
       startCommand: view.startCommand,
       reasonCode: view.connectionReasonCode,
+      origin: view.activeServer?.origin ?? view.origin,
+      serverName: view.activeServer?.name,
     });
     if (banner) {
       if (bannerText) {
@@ -2670,6 +2696,213 @@ export function renderPetApp(root: Document = document): {
   btnClearKey?.addEventListener("click", () => {
     void bridge?.clearAccessKey();
   });
+
+  type ServerProfileRow = {
+    id: string;
+    name?: string | null;
+    origin: string;
+    allowInsecureHttp?: boolean;
+    insecure?: boolean;
+    hasAccessKey?: boolean;
+    keyPersisted?: boolean;
+    isActive?: boolean;
+  };
+  const canManageServers =
+    typeof bridge?.listServerProfiles === "function" &&
+    typeof bridge?.saveServerProfile === "function" &&
+    typeof bridge?.deleteServerProfile === "function" &&
+    typeof bridge?.switchServerProfile === "function";
+  let editingServerId: string | null = null;
+  let serverClearKey = false;
+  let serverProfiles: ServerProfileRow[] = [];
+
+  const showServerError = (message: string | null) => {
+    if (!serverProfileError) return;
+    if (!message) {
+      serverProfileError.hidden = true;
+      serverProfileError.textContent = "";
+      return;
+    }
+    serverProfileError.hidden = false;
+    serverProfileError.textContent = message;
+  };
+
+  const reasonText = (reason: string | undefined) => {
+    switch (reason) {
+      case "duplicate_origin":
+        return "已存在相同地址的服务器";
+      case "insecure_http_not_allowed":
+        return "远程 HTTP 需要勾选不安全兼容";
+      case "invalid_address":
+        return "地址格式无效";
+      case "cannot_delete_active":
+        return "请先切换到其他服务器再删除当前档案";
+      case "cannot_delete_last":
+        return "至少需要保留一个服务器档案";
+      case "too_many_profiles":
+        return "服务器档案数量已达上限";
+      default:
+        return reason ? `保存失败（${reason}）` : "保存失败";
+    }
+  };
+
+  const resetServerForm = (profile?: ServerProfileRow) => {
+    editingServerId = profile?.id ?? null;
+    serverClearKey = false;
+    if (serverProfileName) serverProfileName.value = profile?.name ?? "";
+    if (serverProfileAddress) serverProfileAddress.value = profile?.origin ?? "";
+    if (serverProfileKey) serverProfileKey.value = "";
+    if (serverProfileInsecure) serverProfileInsecure.checked = profile?.insecure === true;
+    if (serverProfileKeyStatus) {
+      serverProfileKeyStatus.hidden = profile?.hasAccessKey !== true;
+      serverProfileKeyStatus.textContent = profile?.keyPersisted === false ? "密钥仅在内存中，重启后需重新输入" : "已配置密钥";
+    }
+    if (btnClearServerKey) btnClearServerKey.hidden = profile?.hasAccessKey !== true;
+    if (serverProfileInsecureNote) serverProfileInsecureNote.hidden = profile?.insecure !== true;
+    showServerError(null);
+  };
+
+  const renderServerProfiles = () => {
+    if (!serverProfileList) return;
+    serverProfileList.replaceChildren();
+    for (const profile of serverProfiles) {
+      const row = root.createElement("li");
+      row.className = "server-profile-row";
+      row.tabIndex = 0;
+      if (profile.isActive) row.setAttribute("aria-current", "true");
+      const meta = root.createElement("div");
+      meta.className = "server-profile-meta";
+      const title = root.createElement("strong");
+      title.textContent = profile.name?.trim() || profile.origin;
+      const origin = root.createElement("div");
+      origin.className = "server-profile-origin";
+      origin.textContent = profile.origin;
+      const badges = root.createElement("div");
+      badges.className = "server-profile-badges";
+      badges.textContent = [
+        profile.isActive ? "当前" : null,
+        profile.insecure ? "HTTP 风险" : "HTTPS",
+        profile.hasAccessKey ? (profile.keyPersisted === false ? "密钥仅内存" : "已配置密钥") : "未配置密钥",
+      ].filter(Boolean).join(" · ");
+      meta.append(title, origin, badges);
+      const switchBtn = root.createElement("button");
+      switchBtn.type = "button";
+      switchBtn.className = "tray-btn";
+      switchBtn.textContent = profile.isActive ? "已连接" : "切换";
+      switchBtn.disabled = profile.isActive === true;
+      switchBtn.addEventListener("click", () => {
+        void bridge?.switchServerProfile?.(profile.id).then((result) => {
+          const payload = result as { ok?: boolean; reason?: string; profiles?: ServerProfileRow[] };
+          if (payload?.ok === false) {
+            showServerError(reasonText(payload.reason));
+            return;
+          }
+          if (Array.isArray(payload?.profiles)) {
+            serverProfiles = payload.profiles;
+            renderServerProfiles();
+          }
+        });
+      });
+      const editBtn = root.createElement("button");
+      editBtn.type = "button";
+      editBtn.className = "tray-btn";
+      editBtn.textContent = "编辑";
+      editBtn.addEventListener("click", () => resetServerForm(profile));
+      const deleteBtn = root.createElement("button");
+      deleteBtn.type = "button";
+      deleteBtn.className = "tray-btn";
+      deleteBtn.textContent = "删除";
+      deleteBtn.disabled = profile.isActive === true || serverProfiles.length <= 1;
+      deleteBtn.title = deleteBtn.disabled ? "请先切换到其他服务器" : "删除此档案";
+      deleteBtn.addEventListener("click", () => {
+        void bridge?.deleteServerProfile?.(profile.id).then((result) => {
+          const payload = result as { ok?: boolean; reason?: string; profiles?: ServerProfileRow[] };
+          if (payload?.ok === false) {
+            showServerError(reasonText(payload.reason));
+            return;
+          }
+          if (Array.isArray(payload?.profiles)) {
+            serverProfiles = payload.profiles;
+            renderServerProfiles();
+            resetServerForm();
+          }
+        });
+      });
+      row.append(meta, switchBtn, editBtn, deleteBtn);
+      row.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") resetServerForm(profile);
+      });
+      serverProfileList.append(row);
+    }
+  };
+
+  const loadServerProfiles = () => {
+    if (!canManageServers) return;
+    void bridge?.listServerProfiles?.().then((result) => {
+      const payload = result as { ok?: boolean; profiles?: ServerProfileRow[] };
+      if (payload?.ok === false || !Array.isArray(payload?.profiles)) return;
+      serverProfiles = payload.profiles;
+      renderServerProfiles();
+    });
+  };
+
+  if (canManageServers && serverProfilesCard) {
+    serverProfilesCard.hidden = false;
+    loadServerProfiles();
+    serverProfileForm?.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const address = serverProfileAddress?.value.trim() ?? "";
+      if (!address) {
+        showServerError("请填写服务器地址");
+        return;
+      }
+      const insecure = serverProfileInsecure?.checked === true;
+      if (address.startsWith("http://") && !insecure && !/^http:\/\/(127\.|\[::1\])/i.test(address)) {
+        showServerError("远程 HTTP 需要勾选不安全兼容");
+        return;
+      }
+      const key = serverProfileKey?.value.trim() ?? "";
+      const patch: Record<string, unknown> = {
+        address,
+        name: serverProfileName?.value.trim() ?? "",
+        allowInsecureHttp: insecure,
+        accessKeyAction: serverClearKey ? "clear" : key ? "replace" : "preserve",
+      };
+      if (editingServerId) patch.id = editingServerId;
+      if (key) patch.accessKey = key;
+      void bridge?.saveServerProfile?.(patch).then((result) => {
+        const payload = result as { ok?: boolean; reason?: string; profiles?: ServerProfileRow[] };
+        if (payload?.ok === false) {
+          showServerError(reasonText(payload.reason));
+          return;
+        }
+        if (serverProfileKey) serverProfileKey.value = "";
+        serverClearKey = false;
+        if (Array.isArray(payload?.profiles)) {
+          serverProfiles = payload.profiles;
+          renderServerProfiles();
+          const saved = editingServerId
+            ? payload.profiles.find((item) => item.id === editingServerId)
+            : payload.profiles[payload.profiles.length - 1];
+          resetServerForm(saved);
+        }
+      });
+    });
+    btnNewServerProfile?.addEventListener("click", () => resetServerForm());
+    btnClearServerKey?.addEventListener("click", () => {
+      serverClearKey = true;
+      if (serverProfileKey) serverProfileKey.value = "";
+      if (serverProfileKeyStatus) serverProfileKeyStatus.hidden = true;
+    });
+    serverProfileInsecure?.addEventListener("change", () => {
+      if (serverProfileInsecureNote) {
+        serverProfileInsecureNote.hidden = serverProfileInsecure.checked !== true;
+      }
+    });
+    root.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && editingServerId) resetServerForm();
+    });
+  }
 
   btnCopy?.addEventListener("click", () => {
     void bridge?.copyStartCommand();

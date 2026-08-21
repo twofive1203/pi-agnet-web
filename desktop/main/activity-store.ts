@@ -137,6 +137,14 @@ export type DesktopActivityView = {
   customPetsRoot: string | null;
   /** Safe boolean only — never a token, cwd, or raw capability list. */
   quickSessionAvailable: boolean;
+  /** Tauri-only bounded projection of the active server profile. */
+  activeServer?: {
+    id: string | null;
+    name: string | null;
+    origin: string;
+    insecure: boolean;
+    generation: number;
+  } | null;
 };
 
 export type ActivityStoreSnapshotInput = {
@@ -502,10 +510,18 @@ export function assertRendererViewSafe(view: unknown): void {
       throw new Error(`renderer view leaked key: ${key}`);
     }
   }
-  // Absolute URLs must stay relative except the verified loopback origin display field.
+  const record = view && typeof view === "object" ? (view as Record<string, unknown>) : null;
+  const origin =
+    (typeof record?.origin === "string" && record.origin) ||
+    (record?.activeServer && typeof record.activeServer === "object"
+      ? String((record.activeServer as { origin?: unknown }).origin ?? "")
+      : "");
   const absoluteUrls = json.match(/https?:\/\/[^"\s]+/gi) ?? [];
   for (const url of absoluteUrls) {
-    if (!/^https?:\/\/127\.0\.0\.1(?::\d+)?\/?$/i.test(url)) {
+    const loopback = /^https?:\/\/127\.0\.0\.1(?::\d+)?\/?$/i.test(url);
+    const matchesOrigin =
+      origin.length > 0 && (url === origin || url.startsWith(`${origin.replace(/\/$/, "")}/`) || url === origin.replace(/\/$/, ""));
+    if (!loopback && !matchesOrigin) {
       throw new Error(`renderer view must not contain non-loopback absolute URL: ${url}`);
     }
   }

@@ -20,9 +20,12 @@ export type DesktopControlScope = (typeof DESKTOP_CONTROL_SCOPES)[number];
 
 /** Additive protocol capability advertised on the observer protocol probe. */
 export const DESKTOP_PROTOCOL_CAPABILITY_QUICK_SESSION = "quick_session" as const;
+/** Additive capability: server accepts remote (non-loopback) desktop attach. */
+export const DESKTOP_PROTOCOL_CAPABILITY_REMOTE_ATTACH = "remote_attach" as const;
 
 export const DESKTOP_PROTOCOL_CAPABILITIES = [
   DESKTOP_PROTOCOL_CAPABILITY_QUICK_SESSION,
+  DESKTOP_PROTOCOL_CAPABILITY_REMOTE_ATTACH,
 ] as const;
 
 export type DesktopProtocolCapability = (typeof DESKTOP_PROTOCOL_CAPABILITIES)[number];

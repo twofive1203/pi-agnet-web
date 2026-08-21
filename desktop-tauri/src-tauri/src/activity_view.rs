@@ -425,13 +425,17 @@ pub fn build_activity_view(input: BuildViewInput<'_>) -> Value {
             .and_then(|snapshot| snapshot.get("reset"))
             == Some(&Value::Bool(true));
 
-    json!({
+    let mut view = json!({
         "presentation": presentation,
         "connectionStatus": input.connection.status,
         "connectionReasonCode": reason_snake,
         "origin": input.connection.origin,
         "port": input.connection.port,
-        "startCommand": DESKTOP_START_COMMAND,
+        "startCommand": if crate::server_profiles::is_loopback_origin(&input.connection.origin) {
+            DESKTOP_START_COMMAND
+        } else {
+            ""
+        },
         "canCopyStartCommand": can_copy_start_command(input.connection),
         "hasAccessKey": input.has_access_key,
         "needsAccessKey": needs_access_key,
@@ -465,7 +469,16 @@ pub fn build_activity_view(input: BuildViewInput<'_>) -> Value {
         "customPetsRoot": Value::Null,
         "quickSessionAvailable": input.connection.status == DesktopConnectionStatus::Connected
             && input.connection.quick_session_available,
-    })
+    });
+    view["activeServer"] = json!({
+        "id": input.active_server_id,
+        "name": input.active_server_name,
+        "origin": input.connection.origin,
+        "insecure": input.connection.origin.starts_with("http://")
+            && !crate::server_profiles::is_loopback_origin(&input.connection.origin),
+        "generation": input.active_server_generation,
+    });
+    view
 }
 
 pub struct BuildViewInput<'a> {
@@ -479,6 +492,9 @@ pub struct BuildViewInput<'a> {
     pub has_access_key: bool,
     pub tray_anchor: Option<&'a str>,
     pub reset: bool,
+    pub active_server_id: Option<&'a str>,
+    pub active_server_name: Option<&'a str>,
+    pub active_server_generation: u64,
 }
 
 fn reason_code_wire(code: crate::connection_state::DesktopConnectionReasonCode) -> String {
@@ -567,12 +583,21 @@ pub fn assert_renderer_view_safe(view: &Value) -> Result<(), String> {
             return Err(format!("renderer view leaked key: {key}"));
         }
     }
+    let allowed_origin = view
+        .get("origin")
+        .and_then(Value::as_str)
+        .or_else(|| {
+            view.get("activeServer")
+                .and_then(|server| server.get("origin"))
+                .and_then(Value::as_str)
+        });
     for url in extract_urls(&json) {
-        if !is_allowed_loopback_url(url) {
-            return Err(format!(
-                "renderer view must not contain non-loopback absolute URL: {url}"
-            ));
+        if is_allowed_view_url(url, allowed_origin) {
+            continue;
         }
+        return Err(format!(
+            "renderer view must not contain disallowed absolute URL: {url}"
+        ));
     }
     Ok(())
 }
@@ -591,15 +616,20 @@ fn extract_urls(json: &str) -> Vec<&str> {
     urls
 }
 
-fn is_allowed_loopback_url(url: &str) -> bool {
-    let rest = url
-        .strip_prefix("http://")
-        .or_else(|| url.strip_prefix("https://"));
-    let Some(rest) = rest else {
+fn is_allowed_view_url(url: &str, allowed_origin: Option<&str>) -> bool {
+    let cleaned = url.trim_end_matches(|ch: char| ch == '"' || ch == ',' || ch == '}');
+    if cleaned.contains('@') {
+        return false;
+    }
+    if cleaned.starts_with("http://127.0.0.1") || cleaned.starts_with("https://127.0.0.1") {
+        return allowed_origin.map(|origin| {
+            origin.starts_with("http://127.0.0.1") || origin.starts_with("https://127.0.0.1")
+        }).unwrap_or(true);
+    }
+    let Some(origin) = allowed_origin else {
         return false;
     };
-    let host = rest.trim_end_matches('/');
-    host == "127.0.0.1" || host.starts_with("127.0.0.1:")
+    crate::server_profiles::is_origin_scoped_url(cleaned, origin)
 }
 
 fn should_suppress_dnd(dnd_enabled: bool, presentation: &str) -> bool {

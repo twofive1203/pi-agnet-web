@@ -155,6 +155,7 @@ cargo test --manifest-path desktop-tauri/src-tauri/Cargo.toml
 | TA-C5 | Deep Link | 点击活动打开已验证 origin；绝对 URL 被拒绝 | **未执行** |
 | TA-C6 | 开机启动 | Preview 登录启动切换不修改 Electron 项，也不启动 `spi` | **未执行** |
 | TA-C7 | 快速会话 | local 与 loopback server-mode 各成功创建一次；退出 Preview 不结束 session | **未执行** |
+| TA-C8 | 多服务器档案 | 保存 A/B HTTPS 档案，切换后活动/通知/Quick Session/Deep Link 不串服；远程 HTTP 仅双端显式允许成功；错误证书失败且无 bypass；重启恢复 active profile | **未执行** |
 
 ## Gate C conclusion
 

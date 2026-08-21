@@ -30,7 +30,7 @@ Writable state stays in the Preview app-data/config directory derived from the P
 ## Permission and process boundary
 
 - Attach-only: Preview never starts, stops, restarts, signals, or stores a `spi` PID.
-- Loopback only: Rust HTTP/SSE may use `http://127.0.0.1:<validated-port>`. WebView CSP is `connect-src 'none'`.
+- Network stays in Rust. Local attach remains `http://127.0.0.1:<port>`. Tauri remote profiles are a later, explicit relaxation documented in [`desktop-pet-remote-server-profiles.md`](desktop-pet-remote-server-profiles.md). WebView CSP is `connect-src 'none'`.
 - Capability is deny-by-default and limited to the `pet` window plus `core:default`. No shell, process, fs, http, or opener plugin wildcards.
 - Observer Token, Control Token, and Access Key stay in Rust memory. Access Key may persist only as OS-bound DPAPI ciphertext; if encryption is unavailable the key stays in memory and is never written as plaintext.
 - Deep links are service-generated relative allowlist URLs, locally revalidated before `ShellExecuteW`.

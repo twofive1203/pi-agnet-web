@@ -1222,21 +1222,36 @@ export function connectionBannerText(input: {
   canCopyStartCommand: boolean;
   startCommand: string;
   reasonCode?: string | null;
+  origin?: string;
+  serverName?: string | null;
 }): string | null {
+  const target = input.serverName?.trim() || input.origin || "服务器";
   if (input.connectionStatus === "service-not-running") {
-    return `蜗牛派服务未启动 — 复制 \`${input.startCommand}\` 后在终端启动，然后重试`;
+    if (input.canCopyStartCommand) {
+      return `蜗牛派服务未启动 — 复制 \`${input.startCommand}\` 后在终端启动，然后重试`;
+    }
+    return `无法连接 ${target} — 请确认该服务器在线后重试`;
   }
   if (input.connectionStatus === "incompatible") {
     if (input.reasonCode === "auth_required") {
-      return "服务已开启访问密钥 — 请在桌宠设置中粘贴密钥后连接";
+      return `${target} 需要访问密钥 — 请在桌宠设置中粘贴密钥后连接`;
     }
     if (input.reasonCode === "auth_invalid") {
-      return "访问密钥无效 — 请在桌宠设置中重新填写";
+      return `${target} 的访问密钥无效 — 请在桌宠设置中重新填写`;
     }
-    return `不兼容的服务${input.reasonCode ? ` (${input.reasonCode})` : ""} — 请检查端口后重试`;
+    if (input.reasonCode === "tls_error") {
+      return `${target} 的证书无法验证 — 请安装受信任证书，桌宠不会跳过校验`;
+    }
+    if (input.reasonCode === "remote_unsupported") {
+      return `${target} 不支持远程桌宠 — 请升级蜗牛派或改用本机档案`;
+    }
+    if (input.reasonCode === "insecure_http_rejected") {
+      return "服务器拒绝不安全 HTTP — 请改用 HTTPS，或让服务端显式允许 HTTP";
+    }
+    return `不兼容的服务${input.reasonCode ? ` (${input.reasonCode})` : ""} — 请检查地址后重试`;
   }
   if (input.connectionStatus === "reconnecting" || input.connectionStatus === "probing") {
-    return input.connectionStatus === "probing" ? "正在连接本地服务…" : "连接中断，正在重连…";
+    return input.connectionStatus === "probing" ? `正在连接 ${target}…` : `与 ${target} 的连接中断，正在重连…`;
   }
   return null;
 }

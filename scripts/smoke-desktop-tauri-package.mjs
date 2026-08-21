@@ -36,6 +36,7 @@ const PREVIEW_IDENTIFIER = "com.twofive.snail-pi-pet.tauri-preview";
 const PREVIEW_EXECUTABLE = "snail-pi-pet-tauri-preview";
 const PREVIEW_SETTINGS = "tauri-preview-settings.json";
 const PREVIEW_ACCESS_KEY = "tauri-preview-access-key.json";
+const PREVIEW_SERVER_PROFILES = "tauri-preview-server-profiles.json";
 const ALLOWED_WEBVIEW_MODES = new Set(["embedBootstrapper", "downloadBootstrapper"]);
 const FORBIDDEN_WEBVIEW_MODES = new Set(["offlineInstaller", "fixedRuntime", "skip"]);
 const FORBIDDEN_BUNDLE_NEEDLES = [
@@ -53,6 +54,8 @@ const FORBIDDEN_BUNDLE_NEEDLES = [
   "forge.config",
   "desktop-pet-settings.json",
   "desktop-pet-access-key.json",
+  "tauri-preview-access-key.json",
+  "tauri-preview-server-profiles.json",
   "connection-cases.json",
   "activity-view-cases.json",
   "transition-cases.json",
@@ -561,7 +564,7 @@ function main() {
   }
 
   console.log(
-    `PACKAGE_CONTRACT_OK identifier=${PREVIEW_IDENTIFIER} exe=${PREVIEW_EXECUTABLE} settings=${PREVIEW_SETTINGS} accessKey=${PREVIEW_ACCESS_KEY} webview=embedBootstrapper`,
+    `PACKAGE_CONTRACT_OK identifier=${PREVIEW_IDENTIFIER} exe=${PREVIEW_EXECUTABLE} settings=${PREVIEW_SETTINGS} accessKey=${PREVIEW_ACCESS_KEY} profiles=${PREVIEW_SERVER_PROFILES} webview=embedBootstrapper`,
   );
   console.log("smoke-desktop-tauri-package: ok");
 }

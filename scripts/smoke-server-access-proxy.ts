@@ -116,6 +116,14 @@ function testPublicPaths(): void {
     "proxy must special-case desktop control loopback attach",
   );
   assert(
+    proxySource.includes("evaluateDesktopCompanionProxyGate"),
+    "proxy must run a desktop transport gate before skipping cookies",
+  );
+  assert(
+    !proxySource.includes("isPublicPath(pathname) && isDesktopObserverPath"),
+    "desktop namespace must not be globally public",
+  );
+  assert(
     proxySource.includes('action === "exchange"') || proxySource.includes("action === 'exchange'"),
     "proxy must allow cookie-free exchange for the Chrome extension",
   );

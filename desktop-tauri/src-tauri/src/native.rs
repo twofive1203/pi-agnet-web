@@ -12,13 +12,31 @@ pub fn copy_start_command() -> bool {
 
 pub fn open_https_or_loopback_url(url: &str) -> Result<(), String> {
     let trimmed = url.trim();
-    if !(trimmed.starts_with("http://127.0.0.1") || trimmed.starts_with("https://127.0.0.1")) {
-        return Err("url_not_loopback".to_string());
+    let scheme = if trimmed.starts_with("https://") {
+        "https"
+    } else if trimmed.starts_with("http://") {
+        "http"
+    } else {
+        return Err("url_protocol".to_string());
+    };
+    let rest = trimmed.split_once("://").map(|(_, rest)| rest).unwrap_or("");
+    let host = rest.split('/').next().unwrap_or(rest);
+    open_configured_origin_url(&format!("{scheme}://{host}"), trimmed)
+}
+
+pub fn open_configured_origin_url(origin: &str, url: &str) -> Result<(), String> {
+    let origin = origin.trim().trim_end_matches('/');
+    let url = url.trim();
+    if !(origin.starts_with("http://") || origin.starts_with("https://")) {
+        return Err("url_protocol".to_string());
     }
-    if trimmed.contains(['\r', '\n', '"']) {
+    if origin.contains('@') || url.contains(['\r', '\n', '"']) {
         return Err("url_invalid".to_string());
     }
-    shell_open(trimmed)
+    if !crate::server_profiles::is_origin_scoped_url(url, origin) {
+        return Err("url_origin_mismatch".to_string());
+    }
+    shell_open(url)
 }
 
 pub fn open_directory(path: &Path) -> Result<(), String> {

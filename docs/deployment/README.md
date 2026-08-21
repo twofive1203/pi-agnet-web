@@ -296,7 +296,7 @@ npm run test:desktop-tauri-package
 
 - Identity: `com.twofive.snail-pi-pet.tauri-preview` / `snail-pi-pet-tauri-preview`.
 - WebView2: default `embedBootstrapper`. `downloadBootstrapper` is an allowed size comparison; Offline/Fixed Runtime must not be used to claim the 20 MB installer target.
-- Settings/secrets stay in the Preview app-data directory (`tauri-preview-settings.json`, DPAPI `tauri-preview-access-key.json`). Custom pets are read-only scans of the existing user folders.
+- Settings/secrets stay in the Preview app-data directory (`tauri-preview-settings.json`, versioned `tauri-preview-server-profiles.json` with per-profile DPAPI ciphertext; legacy single-key file migrates once). Custom pets are read-only scans of the existing user folders. Remote HTTPS is the default; remote HTTP needs both the profile insecure flag and `spi --allow-insecure-http`. IP HTTPS certificates need a matching SAN and a Windows-trusted chain.
 - Read-only Electron settings rehearsal: `npm run test:desktop-tauri-package`. Optional live parse via `DESKTOP_TAURI_ELECTRON_SETTINGS`; the smoke never writes Electron or Preview official files.
 - Same-machine size/memory/start samples: `scripts/benchmark-desktop-runtimes.ps1`. Reports land in gitignored `desktop-tauri/.benchmark/`.
 - Validation and Gate D: [`docs/operations/desktop-pet-tauri-validation.md`](../operations/desktop-pet-tauri-validation.md). Decision record: [`docs/architecture/decisions/desktop-pet-tauri-migration.md`](../architecture/decisions/desktop-pet-tauri-migration.md).

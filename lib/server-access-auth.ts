@@ -137,6 +137,20 @@ export function getServerAccessStatePath(agentDir = getAgentDir()): string {
   return join(agentDir, SERVER_ACCESS_STATE_FILENAME);
 }
 
+/**
+ * Credential generation used to bind short-lived desktop tokens.
+ * 0 = no auth state (local mode). -1 = unreadable/corrupt (fail closed).
+ */
+export function getServerAccessCredentialGeneration(agentDir = getAgentDir()): number {
+  const path = getServerAccessStatePath(agentDir);
+  if (!existsSync(path)) return 0;
+  try {
+    return readServerAccessState(agentDir).credentialGeneration;
+  } catch {
+    return -1;
+  }
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }

@@ -5,7 +5,7 @@
  */
 
 import {
-  assertDesktopObserverLoopback,
+  assertDesktopObserverNetworkAccess,
   buildDesktopObserverProtocolPayload,
   DesktopObserverAccessError,
 } from "@/lib/desktop-observer-access";
@@ -32,7 +32,7 @@ function errorResponse(error: unknown): Response {
 
 export async function GET(req: Request): Promise<Response> {
   try {
-    assertDesktopObserverLoopback(req);
+    assertDesktopObserverNetworkAccess(req);
     const body = buildDesktopObserverProtocolPayload();
     return new Response(JSON.stringify(body), {
       status: 200,
