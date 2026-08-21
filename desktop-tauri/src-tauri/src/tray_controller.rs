@@ -61,7 +61,7 @@ pub fn build_tray_menu_model(input: TrayModelInput<'_>) -> Vec<TrayMenuItem> {
         items.push(item(COPY_START_COMMAND, "复制启动命令", true, None));
     }
     items.push(separator());
-    items.push(item(QUIT_PREVIEW, "退出 Tauri Preview", true, None));
+    items.push(item(QUIT_PREVIEW, "退出桌宠", true, None));
     items
 }
 

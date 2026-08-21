@@ -235,7 +235,7 @@ fn tray_always_has_click_through_recovery_and_preview_only_quit() {
     assert_eq!(QUIT_PREVIEW, "quit-preview");
     let source = include_str!("../src/tray_controller.rs");
     assert!(source.contains("取消鼠标穿透"));
-    assert!(source.contains("退出 Tauri Preview"));
+    assert!(source.contains("退出桌宠"));
     assert!(!source.contains("spi --no-open"));
 }
 
@@ -276,7 +276,7 @@ fn tray_model_covers_dnd_sound_retry_and_preview_only_quit() {
     assert!(items.iter().any(|item| item.id == "retry" && item.enabled));
     assert!(items.iter().any(|item| item.id == "open-webui"));
     let quit = items.iter().find(|item| item.id == QUIT_PREVIEW).expect("quit");
-    assert_eq!(quit.label, "退出 Tauri Preview");
+    assert_eq!(quit.label, "退出桌宠");
     assert!(!quit.label.contains("任务"));
     let status = items
         .iter()
