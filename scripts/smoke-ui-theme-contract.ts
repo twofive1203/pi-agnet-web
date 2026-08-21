@@ -166,6 +166,7 @@ interface ThemeSources {
   chatInput: string;
   appDialog: string;
   extensionDialog: string;
+  directoryPicker: string;
 }
 
 type RuntimeThemeMetadata = Partial<ThemeMetadata>;
@@ -446,6 +447,20 @@ function collectContractProblems(
     || !sources.extensionDialog.includes("button:not(:disabled)")) {
     problems.push("dialog focus: extension dialog keyboard contract is missing");
   }
+  if (!sources.css.includes(".directory-picker-layout")
+    || !sources.css.includes(".directory-picker-shortcuts")
+    || !sources.css.includes(".directory-picker-breadcrumbs")
+    || !sources.css.includes(".directory-picker-entry.is-selected")
+    || !sources.css.includes(".directory-picker-footer-path")) {
+    problems.push("directory picker: stable layout classes are missing");
+  }
+  if (!sources.directoryPicker.includes("createPortal")
+    || !sources.directoryPicker.includes("previouslyFocusedRef")
+    || !sources.directoryPicker.includes('role="listbox"')
+    || !sources.directoryPicker.includes("aria-selected")
+    || !sources.directoryPicker.includes('event.key === "Escape"')) {
+    problems.push("directory picker: portal/focus contract is missing");
+  }
 
   return problems;
 }
@@ -474,6 +489,7 @@ const sources: ThemeSources = {
   chatInput: readSource("components/ChatInput.tsx"),
   appDialog: readSource("components/AppDialogProvider.tsx"),
   extensionDialog: readSource("components/ExtensionDialogHost.tsx"),
+  directoryPicker: readSource("components/sidebar/DirectoryPickerDialog.tsx"),
 };
 const runtimeMeta = THEME_META as unknown as RuntimeThemeMeta;
 

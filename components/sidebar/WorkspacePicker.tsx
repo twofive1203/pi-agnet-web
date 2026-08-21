@@ -58,18 +58,10 @@ export const WorkspacePicker = memo(function WorkspacePicker({
   const [folderActionStatus, setFolderActionStatus] = useState<string | null>(null);
   const folderStatusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [directoryPickerOpen, setDirectoryPickerOpen] = useState(false);
-  const [nativePicking, setNativePicking] = useState(false);
-  const [nativePickerAvailable, setNativePickerAvailable] = useState(false);
   const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false);
   const [worktreeContextMenu, setWorktreeContextMenu] = useState<WorktreeContextMenuState | null>(null);
 
   const workspaceMenuRef = useRef<HTMLDivElement>(null);
-  const pickCapabilitiesRef = useRef<{
-    preferNative: boolean;
-    localAccess: boolean;
-    nativePickerSupported: boolean;
-  } | null>(null);
-  const nativePickAbortRef = useRef<AbortController | null>(null);
 
   const closeProjectPicker = useCallback(() => {
     setProjectPickerOpen(false);
@@ -109,200 +101,14 @@ export const WorkspacePicker = memo(function WorkspacePicker({
 
   const handleDirectoryPicked = useCallback((cwd: string) => {
     setDirectoryPickerOpen(false);
-    setNativePicking(false);
     onActiveCwdChange(cwd);
     onClearWorktreeError?.();
   }, [onActiveCwdChange, onClearWorktreeError]);
 
-  const loadPickCapabilities = useCallback(async (signal?: AbortSignal) => {
-    if (pickCapabilitiesRef.current) return pickCapabilitiesRef.current;
-
-    // Browser-side hint only: when the page itself is on loopback, it is worth
-    // attempting the native chooser even if the server could not prove the peer
-    // yet (connection capture cold start). POST still enforces loopback.
-    const browserLoopback = (() => {
-      if (typeof window === "undefined") return false;
-      const host = window.location.hostname.toLowerCase();
-      return host === "localhost" || host === "127.0.0.1" || host === "[::1]" || host === "::1";
-    })();
-
-    try {
-      const res = await fetch("/api/cwd/pick-native", { signal });
-      const data = await res.json().catch(() => ({})) as {
-        preferNative?: boolean;
-        localAccess?: boolean;
-        nativePickerSupported?: boolean;
-        localAccessReason?: string | null;
-      };
-      const nativeSupported = Boolean(data.nativePickerSupported);
-      const serverLocal = Boolean(data.localAccess);
-      const preferNative =
-        Boolean(data.preferNative) ||
-        (nativeSupported && (serverLocal || (
-          browserLoopback && data.localAccessReason === "remote_address_unavailable"
-        )));
-      const caps = {
-        preferNative,
-        localAccess: serverLocal || browserLoopback,
-        nativePickerSupported: nativeSupported,
-      };
-      pickCapabilitiesRef.current = caps;
-      setNativePickerAvailable(caps.preferNative);
-      return caps;
-    } catch {
-      if (signal?.aborted) return null;
-      const caps = {
-        preferNative: browserLoopback,
-        localAccess: browserLoopback,
-        nativePickerSupported: browserLoopback,
-      };
-      pickCapabilitiesRef.current = caps;
-      setNativePickerAvailable(caps.preferNative);
-      return caps;
-    }
-  }, []);
-
-  // Warm local/native capability so Add Project can decide without an extra round-trip.
-  useEffect(() => {
-    const controller = new AbortController();
-    void loadPickCapabilities(controller.signal);
-    return () => controller.abort();
-  }, [loadPickCapabilities]);
-
-  useEffect(() => {
-    return () => {
-      nativePickAbortRef.current?.abort();
-      nativePickAbortRef.current = null;
-    };
-  }, []);
-
-  const validateAndSelectCwd = useCallback(async (path: string) => {
-    const res = await fetch("/api/cwd/validate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ cwd: path }),
-    });
-    const data = await res.json().catch(() => ({})) as { cwd?: string; error?: string };
-    if (!res.ok || data.error) {
-      throw new Error(data.error || `HTTP ${res.status}`);
-    }
-    handleDirectoryPicked(data.cwd ?? path);
-  }, [handleDirectoryPicked]);
-
-  /**
-   * Try host-OS folder chooser when browser↔server look local.
-   * Returns:
-   *  - "selected" when a path was validated and applied
-   *  - "cancelled" when the user dismissed the native dialog (no web fallback)
-   *  - "fallback" when native is unavailable / failed (open web browser)
-   */
-  const tryNativeDirectoryPick = useCallback(async (options?: {
-    /** When true, open web picker first is already done — keep it open on fallback. */
-    fromWebDialog?: boolean;
-  }): Promise<"selected" | "cancelled" | "fallback"> => {
-    if (nativePicking) return "fallback";
-
-    const caps = await loadPickCapabilities();
-    if (!caps?.preferNative) return "fallback";
-
-    nativePickAbortRef.current?.abort();
-    const controller = new AbortController();
-    nativePickAbortRef.current = controller;
-    setNativePicking(true);
-    if (!options?.fromWebDialog) {
-      closeProjectPicker();
-      showFolderStatus(t("sidebar.nativePickingProject"), 0);
-    }
-
-    try {
-      const res = await fetch("/api/cwd/pick-native", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ initialPath: activeCwd }),
-        signal: controller.signal,
-      });
-      const data = await res.json().catch(() => ({})) as {
-        path?: string;
-        error?: string;
-        code?: string;
-        cancelled?: boolean;
-      };
-
-      if (res.ok && data.path) {
-        await validateAndSelectCwd(data.path);
-        setFolderActionStatus(null);
-        return "selected";
-      }
-
-      if (data.cancelled || data.code === "cancelled") {
-        setFolderActionStatus(null);
-        return "cancelled";
-      }
-
-      if (data.code === "busy") {
-        showFolderStatus(t("sidebar.nativePickBusy"), 4000);
-        return options?.fromWebDialog ? "cancelled" : "fallback";
-      }
-
-      // Permanent capability miss — stop preferring native this session.
-      if (
-        res.status === 403 ||
-        data.code === "not_loopback" ||
-        data.code === "remote_address_unavailable" ||
-        data.code === "forwarded_non_loopback" ||
-        data.code === "host_not_loopback" ||
-        data.code === "unavailable"
-      ) {
-        pickCapabilitiesRef.current = {
-          preferNative: false,
-          localAccess: false,
-          nativePickerSupported: caps.nativePickerSupported && data.code !== "unavailable",
-        };
-        setNativePickerAvailable(false);
-      }
-
-      if (!options?.fromWebDialog) {
-        showFolderStatus(t("sidebar.nativePickFallback"), 2500);
-      }
-      return "fallback";
-    } catch (error) {
-      if (controller.signal.aborted) return "cancelled";
-      if (!options?.fromWebDialog) {
-        showFolderStatus(t("sidebar.nativePickFallback"), 2500);
-      }
-      void error;
-      return "fallback";
-    } finally {
-      if (nativePickAbortRef.current === controller) {
-        nativePickAbortRef.current = null;
-      }
-      setNativePicking(false);
-    }
-  }, [
-    activeCwd,
-    closeProjectPicker,
-    loadPickCapabilities,
-    nativePicking,
-    showFolderStatus,
-    t,
-    validateAndSelectCwd,
-  ]);
-
-  const openDirectoryPicker = useCallback(async () => {
+  const openDirectoryPicker = useCallback(() => {
     closeProjectPicker();
-    const outcome = await tryNativeDirectoryPick();
-    if (outcome === "selected" || outcome === "cancelled") return;
     setDirectoryPickerOpen(true);
-  }, [closeProjectPicker, tryNativeDirectoryPick]);
-
-  const handleRequestNativeFromWeb = useCallback(() => {
-    void (async () => {
-      const outcome = await tryNativeDirectoryPick({ fromWebDialog: true });
-      if (outcome === "selected") {
-        setDirectoryPickerOpen(false);
-      }
-    })();
-  }, [tryNativeDirectoryPick]);
+  }, [closeProjectPicker]);
 
   const handleDefaultCwd = useCallback(async () => {
     try {
@@ -563,9 +369,7 @@ export const WorkspacePicker = memo(function WorkspacePicker({
         onUseDefaultDirectory={() => {
           void handleDefaultCwd();
         }}
-        onAddProject={() => {
-          void openDirectoryPicker();
-        }}
+        onAddProject={openDirectoryPicker}
         onWorktreeContextMenu={(payload) => {
           setWorktreeContextMenu(payload);
         }}
@@ -574,13 +378,8 @@ export const WorkspacePicker = memo(function WorkspacePicker({
       <DirectoryPickerDialog
         open={directoryPickerOpen}
         initialPath={activeCwd}
-        onClose={() => {
-          if (!nativePicking) setDirectoryPickerOpen(false);
-        }}
+        onClose={() => setDirectoryPickerOpen(false)}
         onSelect={handleDirectoryPicked}
-        nativePickerAvailable={nativePickerAvailable}
-        nativePicking={nativePicking}
-        onRequestNativePicker={handleRequestNativeFromWeb}
       />
     </div>
   );

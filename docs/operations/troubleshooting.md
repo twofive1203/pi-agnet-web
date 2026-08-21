@@ -29,7 +29,7 @@
 - **429 on login:** the socket client IP exhausted its short in-process attempt bucket; wait and retry. Restart clears counters (single-instance behavior). Multi-instance would split buckets and is unsupported.
 - **Everyone logged out after ops change:** access key was rotated, or Agent data dir was not persisted (new empty `server-access.json`).
 - **Container loses key every deploy:** mount a persistent volume for `PI_CODING_AGENT_DIR`.
-- **Logged-in remote still cannot use Automation / native folder picker / browser bridge:** correct — those remain loopback-only and are not authorized by the global access key.
+- **Logged-in remote still cannot use Automation / browser bridge:** correct — those remain loopback-only and are not authorized by the global access key. Add Project uses the same web directory browser locally and remotely.
 - **Want Tailscale phone access without typing the key:** start with `--server` and configure durable allowlist in `~/.pi/agent/server-access-policy.json`:
   ```json
   { "version": 1, "authBypassCidrs": ["100.64.0.0/10"] }

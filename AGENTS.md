@@ -62,8 +62,7 @@ npm run dev     # http://localhost:62666
 | `npm run test:server-auth` | Server access-key domain, launcher options, and Proxy policy smokes. |
 | `npm run test:server-auth:e2e` | Post-build production E2E for access auth (first key, login, SSE/API gate, restart, rotation, trusted proxy). |
 | `npm run test:open-folder` | Local project-folder opening policy and route checks. |
-| `npm run test:cwd-browse` | Workspace directory browsing policy and route checks. |
-| `npm run test:cwd-native-pick` | Native folder-picker policy and route checks. |
+| `npm run test:cwd-browse` | Workspace directory browsing, web directory-picker model, and single-path Add Project checks. |
 | `npm run test:api-protection` | Local API mutation protection smoke suite. |
 | `npm run build` | Production/release build through `scripts/build-next.js`. Do not use for routine dev work. |
 | `npm run start` | Start the production server on port 62666 via `bin/pi-web.js` (loopback default). |
@@ -138,7 +137,7 @@ Keep this section short and operational; detailed rationale belongs in `docs/arc
 - Automation is independent of SnFlow and ordinary project sessions: data lives under `getAgentDir()/automations/`; Automation JSONL must not appear in default `/api/sessions` lists.
 - Automation effective tools are snapshot ∩ live policy and never fall back to dynamic `all`; unapproved extensions must not be imported by the scheduled loader.
 - `/api/automations/**` is local-only (direct loopback + control session); sensitive mutations require trusted UI confirmation (browser challenge or `ctx.ui.confirm`).
-- Official launchers default to loopback bind without auth; `--server`, `PI_WEB_SERVER_MODE=1`, or any non-loopback listen enables global access-key auth via root `proxy.ts`. Server mode requires effective HTTPS unless `--allow-insecure-http` / `PI_WEB_ALLOW_INSECURE_HTTP=1` explicitly opts into compatibility, and state-changing requests require exact same-origin. Optional auth-bypass CIDRs live in `server-access-policy.json` or `PI_WEB_AUTH_BYPASS_CIDRS`; match socket client IPs only, reject loopback/world-open rules, and never trust `X-Forwarded-For`. Auth success never relaxes Automation/native-picker/browser-bridge loopback gates.
+- Official launchers default to loopback bind without auth; `--server`, `PI_WEB_SERVER_MODE=1`, or any non-loopback listen enables global access-key auth via root `proxy.ts`. Server mode requires effective HTTPS unless `--allow-insecure-http` / `PI_WEB_ALLOW_INSECURE_HTTP=1` explicitly opts into compatibility, and state-changing requests require exact same-origin. Optional auth-bypass CIDRs live in `server-access-policy.json` or `PI_WEB_AUTH_BYPASS_CIDRS`; match socket client IPs only, reject loopback/world-open rules, and never trust `X-Forwarded-For`. Auth success never relaxes Automation or browser-bridge loopback gates.
 
 ## Standards and Validation
 

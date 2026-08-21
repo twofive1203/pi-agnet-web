@@ -259,3 +259,181 @@ export interface WorktreeActionState {
   error: string | null;
   dirtySummary?: string[];
 }
+
+export type DirectoryPickerPlatform = "win32" | "darwin" | "linux" | "other";
+
+export interface DirectoryPickerBreadcrumb {
+  label: string;
+  path: string;
+}
+
+export type DirectoryPickerShortcutKind = "home" | "root" | "project";
+
+export interface DirectoryPickerShortcut {
+  id: string;
+  kind: DirectoryPickerShortcutKind;
+  label: string;
+  path: string;
+}
+
+export function normalizeDirectoryPickerPlatform(raw?: string | null): DirectoryPickerPlatform {
+  if (raw === "win32" || raw === "darwin") return raw;
+  if (raw === "linux" || raw === "freebsd" || raw === "openbsd") return "linux";
+  return "other";
+}
+
+/** Compare server paths without Node `path`, using platform case rules. */
+export function normalizeDirectoryPickerPathKey(
+  rawPath: string,
+  platform: DirectoryPickerPlatform = "other",
+): string {
+  const trimmed = rawPath.trim();
+  if (!trimmed) return "";
+
+  if (platform === "win32" || /^(?:[A-Za-z]:|\\|\/\/)/.test(trimmed)) {
+    let value = trimmed.replace(/\//g, "\\");
+    if (/^[A-Za-z]:\\?$/.test(value)) {
+      return `${value[0]!.toLowerCase()}:\\`;
+    }
+    value = value.replace(/\\+$/, "");
+    return value.toLowerCase();
+  }
+
+  if (trimmed === "/") return "/";
+  return trimmed.replace(/\/+$/, "");
+}
+
+export function directoryPickerPathsEqual(
+  left: string,
+  right: string,
+  platform: DirectoryPickerPlatform = "other",
+): boolean {
+  const a = normalizeDirectoryPickerPathKey(left, platform);
+  const b = normalizeDirectoryPickerPathKey(right, platform);
+  return a.length > 0 && a === b;
+}
+
+export function splitDirectoryPickerBreadcrumbs(
+  rawPath: string,
+  platform: DirectoryPickerPlatform = "other",
+): DirectoryPickerBreadcrumb[] {
+  const trimmed = rawPath.trim();
+  if (!trimmed) return [];
+
+  if (/^(?:\\\\|\/\/)/.test(trimmed)) {
+    const normalized = trimmed.replace(/\//g, "\\").replace(/\\+$/, "");
+    const parts = normalized.slice(2).split("\\").filter(Boolean);
+    if (parts.length === 0) return [{ label: "\\\\", path: "\\\\" }];
+    if (parts.length === 1) {
+      const root = `\\\\${parts[0]}`;
+      return [{ label: root, path: root }];
+    }
+    const root = `\\\\${parts[0]}\\${parts[1]}`;
+    const crumbs: DirectoryPickerBreadcrumb[] = [{ label: root, path: root }];
+    let acc = root;
+    for (const part of parts.slice(2)) {
+      acc = `${acc}\\${part}`;
+      crumbs.push({ label: part, path: acc });
+    }
+    return crumbs;
+  }
+
+  const drive = trimmed.match(/^([A-Za-z]:)(.*)$/);
+  if (drive) {
+    const letter = `${drive[1][0]!.toUpperCase()}:`;
+    const rest = drive[2].replace(/^[\\/]+/, "").replace(/[\\/]+$/, "");
+    const crumbs: DirectoryPickerBreadcrumb[] = [{ label: letter, path: `${letter}\\` }];
+    if (!rest) return crumbs;
+    let acc = letter;
+    for (const part of rest.split(/[\\/]+/).filter(Boolean)) {
+      acc = `${acc}\\${part}`;
+      crumbs.push({ label: part, path: acc });
+    }
+    return crumbs;
+  }
+
+  if (trimmed === "/" || trimmed.replace(/\/+$/, "") === "") {
+    return [{ label: "/", path: "/" }];
+  }
+
+  if (trimmed.startsWith("/")) {
+    const crumbs: DirectoryPickerBreadcrumb[] = [{ label: "/", path: "/" }];
+    let acc = "";
+    for (const part of trimmed.replace(/\/+$/, "").slice(1).split("/").filter(Boolean)) {
+      acc = `${acc}/${part}`;
+      crumbs.push({ label: part, path: acc });
+    }
+    return crumbs;
+  }
+
+  const sep = platform === "win32" || trimmed.includes("\\") ? "\\" : "/";
+  const parts = trimmed.replace(/[\\/]+$/, "").split(/[\\/]+/).filter(Boolean);
+  const crumbs: DirectoryPickerBreadcrumb[] = [];
+  let acc = "";
+  for (const part of parts) {
+    acc = acc ? `${acc}${sep}${part}` : part;
+    crumbs.push({ label: part, path: acc });
+  }
+  return crumbs;
+}
+
+export function buildDirectoryPickerShortcuts(input: {
+  roots?: Array<{ name: string; path: string }> | null;
+  home?: string | null;
+  currentProjectPath?: string | null;
+  platform?: DirectoryPickerPlatform;
+}): DirectoryPickerShortcut[] {
+  const platform = input.platform ?? "other";
+  const seen = new Set<string>();
+  const shortcuts: DirectoryPickerShortcut[] = [];
+
+  const remember = (path: string): boolean => {
+    const key = normalizeDirectoryPickerPathKey(path, platform);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  };
+
+  for (const root of input.roots ?? []) {
+    if (!root.path || !remember(root.path)) continue;
+    const isHome =
+      root.name === "Home" ||
+      (!!input.home && directoryPickerPathsEqual(root.path, input.home, platform));
+    shortcuts.push({
+      id: isHome ? "home" : `root:${root.path}`,
+      kind: isHome ? "home" : "root",
+      label: root.name || (isHome ? "Home" : getCwdBaseName(root.path)),
+      path: root.path,
+    });
+  }
+
+  const project = input.currentProjectPath?.trim() ?? "";
+  if (project && remember(project)) {
+    shortcuts.push({
+      id: "project",
+      kind: "project",
+      label: getCwdBaseName(project),
+      path: project,
+    });
+  }
+
+  return shortcuts;
+}
+
+export function resolveDirectoryPickerFinalPath(
+  currentPath: string,
+  candidatePath?: string | null,
+): string {
+  const candidate = candidatePath?.trim() ?? "";
+  if (candidate) return candidate;
+  return currentPath.trim();
+}
+
+export function nextDirectoryPickerCandidate(
+  previousLocation: string,
+  nextLocation: string,
+  previousCandidate: string | null,
+): string | null {
+  if (previousLocation !== nextLocation) return null;
+  return previousCandidate;
+}
