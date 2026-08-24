@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url";
 import { getAgentLifecycleDirective } from "../lib/agent-lifecycle";
 import {
   agentMessageText,
+  canSubmitQueuedMessage,
   normalizeFollowUpQueue,
   removedFollowUpItems,
 } from "../lib/chat-follow-up-queue";
@@ -361,6 +362,21 @@ function checkFollowUpQueueProjection(): void {
     "queued",
     "attachment messages correlate by their text content",
   );
+  assert.equal(
+    canSubmitQueuedMessage({ agentRunning: true, writeLocked: false, sessionId: null }),
+    false,
+    "new-session queue actions stay unavailable until the real session id exists",
+  );
+  assert.equal(
+    canSubmitQueuedMessage({ agentRunning: true, writeLocked: false, sessionId: "session-ready" }),
+    true,
+    "running persisted sessions accept queued messages",
+  );
+  assert.equal(
+    canSubmitQueuedMessage({ agentRunning: true, writeLocked: true, sessionId: "session-ready" }),
+    false,
+    "read-only tabs cannot submit queued messages",
+  );
 }
 
 /** Source contract: useAgentSession must still settle on agent_settled, not bare agent_end. */
@@ -400,6 +416,13 @@ function checkHookSourceContract(): void {
     inputSource,
     /if \(accepted !== false\) clearEditor\(\)/,
     "Composer clears queued input only after server acceptance",
+  );
+
+  const windowSource = readFileSync(join(ROOT, "components", "ChatWindow.tsx"), "utf8");
+  assert.match(
+    windowSource,
+    /canSubmitQueuedMessage\(/,
+    "ChatWindow gates queue actions on the real session id",
   );
 
   const rpc = readFileSync(join(ROOT, "lib", "rpc-manager.ts"), "utf8");

@@ -1,5 +1,14 @@
 import type { AgentMessage } from "@/lib/types";
 
+/** Queue controls are valid only after a live prompt has a real session target. */
+export function canSubmitQueuedMessage(input: {
+  agentRunning: boolean;
+  writeLocked: boolean;
+  sessionId: string | null | undefined;
+}): boolean {
+  return input.agentRunning && !input.writeLocked && Boolean(input.sessionId);
+}
+
 /** Normalize the SDK's queue snapshot at the browser event/API boundary. */
 export function normalizeFollowUpQueue(value: unknown): string[] {
   return Array.isArray(value)

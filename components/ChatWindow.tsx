@@ -26,6 +26,7 @@ import {
   chatFailureTitleKey,
 } from "@/lib/chat-provider-errors";
 import { localizeError } from "@/lib/i18n";
+import { canSubmitQueuedMessage } from "@/lib/chat-follow-up-queue";
 import type { PackageUpdateCheckResult } from "@/lib/package-update-check";
 
 /**
@@ -351,6 +352,11 @@ export const ChatWindow = memo(function ChatWindow({ session, newSessionCwd, onA
   const isArchived = !!session?.archived;
 
   const writeLocked = sessionTabLock.writeLocked;
+  const queuedMessageActionsReady = canSubmitQueuedMessage({
+    agentRunning,
+    writeLocked,
+    sessionId: session?.id,
+  });
 
   const archivedBannerElement = isArchived ? (
     <div className="chat-archived-banner">
@@ -392,8 +398,8 @@ export const ChatWindow = memo(function ChatWindow({ session, newSessionCwd, onA
       onSend={handleSend}
       cwd={session?.cwd ?? newSessionCwd}
       onAbort={handleAbort}
-      onSteer={agentRunning && !writeLocked ? handleSteer : undefined}
-      onFollowUp={agentRunning && !writeLocked ? handleFollowUp : undefined}
+      onSteer={queuedMessageActionsReady ? handleSteer : undefined}
+      onFollowUp={queuedMessageActionsReady ? handleFollowUp : undefined}
       isStreaming={agentRunning}
       model={displayModelValue}
       modelNames={modelNames}
