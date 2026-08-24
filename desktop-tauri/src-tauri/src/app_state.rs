@@ -847,8 +847,15 @@ fn spawn_observer_loop(state: Arc<AppState>) {
         .name("snail-pi-tauri-observer".to_string())
         .spawn(move || {
             let mut attempt = 0u32;
+            let mut initial_probe = true;
             while !state.stopped.load(Ordering::SeqCst) {
-                match state.client.start(now_ms()) {
+                let probe = if initial_probe {
+                    initial_probe = false;
+                    state.client.start(now_ms())
+                } else {
+                    state.client.reattach(now_ms())
+                };
+                match probe {
                     ProbeResult::Ok(_) => {
                         attempt = 0;
                         stream_observer_sse(&state);
@@ -892,7 +899,7 @@ fn stream_observer_sse(state: &AppState) {
         Ok(response) => response,
         Err(ureq::Error::Status(401 | 403, _)) => {
             if state.generation_matches(generation) {
-                state.client.handle_token_expiry(now_ms());
+                state.client.prepare_token_renewal();
             }
             return;
         }
@@ -905,7 +912,7 @@ fn stream_observer_sse(state: &AppState) {
                 classified,
                 crate::connection_state::DesktopConnectionEvent::ConnectionRefused
             ) {
-                state.client.handle_token_expiry(now_ms());
+                state.client.prepare_token_renewal();
             }
             return;
         }

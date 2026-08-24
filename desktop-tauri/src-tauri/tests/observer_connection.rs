@@ -2,7 +2,7 @@ use serde_json::{json, Value};
 use snail_pi_pet_tauri_preview_lib::connection_state::{
     acknowledge_connection_baseline, create_initial_connection_state, is_loopback_observer_url,
     is_target_scoped_url, public_connection_state, reduce_connection_state, ConnectionTarget,
-    DesktopConnectionEvent, DesktopConnectionReasonCode,
+    DesktopConnectionEvent, DesktopConnectionReasonCode, DesktopConnectionStatus,
 };
 use snail_pi_pet_tauri_preview_lib::observer_client::{
     classify_fetch_failure, interpret_health_payload, interpret_protocol_payload,
@@ -19,6 +19,44 @@ fn fixtures() -> Value {
         "connection fixtures must not embed secret keys"
     );
     serde_json::from_str(&raw).expect("parse connection fixtures")
+}
+
+fn successful_probe_steps(token: &str) -> Vec<ScriptedStep> {
+    vec![
+        ScriptedStep {
+            match_url: "/api/health".to_string(),
+            status: 200,
+            connection_refused: false,
+            body: json!({ "ok": true, "instanceId": "inst-1" }).to_string(),
+            sse_chunks: None,
+        },
+        ScriptedStep {
+            match_url: "/protocol".to_string(),
+            status: 200,
+            connection_refused: false,
+            body: json!({
+                "product": "snail-pi-web",
+                "protocolVersion": 1,
+                "mode": "local",
+                "compatible": true,
+                "instanceId": "inst-1"
+            })
+            .to_string(),
+            sse_chunks: None,
+        },
+        ScriptedStep {
+            match_url: "/session".to_string(),
+            status: 200,
+            connection_refused: false,
+            body: json!({
+                "token": token,
+                "expiresAt": 999999,
+                "instanceId": "inst-1"
+            })
+            .to_string(),
+            sse_chunks: None,
+        },
+    ]
 }
 
 #[test]
@@ -178,41 +216,7 @@ fn loopback_url_allowlist_rejects_non_local_hosts() {
 
 #[test]
 fn scripted_probe_keeps_token_out_of_connection_state() {
-    let transport = ScriptedTransport::new(vec![
-        ScriptedStep {
-            match_url: "/api/health".to_string(),
-            status: 200,
-            connection_refused: false,
-            body: json!({ "ok": true, "instanceId": "inst-1" }).to_string(),
-            sse_chunks: None,
-        },
-        ScriptedStep {
-            match_url: "/protocol".to_string(),
-            status: 200,
-            connection_refused: false,
-            body: json!({
-                "product": "snail-pi-web",
-                "protocolVersion": 1,
-                "mode": "local",
-                "compatible": true,
-                "instanceId": "inst-1"
-            })
-            .to_string(),
-            sse_chunks: None,
-        },
-        ScriptedStep {
-            match_url: "/session".to_string(),
-            status: 200,
-            connection_refused: false,
-            body: json!({
-                "token": "secret-token",
-                "expiresAt": 999999,
-                "instanceId": "inst-1"
-            })
-            .to_string(),
-            sse_chunks: None,
-        },
-    ]);
+    let transport = ScriptedTransport::new(successful_probe_steps("secret-token"));
     let client = ObserverClient::new(62666, 1, transport, None, None, None);
     let result = client.probe();
     match result {
@@ -225,6 +229,84 @@ fn scripted_probe_keeps_token_out_of_connection_state() {
     let state = serde_json::to_string(&client.get_state()).unwrap();
     assert!(!state.contains("secret-token"));
     assert!(!state.contains("\"token\""));
+}
+
+#[test]
+fn planned_token_renewal_stays_connected_during_successful_reattach() {
+    let observed = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let observed_for_callback = observed.clone();
+    let transport = ScriptedTransport::new(
+        successful_probe_steps("initial-token")
+            .into_iter()
+            .chain(successful_probe_steps("renewed-token"))
+            .collect(),
+    );
+    let client = ObserverClient::new(
+        62666,
+        1,
+        transport,
+        None,
+        Some(std::sync::Arc::new(move |state| {
+            observed_for_callback
+                .lock()
+                .expect("observed state lock")
+                .push(state.status);
+        })),
+        None,
+    );
+
+    assert!(matches!(client.start(1), ProbeResult::Ok(_)));
+    assert_eq!(
+        client.get_state().status,
+        DesktopConnectionStatus::Connected
+    );
+    observed.lock().expect("observed state lock").clear();
+
+    client.handle_sse_message(None, r#"{"type":"error","code":"token_expired"}"#, 2);
+    assert_eq!(client.token_for_tests(), None);
+    assert_eq!(
+        client.get_state().status,
+        DesktopConnectionStatus::Connected
+    );
+    assert!(observed.lock().expect("observed state lock").is_empty());
+
+    assert!(matches!(client.reattach(3), ProbeResult::Ok(_)));
+    assert_eq!(
+        client.get_state().status,
+        DesktopConnectionStatus::Connected
+    );
+    assert_eq!(
+        *observed.lock().expect("observed state lock"),
+        vec![DesktopConnectionStatus::Connected]
+    );
+}
+
+#[test]
+fn failed_automatic_reattach_still_reports_real_outage() {
+    let transport = ScriptedTransport::new(
+        successful_probe_steps("initial-token")
+            .into_iter()
+            .chain([ScriptedStep {
+                match_url: "/api/health".to_string(),
+                status: 0,
+                connection_refused: true,
+                body: String::new(),
+                sse_chunks: None,
+            }])
+            .collect(),
+    );
+    let client = ObserverClient::new(62666, 1, transport, None, None, None);
+
+    assert!(matches!(client.start(1), ProbeResult::Ok(_)));
+    client.handle_sse_message(None, r#"{"type":"error","code":"token_expired"}"#, 2);
+    assert!(matches!(
+        client.reattach(3),
+        ProbeResult::Err(DesktopConnectionEvent::ConnectionRefused)
+    ));
+    assert_eq!(
+        client.get_state().status,
+        DesktopConnectionStatus::ServiceNotRunning
+    );
 }
 
 #[test]

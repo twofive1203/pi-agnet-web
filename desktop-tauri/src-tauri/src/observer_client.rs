@@ -747,6 +747,12 @@ impl<T: DesktopTransport> ObserverClient<T> {
         self.probe_and_attach(now)
     }
 
+    /// Automatic renewal/recovery keeps the last connected view until the
+    /// complete probe proves that the service is unavailable.
+    pub fn reattach(&self, now: i64) -> ProbeResult {
+        self.probe_and_attach(now)
+    }
+
     pub fn consume_notification_baseline(&self, now: i64) {
         if let Ok(mut state) = self.state.lock() {
             *state = crate::connection_state::acknowledge_connection_baseline(&state, now);
@@ -908,7 +914,7 @@ impl<T: DesktopTransport> ObserverClient<T> {
         }
         if unwrapped.kind == "error" {
             if unwrapped.code.as_deref() == Some("token_expired") {
-                self.handle_token_expiry(now);
+                self.prepare_token_renewal();
                 return;
             }
             self.dispatch(
@@ -983,10 +989,14 @@ impl<T: DesktopTransport> ObserverClient<T> {
         }
     }
 
-    pub fn handle_token_expiry(&self, now: i64) {
+    pub fn prepare_token_renewal(&self) {
         if let Ok(mut token) = self.token.lock() {
             *token = None;
         }
+    }
+
+    pub fn handle_token_expiry(&self, now: i64) {
+        self.prepare_token_renewal();
         self.dispatch(DesktopConnectionEvent::TokenRejected, now);
     }
 
