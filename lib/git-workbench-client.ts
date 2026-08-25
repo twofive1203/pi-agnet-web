@@ -9,6 +9,112 @@ import type {
   GitWorkbenchRef,
 } from "@/lib/types";
 
+export const GIT_WORKBENCH_LAYOUT_STORAGE_KEY = "pi-web-git-workbench-layout-v1";
+export const GIT_WORKBENCH_RESIZE_HANDLE_SIZE = 6;
+export const GIT_WORKBENCH_MIN_REFS_WIDTH = 190;
+export const GIT_WORKBENCH_MIN_LOG_WIDTH = 420;
+export const GIT_WORKBENCH_MIN_INSPECTOR_WIDTH = 300;
+export const GIT_WORKBENCH_MIN_INSPECTOR_SECTION_HEIGHT = 180;
+export const GIT_WORKBENCH_RESIZE_STEP = 16;
+export const GIT_WORKBENCH_RESIZE_STEP_LARGE = 48;
+
+export interface GitWorkbenchLayoutPreference {
+  refsWidth: number;
+  inspectorWidth: number;
+  changesRatio: number;
+}
+
+export const DEFAULT_GIT_WORKBENCH_LAYOUT: GitWorkbenchLayoutPreference = {
+  refsWidth: 240,
+  inspectorWidth: 420,
+  changesRatio: 0.5,
+};
+
+interface GitWorkbenchSizeBounds {
+  min: number;
+  max: number;
+}
+
+function clampWorkbenchSize(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+function finitePreferenceNumber(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+export function parseGitWorkbenchLayoutPreference(raw: string | null): GitWorkbenchLayoutPreference {
+  if (!raw) return { ...DEFAULT_GIT_WORKBENCH_LAYOUT };
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return { ...DEFAULT_GIT_WORKBENCH_LAYOUT };
+    }
+    const stored = parsed as Record<string, unknown>;
+    return {
+      refsWidth: Math.max(0, Math.round(finitePreferenceNumber(stored.refsWidth, DEFAULT_GIT_WORKBENCH_LAYOUT.refsWidth))),
+      inspectorWidth: Math.max(0, Math.round(finitePreferenceNumber(stored.inspectorWidth, DEFAULT_GIT_WORKBENCH_LAYOUT.inspectorWidth))),
+      changesRatio: clampWorkbenchSize(
+        finitePreferenceNumber(stored.changesRatio, DEFAULT_GIT_WORKBENCH_LAYOUT.changesRatio),
+        0,
+        1,
+      ),
+    };
+  } catch {
+    return { ...DEFAULT_GIT_WORKBENCH_LAYOUT };
+  }
+}
+
+function usableWorkbenchWidth(containerWidth: number): number {
+  return Math.max(0, Math.round(containerWidth) - GIT_WORKBENCH_RESIZE_HANDLE_SIZE * 2);
+}
+
+export function getGitWorkbenchRefsWidthBounds(
+  containerWidth: number,
+  inspectorWidth: number,
+): GitWorkbenchSizeBounds {
+  const max = usableWorkbenchWidth(containerWidth)
+    - GIT_WORKBENCH_MIN_LOG_WIDTH
+    - Math.max(GIT_WORKBENCH_MIN_INSPECTOR_WIDTH, inspectorWidth);
+  return { min: GIT_WORKBENCH_MIN_REFS_WIDTH, max: Math.max(GIT_WORKBENCH_MIN_REFS_WIDTH, max) };
+}
+
+export function getGitWorkbenchInspectorWidthBounds(
+  containerWidth: number,
+  refsWidth: number,
+): GitWorkbenchSizeBounds {
+  const max = usableWorkbenchWidth(containerWidth)
+    - GIT_WORKBENCH_MIN_LOG_WIDTH
+    - Math.max(GIT_WORKBENCH_MIN_REFS_WIDTH, refsWidth);
+  return { min: GIT_WORKBENCH_MIN_INSPECTOR_WIDTH, max: Math.max(GIT_WORKBENCH_MIN_INSPECTOR_WIDTH, max) };
+}
+
+export function clampGitWorkbenchColumns(
+  containerWidth: number,
+  preference: GitWorkbenchLayoutPreference,
+): GitWorkbenchLayoutPreference {
+  const refsBounds = getGitWorkbenchRefsWidthBounds(containerWidth, preference.inspectorWidth);
+  const refsWidth = Math.round(clampWorkbenchSize(preference.refsWidth, refsBounds.min, refsBounds.max));
+  const inspectorBounds = getGitWorkbenchInspectorWidthBounds(containerWidth, refsWidth);
+  const inspectorWidth = Math.round(clampWorkbenchSize(
+    preference.inspectorWidth,
+    inspectorBounds.min,
+    inspectorBounds.max,
+  ));
+  return { ...preference, refsWidth, inspectorWidth };
+}
+
+export function getGitWorkbenchChangesRatioBounds(containerHeight: number): GitWorkbenchSizeBounds {
+  const usableHeight = Math.max(1, Math.round(containerHeight) - GIT_WORKBENCH_RESIZE_HANDLE_SIZE);
+  const min = Math.min(0.5, GIT_WORKBENCH_MIN_INSPECTOR_SECTION_HEIGHT / usableHeight);
+  return { min, max: 1 - min };
+}
+
+export function clampGitWorkbenchChangesRatio(ratio: number, containerHeight: number): number {
+  const bounds = getGitWorkbenchChangesRatioBounds(containerHeight);
+  return clampWorkbenchSize(ratio, bounds.min, bounds.max);
+}
+
 export class GitWorkbenchClientError extends Error {
   constructor(
     message: string,

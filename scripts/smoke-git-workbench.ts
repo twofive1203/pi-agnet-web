@@ -22,7 +22,12 @@ import { executeGitWorkbenchOperation } from "../lib/git-workbench-operations";
 import {
   buildGitChangedFileTree,
   buildGitRemoteRefGroups,
+  clampGitWorkbenchChangesRatio,
+  clampGitWorkbenchColumns,
   collectGitFileTreeFolderIds,
+  DEFAULT_GIT_WORKBENCH_LAYOUT,
+  getGitWorkbenchChangesRatioBounds,
+  parseGitWorkbenchLayoutPreference,
 } from "../lib/git-workbench-client";
 import { buildGitWorkbenchUrl } from "../lib/git-workbench-url";
 
@@ -86,6 +91,20 @@ async function main(): Promise<void> {
     assert.equal(tree[1]?.name, "README.md");
     assert.equal(tree[0]?.children?.[1]?.change?.oldFile, "old/b.ts");
     assert.deepEqual([...collectGitFileTreeFolderIds(tree)], ["folder:src/deep/module"]);
+
+    assert.deepEqual(parseGitWorkbenchLayoutPreference(null), DEFAULT_GIT_WORKBENCH_LAYOUT);
+    assert.deepEqual(parseGitWorkbenchLayoutPreference("not-json"), DEFAULT_GIT_WORKBENCH_LAYOUT);
+    assert.deepEqual(
+      parseGitWorkbenchLayoutPreference(JSON.stringify({ refsWidth: 312.4, inspectorWidth: 506.7, changesRatio: 0.64 })),
+      { refsWidth: 312, inspectorWidth: 507, changesRatio: 0.64 },
+    );
+    assert.deepEqual(
+      clampGitWorkbenchColumns(960, { refsWidth: 240, inspectorWidth: 420, changesRatio: 0.5 }),
+      { refsWidth: 190, inspectorWidth: 338, changesRatio: 0.5 },
+    );
+    assert.deepEqual(getGitWorkbenchChangesRatioBounds(606), { min: 0.3, max: 0.7 });
+    assert.equal(clampGitWorkbenchChangesRatio(0.1, 606), 0.3);
+    assert.equal(clampGitWorkbenchChangesRatio(0.9, 606), 0.7);
 
     const overview = await currentOverview(repo);
     assert.equal(overview.currentBranch, "main");

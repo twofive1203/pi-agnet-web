@@ -1,12 +1,17 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { GitCommitDetails } from "@/components/GitCommitDetails";
 import { GitCommitDiffModal } from "@/components/GitCommitDiffModal";
 import { useI18n } from "@/components/I18nProvider";
 import {
   buildGitChangedFileTree,
+  clampGitWorkbenchChangesRatio,
   collectGitFileTreeFolderIds,
+  getGitWorkbenchChangesRatioBounds,
+  GIT_WORKBENCH_RESIZE_HANDLE_SIZE,
+  GIT_WORKBENCH_RESIZE_STEP,
+  GIT_WORKBENCH_RESIZE_STEP_LARGE,
   type GitFileTreeNode,
 } from "@/lib/git-workbench-client";
 import type { GitCommitChangedFile, GitCommitDetail } from "@/lib/types";
@@ -16,17 +21,28 @@ export function GitCommitInspector({
   detail,
   loading,
   error,
+  splitRatio,
+  onSplitRatioChange,
 }: {
   cwd: string;
   detail: GitCommitDetail | null;
   loading: boolean;
   error: string | null;
+  splitRatio: number;
+  onSplitRatioChange: (ratio: number, persist: boolean) => void;
 }) {
   const { t } = useI18n();
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [selectedFile, setSelectedFile] = useState<GitCommitChangedFile | null>(null);
   const [diffFile, setDiffFile] = useState<GitCommitChangedFile | null>(null);
+  const [splitResizing, setSplitResizing] = useState(false);
+  const inspectorRef = useRef<HTMLElement>(null);
+  const splitRatioRef = useRef(splitRatio);
   const tree = useMemo(() => buildGitChangedFileTree(detail?.files ?? []), [detail?.files]);
+
+  useEffect(() => {
+    splitRatioRef.current = splitRatio;
+  }, [splitRatio]);
 
   useEffect(() => {
     setExpanded(collectGitFileTreeFolderIds(tree));
@@ -43,8 +59,74 @@ export function GitCommitInspector({
     });
   };
 
+  const previewSplitRatio = (ratio: number) => {
+    const inspector = inspectorRef.current;
+    if (!inspector) return;
+    splitRatioRef.current = ratio;
+    inspector.style.setProperty("--git-workbench-changes-size", `${ratio}fr`);
+    inspector.style.setProperty("--git-workbench-details-size", `${1 - ratio}fr`);
+  };
+
+  const handleSplitPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    const inspector = inspectorRef.current;
+    if (!inspector) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const rect = inspector.getBoundingClientRect();
+    const usableHeight = Math.max(1, rect.height - GIT_WORKBENCH_RESIZE_HANDLE_SIZE);
+    const previousUserSelect = document.body.style.userSelect;
+    const previousCursor = document.body.style.cursor;
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = "row-resize";
+    setSplitResizing(true);
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      const ratio = clampGitWorkbenchChangesRatio((moveEvent.clientY - rect.top) / usableHeight, rect.height);
+      previewSplitRatio(ratio);
+    };
+    const handlePointerUp = () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerUp);
+      document.body.style.userSelect = previousUserSelect;
+      document.body.style.cursor = previousCursor;
+      setSplitResizing(false);
+      onSplitRatioChange(splitRatioRef.current, true);
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerUp);
+  };
+
+  const handleSplitKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const inspector = inspectorRef.current;
+    if (!inspector) return;
+    const bounds = getGitWorkbenchChangesRatioBounds(inspector.clientHeight);
+    const usableHeight = Math.max(1, inspector.clientHeight - GIT_WORKBENCH_RESIZE_HANDLE_SIZE);
+    const step = (event.shiftKey ? GIT_WORKBENCH_RESIZE_STEP_LARGE : GIT_WORKBENCH_RESIZE_STEP) / usableHeight;
+    let nextRatio: number;
+    if (event.key === "Home") nextRatio = bounds.min;
+    else if (event.key === "End") nextRatio = bounds.max;
+    else if (event.key === "ArrowUp") nextRatio = splitRatioRef.current - step;
+    else if (event.key === "ArrowDown") nextRatio = splitRatioRef.current + step;
+    else return;
+    event.preventDefault();
+    const clamped = clampGitWorkbenchChangesRatio(nextRatio, inspector.clientHeight);
+    splitRatioRef.current = clamped;
+    onSplitRatioChange(clamped, true);
+  };
+
+  const inspectorHeight = inspectorRef.current?.clientHeight ?? 720;
+  const displayedSplitRatio = clampGitWorkbenchChangesRatio(splitRatio, inspectorHeight);
+  const splitBounds = getGitWorkbenchChangesRatioBounds(inspectorHeight);
+  const inspectorStyle = {
+    "--git-workbench-changes-size": `${displayedSplitRatio}fr`,
+    "--git-workbench-details-size": `${1 - displayedSplitRatio}fr`,
+  } as CSSProperties;
+
   return (
-    <aside className="git-workbench-inspector">
+    <aside ref={inspectorRef} className="git-workbench-inspector" style={inspectorStyle}>
       <section className="git-workbench-inspector-section is-changes" aria-label={t("git.changedFiles")}>
         <div className="git-workbench-pane-title">
           <strong>{t("git.changedFiles")}</strong>
@@ -70,6 +152,19 @@ export function GitCommitInspector({
           {detail?.filesTruncated && <div className="git-workbench-limit-note">{t("git.workbench.filesTruncated")}</div>}
         </div>
       </section>
+      <div
+        className={`panel-resize-handle git-workbench-resize-handle is-row${splitResizing ? " is-active" : ""}`}
+        role="separator"
+        aria-orientation="horizontal"
+        aria-valuemin={Math.round(splitBounds.min * 100)}
+        aria-valuemax={Math.round(splitBounds.max * 100)}
+        aria-valuenow={Math.round(displayedSplitRatio * 100)}
+        aria-label={t("git.workbench.resizeChanges")}
+        title={t("git.workbench.resizeChanges")}
+        tabIndex={0}
+        onPointerDown={handleSplitPointerDown}
+        onKeyDown={handleSplitKeyDown}
+      />
       <section className="git-workbench-inspector-section is-details" aria-label={t("git.commitDetails")}>
         <div className="git-workbench-pane-title"><strong>{t("git.commitDetails")}</strong></div>
         <div className="git-workbench-detail-scroll">

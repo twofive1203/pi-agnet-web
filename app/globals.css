@@ -10894,7 +10894,12 @@ button.inspector-list-row { cursor: pointer; }
 .git-workbench-layout {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(190px, 240px) minmax(420px, 1fr) minmax(300px, 0.72fr);
+  grid-template-columns:
+    minmax(190px, var(--git-workbench-refs-width, 240px))
+    6px
+    minmax(420px, 1fr)
+    6px
+    minmax(300px, var(--git-workbench-inspector-width, 420px));
   flex: 1;
   min-width: 0;
   min-height: 0;
@@ -10903,8 +10908,12 @@ button.inspector-list-row { cursor: pointer; }
 .git-workbench-refs-shell,
 .git-workbench-log-shell,
 .git-workbench-inspector { min-width: 0; min-height: 0; overflow: hidden; background: var(--surface-panel); }
-.git-workbench-refs-shell { border-right: 1px solid var(--border-default); }
-.git-workbench-log-shell { display: flex; flex-direction: column; border-right: 1px solid var(--border-default); }
+.git-workbench-log-shell { display: flex; flex-direction: column; }
+.git-workbench-resize-handle { align-self: stretch; justify-self: stretch; z-index: 2; }
+.git-workbench-resize-handle.is-column { width: 6px; cursor: col-resize; }
+.git-workbench-resize-handle.is-column::after { top: 0; bottom: 0; left: 50%; width: 1px; }
+.git-workbench-resize-handle.is-row { width: 100%; height: 6px; cursor: row-resize; }
+.git-workbench-resize-handle.is-row::after { top: 50%; right: 0; left: 0; height: 1px; }
 .git-workbench-refs { height: 100%; padding: 8px 6px; overflow: auto; }
 .git-workbench-ref-row { display: flex; align-items: center; min-width: 0; min-height: 34px; border-radius: var(--radius-control); background: transparent; color: var(--text-secondary); }
 .git-workbench-ref-row.is-all { width: 100%; gap: 7px; padding: 4px 8px; border: 0; cursor: pointer; font-weight: 750; text-align: left; }
@@ -10978,9 +10987,14 @@ button.inspector-list-row { cursor: pointer; }
 .commit-graph-more-button:hover,
 .commit-graph-more-button:focus-visible { background: var(--surface-hover); color: var(--text-primary); }
 .commit-graph-more-button:focus-visible { outline: var(--focus-ring-width) solid var(--focus-ring-color); }
-.git-workbench-inspector { display: grid; grid-template-rows: minmax(180px, 1fr) minmax(180px, 1fr); }
+.git-workbench-inspector {
+  display: grid;
+  grid-template-rows:
+    minmax(180px, var(--git-workbench-changes-size, 0.5fr))
+    6px
+    minmax(180px, var(--git-workbench-details-size, 0.5fr));
+}
 .git-workbench-inspector-section { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
-.git-workbench-inspector-section.is-changes { border-bottom: 1px solid var(--border-default); }
 .git-workbench-pane-title { display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; min-height: 38px; padding: 8px 10px; border-bottom: 1px solid var(--border-subtle); background: var(--surface-raised); font-size: 12px; }
 .git-workbench-pane-title span { color: var(--text-tertiary); font-family: var(--font-mono); }
 .git-workbench-tree,
@@ -11065,6 +11079,9 @@ button.inspector-list-row { cursor: pointer; }
 
 @media (min-width: 641px) and (max-width: 959px) {
   .git-workbench-layout { grid-template-columns: minmax(0, 1fr) minmax(300px, 40vw); }
+  .git-workbench-resize-handle { display: none; }
+  .git-workbench-log-shell { border-right: 1px solid var(--border-default); }
+  .git-workbench-inspector { grid-template-rows: minmax(180px, 1fr) minmax(180px, 1fr); }
   .git-workbench-refs-shell { position: fixed; z-index: var(--z-inspector-drawer); top: 52px; bottom: 0; left: 0; width: min(320px, 82vw); border-right: 1px solid var(--border-strong); box-shadow: var(--shadow-panel); transform: translateX(-105%); transition: transform var(--motion-duration-base) var(--motion-ease-emphasized); }
   .git-workbench-layout.is-refs-open .git-workbench-refs-shell { transform: translateX(0); }
   .git-workbench-refs-drawer-trigger { display: inline-flex; align-self: flex-start; margin: 6px 8px 0; }
