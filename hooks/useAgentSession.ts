@@ -5,11 +5,22 @@ import { useI18n } from "@/components/I18nProvider";
 import type {
   AgentMessage,
   SessionBillingStats,
+  SessionContextState,
   SessionInfo,
   SessionPerformanceSummary,
+  SessionTranscriptPage,
   SessionTreeNode,
 } from "@/lib/types";
 import { selectLatestSessionPerformance } from "@/lib/session-performance-client";
+import {
+  emptyTranscriptClientState,
+  isStaleTranscriptResponse,
+  mergeTranscriptTail,
+  prependTranscriptPage,
+  replaceTranscriptPage,
+  restoreScrollAfterPrepend,
+  type TranscriptClientState,
+} from "@/lib/session-transcript-client";
 import { useExtensionUi } from "@/hooks/useExtensionUi";
 import {
   hasUrgentSubagentUpdate,
@@ -78,7 +89,10 @@ export interface SessionData {
   sessionStats: SessionBillingStats | null;
   /** Durable accurate performance summary; null/absent when no valid samples. */
   sessionPerformance?: SessionPerformanceSummary | null;
-  context: {
+  contextState?: SessionContextState;
+  transcript?: SessionTranscriptPage;
+  /** Compat default detail payload. Chat view omits this unbounded model context. */
+  context?: {
     messages: AgentMessage[];
     entryIds: string[];
     thinkingLevel: string;
@@ -265,6 +279,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [activeLeafId, setActiveLeafId] = useState<string | null>(null);
   const [messages, setMessages] = useState<AgentMessage[]>([]);
   const [entryIds, setEntryIds] = useState<string[]>([]);
+  const [hasMoreBefore, setHasMoreBefore] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [loadOlderError, setLoadOlderError] = useState<string | null>(null);
   const [streamState, dispatch] = useReducer(streamReducer, { isStreaming: false, streamingMessage: null });
   const [agentRunning, setAgentRunning] = useState(false);
   const [modelNames, setModelNames] = useState<Record<string, string>>({});
@@ -325,6 +342,26 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const autoScrollStickyRef = useRef(true);
   const sessionLoadRequestRef = useRef(0);
   const contextLoadRequestRef = useRef(0);
+  const transcriptRequestRef = useRef(0);
+  const activeLeafIdRef = useRef<string | null>(null);
+  const nextBeforeEntryIdRef = useRef<string | null>(null);
+  const hasMoreBeforeRef = useRef(false);
+  const loadingOlderRef = useRef(false);
+  const skipAutoScrollRef = useRef(false);
+  const prependScrollAnchorRef = useRef<{ scrollHeight: number; scrollTop: number } | null>(null);
+  const transcriptStateRef = useRef<TranscriptClientState>(emptyTranscriptClientState());
+
+  const applyTranscriptState = useCallback((next: TranscriptClientState) => {
+    transcriptStateRef.current = next;
+    setMessages(next.messages);
+    setEntryIds(next.entryIds);
+    setHasMoreBefore(next.hasMoreBefore);
+    hasMoreBeforeRef.current = next.hasMoreBefore;
+    nextBeforeEntryIdRef.current = next.nextBeforeEntryId;
+    if (next.leafId !== undefined) {
+      activeLeafIdRef.current = next.leafId;
+    }
+  }, []);
 
   const setNewSessionModel = opts.setNewSessionModel ?? setNewSessionModelState;
   const setToolPresetState = opts.setToolPreset ?? setToolPreset;
@@ -363,7 +400,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     }
   }, [flushSubagentRuns, scheduleSubagentFlush]);
 
-  const currentModel = currentModelOverride ?? data?.context.model ?? pendingModel ?? null;
+  const currentModel = currentModelOverride ?? data?.contextState?.model ?? data?.context?.model ?? pendingModel ?? null;
   const displayModel = isNew ? newSessionModel : currentModel;
 
   const currentContextStats = useMemo(() => {
@@ -394,16 +431,24 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     setPendingFollowUps(next);
   }, []);
 
-  const loadSession = useCallback(async (sid: string, showLoading = false, includeState = false) => {
+  const loadSession = useCallback(async (
+    sid: string,
+    showLoading = false,
+    includeState = false,
+    mode: "replace" | "merge-tail" = "replace",
+  ) => {
     const requestId = ++sessionLoadRequestRef.current;
     const requestedAt = Date.now();
     const followUpQueueEventVersion = followUpQueueEventVersionRef.current;
-    ++contextLoadRequestRef.current;
+    if (mode === "replace") {
+      ++contextLoadRequestRef.current;
+      ++transcriptRequestRef.current;
+    }
     try {
       if (showLoading) setLoading(true);
       const url = includeState
-        ? `/api/sessions/${encodeURIComponent(sid)}?includeState`
-        : `/api/sessions/${encodeURIComponent(sid)}`;
+        ? `/api/sessions/${encodeURIComponent(sid)}?view=chat&includeState`
+        : `/api/sessions/${encodeURIComponent(sid)}?view=chat`;
       const res = await fetch(url);
       if (requestId !== sessionLoadRequestRef.current || sid !== sessionIdRef.current) return null;
       if (res.status === 404) {
@@ -411,7 +456,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           setData(null);
           setSessionPerformance(null);
           setActiveLeafId(null);
-          setMessages([]);
+          activeLeafIdRef.current = null;
+          applyTranscriptState(emptyTranscriptClientState());
           setError(null);
         }
         return null;
@@ -424,19 +470,29 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         current,
         d.sessionPerformance,
       ));
-      setActiveLeafId(d.leafId);
-      setMessages(d.context.messages);
-      setEntryIds(d.context.entryIds ?? []);
+      const page = d.transcript;
+      const leafChanged = Boolean(d.leafId && d.leafId !== activeLeafIdRef.current);
+      if (page && mode === "merge-tail" && !leafChanged) {
+        applyTranscriptState(mergeTranscriptTail(transcriptStateRef.current, page));
+      } else if (page) {
+        setActiveLeafId(d.leafId);
+        activeLeafIdRef.current = d.leafId;
+        applyTranscriptState(replaceTranscriptPage(page));
+      } else {
+        setActiveLeafId(d.leafId);
+        activeLeafIdRef.current = d.leafId;
+        applyTranscriptState(emptyTranscriptClientState(d.leafId));
+      }
       updateSubagentRuns((current) => mergePersistedSubagentRuns(
-        parsePersistedSubagentRuns(d.context.messages),
+        parsePersistedSubagentRuns(transcriptStateRef.current.messages),
         current,
         requestedAt,
       ));
       setCurrentModelOverride(null);
       setError(null);
-      // If no live agent state, fall back to thinking level from session file
-      if (!d.agentState?.state?.thinkingLevel && d.context.thinkingLevel && d.context.thinkingLevel !== "off") {
-        setThinkingLevel(d.context.thinkingLevel as ThinkingLevelOption);
+      const thinkingLevelFromFile = d.contextState?.thinkingLevel ?? d.context?.thinkingLevel;
+      if (!d.agentState?.state?.thinkingLevel && thinkingLevelFromFile && thinkingLevelFromFile !== "off") {
+        setThinkingLevel(thinkingLevelFromFile as ThinkingLevelOption);
       }
       if (
         d.agentState?.state?.followUpMessages !== undefined
@@ -453,29 +509,101 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     } finally {
       if (showLoading && requestId === sessionLoadRequestRef.current) setLoading(false);
     }
-  }, [applyFollowUpQueueSnapshot, updateSubagentRuns]);
+  }, [applyFollowUpQueueSnapshot, applyTranscriptState, updateSubagentRuns]);
 
   const loadContext = useCallback(async (sid: string, leafId: string | null) => {
     ++sessionLoadRequestRef.current;
     const requestId = ++contextLoadRequestRef.current;
+    const transcriptSeq = ++transcriptRequestRef.current;
     try {
       const url = leafId
-        ? `/api/sessions/${encodeURIComponent(sid)}/context?leafId=${encodeURIComponent(leafId)}`
-        : `/api/sessions/${encodeURIComponent(sid)}/context`;
+        ? `/api/sessions/${encodeURIComponent(sid)}/transcript?leafId=${encodeURIComponent(leafId)}`
+        : `/api/sessions/${encodeURIComponent(sid)}/transcript`;
       const res = await fetch(url);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const d = await res.json() as { context: { messages: AgentMessage[]; entryIds: string[] } };
+      const page = await res.json() as SessionTranscriptPage;
+      if (
+        isStaleTranscriptResponse({
+          requestSessionId: sid,
+          currentSessionId: sessionIdRef.current,
+          requestLeafId: leafId,
+          currentLeafId: leafId,
+          requestSeq: transcriptSeq,
+          currentSeq: transcriptRequestRef.current,
+        })
+      ) return;
       if (requestId !== contextLoadRequestRef.current || sid !== sessionIdRef.current) return;
-      setMessages(d.context.messages);
-      setEntryIds(d.context.entryIds ?? []);
+      setActiveLeafId(page.leafId);
+      activeLeafIdRef.current = page.leafId;
+      applyTranscriptState(replaceTranscriptPage(page));
       updateSubagentRuns((current) => mergePersistedSubagentRuns(
-        parsePersistedSubagentRuns(d.context.messages),
+        parsePersistedSubagentRuns(page.messages),
         current,
       ));
     } catch (e) {
       if (requestId === contextLoadRequestRef.current) console.error("Failed to load context:", e);
     }
-  }, [updateSubagentRuns]);
+  }, [applyTranscriptState, updateSubagentRuns]);
+
+  const loadOlder = useCallback(async () => {
+    const sid = sessionIdRef.current;
+    const leafId = activeLeafIdRef.current;
+    const cursor = nextBeforeEntryIdRef.current;
+    if (!sid || !cursor || !hasMoreBeforeRef.current || loadingOlderRef.current) return;
+    const requestId = ++transcriptRequestRef.current;
+    loadingOlderRef.current = true;
+    setLoadingOlder(true);
+    setLoadOlderError(null);
+    const container = scrollContainerRef.current;
+    const anchor = container
+      ? { scrollHeight: container.scrollHeight, scrollTop: container.scrollTop }
+      : null;
+    try {
+      const params = new URLSearchParams({
+        beforeEntryId: cursor,
+        ...(leafId ? { leafId } : {}),
+      });
+      const res = await fetch(`/api/sessions/${encodeURIComponent(sid)}/transcript?${params}`);
+      if (
+        isStaleTranscriptResponse({
+          requestSessionId: sid,
+          currentSessionId: sessionIdRef.current,
+          requestLeafId: leafId,
+          currentLeafId: activeLeafIdRef.current,
+          requestSeq: requestId,
+          currentSeq: transcriptRequestRef.current,
+        })
+      ) return;
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const page = await res.json() as SessionTranscriptPage;
+      if (
+        isStaleTranscriptResponse({
+          requestSessionId: sid,
+          currentSessionId: sessionIdRef.current,
+          requestLeafId: leafId,
+          currentLeafId: activeLeafIdRef.current,
+          requestSeq: requestId,
+          currentSeq: transcriptRequestRef.current,
+        })
+      ) return;
+      skipAutoScrollRef.current = true;
+      prependScrollAnchorRef.current = anchor;
+      applyTranscriptState(prependTranscriptPage(transcriptStateRef.current, page));
+      updateSubagentRuns((current) => mergePersistedSubagentRuns(
+        parsePersistedSubagentRuns(transcriptStateRef.current.messages),
+        current,
+      ));
+    } catch (e) {
+      if (requestId === transcriptRequestRef.current) {
+        setLoadOlderError(e instanceof Error ? e.message : String(e));
+      }
+    } finally {
+      if (requestId === transcriptRequestRef.current) {
+        loadingOlderRef.current = false;
+        setLoadingOlder(false);
+      }
+    }
+  }, [applyTranscriptState, updateSubagentRuns]);
 
   const loadTools = useCallback(async (sid: string) => {
     try {
@@ -635,7 +763,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           setAgentFailure((current) => current ?? pendingAgentErrorRef.current);
         }
         if (sessionIdRef.current) {
-          loadSession(sessionIdRef.current);
+          void loadSession(sessionIdRef.current, false, false, "merge-tail");
           fetch(`/api/agent/${encodeURIComponent(sessionIdRef.current)}`)
             .then((r) => r.json())
             .then((d: { state?: { contextUsage?: { percent: number | null; contextWindow: number; tokens: number | null } | null; systemPrompt?: string } }) => {
@@ -884,7 +1012,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         if (event.errorMessage) {
           setCompactError(event.errorMessage as string);
         } else if (!event.aborted) {
-          if (sessionIdRef.current) loadSession(sessionIdRef.current);
+          if (sessionIdRef.current) void loadSession(sessionIdRef.current, false, false, "merge-tail");
         }
         break;
       case "session_file_changes_update":
@@ -1054,11 +1182,13 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     if (!sid) return;
     sendAgentCommand(sid, { type: "navigate_tree", targetId: entryId }).catch(() => {});
     setActiveLeafId(entryId);
+    activeLeafIdRef.current = entryId;
     await loadContext(sid, entryId);
   }, [loadContext]);
 
   const handleLeafChange = useCallback(async (leafId: string | null) => {
     setActiveLeafId(leafId);
+    activeLeafIdRef.current = leafId;
     const sid = sessionIdRef.current;
     if (!sid) return;
     await loadContext(sid, leafId);
@@ -1089,7 +1219,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     setCompactError(null);
     try {
       await sendAgentCommand(sid, { type: "compact" });
-      await loadSession(sid, true);
+      await loadSession(sid, false, false, "merge-tail");
     } catch (e) {
       setCompactError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -1265,6 +1395,17 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   useEffect(() => {
     if (!hasMessages) return;
 
+    if (skipAutoScrollRef.current) {
+      skipAutoScrollRef.current = false;
+      const container = scrollContainerRef.current;
+      const anchor = prependScrollAnchorRef.current;
+      prependScrollAnchorRef.current = null;
+      if (container && anchor) {
+        container.scrollTop = restoreScrollAfterPrepend(anchor, container.scrollHeight);
+      }
+      return;
+    }
+
     if (pendingScrollToUserRef.current) {
       pendingScrollToUserRef.current = false;
       initialScrollDoneRef.current = true;
@@ -1341,7 +1482,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
 
   return {
     // State
-    data, loading, error, activeLeafId, messages, entryIds, streamState,
+    data, loading, error, activeLeafId, messages, entryIds, hasMoreBefore, loadingOlder, loadOlderError, streamState,
     agentRunning, modelNames, modelList, modelsReady, modelThinkingLevels, modelThinkingLevelMaps, newSessionModel, toolPreset, thinkingLevel,
     retryInfo, agentFailure, contextUsage, systemPrompt, forkingEntryId,
     isCompacting, compactError, currentModel, displayModel, sessionStats,
@@ -1360,7 +1501,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     // Actions
     handleSend, handleContinueAfterFailure, dismissAgentFailure,
     handleAbort, handleFork, handleNavigate, handleModelChange,
-    handleCompact, handleSteer, handleFollowUp, handleAbortCompaction,
+    handleCompact, handleSteer, handleFollowUp, handleAbortCompaction, loadOlder,
     handleToolPresetChange, handleThinkingLevelChange, loadTools, setActiveLeafId, setData, setMessages,
     dispatch, setAgentRunning, setForkingEntryId,
     respondExtensionDialog,

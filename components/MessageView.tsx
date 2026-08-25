@@ -17,6 +17,7 @@ import type {
 import { useI18n } from "@/components/I18nProvider";
 import { classifyChatProviderError } from "@/lib/chat-provider-errors";
 import { localizeError } from "@/lib/i18n";
+import { isTranscriptCompactionMessage } from "@/lib/session-transcript-client";
 
 interface Props {
   message: AgentMessage;
@@ -77,6 +78,9 @@ export const MessageView = memo(function MessageView({ message, isStreaming, too
     return null;
   }
   if (message.role === "custom") {
+    if (isTranscriptCompactionMessage(message)) {
+      return <CompactionMarkerView message={message as CustomMessage} />;
+    }
     return <CustomMessageView message={message as CustomMessage} />;
   }
   return null;
@@ -610,6 +614,41 @@ function PairedResult({ text, isEmpty, isError }: {
       <pre className={isEmpty ? "message-tool-result-content is-empty" : "message-tool-result-content"}>
         {isEmpty ? t("chat.noOutput") : text}
       </pre>
+    </div>
+  );
+}
+
+function CompactionMarkerView({ message }: { message: CustomMessage }) {
+  const { t } = useI18n();
+  const [expanded, setExpanded] = useState(false);
+  const time = formatTime(message.timestamp);
+  const summary = getMessageText(message.content);
+
+  return (
+    <div className="message-view message-view-custom message-compaction-marker">
+      <div className={expanded ? "message-custom-card" : "message-custom-card is-collapsed"}>
+        <div className="message-custom-header">
+          <span className="message-custom-title">{t("chat.compactionMarkerTitle")}</span>
+          {time && <span className="message-timestamp message-timestamp-trailing">{time}</span>}
+        </div>
+        {expanded ? (
+          <div className="message-custom-body">
+            {summary
+              ? <MarkdownBody className="markdown-custom-message">{summary}</MarkdownBody>
+              : <span className="message-empty-content">{t("chat.noMessage")}</span>}
+          </div>
+        ) : null}
+        <div className="message-custom-footer">
+          <button
+            type="button"
+            className="message-action-button"
+            aria-expanded={expanded}
+            onClick={() => setExpanded((value) => !value)}
+          >
+            {expanded ? t("chat.compactionMarkerCollapse") : t("chat.compactionMarkerExpand")}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

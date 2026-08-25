@@ -165,7 +165,7 @@ export const ChatWindow = memo(function ChatWindow({ session, newSessionCwd, onA
   const { autoScrollEnabled, onAutoScrollToggle } = useAutoScroll();
   const sessionTabLock = useSessionTabLock(session?.id ?? null);
   const {
-    loading, error, messages, entryIds, streamState,
+    loading, error, messages, entryIds, hasMoreBefore, loadingOlder, loadOlderError, streamState,
     agentRunning, modelNames, modelList, modelsReady, modelThinkingLevels, modelThinkingLevelMaps, toolPreset, thinkingLevel,
     retryInfo, agentFailure, contextUsage, forkingEntryId,
     isCompacting, compactError, displayModel: displayModelValue, sessionStats,
@@ -177,7 +177,7 @@ export const ChatWindow = memo(function ChatWindow({ session, newSessionCwd, onA
     lastUserMsgRef,
     handleSend, handleContinueAfterFailure, dismissAgentFailure,
     handleAbort, handleFork, handleNavigate, handleModelChange,
-    handleCompact, handleSteer, handleFollowUp, handleAbortCompaction,
+    handleCompact, handleSteer, handleFollowUp, handleAbortCompaction, loadOlder,
     handleToolPresetChange, handleThinkingLevelChange,
     respondExtensionDialog, dismissExtensionToast,
     handleAgentEventRef,
@@ -602,6 +602,21 @@ export const ChatWindow = memo(function ChatWindow({ session, newSessionCwd, onA
       <div className="relative flex flex-1 overflow-hidden">
         <div ref={scrollContainerRef} className="flex-1 overflow-y-auto pt-4 [scrollbar-width:none]">
           <div className="mx-auto max-w-[820px] px-4">
+            {(hasMoreBefore || loadingOlder || loadOlderError) && (
+              <div className="chat-load-older">
+                {loadOlderError ? (
+                  <div className="chat-load-older-error" role="alert">{t("chat.loadOlderFailed")}</div>
+                ) : null}
+                <button
+                  type="button"
+                  className="chat-load-older-button"
+                  disabled={loadingOlder || !hasMoreBefore}
+                  onClick={() => { void loadOlder(); }}
+                >
+                  {loadingOlder ? t("chat.loadingOlderMessages") : t("chat.loadOlderMessages")}
+                </button>
+              </div>
+            )}
 
             {(() => {
               let lastUserIdx = -1;
@@ -637,7 +652,7 @@ export const ChatWindow = memo(function ChatWindow({ session, newSessionCwd, onA
                     toolResults={toolResultsMap}
                     modelNames={modelNames}
                     entryId={entryIds[idx]}
-                    onFork={agentRunning || writeLocked || isNew || (idx === 0 && msg.role === "user") ? undefined : handleFork}
+                    onFork={agentRunning || writeLocked || isNew || (idx === 0 && msg.role === "user" && !hasMoreBefore) ? undefined : handleFork}
                     forking={forkingEntryId === entryIds[idx]}
                     onNavigate={agentRunning || writeLocked ? undefined : handleNavigate}
                     prevAssistantEntryId={agentRunning ? undefined : prevAssistantEntryId}

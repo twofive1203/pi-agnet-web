@@ -8614,6 +8614,41 @@ html:is([data-wallpaper="on"], [data-wallpaper="image"], [data-wallpaper="gradie
   line-height: 1.4;
   cursor: pointer;
 }
+.chat-load-older {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0 16px;
+}
+.chat-load-older-button {
+  appearance: none;
+  border: 1px solid var(--border-default);
+  background: var(--surface-raised);
+  color: var(--text-secondary);
+  border-radius: var(--radius-pill);
+  padding: 6px 14px;
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+.chat-load-older-button:hover,
+.chat-load-older-button:focus-visible {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+.chat-load-older-button:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+.chat-load-older-button:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+.chat-load-older-error {
+  color: var(--status-danger-foreground);
+  font-size: 12px;
+}
 .chat-multitab-takeover:hover {
   background: color-mix(in srgb, currentColor 12%, transparent);
 }
@@ -9953,6 +9988,9 @@ html:is([data-wallpaper="on"], [data-wallpaper="image"], [data-wallpaper="gradie
   opacity: 0.78;
 }
 .message-custom-card.is-collapsed { opacity: 0.82; }
+.message-compaction-marker {
+  margin: 10px 0;
+}
 .message-custom-header {
   display: flex;
   align-items: center;

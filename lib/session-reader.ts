@@ -39,6 +39,27 @@ export function getSessionsDir(): string {
   return `${getAgentDir()}/sessions`;
 }
 
+export type LiveSessionManagerHost = {
+  isAlive(): boolean;
+  sessionFile?: string | null;
+  inner: { sessionManager: SessionManager };
+} | null | undefined;
+
+/** Reuse a matching live parsed manager; otherwise open the session file from disk. */
+export function resolveLiveOrDiskSessionManager(
+  filePath: string,
+  live?: LiveSessionManagerHost,
+): SessionManager {
+  if (
+    live?.isAlive()
+    && live.sessionFile
+    && canonicalizeCwd(live.sessionFile) === canonicalizeCwd(filePath)
+  ) {
+    return live.inner.sessionManager;
+  }
+  return SessionManager.open(filePath);
+}
+
 export interface DeletedSessionFile {
   id: string;
   path: string;

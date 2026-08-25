@@ -10,6 +10,7 @@ import {
   isArchivedSessionPath,
   sessionIdFromFilePath,
   readSessionHeaderLine,
+  resolveLiveOrDiskSessionManager,
 } from "@/lib/session-reader";
 import { getRpcSession } from "@/lib/rpc-manager";
 import { deleteSessionChangesSidecar } from "@/lib/session-file-changes";
@@ -17,6 +18,12 @@ import { deleteSessionPerformanceSidecar, readSessionPerformanceSummary } from "
 import { deleteSessionArtifacts } from "@/lib/session-artifacts";
 import { getSessionBillingStats, hasSessionBillingUsage } from "@/lib/session-billing-stats";
 import { canonicalizeCwd } from "@/lib/cwd";
+import {
+  TranscriptCursorError,
+  paginateSessionTranscript,
+  parseTranscriptSearchParams,
+  projectSessionTranscript,
+} from "@/lib/session-transcript";
 import type { SessionEntry } from "@/lib/types";
 
 // BranchNavigator still traverses recursively, so keep the response tree shallow.
@@ -144,15 +151,9 @@ export async function GET(
     let leafId: string | null;
     let tree: ReturnType<typeof projectTreeForResponse>;
     try {
-      const liveSession = getRpcSession(id);
-      const liveManager = liveSession?.isAlive()
-        && liveSession.sessionFile
-        && canonicalizeCwd(liveSession.sessionFile) === canonicalizeCwd(filePath)
-        ? liveSession.inner.sessionManager
-        : null;
       // The SSE route already owns a parsed SessionManager for active chats. Reuse it
       // instead of synchronously reparsing multi-megabyte JSONL on every agent_end.
-      sm = liveManager ?? SessionManager.open(filePath);
+      sm = resolveLiveOrDiskSessionManager(filePath, getRpcSession(id));
       header = sm.getHeader();
       // Guard against substring/path-cache mismatches: requested id must equal header id.
       if (!header?.id || header.id !== id) {
@@ -167,7 +168,18 @@ export async function GET(
       invalidateSessionPathCache(id);
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
     }
-    const context = buildSessionContext(entries, leafId);
+    const url = new URL(req.url);
+    const view = url.searchParams.get("view");
+    const transcriptQuery = parseTranscriptSearchParams(url.searchParams);
+    let transcriptProjection;
+    try {
+      transcriptProjection = projectSessionTranscript(entries, transcriptQuery.leafId ?? leafId);
+    } catch (error) {
+      if (view === "chat" && error instanceof TranscriptCursorError) {
+        return NextResponse.json({ error: error.code }, { status: 400 });
+      }
+      throw error;
+    }
     const billingStats = getSessionBillingStats(entries);
 
     let modified = header?.timestamp ?? new Date().toISOString();
@@ -183,19 +195,12 @@ export async function GET(
       name: sm.getSessionName(),
       created: header.timestamp,
       modified,
-      messageCount: context.messages.length,
-      firstMessage: context.messages.find((m) => m.role === "user")
-        ? (() => {
-            const msg = context.messages.find((m) => m.role === "user")!;
-            const c = (msg as { content: unknown }).content;
-            return typeof c === "string" ? c : (Array.isArray(c) ? (c.find((b: { type: string }) => b.type === "text") as { text: string } | undefined)?.text ?? "" : "") || "(no messages)";
-          })()
-        : "(no messages)",
+      messageCount: transcriptProjection.messageCount,
+      firstMessage: transcriptProjection.firstMessage,
       parentSessionId,
       archived,
     } : null;
 
-    const url = new URL(req.url);
     let agentState: { running: boolean; state?: unknown } | undefined;
     if (url.searchParams.has("includeState")) {
       const rpc = getRpcSession(id);
@@ -214,6 +219,22 @@ export async function GET(
       sessionPerformance = null;
     }
 
+    if (view === "chat") {
+      return NextResponse.json({
+        sessionId: id,
+        filePath,
+        info,
+        leafId: transcriptProjection.leafId,
+        tree,
+        contextState: transcriptProjection.contextState,
+        transcript: paginateSessionTranscript(transcriptProjection),
+        sessionStats: hasSessionBillingUsage(billingStats) ? billingStats : null,
+        sessionPerformance,
+        ...(agentState !== undefined ? { agentState } : {}),
+      });
+    }
+
+    const context = buildSessionContext(entries, leafId);
     return NextResponse.json({
       sessionId: id,
       filePath,

@@ -2,7 +2,8 @@
  * Seed a SnFlow task title/goal from an existing chat session transcript.
  */
 
-import { buildSessionContext, getSessionEntries, resolveSessionPath } from "./session-reader";
+import { getSessionEntries, resolveSessionPath } from "./session-reader";
+import { projectSessionTranscript } from "./session-transcript";
 
 function messageText(content: unknown): string {
   if (typeof content === "string") return content.trim();
@@ -27,13 +28,13 @@ export async function extractWorkflowSeedFromSession(sessionId: string): Promise
   const filePath = await resolveSessionPath(sessionId);
   if (!filePath) return null;
   const entries = getSessionEntries(filePath);
-  const ctx = buildSessionContext(entries);
+  const transcript = projectSessionTranscript(entries);
   const userTexts: string[] = [];
-  for (const msg of ctx.messages) {
+  for (const row of transcript.rows) {
+    const msg = row.message;
     if (!msg || typeof msg !== "object") continue;
-    const role = (msg as { role?: string }).role;
-    if (role !== "user") continue;
-    const text = messageText((msg as { content?: unknown }).content);
+    if (msg.role !== "user") continue;
+    const text = messageText(msg.content);
     if (!text) continue;
     // Skip injected system-ish resume prompts.
     if (

@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
-import { SessionManager } from "@earendil-works/pi-coding-agent";
-import { resolveSessionPath, buildSessionContext } from "@/lib/session-reader";
+import { resolveSessionPath, buildSessionContext, resolveLiveOrDiskSessionManager } from "@/lib/session-reader";
 import { getRpcSession } from "@/lib/rpc-manager";
-import { canonicalizeCwd } from "@/lib/cwd";
 
 export async function GET(
   req: Request,
@@ -18,13 +16,7 @@ export async function GET(
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
     }
 
-    const liveSession = getRpcSession(id);
-    const liveManager = liveSession?.isAlive()
-      && liveSession.sessionFile
-      && canonicalizeCwd(liveSession.sessionFile) === canonicalizeCwd(filePath)
-      ? liveSession.inner.sessionManager
-      : null;
-    const sm = liveManager ?? SessionManager.open(filePath);
+    const sm = resolveLiveOrDiskSessionManager(filePath, getRpcSession(id));
     const context = buildSessionContext(sm.getEntries() as never, leafId);
 
     return NextResponse.json({ context });

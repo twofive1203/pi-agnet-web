@@ -177,6 +177,12 @@ export const chatZh = {
   closeTodoList: "关闭待办列表",
   hideTodoList: "隐藏待办列表",
   showTodoList: "显示待办列表",
+  compactionMarkerTitle: "上下文已压缩",
+  compactionMarkerExpand: "查看摘要",
+  compactionMarkerCollapse: "收起摘要",
+  loadOlderMessages: "加载更早记录",
+  loadingOlderMessages: "正在加载更早记录…",
+  loadOlderFailed: "无法加载更早记录",
 } as const satisfies MessageTree;
 
 export const chatEn = {
@@ -356,4 +362,10 @@ export const chatEn = {
   closeTodoList: "Close todo list",
   hideTodoList: "Hide todo list",
   showTodoList: "Show todo list",
+  compactionMarkerTitle: "Context compacted",
+  compactionMarkerExpand: "Show summary",
+  compactionMarkerCollapse: "Hide summary",
+  loadOlderMessages: "Load earlier messages",
+  loadingOlderMessages: "Loading earlier messages…",
+  loadOlderFailed: "Could not load earlier messages",
 } as const satisfies MessageTree;

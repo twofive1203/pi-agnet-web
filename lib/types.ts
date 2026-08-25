@@ -377,6 +377,29 @@ export interface SessionContext {
   model: { provider: string; modelId: string } | null;
 }
 
+/** Model/runtime metadata only. Never a substitute for the display transcript. */
+export interface SessionContextState {
+  thinkingLevel: string;
+  model: { provider: string; modelId: string } | null;
+}
+
+/** Dedicated display marker for a persisted compaction entry. Not a user message. */
+export const TRANSCRIPT_COMPACTION_CUSTOM_TYPE = "pi-web:compaction";
+
+/** Dedicated display marker for a persisted branch_summary entry. Not a user message. */
+export const TRANSCRIPT_BRANCH_SUMMARY_CUSTOM_TYPE = "pi-web:branch-summary";
+
+/** One bounded page of the current-branch display transcript. */
+export interface SessionTranscriptPage {
+  messages: AgentMessage[];
+  entryIds: string[];
+  leafId: string | null;
+  hasMoreBefore: boolean;
+  nextBeforeEntryId: string | null;
+  messageCount: number;
+  firstMessage: string;
+}
+
 export type SessionFileChangeStatus = "added" | "modified" | "deleted" | "metadata-only";
 export type SessionFileChangeSourceKind = "edit" | "write";
 export type SessionFileChangeReason = "binary" | "too-large" | "outside-workspace" | "unreadable" | "unchanged";
