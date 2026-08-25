@@ -10840,9 +10840,16 @@ button.inspector-list-row { cursor: pointer; }
 .git-stash-target-row { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; color: var(--text-primary); font-size: 11px; }
 .git-stash-target-row strong { min-width: 0; overflow: hidden; font-family: var(--font-mono); text-overflow: ellipsis; white-space: nowrap; }
 .git-stash-help { margin-top: 4px; color: var(--text-tertiary); font-size: 9px; line-height: 1.4; }
-.git-stash-list { display: flex; flex-direction: column; gap: 3px; }
+.git-stash-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: 326px; /* Seven 44px rows plus six 3px gaps. */
+  overflow-y: auto;
+}
 .git-stash-row {
   display: flex;
+  flex: 0 0 44px;
   flex-direction: column;
   gap: 3px;
   width: 100%;
