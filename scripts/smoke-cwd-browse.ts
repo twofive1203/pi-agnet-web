@@ -2,7 +2,12 @@ import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { browseCwdDirectory, CwdBrowseError, listBrowseRoots } from "../lib/cwd-browse";
+import {
+  browseCwdDirectory,
+  createCwdDirectory,
+  CwdBrowseError,
+  listBrowseRoots,
+} from "../lib/cwd-browse";
 import {
   buildDirectoryPickerShortcuts,
   nextDirectoryPickerCandidate,
@@ -50,6 +55,47 @@ function checkBrowseDirectories(): void {
     assert(listed.entries.some((entry) => entry.name === "alpha-dir"), "browse must list child directories");
     assert(listed.entries.some((entry) => entry.name === "beta-dir"), "browse must list all child directories");
     assert(!listed.entries.some((entry) => entry.name === "note.txt"), "browse must not list files");
+
+    const created = createCwdDirectory(base, " new-project ");
+    assert(created.name === "new-project", "create must trim and return the folder name");
+    assert(existsSync(created.path), "create must make the folder on disk");
+    assert(
+      browseCwdDirectory(base).entries.some((entry) => entry.path === created.path),
+      "created folder must appear in the parent browse result",
+    );
+
+    let duplicateFailed = false;
+    try {
+      createCwdDirectory(base, "new-project");
+    } catch (error) {
+      duplicateFailed = error instanceof CwdBrowseError && error.status === 409;
+    }
+    assert(duplicateFailed, "existing folders must raise CwdBrowseError 409");
+
+    for (const invalidName of ["", ".", "..", "../escape", "nested/folder", "nested\\folder"]) {
+      let invalidFailed = false;
+      try {
+        createCwdDirectory(base, invalidName);
+      } catch (error) {
+        invalidFailed = error instanceof CwdBrowseError && error.status === 400;
+      }
+      assert(invalidFailed, `invalid folder name must be rejected: ${JSON.stringify(invalidName)}`);
+    }
+    let missingParentFailed = false;
+    try {
+      createCwdDirectory(join(base, "missing-parent"), "child");
+    } catch (error) {
+      missingParentFailed = error instanceof CwdBrowseError && error.status === 400;
+    }
+    assert(missingParentFailed, "missing create parent must raise CwdBrowseError 400");
+
+    let fileParentFailed = false;
+    try {
+      createCwdDirectory(join(base, "note.txt"), "child");
+    } catch (error) {
+      fileParentFailed = error instanceof CwdBrowseError && error.status === 400;
+    }
+    assert(fileParentFailed, "file create parent must raise CwdBrowseError 400");
 
     const rootsView = browseCwdDirectory("");
     assert(rootsView.path === "", "empty path must open roots view");
@@ -152,6 +198,11 @@ function checkWiring(): void {
   assert(route.includes('export const runtime = "nodejs"'), "browse route must run in the Node.js runtime");
   assert(route.includes("browseCwdDirectory(pathParam)"), "browse route must use shared browse helper");
 
+  const createRoute = readRepoFile("app", "api", "cwd", "create", "route.ts");
+  assert(createRoute.includes('export const runtime = "nodejs"'), "create route must run in the Node.js runtime");
+  assert(createRoute.includes("createCwdDirectory(body.parent, body.name)"), "create route must use shared create helper");
+  assert(createRoute.includes("status: 201"), "create route must return created status");
+
   const picker = readRepoFile("components", "sidebar", "WorkspacePicker.tsx");
   assert(picker.includes("DirectoryPickerDialog"), "workspace picker must mount directory picker dialog");
   assert(picker.includes("ProjectPickerDialog"), "workspace picker must mount project picker dialog");
@@ -171,6 +222,10 @@ function checkWiring(): void {
   const dialog = readRepoFile("components", "sidebar", "DirectoryPickerDialog.tsx");
   assert(dialog.includes("fetch(`/api/cwd/browse"), "dialog must load directories from browse API");
   assert(dialog.includes('fetch("/api/cwd/validate"'), "dialog must validate before selecting cwd");
+  assert(dialog.includes('fetch("/api/cwd/create"'), "dialog must create folders through the create API");
+  assert(dialog.includes("handleCreateDirectory"), "dialog must expose the new-folder action");
+  assert(dialog.includes("directoryPickerCreateFolder"), "dialog must localize the new-folder action");
+  assert(dialog.includes("await loadDirectory(data.path)"), "dialog must enter the newly created folder");
   assert(dialog.includes("createPortal"), "dialog must portal to document body");
   assert(dialog.includes("data-server-platform"), "dialog must expose server platform");
   assert(dialog.includes("normalizeDirectoryPickerPlatform"), "dialog must consume the shared platform model");

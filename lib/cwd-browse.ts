@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, statSync } from "fs";
+import { existsSync, mkdirSync, readdirSync, statSync } from "fs";
 import { homedir } from "os";
 import path from "path";
 import { canonicalizeCwd, expandCwd } from "./cwd";
@@ -23,6 +23,11 @@ export interface CwdBrowseResult {
   roots: CwdBrowseEntry[];
 }
 
+export interface CwdCreateResult {
+  name: string;
+  path: string;
+}
+
 export class CwdBrowseError extends Error {
   status: number;
 
@@ -44,6 +49,70 @@ function safeCanonical(dirPath: string): string {
   } catch {
     return path.resolve(expandCwd(dirPath));
   }
+}
+
+function normalizeNewDirectoryName(rawName: unknown): string {
+  const name = typeof rawName === "string" ? rawName.trim() : "";
+  if (!name) {
+    throw new CwdBrowseError("Folder name is required", 400);
+  }
+  if (name.length > 255) {
+    throw new CwdBrowseError("Folder name must be 255 characters or fewer", 400);
+  }
+  if (name === "." || name === ".." || /[\u0000-\u001f\u007f/\\]/.test(name)) {
+    throw new CwdBrowseError("Folder name cannot contain path separators or control characters", 400);
+  }
+  if (process.platform === "win32") {
+    if (/[<>:"|?*]/.test(name) || /[. ]$/.test(name)) {
+      throw new CwdBrowseError("Folder name contains characters that Windows does not allow", 400);
+    }
+    const stem = name.split(".", 1)[0]?.toUpperCase() ?? "";
+    if (/^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/.test(stem)) {
+      throw new CwdBrowseError("Folder name is reserved by Windows", 400);
+    }
+  }
+  return name;
+}
+
+/**
+ * Create one direct child in a directory currently reachable by the server picker.
+ * The name is a single path segment and mkdir remains non-recursive so a typo cannot
+ * create an unexpected directory chain.
+ */
+export function createCwdDirectory(rawParent: unknown, rawName: unknown): CwdCreateResult {
+  const parentInput = typeof rawParent === "string" ? rawParent.trim() : "";
+  if (!parentInput) {
+    throw new CwdBrowseError("Parent directory is required", 400);
+  }
+
+  const parent = safeCanonical(expandCwd(parentInput));
+  let parentStat;
+  try {
+    parentStat = statSync(parent);
+  } catch {
+    throw new CwdBrowseError(`Parent directory does not exist: ${parentInput}`, 400);
+  }
+  if (!parentStat.isDirectory()) {
+    throw new CwdBrowseError(`Parent path is not a directory: ${parentInput}`, 400);
+  }
+
+  const name = normalizeNewDirectoryName(rawName);
+  const target = path.join(parent, name);
+  try {
+    mkdirSync(target);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "EEXIST") {
+      throw new CwdBrowseError(`Folder already exists: ${name}`, 409);
+    }
+    if (code === "EACCES" || code === "EPERM" || code === "EROFS") {
+      throw new CwdBrowseError(`Cannot create folder in this location: ${name}`, 403);
+    }
+    const message = error instanceof Error ? error.message : String(error);
+    throw new CwdBrowseError(`Cannot create folder: ${message}`, 500);
+  }
+
+  return { name, path: safeCanonical(target) };
 }
 
 /**

@@ -10,6 +10,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import { createPortal } from "react-dom";
+import { useAppDialog } from "@/components/AppDialogProvider";
 import { useI18n } from "@/components/I18nProvider";
 import {
   SettingsActionRow,
@@ -68,6 +69,7 @@ export function DirectoryPickerDialog({
   onSelect,
 }: DirectoryPickerDialogProps) {
   const { t } = useI18n();
+  const appDialog = useAppDialog();
   const titleId = useId();
   const subtitleId = useId();
   const listId = useId();
@@ -92,6 +94,7 @@ export function DirectoryPickerDialog({
   const [browseError, setBrowseError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [creating, setCreating] = useState(false);
 
   currentPathRef.current = currentPath;
 
@@ -252,7 +255,7 @@ export function DirectoryPickerDialog({
   const handleKeyDown = useCallback((event: ReactKeyboardEvent<HTMLDivElement>) => {
     if (event.key === "Escape") {
       event.stopPropagation();
-      if (!saving) onClose();
+      if (!saving && !creating) onClose();
       return;
     }
 
@@ -262,19 +265,19 @@ export function DirectoryPickerDialog({
       document.activeElement === listRef.current || listRef.current.contains(document.activeElement)
     );
 
-    if (!editingPath && !saving && (event.key === "ArrowDown" || event.key === "ArrowUp") && listFocused) {
+    if (!editingPath && !saving && !creating && (event.key === "ArrowDown" || event.key === "ArrowUp") && listFocused) {
       event.preventDefault();
       moveCandidate(event.key === "ArrowDown" ? 1 : -1);
       return;
     }
 
-    if (!editingPath && !saving && event.key === "Enter" && listFocused && candidatePath) {
+    if (!editingPath && !saving && !creating && event.key === "Enter" && listFocused && candidatePath) {
       event.preventDefault();
       void loadDirectory(candidatePath);
       return;
     }
 
-    if (!editingPath && !saving && !loading && event.key === "Backspace") {
+    if (!editingPath && !saving && !creating && !loading && event.key === "Backspace") {
       const canGoUp = parentPath != null || currentPath !== "";
       if (canGoUp) {
         event.preventDefault();
@@ -284,11 +287,44 @@ export function DirectoryPickerDialog({
     }
 
     trapFocus(event);
-  }, [candidatePath, currentPath, loadDirectory, loading, moveCandidate, onClose, parentPath, saving, trapFocus]);
+  }, [candidatePath, creating, currentPath, loadDirectory, loading, moveCandidate, onClose, parentPath, saving, trapFocus]);
 
   const goToDraftPath = useCallback(() => {
     void loadDirectory(draftPath.trim());
   }, [draftPath, loadDirectory]);
+
+  const handleCreateDirectory = useCallback(async () => {
+    if (!currentPath || loading || saving || creating) return;
+
+    const name = await appDialog.prompt({
+      title: t("sidebar.directoryPickerCreateTitle"),
+      message: t("sidebar.directoryPickerCreateMessage", { path: currentPath }),
+      placeholder: t("sidebar.directoryPickerCreatePlaceholder"),
+      confirmLabel: t("sidebar.directoryPickerCreateConfirm"),
+    });
+    if (name == null) return;
+
+    setCreating(true);
+    setBrowseError(null);
+    setSaveError(null);
+    try {
+      const res = await fetch("/api/cwd/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ parent: currentPath, name }),
+      });
+      const data = await res.json().catch(() => ({})) as { path?: string; error?: string };
+      if (!res.ok || data.error || !data.path) {
+        setSaveError(data.error ?? `HTTP ${res.status}`);
+        return;
+      }
+      await loadDirectory(data.path);
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setCreating(false);
+    }
+  }, [appDialog, creating, currentPath, loadDirectory, loading, saving, t]);
 
   const handleSave = useCallback(async () => {
     const path = resolveDirectoryPickerFinalPath(currentPath, candidatePath);
@@ -318,8 +354,8 @@ export function DirectoryPickerDialog({
   if (!open || typeof document === "undefined") return null;
 
   const canGoUp = parentPath != null || currentPath !== "";
-  const navigating = loading || saving;
-  const saveDisabled = saving || !finalPath;
+  const navigating = loading || saving || creating;
+  const saveDisabled = saving || creating || !finalPath;
   const rootsLabel = labels.roots;
   const locationLabel = currentPath || rootsLabel;
 
@@ -328,7 +364,7 @@ export function DirectoryPickerDialog({
       className="pi-modal-overlay"
       role="presentation"
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget && !saving) onClose();
+        if (event.target === event.currentTarget && !saving && !creating) onClose();
       }}
     >
       <div
@@ -351,8 +387,9 @@ export function DirectoryPickerDialog({
             type="button"
             className="pi-modal-close"
             aria-label={t("common.close")}
+            disabled={saving || creating}
             onClick={() => {
-              if (!saving) onClose();
+              if (!saving && !creating) onClose();
             }}
           >
             ×
@@ -378,7 +415,7 @@ export function DirectoryPickerDialog({
               aria-label={t("sidebar.directoryPickerPathAria")}
               spellCheck={false}
               className="settings-control-mono directory-picker-path-input"
-              disabled={saving}
+              disabled={saving || creating}
             />
             <SettingsButton
               type="button"
@@ -419,6 +456,18 @@ export function DirectoryPickerDialog({
               disabled={navigating}
             >
               {t("sidebar.directoryPickerRefresh")}
+            </SettingsButton>
+            <SettingsButton
+              type="button"
+              variant="secondary"
+              size="sm"
+              busy={creating}
+              onClick={() => void handleCreateDirectory()}
+              disabled={!currentPath || navigating}
+            >
+              {creating
+                ? t("sidebar.directoryPickerCreating")
+                : `+ ${t("sidebar.directoryPickerCreateFolder")}`}
             </SettingsButton>
             <span className="directory-picker-location" title={locationLabel}>
               {locationLabel}
@@ -584,7 +633,7 @@ export function DirectoryPickerDialog({
               type="button"
               variant="secondary"
               onClick={onClose}
-              disabled={saving}
+              disabled={saving || creating}
             >
               {t("common.cancel")}
             </SettingsButton>
