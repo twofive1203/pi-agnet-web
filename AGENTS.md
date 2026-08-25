@@ -23,6 +23,7 @@ npm run dev     # http://localhost:62666
 | `npm run test:session-index` | Rebuildable session/project index smoke suite (header reuse, cwd isolation, archive moves). |
 | `npm run test:session-search` | Workspace session search smoke suite (indexed name/firstMessage, archived, limits, stale gate). |
 | `npm run test:session-stats` | Parent-session lifetime token/cost aggregation smoke suite. |
+| `npm run test:session-transcript` | Display-transcript projection, turn-aware pagination, chat-page contract, and client merge smoke suite. |
 | `npm run test:session-performance` | Durable session performance (weighted TPS/TTFT) domain, sidecar, and lifecycle smoke suite. |
 | `npm run test:task-observer` | Desktop pet task-observer domain contract (identity/presentation/privacy/budgets) smoke suite. |
 | `npm run test:desktop-observer-api` | Desktop observer access gate, hub revision/coalesce, and health boundary smoke suite. |
@@ -107,6 +108,7 @@ npm run dev     # http://localhost:62666
 | Area | Source entry | Documentation |
 | --- | --- | --- |
 | Session browsing/parsing | `lib/session-reader.ts`, `app/api/sessions/**` | `docs/architecture/overview.md`, `docs/modules/api.md` |
+| Session display transcript | `lib/session-transcript.ts`, `lib/session-transcript-client.ts`, `app/api/sessions/[id]/transcript/`, `hooks/useAgentSession.ts` | `docs/architecture/overview.md`, `docs/modules/api.md`, `docs/modules/library.md` |
 | Workspace session search | `lib/session-search.ts`, `lib/session-index.ts`, `app/api/sessions/search/`, `hooks/useSessionBrowser.ts`, `components/sidebar/SessionSearchResults.tsx` | `docs/modules/api.md`, `docs/modules/frontend.md`, `docs/modules/library.md` |
 | Session changed-file overlay | `lib/session-file-changes.ts`, `components/SessionChangesFloatingPanel.tsx`, `app/api/sessions/[id]/changes/**` | `docs/architecture/overview.md`, `docs/modules/api.md`, `docs/modules/frontend.md`, `docs/modules/library.md` |
 | Session performance metrics | `lib/session-performance.ts`, `components/SessionResourcePanel.tsx`, `lib/rpc-manager.ts`, `app/api/sessions/[id]/route.ts` | `docs/architecture/overview.md`, `docs/modules/api.md`, `docs/modules/frontend.md`, `docs/modules/library.md` |
@@ -132,6 +134,7 @@ Keep this section short and operational; detailed rationale belongs in `docs/arc
 - Track session changed-file UI through non-Git sidecars in `lib/session-file-changes.ts`; do not derive it from Git status.
 - Track session performance (weighted TPS/TTFT) through the non-JSONL sidecar in `lib/session-performance.ts`; measure on the raw AgentSession event boundary before SSE throttling; do not backfill from historical message timestamps or mix into billing/`sessionStats`/global Usage.
 - Treat session header `parentSession` as display metadata only; content comes from JSONL entries.
+- Keep model context and display transcript as separate projections. Pi `buildSessionContext()` is LLM/runtime only; the chat UI loads bounded pages from `lib/session-transcript.ts` and must not send the full history back to the model.
 - When changing event kinds, JSONL records, RPC payloads, config fields, or shared constants, search for all consumers first and update docs/tests/validation notes.
 - Do not reset or overwrite unrelated user changes.
 - Automation is independent of SnFlow and ordinary project sessions: data lives under `getAgentDir()/automations/`; Automation JSONL must not appear in default `/api/sessions` lists.

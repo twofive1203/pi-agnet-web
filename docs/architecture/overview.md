@@ -33,7 +33,7 @@ Project discovery and per-cwd candidate collection are accelerated by a rebuilda
 - **Single process:** ordinary chat wrappers, SSE listeners, and access-auth rate limits are process-local. Official launchers and instrumentation refuse known PM2/Node cluster multi-instance markers by default; sticky routing is not a supported multi-replica mode. `GET /api/health` exposes pid/instanceId/live session and SSE aggregates plus Automation scheduler role for ops.
 - Session browsing does not create an AgentSession: API routes read `.jsonl` files through `lib/session-reader.ts`; the only write side effect is pruning stale sessions whose cwd points at a deleted WorkTree.
 - Sending commands creates or reuses an in-process AgentSession through `lib/rpc-manager.ts`.
-- Session detail/context routes reuse the live wrapper's already-parsed `SessionManager` when its canonical session file matches, avoiding another synchronous JSONL parse during active-chat refreshes; inactive sessions still open from disk as the source of truth.
+- Session detail/context/transcript routes reuse the live wrapper's already-parsed `SessionManager` when its canonical session file matches, avoiding another synchronous JSONL parse during active-chat refreshes; inactive sessions still open from disk as the source of truth.
 - Client state and SSE streaming behavior are centralized in `hooks/useAgentSession.ts`.
 - File viewing and workspace metadata use explicit API routes under `app/api/files/`, `app/api/cwd/`, and `app/api/git/`. The standalone `/file?path=...&line=...` page reuses the same `FileViewer` and API authorization; it never reads arbitrary paths directly. Historical root-level Windows links (`/D:/.../File.java:11`) are compatibility redirects only.
 
@@ -64,7 +64,15 @@ Project discovery and per-cwd candidate collection are accelerated by a rebuilda
 ### Branching model
 
 - Fork creates a new `.jsonl` file and is shown as a child in the sidebar via the header `parentSession` field.
-- In-session branch uses `navigate_tree` within the same file. Multiple entries may share a `parentId`; switching branches calls `/api/sessions/[id]/context?leafId=`.
+- In-session branch uses `navigate_tree` within the same file. Multiple entries may share a `parentId`; switching branches loads a fresh display-transcript page from `/api/sessions/[id]/transcript?leafId=`.
+
+### Model context vs display transcript
+
+- Compaction appends a `compaction` JSONL entry. It does not delete earlier messages.
+- Pi `buildSessionContext()` / `buildContextEntries()` remain the LLM/runtime projection: latest compaction summary plus kept/recent entries. AgentSession must keep using that compacted context.
+- The chat UI uses an independent display transcript from `lib/session-transcript.ts`. `GET /api/sessions/[id]?view=chat` returns only the latest bounded page plus `contextState`; older pages come from `/api/sessions/[id]/transcript`.
+- Compaction entries render as collapsed `pi-web:compaction` markers, not as user messages. Detail `messageCount` / `firstMessage` come from real `type:"message"` entries on the current branch.
+- `/api/sessions/[id]/context` stays a compaction-aware compatibility endpoint and is not the chat transcript.
 
 ### Session files
 
