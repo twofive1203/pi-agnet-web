@@ -18,12 +18,13 @@ import type {
 } from "@/lib/types";
 import {
   GitWorkbenchError,
-  parseStatusPorcelainV1Z,
   readGitOperationState,
   resolveGitRepository,
   runGit,
   type GitRepositoryIdentity,
 } from "@/lib/git-executor";
+import { readRepositoryStatus } from "@/lib/git-repository-status";
+import { readGitStashCount } from "@/lib/git-stash";
 
 export const GIT_WORKBENCH_DEFAULT_PAGE_SIZE = 100;
 export const GIT_WORKBENCH_MAX_PAGE_SIZE = 200;
@@ -32,19 +33,6 @@ export const GIT_WORKBENCH_MAX_REFS = 5_000;
 export const GIT_WORKBENCH_MAX_AUTHORS = 500;
 export const GIT_WORKBENCH_MAX_FILES = 5_000;
 const LOG_AUTHOR_SCAN_LIMIT = 20_000;
-
-interface RepositoryStatusProjection {
-  branch: string | null;
-  head: string | null;
-  upstream: string | null;
-  ahead: number;
-  behind: number;
-  staged: GitStatusInfo["staged"];
-  unstaged: GitStatusInfo["unstaged"];
-  untracked: string[];
-  isDirty: boolean;
-  hasUnmerged: boolean;
-}
 
 function trimmed(value: string): string {
   return value.trim();
@@ -71,41 +59,12 @@ async function gitSucceeds(repo: GitRepositoryIdentity, args: readonly string[])
   }
 }
 
-function parseAheadBehind(value: string): { ahead: number; behind: number } {
-  const [aheadRaw, behindRaw] = value.trim().split(/\s+/);
-  return {
-    ahead: Number.parseInt(aheadRaw ?? "0", 10) || 0,
-    behind: Number.parseInt(behindRaw ?? "0", 10) || 0,
-  };
-}
-
 function parseTrack(value: string): { ahead: number; behind: number } {
   const ahead = /ahead\s+(\d+)/.exec(value)?.[1];
   const behind = /behind\s+(\d+)/.exec(value)?.[1];
   return {
     ahead: Number.parseInt(ahead ?? "0", 10) || 0,
     behind: Number.parseInt(behind ?? "0", 10) || 0,
-  };
-}
-
-export async function readRepositoryStatus(repo: GitRepositoryIdentity): Promise<RepositoryStatusProjection> {
-  const porcelain = await gitText(repo, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]);
-  const parsed = parseStatusPorcelainV1Z(porcelain);
-  const [headOutput, branchOutput, upstreamOutput, aheadBehindOutput] = await Promise.all([
-    tryGitText(repo, ["rev-parse", "--verify", "HEAD"]),
-    tryGitText(repo, ["symbolic-ref", "--quiet", "--short", "HEAD"]),
-    tryGitText(repo, ["rev-parse", "--abbrev-ref", "@{upstream}"]),
-    tryGitText(repo, ["rev-list", "--count", "--left-right", "HEAD...@{upstream}"]),
-  ]);
-  const counts = parseAheadBehind(aheadBehindOutput);
-  return {
-    branch: trimmed(branchOutput) || null,
-    head: trimmed(headOutput) || null,
-    upstream: trimmed(upstreamOutput) || null,
-    ahead: counts.ahead,
-    behind: counts.behind,
-    ...parsed,
-    isDirty: parsed.staged.length > 0 || parsed.unstaged.length > 0 || parsed.untracked.length > 0,
   };
 }
 
@@ -121,11 +80,11 @@ function parseRecentLog(output: string): GitCommitInfo[] {
 export async function readGitStatus(cwd: string): Promise<GitStatusInfo> {
   const repo = await resolveGitRepository(cwd);
   const status = await readRepositoryStatus(repo);
-  const [recentOutput, stashOutput] = await Promise.all([
+  const [recentOutput, stashCount] = await Promise.all([
     status.head
       ? tryGitText(repo, ["log", "-10", "--format=%H%x00%an%x00%ar%x00%ai%x00%s"])
       : Promise.resolve(""),
-    tryGitText(repo, ["stash", "list"]),
+    readGitStashCount(repo),
   ]);
   return {
     branch: status.branch,
@@ -139,7 +98,7 @@ export async function readGitStatus(cwd: string): Promise<GitStatusInfo> {
     unstaged: status.unstaged,
     untracked: status.untracked,
     recentCommits: parseRecentLog(recentOutput),
-    stashCount: stashOutput.trim() ? stashOutput.trimEnd().split("\n").length : 0,
+    stashCount,
   };
 }
 

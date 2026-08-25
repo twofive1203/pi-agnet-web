@@ -1532,7 +1532,7 @@ export function AppShell() {
               )}
               {rightPanelMode === "git" && (
                 <div className="insp-panel-scroll">
-                  <GitPanel cwd={workspaceCwd} refreshKey={gitRefreshKey} onDirtyChange={setGitDirty} />
+                  <GitPanel cwd={workspaceCwd} refreshKey={gitRefreshKey} agentRunning={agentRunning} onDirtyChange={setGitDirty} />
                 </div>
               )}
               {rightPanelMode === "workflow" && (

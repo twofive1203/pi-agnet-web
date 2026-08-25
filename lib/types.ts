@@ -529,6 +529,76 @@ export interface GitWorkingTreeFileDiffResponse {
   reason?: GitCommitDiffReason;
 }
 
+export type GitStashFileSource = "tracked" | "untracked";
+
+export interface GitStashEntry {
+  oid: string;
+  shortOid: string;
+  displayRef: string;
+  subject: string;
+  name: string;
+  sourceBranch: string | null;
+  createdAt: string;
+  timestamp: number;
+}
+
+export interface GitStashFile extends GitCommitChangedFile {
+  source: GitStashFileSource;
+}
+
+export interface GitStashTargetState {
+  cwd: string;
+  repoRoot: string;
+  branch: string | null;
+  head: string | null;
+  isDetached: boolean;
+  isDirty: boolean;
+  hasUnmerged: boolean;
+  isWorktree: boolean;
+  operationState: GitOperationState | null;
+  revision: string;
+}
+
+export interface GitStashListResponse {
+  entries: GitStashEntry[];
+  revision: string;
+  truncated: boolean;
+  totalCount: number;
+  target: GitStashTargetState;
+}
+
+export interface GitStashDetailResponse {
+  entry: GitStashEntry;
+  files: GitStashFile[];
+  fileCount: number;
+  filesTruncated: boolean;
+}
+
+export interface GitStashFileDiffResponse {
+  oid: string;
+  source: GitStashFileSource;
+  file: string;
+  oldFile?: string;
+  diffAvailable: boolean;
+  diff?: string;
+  reason?: GitCommitDiffReason;
+}
+
+export type GitStashAction = "create" | "apply" | "pop" | "drop";
+
+export type GitStashMutationRequest =
+  | { action: "create"; cwd: string; name: string; includeUntracked: boolean }
+  | { action: "apply" | "pop"; cwd: string; oid: string; reinstateIndex: boolean; expectedRevision: string; expectedTargetRevision: string }
+  | { action: "drop"; cwd: string; oid: string; expectedRevision: string };
+
+export interface GitStashMutationResponse {
+  success: true;
+  action: GitStashAction;
+  stashes: GitStashListResponse;
+  selectedOid: string | null;
+  stashRetained?: boolean;
+}
+
 export interface GitBranchInfo {
   name: string;
   isCurrent: boolean;
@@ -690,4 +760,5 @@ export interface GitWorkbenchErrorResponse {
   details?: string;
   recoveryRequired?: boolean;
   outcome?: "unknown";
+  stashRetained?: boolean;
 }

@@ -52,6 +52,7 @@ npm run test:usage           # Usage auto timeline projection + subagent/archive
 npm run test:scale-baseline  # Usage/index/allowed-roots scale + accelerated-path correctness
 npm run test:git-diff        # commit and staged/unstaged working-tree diff smoke
 npm run test:git-workbench   # refs/log/filter/common-dir lock and safe Git operations in disposable repos
+npm run test:git-stash       # stash list/detail/diff/create/apply/pop/drop safety in disposable repos
 npm run test:file-search     # bounded async workspace filename search smoke
 npm run test:file-upload     # chat upload path-boundary / sanitize / exclusive-write smoke
 npm run test:quick-commands # project quick-command config/trust/runner/cancel/output bounds

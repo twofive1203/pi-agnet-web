@@ -121,6 +121,9 @@ const REQUIRED_STABLE_CLASSES = [
   ".git-workbench-layout",
   ".git-workbench-context-menu",
   ".git-workbench-dialog",
+  ".git-panel-tabs",
+  ".git-stash-panel",
+  ".git-stash-dialog",
 ] as const;
 
 const REQUIRED_MODAL_WIDTH_CONTRACTS = [
@@ -174,6 +177,8 @@ interface ThemeSources {
   gitWorkbench: string;
   gitContextMenu: string;
   gitDialog: string;
+  gitPanel: string;
+  gitStashDialog: string;
 }
 
 type RuntimeThemeMetadata = Partial<ThemeMetadata>;
@@ -487,6 +492,17 @@ function collectContractProblems(
     || !sources.css.includes(".git-workbench-dialog-overlay")) {
     problems.push("git workbench: operation dialog focus contract is missing");
   }
+  if (!sources.gitPanel.includes('role="tablist"')
+    || !sources.gitPanel.includes("handleViewKeyDown")
+    || !sources.gitPanel.includes('aria-controls="git-panel-stash"')
+    || !sources.gitStashDialog.includes('aria-modal="true"')
+    || !sources.gitStashDialog.includes("button:not(:disabled)")
+    || !sources.gitStashDialog.includes('event.key === "Escape"')
+    || !sources.css.includes("@container (max-width: 430px)")
+    || !sources.css.includes(".git-stash-dialog-overlay")
+    || !sources.css.includes(".git-panel-tabs button { transition: none; }")) {
+    problems.push("git stash: tabs/dialog/narrow/reduced-motion contract is missing");
+  }
   if (!sources.css.includes(".git-workbench-more-button,")
     || !sources.css.includes("padding-bottom: max(4px, env(safe-area-inset-bottom))")
     || !sources.css.includes(".git-workbench-refs-shell,")) {
@@ -524,6 +540,8 @@ const sources: ThemeSources = {
   gitWorkbench: readSource("components/git-workbench/GitWorkbench.tsx"),
   gitContextMenu: readSource("components/git-workbench/GitContextMenu.tsx"),
   gitDialog: readSource("components/git-workbench/GitWorkbenchDialogs.tsx"),
+  gitPanel: readSource("components/GitPanel.tsx"),
+  gitStashDialog: readSource("components/GitStashDialogs.tsx"),
 };
 const runtimeMeta = THEME_META as unknown as RuntimeThemeMeta;
 

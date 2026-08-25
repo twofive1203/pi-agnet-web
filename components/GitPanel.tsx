@@ -8,10 +8,14 @@ import { GitCommitDetails } from "./GitCommitDetails";
 import { GitWorkingTreeDiffModal } from "./GitWorkingTreeDiffModal";
 import { useI18n } from "@/components/I18nProvider";
 import { buildGitWorkbenchUrl } from "@/lib/git-workbench-url";
+import { GitStashDialogs, type GitStashDialogRequest } from "./GitStashDialogs";
+import { GitStashPanel } from "./GitStashPanel";
+import { useGitStashes } from "@/hooks/useGitStashes";
 
 interface Props {
   cwd: string | null;
   refreshKey: number;
+  agentRunning?: boolean;
   onDirtyChange?: (dirty: boolean) => void;
 }
 
@@ -41,7 +45,7 @@ function FileChangeRow({ change, onOpenDiff }: { change: GitFileChange; onOpenDi
   );
 }
 
-export function GitPanel({ cwd, refreshKey, onDirtyChange }: Props) {
+export function GitPanel({ cwd, refreshKey, agentRunning = false, onDirtyChange }: Props) {
   const { t } = useI18n();
   const [status, setStatus] = useState<GitStatusInfo | null>(null);
   const [graphData, setGraphData] = useState<GitGraphData | null>(null);
@@ -65,6 +69,12 @@ export function GitPanel({ cwd, refreshKey, onDirtyChange }: Props) {
   const fetchIdRef = useRef(0);
   const commitDetailFetchIdRef = useRef(0);
   const branchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [activeView, setActiveView] = useState<"workspace" | "stash">("workspace");
+  const [stashVisited, setStashVisited] = useState(false);
+  const [stashDialog, setStashDialog] = useState<GitStashDialogRequest | null>(null);
+  const workspaceTabRef = useRef<HTMLButtonElement>(null);
+  const stashTabRef = useRef<HTMLButtonElement>(null);
+  const stashes = useGitStashes(cwd, stashVisited || activeView === "stash", onDirtyChange);
 
   useEffect(() => {
     return () => {
@@ -140,6 +150,7 @@ export function GitPanel({ cwd, refreshKey, onDirtyChange }: Props) {
     setGraphError(null);
     setDiffFile(null);
     setWorkingDiff(null);
+    setStashDialog(null);
   }, [cwd]);
 
   useEffect(() => {
@@ -236,6 +247,50 @@ export function GitPanel({ cwd, refreshKey, onDirtyChange }: Props) {
     setWorkingDiff({ scope, file });
   }, []);
 
+  const activateView = useCallback((view: "workspace" | "stash", focus = false) => {
+    setActiveView(view);
+    if (view === "stash") setStashVisited(true);
+    if (focus) requestAnimationFrame(() => (view === "workspace" ? workspaceTabRef : stashTabRef).current?.focus());
+  }, []);
+
+  const handleViewKeyDown = useCallback((event: React.KeyboardEvent<HTMLButtonElement>) => {
+    let next: "workspace" | "stash" | null = null;
+    if (event.key === "ArrowLeft" || event.key === "ArrowUp" || event.key === "Home") next = "workspace";
+    if (event.key === "ArrowRight" || event.key === "ArrowDown" || event.key === "End") next = "stash";
+    if (!next) return;
+    event.preventDefault();
+    activateView(next, true);
+  }, [activateView]);
+
+  const openStashDialog = useCallback((request: GitStashDialogRequest) => {
+    stashes.clearOperationError();
+    setStashDialog(request);
+  }, [stashes]);
+
+  const handleCreateStash = useCallback(async (name: string, includeUntracked: boolean) => {
+    const success = await stashes.create(name, includeUntracked);
+    await fetchAll();
+    if (success) activateView("stash");
+    return success;
+  }, [activateView, fetchAll, stashes]);
+
+  const handleStashAction = useCallback(async (
+    action: "apply" | "pop" | "drop",
+    oid: string,
+    reinstateIndex: boolean,
+    expectedRevision: string,
+    expectedTargetRevision: string,
+  ) => {
+    const success = await stashes.operate(action, oid, reinstateIndex, expectedRevision, expectedTargetRevision);
+    await fetchAll();
+    return success;
+  }, [fetchAll, stashes]);
+
+  const handleGitRefresh = useCallback(() => {
+    void fetchAll();
+    if (stashVisited || activeView === "stash") void stashes.refresh();
+  }, [activeView, fetchAll, stashVisited, stashes]);
+
   const handleSwitchBranch = useCallback(async () => {
     if (!cwd || !selectedBranch || status?.isDirty || switching) return;
 
@@ -303,27 +358,76 @@ export function GitPanel({ cwd, refreshKey, onDirtyChange }: Props) {
         ? t("git.switchDisabledCurrent")
         : null;
 
+  const stashErrorMessage = stashes.operationError
+    ? t(`git.stashManager.errors.${stashes.operationError.code}`)
+    : null;
+  const createDisabledReason = agentRunning ? t("git.stashManager.agentRunningDisabled") : undefined;
+
   return (
     <div className="git-panel-root inspector-content">
       <div className="git-panel-toolbar">
-        <a
-          href={buildGitWorkbenchUrl(cwd)}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="git-workbench-open-link"
-          title={t("git.workbench.open")}
-        >
-          {t("git.workbench.open")}
-        </a>
-        <button type="button" onClick={() => void fetchAll()} disabled={loading} title={t("git.refreshTitle")} className="git-refresh-button">
-          <svg className={loading ? "is-spinning" : undefined} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="23 4 23 10 17 10" />
-            <polyline points="1 20 1 14 7 14" />
-            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
-          </svg>
-        </button>
+        <div className="git-panel-tabs" role="tablist" aria-label={t("git.stashManager.views")}>
+          <button
+            ref={workspaceTabRef}
+            type="button"
+            role="tab"
+            id="git-panel-tab-workspace"
+            aria-controls="git-panel-workspace"
+            aria-selected={activeView === "workspace"}
+            tabIndex={activeView === "workspace" ? 0 : -1}
+            className={activeView === "workspace" ? "is-active" : undefined}
+            onClick={() => activateView("workspace")}
+            onKeyDown={handleViewKeyDown}
+          >{t("git.stashManager.workspaceTab")}</button>
+          <button
+            ref={stashTabRef}
+            type="button"
+            role="tab"
+            id="git-panel-tab-stash"
+            aria-controls="git-panel-stash"
+            aria-selected={activeView === "stash"}
+            tabIndex={activeView === "stash" ? 0 : -1}
+            className={activeView === "stash" ? "is-active" : undefined}
+            onClick={() => activateView("stash")}
+            onKeyDown={handleViewKeyDown}
+          >{t("git.stashManager.stashTab")} <span>{status.stashCount}</span></button>
+        </div>
+        <div className="git-panel-toolbar-actions">
+          {activeView === "workspace" && status.isDirty && (
+            <button
+              type="button"
+              className="git-stash-create-button"
+              disabled={agentRunning || stashes.operationBusy}
+              title={createDisabledReason}
+              onClick={(event) => openStashDialog({ type: "create", trigger: event.currentTarget })}
+            >{t("git.stashManager.create")}</button>
+          )}
+          <a
+            href={buildGitWorkbenchUrl(cwd)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="git-workbench-open-link"
+            title={t("git.workbench.open")}
+          >
+            {t("git.workbench.open")}
+          </a>
+          <button type="button" onClick={handleGitRefresh} disabled={loading || stashes.operationBusy} title={t("git.refreshTitle")} className="git-refresh-button">
+            <svg className={loading ? "is-spinning" : undefined} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="23 4 23 10 17 10" />
+              <polyline points="1 20 1 14 7 14" />
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+            </svg>
+          </button>
+        </div>
       </div>
 
+      <div
+        id="git-panel-workspace"
+        role="tabpanel"
+        aria-labelledby="git-panel-tab-workspace"
+        hidden={activeView !== "workspace"}
+        className="git-panel-workspace"
+      >
       <section className="inspector-section git-branch-section">
         <div className="inspector-section-title">{t("git.branch")}</div>
         <div className="git-branch-summary">
@@ -493,6 +597,32 @@ export function GitPanel({ cwd, refreshKey, onDirtyChange }: Props) {
           ? <div className="git-stash-count">{t("git.stashEntries", { count: status.stashCount })}</div>
           : <div className="git-empty-inline">{t("git.noStash")}</div>}
       </section>
+      </div>
+
+      <div
+        id="git-panel-stash"
+        role="tabpanel"
+        aria-labelledby="git-panel-tab-stash"
+        hidden={activeView !== "stash"}
+        className="git-panel-stash"
+      >
+        <GitStashPanel
+          cwd={cwd}
+          projection={stashes.projection}
+          selectedOid={stashes.selectedOid}
+          detail={stashes.detail}
+          listLoading={stashes.listLoading}
+          detailLoading={stashes.detailLoading}
+          listError={stashes.listError}
+          detailError={stashes.detailError}
+          operationError={stashes.operationError}
+          operationBusy={stashes.operationBusy}
+          agentRunning={agentRunning}
+          onSelect={stashes.selectOid}
+          onRefresh={() => void stashes.refresh()}
+          onRequestAction={openStashDialog}
+        />
+      </div>
 
       {diffFile && cwd && selectedCommitHash && (
         <GitCommitDiffModal
@@ -511,6 +641,16 @@ export function GitPanel({ cwd, refreshKey, onDirtyChange }: Props) {
           onClose={() => setWorkingDiff(null)}
         />
       )}
+      <GitStashDialogs
+        request={stashDialog}
+        status={status}
+        busy={stashes.operationBusy}
+        error={stashErrorMessage}
+        agentRunning={agentRunning}
+        onClose={() => setStashDialog(null)}
+        onCreate={handleCreateStash}
+        onAction={handleStashAction}
+      />
     </div>
   );
 }

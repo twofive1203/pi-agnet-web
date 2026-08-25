@@ -38,7 +38,12 @@ export type GitErrorCode =
   | "PUSH_AUTH_FAILED"
   | "PUSH_HOOK_FAILED"
   | "PUSH_OUTCOME_UNKNOWN"
-  | "CONFLICT_ABORTED";
+  | "CONFLICT_ABORTED"
+  | "NOTHING_TO_STASH"
+  | "STASH_NOT_FOUND"
+  | "STASH_CONFLICT"
+  | "STASH_OUTCOME_UNKNOWN"
+  | "STALE_TARGET";
 
 export class GitWorkbenchError extends Error {
   readonly code: GitErrorCode;
@@ -48,6 +53,7 @@ export class GitWorkbenchError extends Error {
   readonly outcome?: "unknown";
   readonly stdout?: string;
   readonly stderr?: string;
+  readonly stashRetained?: boolean;
 
   constructor(
     code: GitErrorCode,
@@ -59,6 +65,7 @@ export class GitWorkbenchError extends Error {
       outcome?: "unknown";
       stdout?: string;
       stderr?: string;
+      stashRetained?: boolean;
     } = {},
   ) {
     super(message);
@@ -70,6 +77,7 @@ export class GitWorkbenchError extends Error {
     this.outcome = options.outcome;
     this.stdout = options.stdout;
     this.stderr = options.stderr;
+    this.stashRetained = options.stashRetained;
   }
 }
 
@@ -355,7 +363,7 @@ export function parseStatusPorcelainV1Z(output: string): {
 }
 
 export function gitErrorResponse(error: unknown): {
-  body: { error: string; code: string; details?: string; recoveryRequired?: boolean; outcome?: "unknown" };
+  body: { error: string; code: string; details?: string; recoveryRequired?: boolean; outcome?: "unknown"; stashRetained?: boolean };
   status: number;
 } {
   const mapped = error instanceof GitWorkbenchError
@@ -368,6 +376,7 @@ export function gitErrorResponse(error: unknown): {
       details: mapped.details,
       recoveryRequired: mapped.recoveryRequired,
       outcome: mapped.outcome,
+      stashRetained: mapped.stashRetained,
     },
     status: mapped.status,
   };
