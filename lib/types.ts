@@ -471,6 +471,8 @@ export interface GitGraphCommit {
   timestamp?: number;
   parents: string[];
   refs: GitCommitRef[];
+  /** Workbench log projection: whether this exact commit is reachable from the current HEAD. */
+  containedInCurrent?: boolean;
 }
 
 export interface GitCommitChangedFile {

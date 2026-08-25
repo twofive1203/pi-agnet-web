@@ -61,6 +61,7 @@ export function GitLogPane({
     ...overview.remoteBranches,
     ...overview.tags,
   ], [overview]);
+  const currentScope = overview.currentBranch ? `refs/heads/${overview.currentBranch}` : null;
 
   const capabilities = detail && menu && detail.hash === menu.commit.hash ? detail.capabilities : undefined;
   const reasonText = (capability: GitCommitCapability | undefined): string | undefined => {
@@ -133,6 +134,7 @@ export function GitLogPane({
             selectedHash={selectedHash}
             onSelectCommit={onSelectCommit}
             variant="workbench"
+            highlightContainedInCurrent={selectedScope !== currentScope}
             onContextMenu={(commit, anchor) => setMenu({ commit, ...anchor })}
           />
         )}

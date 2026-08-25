@@ -19,7 +19,11 @@ import {
   readGitWorkbenchOverview,
 } from "../lib/git-workbench";
 import { executeGitWorkbenchOperation } from "../lib/git-workbench-operations";
-import { buildGitChangedFileTree } from "../lib/git-workbench-client";
+import {
+  buildGitChangedFileTree,
+  buildGitRemoteRefGroups,
+  collectGitFileTreeFolderIds,
+} from "../lib/git-workbench-client";
 import { buildGitWorkbenchUrl } from "../lib/git-workbench-url";
 
 const execFileAsync = promisify(execFile);
@@ -61,6 +65,8 @@ async function main(): Promise<void> {
     await git(root, "init", "--bare", bare);
     await git(repo, "remote", "add", "origin", bare);
     await git(repo, "push", "-u", "origin", "main");
+    await git(repo, "remote", "add", "team", bare);
+    await git(repo, "fetch", "team", "main");
 
     await git(repo, "switch", "-c", "source", base);
     const sourceCommit = await commitFile(repo, "source.txt", "source\n", "source change");
@@ -79,11 +85,18 @@ async function main(): Promise<void> {
     assert.equal(tree[0]?.name, "src/deep/module");
     assert.equal(tree[1]?.name, "README.md");
     assert.equal(tree[0]?.children?.[1]?.change?.oldFile, "old/b.ts");
+    assert.deepEqual([...collectGitFileTreeFolderIds(tree)], ["folder:src/deep/module"]);
 
     const overview = await currentOverview(repo);
     assert.equal(overview.currentBranch, "main");
     assert.equal(overview.localBranches.some((ref) => ref.name === "source"), true);
-    assert.equal(overview.remoteBranches.some((ref) => ref.name === "origin/main"), true);
+    assert.equal(overview.remoteBranches.some((ref) => ref.name === "origin/main" && ref.remote === "origin"), true);
+    assert.equal(overview.remoteBranches.some((ref) => ref.name === "team/main" && ref.remote === "team"), true);
+    assert.deepEqual(overview.remotes, ["origin", "team"]);
+    assert.deepEqual(
+      buildGitRemoteRefGroups(overview.remotes, overview.remoteBranches).map((group) => [group.remote, group.refs.map((ref) => ref.name)]),
+      [["origin", ["origin/main"]], ["team", ["team/main"]]],
+    );
     assert.equal(overview.tags.some((ref) => ref.name === "v-local"), true);
     assert.equal(overview.authors.some((author) => author.name === "Smoke 用户"), true);
     assert.equal(overview.isDirty, false);
@@ -96,8 +109,14 @@ async function main(): Promise<void> {
 
     const searchPage = await readGitWorkbenchLog({ cwd: repo, revision: overview.revision, query: "SOURCE CHANGE", limit: 20 });
     assert.deepEqual(searchPage.commits.map((commit) => commit.hash), [sourceCommit]);
+    assert.equal(searchPage.commits[0]?.containedInCurrent, false);
     const hashPage = await readGitWorkbenchLog({ cwd: repo, revision: overview.revision, query: sourceCommit.slice(0, 9), limit: 20 });
     assert.deepEqual(hashPage.commits.map((commit) => commit.hash), [sourceCommit]);
+    assert.equal(hashPage.commits[0]?.containedInCurrent, false);
+    const basePage = await readGitWorkbenchLog({ cwd: repo, revision: overview.revision, query: base.slice(0, 9), limit: 20 });
+    assert.equal(basePage.commits[0]?.containedInCurrent, true);
+    const currentBranchPage = await readGitWorkbenchLog({ cwd: repo, revision: overview.revision, scope: "refs/heads/main", limit: 20 });
+    assert.equal(currentBranchPage.commits.every((commit) => commit.containedInCurrent), true);
     const author = overview.authors.find((candidate) => candidate.name === "Smoke 用户");
     assert.ok(author);
     const authorPage = await readGitWorkbenchLog({ cwd: repo, revision: overview.revision, authorId: author.id, limit: 20 });

@@ -6,6 +6,7 @@ import type {
   GitWorkbenchOperationRequest,
   GitWorkbenchOperationResponse,
   GitWorkbenchOverview,
+  GitWorkbenchRef,
 } from "@/lib/types";
 
 export class GitWorkbenchClientError extends Error {
@@ -90,6 +91,26 @@ export async function runGitWorkbenchOperation(
   return responseJson<GitWorkbenchOperationResponse>(response);
 }
 
+export interface GitRemoteRefGroup {
+  remote: string;
+  refs: GitWorkbenchRef[];
+}
+
+export function buildGitRemoteRefGroups(
+  remotes: readonly string[],
+  remoteBranches: readonly GitWorkbenchRef[],
+): GitRemoteRefGroup[] {
+  const groups = new Map<string, GitWorkbenchRef[]>(remotes.map((remote) => [remote, []]));
+  for (const ref of remoteBranches) {
+    const remote = ref.remote ?? ref.name.split("/", 1)[0];
+    if (!remote) continue;
+    const refs = groups.get(remote);
+    if (refs) refs.push(ref);
+    else groups.set(remote, [ref]);
+  }
+  return [...groups].map(([remote, refs]) => ({ remote, refs }));
+}
+
 export interface GitFileTreeNode {
   id: string;
   name: string;
@@ -160,4 +181,15 @@ export function buildGitChangedFileTree(files: readonly GitCommitChangedFile[]):
     });
   }
   return finalizeFolder(root, true);
+}
+
+export function collectGitFileTreeFolderIds(nodes: readonly GitFileTreeNode[]): Set<string> {
+  const folderIds = new Set<string>();
+  const visit = (node: GitFileTreeNode) => {
+    if (node.kind !== "folder") return;
+    folderIds.add(node.id);
+    node.children?.forEach(visit);
+  };
+  nodes.forEach(visit);
+  return folderIds;
 }

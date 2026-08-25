@@ -345,6 +345,33 @@ function parseLogRows(output: string, byTarget: Map<string, GitCommitRef[]>): Gi
   return commits;
 }
 
+async function markCurrentBranchCommits(
+  repo: GitRepositoryIdentity,
+  overview: GitWorkbenchOverview,
+  scope: string,
+  commits: readonly GitGraphCommit[],
+): Promise<GitGraphCommit[]> {
+  if (commits.length === 0) return [];
+  const currentRef = overview.currentBranch ? `refs/heads/${overview.currentBranch}` : null;
+  if (!overview.head || !currentRef) {
+    return commits.map((commit) => ({ ...commit, containedInCurrent: false }));
+  }
+  if (scope === currentRef) {
+    return commits.map((commit) => ({ ...commit, containedInCurrent: true }));
+  }
+  const output = await gitText(repo, [
+    "name-rev",
+    "--name-only",
+    `--refs=${currentRef}`,
+    ...commits.map((commit) => commit.hash),
+  ]);
+  const names = output.trimEnd() ? output.trimEnd().split("\n") : [];
+  return commits.map((commit, index) => ({
+    ...commit,
+    containedInCurrent: Boolean(names[index] && names[index] !== "undefined"),
+  }));
+}
+
 function escapeGitRegex(value: string): string {
   return value.replace(/[\\.^$|?*+()[\]{}]/g, "\\$&");
 }
@@ -431,7 +458,7 @@ export async function readGitWorkbenchLog(options: {
       const exactOutput = inScope && authorMatches && offset === 0
         ? await gitText(repo, ["show", "-s", format, normalized])
         : "";
-      const commits = parseLogRows(exactOutput, byTarget);
+      const commits = await markCurrentBranchCommits(repo, overview, scope, parseLogRows(exactOutput, byTarget));
       return { revision: overview.revision, scope, query, authorId: selectedAuthor?.id ?? null, offset, limit, commits, hasMore: false };
     } catch (error) {
       if (!(error instanceof GitWorkbenchError) || error.code !== "COMMIT_NOT_FOUND") throw error;
@@ -451,6 +478,7 @@ export async function readGitWorkbenchLog(options: {
   if (selectedAuthor) args.push(`--author=${escapeGitRegex(`${selectedAuthor.name} <${selectedAuthor.email}>`)}`);
   const output = await gitText(repo, args);
   const rows = parseLogRows(output, byTarget);
+  const commits = await markCurrentBranchCommits(repo, overview, scope, rows.slice(0, limit));
   return {
     revision: overview.revision,
     scope,
@@ -458,7 +486,7 @@ export async function readGitWorkbenchLog(options: {
     authorId: selectedAuthor?.id ?? null,
     offset,
     limit,
-    commits: rows.slice(0, limit),
+    commits,
     hasMore: rows.length > limit,
   };
 }

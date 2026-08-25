@@ -4,7 +4,11 @@ import { useEffect, useMemo, useState } from "react";
 import { GitCommitDetails } from "@/components/GitCommitDetails";
 import { GitCommitDiffModal } from "@/components/GitCommitDiffModal";
 import { useI18n } from "@/components/I18nProvider";
-import { buildGitChangedFileTree, type GitFileTreeNode } from "@/lib/git-workbench-client";
+import {
+  buildGitChangedFileTree,
+  collectGitFileTreeFolderIds,
+  type GitFileTreeNode,
+} from "@/lib/git-workbench-client";
 import type { GitCommitChangedFile, GitCommitDetail } from "@/lib/types";
 
 export function GitCommitInspector({
@@ -25,10 +29,10 @@ export function GitCommitInspector({
   const tree = useMemo(() => buildGitChangedFileTree(detail?.files ?? []), [detail?.files]);
 
   useEffect(() => {
-    setExpanded(new Set());
+    setExpanded(collectGitFileTreeFolderIds(tree));
     setSelectedFile(null);
     setDiffFile(null);
-  }, [detail?.hash]);
+  }, [detail?.hash, tree]);
 
   const toggleFolder = (node: GitFileTreeNode) => {
     setExpanded((current) => {

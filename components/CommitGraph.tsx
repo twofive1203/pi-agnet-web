@@ -279,10 +279,11 @@ interface Props {
   selectedHash?: string | null;
   onSelectCommit?: (commit: GitGraphCommit) => void;
   variant?: "compact" | "workbench";
+  highlightContainedInCurrent?: boolean;
   onContextMenu?: (commit: GitGraphCommit, anchor: GitCommitMenuAnchor) => void;
 }
 
-export function CommitGraph({ commits, currentBranch, maxDisplay = 50, selectedHash, onSelectCommit, variant = "compact", onContextMenu }: Props) {
+export function CommitGraph({ commits, currentBranch, maxDisplay = 50, selectedHash, onSelectCommit, variant = "compact", highlightContainedInCurrent = false, onContextMenu }: Props) {
   const [tooltip, setTooltip] = useState<TooltipInfo | null>(null);
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -323,7 +324,7 @@ export function CommitGraph({ commits, currentBranch, maxDisplay = 50, selectedH
     const laneWidth = 20;
     const paddingL = 6;
     const graphWidth = ordered.length * laneWidth + paddingL;
-    const rowHeight = variant === "workbench" ? 30 : 20;
+    const rowHeight = variant === "workbench" ? 34 : 20;
 
     const hashToIndex = new Map(display.map((c, i) => [c.hash, i]));
     const rows = buildRowData(display, layout, ordered, laneWidth, paddingL, hashToIndex);
@@ -401,6 +402,7 @@ export function CommitGraph({ commits, currentBranch, maxDisplay = 50, selectedH
             hideTooltip={hideTooltip}
             isHovered={hoveredIdx === rd.idx}
             isSelected={selectedHash === rd.commit.hash}
+            isContainedInCurrent={highlightContainedInCurrent && rd.commit.containedInCurrent === true}
             onRowEnter={handleRowEnter}
             onRowLeave={handleRowLeave}
             onSelectCommit={onSelectCommit}
@@ -468,7 +470,7 @@ export function CommitGraph({ commits, currentBranch, maxDisplay = 50, selectedH
 function CommitRow({
   rd, layout, laneOrder, graphWidth, laneWidth, paddingL, rowHeight,
   currentBranch, showTooltip, hideTooltip,
-  isHovered, isSelected, onRowEnter, onRowLeave, onSelectCommit,
+  isHovered, isSelected, isContainedInCurrent, onRowEnter, onRowLeave, onSelectCommit,
   variant, onContextMenu,
 }: {
   rd: RowData;
@@ -483,6 +485,7 @@ function CommitRow({
   hideTooltip: () => void;
   isHovered: boolean;
   isSelected: boolean;
+  isContainedInCurrent: boolean;
   onRowEnter: (idx: number) => void;
   onRowLeave: () => void;
   onSelectCommit?: (commit: GitGraphCommit) => void;
@@ -514,7 +517,7 @@ function CommitRow({
       aria-pressed={onSelectCommit && variant === "compact" ? isSelected : undefined}
       aria-selected={onSelectCommit && variant === "workbench" ? isSelected : undefined}
       data-commit-row={variant === "workbench" ? "true" : undefined}
-      className={`commit-graph-row${isSelected ? " is-selected" : ""}${isHovered ? " is-hovered" : ""}${onSelectCommit ? " is-interactive" : ""}`}
+      className={`commit-graph-row${isSelected ? " is-selected" : ""}${isHovered ? " is-hovered" : ""}${isContainedInCurrent ? " is-contained-in-current" : ""}${onSelectCommit ? " is-interactive" : ""}`}
       onClick={() => onSelectCommit?.(commit)}
       onContextMenu={(event) => {
         if (!onContextMenu) return;
@@ -668,6 +671,7 @@ function CommitRow({
             label={ref.name}
             isCurrent={ref.name === currentBranch}
             color={myColor}
+            workbench={variant === "workbench"}
           />
         ))}
         {tagLabels.length > 0 && (
@@ -676,6 +680,7 @@ function CommitRow({
             label={tagLabels[0].name}
             isCurrent={false}
             color="#9ca3af"
+            workbench={variant === "workbench"}
           />
         )}
 
@@ -720,23 +725,23 @@ function formatCommitTooltip(c: GitGraphCommit): string {
 
 // ─── Ref badge ────────────────────────────────────────────────────
 
-function RefBadge({ label, isCurrent, color }: { label: string; color: string; isCurrent: boolean }) {
+function RefBadge({ label, isCurrent, color, workbench }: { label: string; color: string; isCurrent: boolean; workbench: boolean }) {
   return (
     <span
       title={label}
       style={{
-        fontSize: 8.5,
+        fontSize: workbench ? 10.5 : 8.5,
         fontFamily: "var(--font-mono)",
         color: isCurrent ? color : "var(--text-dim)",
         background: isCurrent ? `${color}22` : "var(--bg-hover)",
         border: `1px solid ${isCurrent ? `${color}44` : "var(--border)"}`,
         borderRadius: 3,
-        padding: "0 4px",
-        lineHeight: "15px",
+        padding: workbench ? "0 5px" : "0 4px",
+        lineHeight: workbench ? "17px" : "15px",
         whiteSpace: "nowrap",
         flexShrink: 0,
         fontWeight: isCurrent ? 600 : 400,
-        maxWidth: 70,
+        maxWidth: workbench ? 90 : 70,
         overflow: "hidden",
         textOverflow: "ellipsis",
       }}
