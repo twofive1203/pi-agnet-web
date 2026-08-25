@@ -390,6 +390,8 @@ export const panelsZh = {
     previewAfterStream: "流式输出结束后可预览",
     showSource: "显示 Mermaid 源码",
     previewDiagram: "预览 Mermaid 图",
+    source: "源码",
+    preview: "预览",
   },
   sessionChanges: {
     title: "变更文件",
@@ -938,6 +940,8 @@ export const panelsEn = {
     previewAfterStream: "Preview available after streaming",
     showSource: "Show Mermaid source",
     previewDiagram: "Preview Mermaid diagram",
+    source: "Source",
+    preview: "Preview",
   },
   sessionChanges: {
     title: "Changed files",

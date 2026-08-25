@@ -14,6 +14,8 @@ interface MarkdownBodyProps {
   children: string;
   className?: string;
   isStreaming?: boolean;
+  /** File preview starts Mermaid in the rendered view; chat keeps source-first. */
+  autoPreviewMermaid?: boolean;
 }
 
 /** Large fenced blocks stay collapsed until expanded; highlight only after expand. */
@@ -44,7 +46,8 @@ function markdownBodyPropsEqual(prev: MarkdownBodyProps, next: MarkdownBodyProps
   return (
     prev.children === next.children &&
     prev.className === next.className &&
-    prev.isStreaming === next.isStreaming
+    prev.isStreaming === next.isStreaming &&
+    prev.autoPreviewMermaid === next.autoPreviewMermaid
   );
 }
 
@@ -52,6 +55,7 @@ export const MarkdownBody = memo(function MarkdownBody({
   children,
   className,
   isStreaming,
+  autoPreviewMermaid,
 }: MarkdownBodyProps) {
   const normalizedMarkdown = useMemo(() => normalizeDisplayMath(children), [children]);
 
@@ -67,7 +71,13 @@ export const MarkdownBody = memo(function MarkdownBody({
             const isBlock = codeClassName?.includes("language-") || raw.includes("\n");
             if (isBlock) {
               if (lang === "mermaid") {
-                return <MermaidBlock code={raw.replace(/\n$/, "")} isStreaming={isStreaming} />;
+                return (
+                  <MermaidBlock
+                    code={raw.replace(/\n$/, "")}
+                    isStreaming={isStreaming}
+                    autoPreview={autoPreviewMermaid}
+                  />
+                );
               }
               return (
                 <CodeBlock
@@ -151,10 +161,18 @@ function normalizeDisplayMath(markdown: string): string {
     .join(lineBreak);
 }
 
-function MermaidBlock({ code, isStreaming }: { code: string; isStreaming?: boolean }) {
+function MermaidBlock({
+  code,
+  isStreaming,
+  autoPreview,
+}: {
+  code: string;
+  isStreaming?: boolean;
+  autoPreview?: boolean;
+}) {
   const { t } = useI18n();
   const { isDark } = useTheme();
-  const [showPreview, setShowPreview] = useState(false);
+  const [showPreview, setShowPreview] = useState(() => Boolean(autoPreview) && !isStreaming);
   const [svg, setSvg] = useState<string | null>(null);
   const [renderedKey, setRenderedKey] = useState("");
   const [failedKey, setFailedKey] = useState<string | null>(null);
@@ -200,18 +218,19 @@ function MermaidBlock({ code, isStreaming }: { code: string; isStreaming?: boole
 
   const previewButton = (
     <button
+      type="button"
       onClick={() => setShowPreview((v) => !v)}
       disabled={isStreaming}
       title={
         isStreaming
-          ? "Preview available after streaming"
+          ? t("panels.mermaid.previewAfterStream")
           : showPreview
-            ? "Show Mermaid source"
-            : "Preview Mermaid diagram"
+            ? t("panels.mermaid.showSource")
+            : t("panels.mermaid.previewDiagram")
       }
       className={["markdown-code-action", showPreview ? "is-active" : ""].filter(Boolean).join(" ")}
     >
-      {showPreview ? "Source" : "Preview"}
+      {showPreview ? t("panels.mermaid.source") : t("panels.mermaid.preview")}
     </button>
   );
 

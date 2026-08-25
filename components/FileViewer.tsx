@@ -2,12 +2,10 @@
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import dynamic from "next/dynamic";
-import ReactMarkdown from "react-markdown";
 import { useTheme } from "@/hooks/useTheme";
 import { useI18n } from "@/components/I18nProvider";
 import { useAppDialog } from "@/components/AppDialogProvider";
 import { encodeFilePathForApi, getFileName, getRelativeFilePath } from "@/lib/file-paths";
-import { markdownPreviewRehypePlugins, markdownPreviewRemarkPlugins } from "@/lib/markdown";
 import type { PiWebEditorConfig } from "@/lib/pi-web-config";
 import type { MonacoFileEditorProps } from "./MonacoFileEditor";
 
@@ -20,6 +18,14 @@ const MonacoFileEditor = dynamic<MonacoFileEditorProps>(
         Loading editor…
       </div>
     ),
+  },
+);
+
+const MarkdownPreview = dynamic(
+  () => import("./MarkdownBody").then((mod) => mod.MarkdownBody),
+  {
+    ssr: false,
+    loading: () => <div className="file-viewer-state is-loading">Loading preview…</div>,
   },
 );
 
@@ -1094,14 +1100,9 @@ function TextFileViewer({ filePath, cwd, initialLine, editorConfig, onAddChat, o
             title={t("panels.fileViewer.htmlPreview")}
           />
         ) : isMarkdown && previewMode ? (
-          <div className="markdown-body markdown-file-preview">
-            <ReactMarkdown
-              remarkPlugins={markdownPreviewRemarkPlugins}
-              rehypePlugins={markdownPreviewRehypePlugins}
-            >
-              {editorContent}
-            </ReactMarkdown>
-          </div>
+          <MarkdownPreview className="markdown-file-preview" autoPreviewMermaid>
+            {editorContent}
+          </MarkdownPreview>
         ) : (
           <MonacoFileEditor
             value={editorContent}
