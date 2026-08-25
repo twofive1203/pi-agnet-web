@@ -117,6 +117,10 @@ const REQUIRED_STABLE_CLASSES = [
   ".usage-token-bucket",
   ".usage-token-tooltip",
   ".usage-token-legend",
+  ".git-workbench-root",
+  ".git-workbench-layout",
+  ".git-workbench-context-menu",
+  ".git-workbench-dialog",
 ] as const;
 
 const REQUIRED_MODAL_WIDTH_CONTRACTS = [
@@ -167,6 +171,9 @@ interface ThemeSources {
   appDialog: string;
   extensionDialog: string;
   directoryPicker: string;
+  gitWorkbench: string;
+  gitContextMenu: string;
+  gitDialog: string;
 }
 
 type RuntimeThemeMetadata = Partial<ThemeMetadata>;
@@ -461,6 +468,30 @@ function collectContractProblems(
     || !sources.directoryPicker.includes('event.key === "Escape"')) {
     problems.push("directory picker: portal/focus contract is missing");
   }
+  if (!sources.gitWorkbench.includes('data-mobile-pane={mobilePane}')
+    || !sources.css.includes('.git-workbench-root[data-mobile-pane="changes"]')
+    || !sources.css.includes(".git-workbench-refs-drawer-trigger")
+    || !sources.css.includes(".git-workbench-inspector")) {
+    problems.push("git workbench: responsive three-pane/drawer/tab contract is missing");
+  }
+  if (!sources.gitContextMenu.includes("createPortal")
+    || !sources.gitContextMenu.includes('role="menu"')
+    || !sources.gitContextMenu.includes('event.key === "Escape"')
+    || !sources.gitContextMenu.includes("trigger.focus()")
+    || !sources.css.includes("z-index: var(--z-context-menu)")) {
+    problems.push("git workbench: context-menu portal/focus/layer contract is missing");
+  }
+  if (!sources.gitDialog.includes('aria-modal="true"')
+    || !sources.gitDialog.includes("button:not(:disabled)")
+    || !sources.gitDialog.includes('event.key === "Escape"')
+    || !sources.css.includes(".git-workbench-dialog-overlay")) {
+    problems.push("git workbench: operation dialog focus contract is missing");
+  }
+  if (!sources.css.includes(".git-workbench-more-button,")
+    || !sources.css.includes("padding-bottom: max(4px, env(safe-area-inset-bottom))")
+    || !sources.css.includes(".git-workbench-refs-shell,")) {
+    problems.push("git workbench: coarse-pointer/safe-area/reduced-motion contract is missing");
+  }
 
   return problems;
 }
@@ -490,6 +521,9 @@ const sources: ThemeSources = {
   appDialog: readSource("components/AppDialogProvider.tsx"),
   extensionDialog: readSource("components/ExtensionDialogHost.tsx"),
   directoryPicker: readSource("components/sidebar/DirectoryPickerDialog.tsx"),
+  gitWorkbench: readSource("components/git-workbench/GitWorkbench.tsx"),
+  gitContextMenu: readSource("components/git-workbench/GitContextMenu.tsx"),
+  gitDialog: readSource("components/git-workbench/GitWorkbenchDialogs.tsx"),
 };
 const runtimeMeta = THEME_META as unknown as RuntimeThemeMeta;
 

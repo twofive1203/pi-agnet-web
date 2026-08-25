@@ -10,6 +10,7 @@ import type {
   GitCommitFileDiffResponse,
   GitWorkingTreeFileDiffResponse,
 } from "../lib/types";
+import { registerAllowedRoot } from "../lib/allowed-roots";
 
 const execFileAsync = promisify(execFile);
 
@@ -27,6 +28,7 @@ async function main(): Promise<void> {
   const cwd = await mkdtemp(path.join(os.tmpdir(), "pi-web-git-diff-"));
   try {
     await git(cwd, "init");
+    registerAllowedRoot(cwd);
   await git(cwd, "config", "user.email", "smoke@example.test");
   await git(cwd, "config", "user.name", "Smoke Test");
 

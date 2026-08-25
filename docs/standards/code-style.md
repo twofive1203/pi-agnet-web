@@ -51,6 +51,7 @@ npm run test:session-transcript # display transcript vs model context + paginati
 npm run test:usage           # Usage auto timeline projection + subagent/archive accounting
 npm run test:scale-baseline  # Usage/index/allowed-roots scale + accelerated-path correctness
 npm run test:git-diff        # commit and staged/unstaged working-tree diff smoke
+npm run test:git-workbench   # refs/log/filter/common-dir lock and safe Git operations in disposable repos
 npm run test:file-search     # bounded async workspace filename search smoke
 npm run test:file-upload     # chat upload path-boundary / sanitize / exclusive-write smoke
 npm run test:quick-commands # project quick-command config/trust/runner/cancel/output bounds

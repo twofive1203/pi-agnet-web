@@ -4,8 +4,10 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import type { GitStatusInfo, GitFileChange, GitGraphData, GitGraphCommit, GitCommitDetail, GitCommitChangedFile } from "@/lib/types";
 import { CommitGraph } from "./CommitGraph";
 import { GitCommitDiffModal } from "./GitCommitDiffModal";
+import { GitCommitDetails } from "./GitCommitDetails";
 import { GitWorkingTreeDiffModal } from "./GitWorkingTreeDiffModal";
 import { useI18n } from "@/components/I18nProvider";
+import { buildGitWorkbenchUrl } from "@/lib/git-workbench-url";
 
 interface Props {
   cwd: string | null;
@@ -36,106 +38,6 @@ function FileChangeRow({ change, onOpenDiff }: { change: GitFileChange; onOpenDi
       <span className="git-file-path">{change.oldFile ? `${change.oldFile} → ${change.file}` : change.file}</span>
       <span className="git-file-status">{t(`git.status.${change.status}`)}</span>
     </button>
-  );
-}
-
-function CommitChangedFileRow({ file, onOpenDiff }: { file: GitCommitChangedFile; onOpenDiff: (file: GitCommitChangedFile) => void }) {
-  const { t } = useI18n();
-  return (
-    <button
-      type="button"
-      onClick={() => onOpenDiff(file)}
-      title={t("git.openDiff")}
-      className="git-commit-file-row"
-    >
-      <span className={`git-commit-file-code ${gitStatusTone(file.status)}`}>{file.status}</span>
-      <span className="git-file-path">{file.oldFile ? `${file.oldFile} → ${file.file}` : file.file}</span>
-      {file.binary ? (
-        <span className="git-file-status">{t("git.binary")}</span>
-      ) : (typeof file.additions === "number" || typeof file.deletions === "number") ? (
-        <span className="git-file-metrics">
-          {typeof file.additions === "number" && <span className="is-success">+{file.additions}</span>}
-          {typeof file.deletions === "number" && <span className="is-danger">-{file.deletions}</span>}
-        </span>
-      ) : null}
-      <span className="git-file-status">{t(`git.status.${file.status}`)}</span>
-    </button>
-  );
-}
-
-function formatRefLabel(ref: GitCommitDetail["refs"][number]): string {
-  if (ref.type === "tag") return `tag:${ref.name}`;
-  if (ref.type === "remote") return ref.name;
-  if (ref.type === "head") return `HEAD:${ref.name}`;
-  return ref.name;
-}
-
-function CommitDetailPanel({
-  detail,
-  loading,
-  error,
-  onOpenDiff,
-  onRetry,
-}: {
-  detail: GitCommitDetail | null;
-  loading: boolean;
-  error: string | null;
-  onOpenDiff: (file: GitCommitChangedFile) => void;
-  onRetry?: () => void;
-}) {
-  const { t } = useI18n();
-  if (loading) return <div className="inspector-state inspector-state-loading git-detail-state">{t("git.loadingCommit")}</div>;
-  if (error) {
-    return (
-      <div className="inspector-state inspector-state-error git-detail-state" role="alert">
-        <div>{error}</div>
-        {onRetry && (
-          <button type="button" onClick={onRetry} className="git-switch-button" style={{ marginTop: 8 }}>
-            {t("git.retry")}
-          </button>
-        )}
-      </div>
-    );
-  }
-  if (!detail) return <div className="inspector-state inspector-state-empty git-detail-state">{t("git.selectCommit")}</div>;
-
-  return (
-    <div className="git-commit-detail">
-      <div className="git-commit-subject">{detail.subject || "(no subject)"}</div>
-      {detail.body && <div className="git-commit-body">{detail.body}</div>}
-      <div className="git-commit-meta">
-        <span>{t("git.hash")}</span>
-        <code>{detail.hash}</code>
-        <span>{t("git.author")}</span>
-        <span>{detail.author.name} &lt;{detail.author.email}&gt; · {detail.author.date}</span>
-        <span>{t("git.committer")}</span>
-        <span>{detail.committer.name} &lt;{detail.committer.email}&gt; · {detail.committer.date}</span>
-        {detail.parents.length > 0 && (
-          <>
-            <span>{t("git.parents")}</span>
-            <code>{detail.parents.map((parent) => parent.slice(0, 8)).join(", ")}</code>
-          </>
-        )}
-      </div>
-      {detail.refs.length > 0 && (
-        <div className="git-ref-list">
-          {detail.refs.map((ref) => <span key={`${ref.type}-${ref.name}`} className="git-ref-badge">{formatRefLabel(ref)}</span>)}
-        </div>
-      )}
-      <div className="git-commit-files-header">
-        <div className="inspector-section-title">{t("git.changedFiles")} <span>({detail.files.length})</span></div>
-        <div className="git-detail-hint">{t("git.doubleClickHint")}</div>
-      </div>
-      {detail.files.length > 0 ? (
-        <div className="git-commit-files-list">
-          {detail.files.map((file) => (
-            <CommitChangedFileRow key={`${file.status}-${file.oldFile ?? ""}-${file.file}`} file={file} onOpenDiff={onOpenDiff} />
-          ))}
-        </div>
-      ) : (
-        <div className="git-empty-inline">{t("git.noFirstParentChanges")}</div>
-      )}
-    </div>
   );
 }
 
@@ -387,7 +289,7 @@ export function GitPanel({ cwd, refreshKey, onDirtyChange }: Props) {
     return <div className="inspector-state inspector-state-loading">{t("git.loading")}</div>;
   }
 
-  if (!status) return null;
+  if (!status || !cwd) return null;
 
   const branchOptions = graphData?.branches ?? [];
   const previewBranch = graphBranch || status.branch;
@@ -404,6 +306,15 @@ export function GitPanel({ cwd, refreshKey, onDirtyChange }: Props) {
   return (
     <div className="git-panel-root inspector-content">
       <div className="git-panel-toolbar">
+        <a
+          href={buildGitWorkbenchUrl(cwd)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="git-workbench-open-link"
+          title={t("git.workbench.open")}
+        >
+          {t("git.workbench.open")}
+        </a>
         <button type="button" onClick={() => void fetchAll()} disabled={loading} title={t("git.refreshTitle")} className="git-refresh-button">
           <svg className={loading ? "is-spinning" : undefined} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="23 4 23 10 17 10" />
@@ -508,7 +419,7 @@ export function GitPanel({ cwd, refreshKey, onDirtyChange }: Props) {
 
           <div className="git-history-column">
             <div className="inspector-section-title">{t("git.commitDetails")}</div>
-            <CommitDetailPanel
+            <GitCommitDetails
               detail={commitDetail}
               loading={commitDetailLoading}
               error={commitDetailError}

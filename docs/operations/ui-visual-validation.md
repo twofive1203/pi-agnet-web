@@ -118,6 +118,23 @@ Check each combination at desktop, portrait-tablet, and mobile widths:
 
 The canonical layer order is declared by `--z-*` Tokens in `app/globals.css`: workbench card, drawer backdrop, Sidebar/Inspector drawers, Automation drawer, top portals, terminal fullscreen, context menu, and dialogs.
 
+## Standalone Git workbench matrix
+
+Use a disposable fixture repository and open it from Inspector Git → **Open Git Workbench**. Never run destructive rows against a developer repository.
+
+| View | Required checks |
+| --- | --- |
+| Desktop ≥960 | Three panes remain independently scrollable; Local/Remote/Tags start collapsed; All is selected; right-side changed-file tree and details keep their vertical split. |
+| 641–959 | Branches button opens/closes the refs drawer; Log and commit inspector remain usable without page-level horizontal scroll. |
+| ≤640 | Branches/Log/Changes/Details tabs expose every function without hover; dialogs fill the viewport and honor safe-area insets. |
+| 200% zoom | Search/Branch/User filters wrap or remain reachable; long refs/paths truncate without hiding menu/Diff actions. |
+
+For keyboard and Portal behavior, select a commit with Up/Down, open its menu by `Shift+F10`, traverse enabled actions, inspect visible disabled reasons, close with Escape, and verify trigger focus restoration. Repeat from a branch More button and through coarse-pointer emulation. Open a destructive Reset/Drop dialog from the context menu, then open a file Diff after canceling; context menu must use `--z-context-menu`, while operation and Diff dialogs win through `--z-dialog`.
+
+Use Light, Dark, Paper, Twilight, and Dracula with clean, dirty, detached, published, unpublished-linear, merge, and empty-repository fixtures. Check non-color cues for current/tracking/remote/tag, capability-disabled rows, stale/busy/conflict-aborted/recovery-required notices, push rejection, and unknown push outcome. With reduced motion, the middle-width refs drawer must change state without animation while focus and content remain correct.
+
+Record this matrix as executed or not executed in the delivery summary; `test:git-workbench` and `test:ui-theme` do not replace it.
+
 ## Contrast and motion review
 
 - Inspect primary, secondary, and tertiary text on app/panel/raised/subtle surfaces.

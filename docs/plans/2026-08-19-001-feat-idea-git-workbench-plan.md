@@ -1,7 +1,7 @@
 ---
 title: "feat: 新增 IDEA 风格 Git 工作台"
 type: feat
-status: active
+status: completed
 date: 2026-08-19
 ---
 
@@ -14,6 +14,10 @@ date: 2026-08-19
 首版同时提供用户指定的常用操作，但采用已确认的“安全首版”边界：不提供强推和网页冲突解决器；编辑提交消息和删除提交只允许作用于当前分支中根据本地 remote-tracking refs 判定为未推送的线性、非 merge 提交；可能产生冲突的操作失败时自动尝试中止并恢复，恢复失败则冻结后续写操作并明确引导用户检查仓库。
 
 ---
+
+## Delivery Record
+
+Completed on the implementation branch. U1–U8 are delivered through the shared authorized Git executor/domain, standalone `/git?cwd=` page, revision-bound All log, refs/author/search filters, changed-file tree, strict safe operations, i18n/CSS/docs, and disposable-repository smoke coverage. Automated validation: `npm run test:git-workbench`, `npm run test:git-diff`, `npm run test:i18n`, `npm run test:ui-theme`, `npm run lint`, and `node_modules/.bin/tsc --noEmit`. The representative browser/theme/viewport and destructive-dialog visual matrix remains explicitly unexecuted and is documented in `docs/operations/ui-visual-validation.md`; it is not replaced by static smoke.
 
 ## Problem Frame
 
@@ -265,7 +269,7 @@ flowchart TB
   U7 --> U8
 ```
 
-- [ ] U1. **建立统一 Git 执行与仓库安全边界**
+- [x] U1. **建立统一 Git 执行与仓库安全边界**
 
 **Goal:** 在新增写操作前统一 cwd 授权、Git subprocess、common-dir identity、超时、错误码、operation-state 检测和仓库级互斥，并让现有普通 Git 路由逐步使用同一边界。
 
@@ -317,7 +321,7 @@ flowchart TB
 
 ---
 
-- [ ] U2. **建立工作台读取模型、refs revision 与分页 API**
+- [x] U2. **建立工作台读取模型、refs revision 与分页 API**
 
 **Goal:** 提供工作台初始化、完整 refs、作者选项、All 日志过滤和稳定继续加载，并为菜单能力提供服务端事实。
 
@@ -366,7 +370,7 @@ flowchart TB
 
 ---
 
-- [ ] U3. **新增独立工作台页面、入口和客户端状态编排**
+- [x] U3. **新增独立工作台页面、入口和客户端状态编排**
 
 **Goal:** 从现有 GitPanel 进入保持 cwd 隔离的独立页面，并建立不受陈旧请求污染的 overview/log/detail 选择状态。
 
@@ -414,7 +418,7 @@ flowchart TB
 
 ---
 
-- [ ] U4. **实现左侧 refs 树和中间 IDEA 式提交日志**
+- [x] U4. **实现左侧 refs 树和中间 IDEA 式提交日志**
 
 **Goal:** 完成默认收起的 Local/Remote/Tags 管理区、All/branch/user/search 过滤和支持上下文菜单的工作台提交图。
 
@@ -466,7 +470,7 @@ flowchart TB
 
 ---
 
-- [ ] U5. **实现右侧变更文件树与上下提交检查器**
+- [x] U5. **实现右侧变更文件树与上下提交检查器**
 
 **Goal:** 将选中提交的变更文件按目录树显示在右上，并把提交元数据独立放到右下，同时复用现有 Diff。
 
@@ -513,7 +517,7 @@ flowchart TB
 
 ---
 
-- [ ] U6. **实现分支签出与普通推送**
+- [x] U6. **实现分支签出与普通推送**
 
 **Goal:** 从左侧分支菜单安全签出 Local/Remote 分支，并把任意 Local 分支普通推送到其 upstream 或用户选择的 remote target。
 
@@ -565,7 +569,7 @@ flowchart TB
 
 ---
 
-- [ ] U7. **实现安全提交操作、Reset 模式和 ref 创建**
+- [x] U7. **实现安全提交操作、Reset 模式和 ref 创建**
 
 **Goal:** 完成提交菜单中的 cherry-pick、四模式 reset、revert、reword、drop、新建分支和新建 Tag，并落实已确认的安全首版限制与恢复行为。
 
@@ -628,7 +632,7 @@ flowchart TB
 
 ---
 
-- [ ] U8. **完成跨层集成、i18n、文档和验收矩阵**
+- [x] U8. **完成跨层集成、i18n、文档和验收矩阵**
 
 **Goal:** 将工作台纳入项目模块地图、脚本和视觉/手工验证合同，确保现有 GitPanel、worktree 和独立页面在主题及视口下共同稳定。
 

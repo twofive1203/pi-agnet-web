@@ -36,6 +36,7 @@ Project discovery and per-cwd candidate collection are accelerated by a rebuilda
 - Session detail/context/transcript routes reuse the live wrapper's already-parsed `SessionManager` when its canonical session file matches, avoiding another synchronous JSONL parse during active-chat refreshes; inactive sessions still open from disk as the source of truth.
 - Client state and SSE streaming behavior are centralized in `hooks/useAgentSession.ts`.
 - File viewing and workspace metadata use explicit API routes under `app/api/files/`, `app/api/cwd/`, and `app/api/git/`. The standalone `/file?path=...&line=...` page reuses the same `FileViewer` and API authorization; it never reads arbitrary paths directly. Historical root-level Windows links (`/D:/.../File.java:11`) are compatibility redirects only.
+- The standalone `/git?cwd=` workbench is repository-live and index-free. Reads go through `lib/git-executor.ts` / `lib/git-workbench.ts`, require an allowed-root canonical cwd, and expose a HEAD+refs revision so pagination never mixes snapshots. Writes use a strict action union, lock the canonical Git common-dir (therefore coordinating linked worktrees inside this WebUI process), then revalidate revision/HEAD/ref/operation state and server capabilities. External IDE/terminal changes are handled by optimistic revalidation, not claimed to be locked. Remote nodes are local remote-tracking snapshots; only explicit Push performs network I/O.
 
 ## Project Invariants
 
@@ -60,6 +61,14 @@ Project discovery and per-cwd candidate collection are accelerated by a rebuilda
 - Concurrent `startRpcSession()` calls must share `globalThis.__piStartLocks`.
 - After `send("fork")`, capture the new session id and destroy the wrapper immediately. `AgentSession.fork()` mutates `inner.sessionId`; leaving the old wrapper alive can corrupt `parentSession` chains.
 - WebUI-owned wrapper teardown drains active agent/compaction work (`abort` + idle wait, bounded), then emits the SDK `session_shutdown` lifecycle event, and only then calls `AgentSession.dispose()`. This order is required so extension timers/pollers and in-flight handlers release references before the SDK marks extension ctx stale (stale-ctx access otherwise surfaces as `unhandledRejection`). Extension-driven `/reload` follows the same drain-before-invalidate rule.
+
+### Git workbench safety
+
+- No API accepts arbitrary Git arguments, force push, force-with-lease, fetch/pull/merge, or conflict continue/skip commands. Existing worktree archive behavior is a separate legacy workflow and is not reachable through the workbench operations endpoint.
+- Reword/drop require the selected non-root, non-merge commit to be on the current first-parent chain, absent from every local remote-tracking ref, and part of a merge-free range to HEAD. The operations route recomputes this under lock; UI capability reasons are explanatory, not authorization.
+- Cherry-pick/revert/rebase conflicts are automatically aborted. HEAD and operation markers are checked after abort; an uncertain restore returns `recoveryRequired`, and the browser freezes further writes while retaining read/copy access.
+- Push is a normal ref-to-ref push through the server host's configured credential helper/hooks. Non-fast-forward never escalates to force. A network timeout reports unknown outcome and is not automatically retried.
+- Reset modes retain native Git semantics. Hard reset/drop require target-hash confirmation in the dialog; all reset modes reject detached HEAD, unmerged index, stale revision, and stale HEAD.
 
 ### Branching model
 

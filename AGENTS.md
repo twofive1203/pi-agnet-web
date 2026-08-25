@@ -46,6 +46,7 @@ npm run dev     # http://localhost:62666
 | `npm run test:usage` | Usage timeline projection + parent/subagent/archive accounting smoke suite. |
 | `npm run test:session-tabs` | Same-session multi-tab write-lock coordination pure smoke. |
 | `npm run test:git-diff` | Commit and staged/unstaged working-tree diff smoke suite. |
+| `npm run test:git-workbench` | IDEA-style Git workbench read/filter/ref/operation safety smoke suite with temp repos, linked worktree, and bare remote. |
 | `npm run test:file-search` | Bounded async workspace filename search smoke suite. |
 | `npm run test:file-upload` | Chat upload path-boundary/sanitize/exclusive-write smoke suite. |
 | `npm run test:quick-commands` | Project quick-command config/trust/runner/SSE/cancel/bounded-output smoke suite. |
@@ -115,7 +116,7 @@ npm run dev     # http://localhost:62666
 | Agent command lifecycle | `lib/rpc-manager.ts`, `app/api/agent/**` | `docs/architecture/overview.md` |
 | Chat/session UI state | `hooks/useAgentSession.ts`, `components/ChatWindow.tsx`, `components/ChatInput.tsx` | `docs/modules/frontend.md` |
 | Tool-call normalization | `lib/normalize.ts` | `docs/architecture/overview.md`, `docs/modules/library.md` |
-| Workspace files and Git context | `app/api/files/**`, `app/file/page.tsx`, `components/StandaloneFileViewer.tsx`, `app/api/git/**`, `lib/file-paths.ts`, `lib/file-viewer-url.ts`, `lib/git-worktree.ts`, `lib/workspace-title.ts` | `docs/modules/api.md`, `docs/modules/frontend.md`, `docs/modules/library.md` |
+| Workspace files and Git context | `app/api/files/**`, `app/file/page.tsx`, `app/git/page.tsx`, `components/StandaloneFileViewer.tsx`, `components/git-workbench/`, `app/api/git/**`, `lib/file-paths.ts`, `lib/file-viewer-url.ts`, `lib/git-executor.ts`, `lib/git-workbench*.ts`, `lib/git-worktree.ts`, `lib/workspace-title.ts` | `docs/modules/api.md`, `docs/modules/frontend.md`, `docs/modules/library.md` |
 | Models, model pricing/catalog, bundled/native subagents, Web Search/MCP config, skills, extensions, auth, usage | `app/api/models*`, `app/api/model-pricing/`, `app/api/subagents/config/**`, `app/api/web-tools/config/**`, `app/api/mcp/config/**`, `app/api/skills/**`, `app/api/pi/**`, `app/api/auth/**`, `app/api/usage/route.ts`, `lib/usage-stats.ts`, `lib/usage-timeline.ts`, `components/UsageStatsModal.tsx`, `components/UsageTokenChart.tsx` | `docs/modules/api.md`, `docs/modules/library.md`, `docs/modules/frontend.md`, `docs/integrations/README.md` |
 | WebUI-owned SnFlow tasks/runs | `lib/workflow-store.ts`, `lib/workflow-chat-lifecycle.ts`, `lib/workflow-run-manager.ts`, `app/api/workflows/**`, `components/WorkflowPanel.tsx` | `docs/modules/api.md`, `docs/modules/library.md`, `docs/modules/frontend.md` |
 | Scheduled Agent Automation | `lib/automation-service.ts`, `lib/automation-scheduler.ts`, `lib/automation-runner.ts`, `app/api/automations/**`, `components/AutomationPanel.tsx`, `instrumentation.ts` | `docs/architecture/decisions/automation-scheduler.md`, `docs/modules/api.md`, `docs/modules/library.md`, `docs/modules/frontend.md` |

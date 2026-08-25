@@ -465,8 +465,10 @@ export interface GitGraphCommit {
   hash: string;
   message: string;
   author: string;
+  authorEmail?: string;
   date: string;
   relativeDate: string;
+  timestamp?: number;
   parents: string[];
   refs: GitCommitRef[];
 }
@@ -499,6 +501,8 @@ export interface GitCommitDetail {
   body: string;
   refs: GitCommitRef[];
   files: GitCommitChangedFile[];
+  filesTruncated?: boolean;
+  capabilities?: GitCommitCapabilities;
 }
 
 export type GitCommitDiffReason = "binary" | "too-large" | "unavailable";
@@ -550,4 +554,138 @@ export interface GitStatusInfo {
   untracked: string[];
   recentCommits: GitCommitInfo[];
   stashCount: number;
+}
+
+export type GitOperationState = "merge" | "rebase" | "cherry-pick" | "revert" | "bisect";
+
+export type GitWorkbenchRefKind = "local" | "remote" | "tag";
+
+export interface GitWorkbenchRef {
+  kind: GitWorkbenchRefKind;
+  /** Full, validated ref name used by APIs. */
+  ref: string;
+  /** Browser-facing short name. */
+  name: string;
+  target: string;
+  current?: boolean;
+  remote?: string;
+  upstreamRef?: string | null;
+  upstreamName?: string | null;
+  ahead?: number;
+  behind?: number;
+  checkedOutPath?: string | null;
+}
+
+export interface GitWorkbenchAuthor {
+  id: string;
+  name: string;
+  email: string;
+  label: string;
+}
+
+export interface GitWorkbenchTruncation {
+  refs: boolean;
+  authors: boolean;
+}
+
+export interface GitWorkbenchOverview {
+  cwd: string;
+  repoRoot: string;
+  commonDir: string;
+  repositoryName: string;
+  revision: string;
+  head: string | null;
+  currentBranch: string | null;
+  isDetached: boolean;
+  isEmpty: boolean;
+  isDirty: boolean;
+  hasUnmerged: boolean;
+  isWorktree: boolean;
+  operationState: GitOperationState | null;
+  localBranches: GitWorkbenchRef[];
+  remoteBranches: GitWorkbenchRef[];
+  tags: GitWorkbenchRef[];
+  remotes: string[];
+  authors: GitWorkbenchAuthor[];
+  truncation: GitWorkbenchTruncation;
+}
+
+export type GitCommitCapabilityReason =
+  | "detached-head"
+  | "empty-repository"
+  | "dirty-working-tree"
+  | "unmerged-index"
+  | "operation-in-progress"
+  | "merge-commit"
+  | "root-commit"
+  | "already-contained"
+  | "published-commit"
+  | "not-current-first-parent"
+  | "non-linear-range"
+  | "current-commit"
+  | "branch-in-use";
+
+export interface GitCommitCapability {
+  allowed: boolean;
+  reason?: GitCommitCapabilityReason;
+}
+
+export interface GitCommitCapabilities {
+  cherryPick: GitCommitCapability;
+  reset: GitCommitCapability;
+  revert: GitCommitCapability;
+  reword: GitCommitCapability;
+  drop: GitCommitCapability;
+  newBranch: GitCommitCapability;
+  newTag: GitCommitCapability;
+  facts: {
+    published: boolean;
+    currentFirstParent: boolean;
+    linearToHead: boolean;
+    merge: boolean;
+    root: boolean;
+    head: boolean;
+    containedInCurrent: boolean;
+  };
+}
+
+export interface GitWorkbenchLogPage {
+  revision: string;
+  scope: "all" | string;
+  query: string;
+  authorId: string | null;
+  offset: number;
+  limit: number;
+  commits: GitGraphCommit[];
+  hasMore: boolean;
+}
+
+export type GitResetMode = "soft" | "mixed" | "hard" | "keep";
+
+export type GitWorkbenchOperationRequest =
+  | { action: "checkout-local"; cwd: string; ref: string; expectedRevision: string }
+  | { action: "checkout-remote"; cwd: string; ref: string; localName?: string; expectedRevision: string }
+  | { action: "push"; cwd: string; ref: string; remote?: string; target?: string; setUpstream?: boolean; expectedRevision: string; expectedRefTip: string }
+  | { action: "cherry-pick"; cwd: string; hash: string; expectedRevision: string; expectedHead: string }
+  | { action: "reset"; cwd: string; hash: string; mode: GitResetMode; confirmTarget?: string; expectedRevision: string; expectedHead: string }
+  | { action: "revert"; cwd: string; hash: string; expectedRevision: string; expectedHead: string }
+  | { action: "reword"; cwd: string; hash: string; message: string; expectedRevision: string; expectedHead: string }
+  | { action: "drop"; cwd: string; hash: string; expectedRevision: string; expectedHead: string }
+  | { action: "create-branch"; cwd: string; hash: string; name: string; checkout?: boolean; expectedRevision: string; expectedHead?: string }
+  | { action: "create-tag"; cwd: string; hash: string; name: string; expectedRevision: string };
+
+export interface GitWorkbenchOperationResponse {
+  success: true;
+  action: GitWorkbenchOperationRequest["action"];
+  overview: GitWorkbenchOverview;
+  selectedHash: string | null;
+  outcome?: "updated" | "created" | "up-to-date";
+}
+
+export interface GitWorkbenchErrorResponse {
+  error: string;
+  code: string;
+  details?: string;
+  recoveryRequired?: boolean;
+  outcome?: "unknown";
 }

@@ -266,15 +266,23 @@ function buildRowData(
 
 // ─── Component ────────────────────────────────────────────────────
 
+export interface GitCommitMenuAnchor {
+  x: number;
+  y: number;
+  trigger: HTMLElement;
+}
+
 interface Props {
   commits: GitGraphCommit[];
   currentBranch: string | null;
   maxDisplay?: number;
   selectedHash?: string | null;
   onSelectCommit?: (commit: GitGraphCommit) => void;
+  variant?: "compact" | "workbench";
+  onContextMenu?: (commit: GitGraphCommit, anchor: GitCommitMenuAnchor) => void;
 }
 
-export function CommitGraph({ commits, currentBranch, maxDisplay = 50, selectedHash, onSelectCommit }: Props) {
+export function CommitGraph({ commits, currentBranch, maxDisplay = 50, selectedHash, onSelectCommit, variant = "compact", onContextMenu }: Props) {
   const [tooltip, setTooltip] = useState<TooltipInfo | null>(null);
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -315,7 +323,7 @@ export function CommitGraph({ commits, currentBranch, maxDisplay = 50, selectedH
     const laneWidth = 20;
     const paddingL = 6;
     const graphWidth = ordered.length * laneWidth + paddingL;
-    const rowHeight = 20;
+    const rowHeight = variant === "workbench" ? 30 : 20;
 
     const hashToIndex = new Map(display.map((c, i) => [c.hash, i]));
     const rows = buildRowData(display, layout, ordered, laneWidth, paddingL, hashToIndex);
@@ -366,7 +374,7 @@ export function CommitGraph({ commits, currentBranch, maxDisplay = 50, selectedH
     }
 
     return { rows, layout, laneOrder: ordered, laneWidth, paddingL, graphWidth, rowHeight, overlays, hasMore: commits.length > maxDisplay };
-  }, [commits, currentBranch, maxDisplay]);
+  }, [commits, currentBranch, maxDisplay, variant]);
 
   const handleRowEnter = useCallback((idx: number) => setHoveredIdx(idx), []);
   const handleRowLeave = useCallback(() => setHoveredIdx(null), []);
@@ -376,8 +384,8 @@ export function CommitGraph({ commits, currentBranch, maxDisplay = 50, selectedH
   const { rows, layout, laneOrder, laneWidth, paddingL, graphWidth, rowHeight, overlays, hasMore } = MEMO;
 
   return (
-    <div ref={containerRef} className="commit-graph">
-      <div className="commit-graph-list">
+    <div ref={containerRef} className={`commit-graph${variant === "workbench" ? " is-workbench" : ""}`}>
+      <div className="commit-graph-list" role={variant === "workbench" ? "listbox" : undefined} aria-label={variant === "workbench" ? "Git commits" : undefined}>
         {rows.map((rd) => (
           <CommitRow
             key={rd.commit.hash}
@@ -396,6 +404,8 @@ export function CommitGraph({ commits, currentBranch, maxDisplay = 50, selectedH
             onRowEnter={handleRowEnter}
             onRowLeave={handleRowLeave}
             onSelectCommit={onSelectCommit}
+            variant={variant}
+            onContextMenu={onContextMenu}
           />
         ))}
         {hasMore && <div className="commit-graph-more">+{commits.length - maxDisplay} more</div>}
@@ -459,6 +469,7 @@ function CommitRow({
   rd, layout, laneOrder, graphWidth, laneWidth, paddingL, rowHeight,
   currentBranch, showTooltip, hideTooltip,
   isHovered, isSelected, onRowEnter, onRowLeave, onSelectCommit,
+  variant, onContextMenu,
 }: {
   rd: RowData;
   layout: GraphLayout;
@@ -475,6 +486,8 @@ function CommitRow({
   onRowEnter: (idx: number) => void;
   onRowLeave: () => void;
   onSelectCommit?: (commit: GitGraphCommit) => void;
+  variant: "compact" | "workbench";
+  onContextMenu?: (commit: GitGraphCommit, anchor: GitCommitMenuAnchor) => void;
 }) {
   const { commit, idx, commitLane, dotCX, myColor, isHead, laneInSpan, hasAbove, hasBelow, forkInfo } = rd;
   const yDot = rowHeight / 2;
@@ -496,16 +509,40 @@ function CommitRow({
   const tipText = formatCommitTooltip(commit);
   return (
     <div
-      role={onSelectCommit ? "button" : undefined}
-      tabIndex={onSelectCommit ? 0 : undefined}
-      aria-pressed={onSelectCommit ? isSelected : undefined}
+      role={onSelectCommit ? (variant === "workbench" ? "option" : "button") : undefined}
+      tabIndex={onSelectCommit ? (variant === "workbench" ? (isSelected ? 0 : -1) : 0) : undefined}
+      aria-pressed={onSelectCommit && variant === "compact" ? isSelected : undefined}
+      aria-selected={onSelectCommit && variant === "workbench" ? isSelected : undefined}
+      data-commit-row={variant === "workbench" ? "true" : undefined}
       className={`commit-graph-row${isSelected ? " is-selected" : ""}${isHovered ? " is-hovered" : ""}${onSelectCommit ? " is-interactive" : ""}`}
       onClick={() => onSelectCommit?.(commit)}
+      onContextMenu={(event) => {
+        if (!onContextMenu) return;
+        event.preventDefault();
+        onSelectCommit?.(commit);
+        onContextMenu(commit, { x: event.clientX, y: event.clientY, trigger: event.currentTarget });
+      }}
       onKeyDown={(event) => {
         if (!onSelectCommit) return;
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
           onSelectCommit(commit);
+          return;
+        }
+        if (variant === "workbench" && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
+          event.preventDefault();
+          const rows = [...(event.currentTarget.parentElement?.querySelectorAll<HTMLElement>("[data-commit-row]") ?? [])];
+          const currentIndex = rows.indexOf(event.currentTarget);
+          const target = rows[currentIndex + (event.key === "ArrowDown" ? 1 : -1)];
+          target?.focus();
+          target?.click();
+          return;
+        }
+        if (onContextMenu && (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10"))) {
+          event.preventDefault();
+          onSelectCommit(commit);
+          const rect = event.currentTarget.getBoundingClientRect();
+          onContextMenu(commit, { x: rect.left + Math.min(rect.width, 48), y: rect.top + Math.min(rect.height, 24), trigger: event.currentTarget });
         }
       }}
       onMouseEnter={() => onRowEnter(idx)}
@@ -642,7 +679,24 @@ function CommitRow({
           />
         )}
 
+        {variant === "workbench" && <span className="commit-graph-author" title={commit.authorEmail}>{commit.author}</span>}
+        {variant === "workbench" && <code className="commit-graph-hash">{commit.hash.slice(0, 8)}</code>}
         <span className="commit-graph-date">{commit.relativeDate}</span>
+        {variant === "workbench" && onContextMenu && (
+          <button
+            type="button"
+            className="commit-graph-more-button"
+            aria-label="Commit actions"
+            onClick={(event) => {
+              event.stopPropagation();
+              onSelectCommit?.(commit);
+              const rect = event.currentTarget.getBoundingClientRect();
+              onContextMenu(commit, { x: rect.right, y: rect.bottom, trigger: event.currentTarget });
+            }}
+          >
+            ⋯
+          </button>
+        )}
       </div>
     </div>
   );
