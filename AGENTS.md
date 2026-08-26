@@ -62,6 +62,7 @@ npm run dev     # http://localhost:62666
 | `npm run test:ui-theme` | Theme registry, semantic Token, responsive, focus, and motion contract checks. |
 | `npm run test:subagent-observability` | Subagent summaries, metrics, and observation projections. |
 | `npm run test:runtime` | Runtime packaging and published launcher invariants. |
+| `npm run test:npm-package` | npm tarball runtime-file contract and 75 MB unpacked-size budget. |
 | `npm run test:server-auth` | Server access-key domain, launcher options, and Proxy policy smokes. |
 | `npm run test:server-auth:e2e` | Post-build production E2E for access auth (first key, login, SSE/API gate, restart, rotation, trusted proxy). |
 | `npm run test:open-folder` | Local project-folder opening policy and route checks. |

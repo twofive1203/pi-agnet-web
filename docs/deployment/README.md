@@ -315,11 +315,12 @@ npm run test:server-auth
 npm run test:runtime
 npm run test:desktop-package
 npm run build
+npm run test:npm-package
 npm run test:server-auth:e2e
 npm pack --dry-run
 ```
 
-Confirm `npm pack --dry-run` does **not** list `desktop/` or `forge.config.ts`.
+Confirm `npm pack --dry-run` does **not** list `desktop/` or `forge.config.ts`. `npm run test:npm-package` also enforces a 75 MB unpacked-size budget for registry mirrors and rejects build-only Next.js trace, type, diagnostic, and `.nft.json` files. These files are used for build/deployment tracing and are not required by the published `next start` runtime.
 
 Publish the current version:
 
