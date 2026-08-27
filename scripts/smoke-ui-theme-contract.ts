@@ -106,6 +106,7 @@ const REQUIRED_STABLE_CLASSES = [
   ".app-resource-tps",
   ".session-resource-popover",
   ".assistant-tps-badge",
+  ".message-image-lightbox",
   ".app-top-more-portal",
   ".top-more-menu",
   ".insp-tabs",
@@ -170,6 +171,7 @@ interface ThemeSources {
   shell: string;
   sessionResource: string;
   messageView: string;
+  messageImagePreview: string;
   chatInput: string;
   appDialog: string;
   extensionDialog: string;
@@ -427,6 +429,20 @@ function collectContractProblems(
     || !sources.sessionResource.includes("window.visualViewport?.addEventListener")) {
     problems.push("portal focus: Session Resource popover focus/viewport contract is missing");
   }
+  if (!sources.messageImagePreview.includes("createPortal(")
+    || !sources.messageImagePreview.includes('role="dialog"')
+    || !sources.messageImagePreview.includes('event.key === "Escape"')
+    || !sources.messageImagePreview.includes("trigger?.isConnected")
+    || !sources.messageImagePreview.includes("onDoubleClick")
+    || !sources.messageImagePreview.includes('event.pointerType === "mouse"')
+    || !sources.messageImagePreview.includes('addEventListener("wheel", zoomAtCursor, { passive: false })')
+    || !sources.messageImagePreview.includes("MAX_ZOOM = 6")
+    || !sources.messageImagePreview.includes("(cursorX - centerX) * (1 - scaleRatio)")
+    || !sources.css.includes(".message-media-trigger:focus-visible")
+    || !sources.css.includes("transform-origin: center")
+    || !sources.css.includes("z-index: var(--z-dialog)")) {
+    problems.push("message image lightbox: portal/input/focus/layer contract is missing");
+  }
   if (!sources.messageView.includes("is-estimate")
     || !sources.messageView.includes("estimatedTps")
     || !sources.messageView.includes('is-${tier}')
@@ -533,6 +549,7 @@ const sources: ThemeSources = {
   shell: readSource("components/AppShell.tsx"),
   sessionResource: readSource("components/SessionResourcePanel.tsx"),
   messageView: readSource("components/MessageView.tsx"),
+  messageImagePreview: readSource("components/MessageImagePreview.tsx"),
   chatInput: readSource("components/ChatInput.tsx"),
   appDialog: readSource("components/AppDialogProvider.tsx"),
   extensionDialog: readSource("components/ExtensionDialogHost.tsx"),

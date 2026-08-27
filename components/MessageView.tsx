@@ -2,6 +2,7 @@
 
 import { memo, useState, useRef, useEffect, useMemo } from "react";
 import { MarkdownBody } from "./MarkdownBody";
+import { MessageImagePreview } from "./MessageImagePreview";
 import type {
   AgentMessage,
   UserMessage,
@@ -129,25 +130,9 @@ function UserMessageView({ message, entryId, onFork, forking, onNavigate, prevAs
           {imageBlocks.length > 0 && (
             <div className={content ? "message-media-grid has-content" : "message-media-grid"}>
               {imageBlocks.map((img, i) => {
-                // lib/types.ts ImageContent uses {source:{type,data,media_type,url}}
-                // pi-ai on-disk format uses flat {data, mimeType} — handle both
-                const flat = img as unknown as { data?: string; mimeType?: string };
-                const src = img.source
-                  ? img.source.type === "base64"
-                    ? `data:${img.source.media_type};base64,${img.source.data}`
-                    : img.source.url ?? ""
-                  : flat.data
-                    ? `data:${flat.mimeType};base64,${flat.data}`
-                    : "";
-                return (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    key={i}
-                    src={src}
-                    alt=""
-                    className="message-media-preview"
-                  />
-                );
+                const src = imageSource(img);
+                if (!src) return null;
+                return <MessageImagePreview key={i} src={src} />;
               })}
             </div>
           )}
@@ -689,15 +674,7 @@ function CustomMessageView({ message }: { message: CustomMessage }) {
                 {images.map((img, i) => {
                   const src = imageSource(img);
                   if (!src) return null;
-                  return (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      key={i}
-                      src={src}
-                      alt=""
-                      className="message-media-preview"
-                    />
-                  );
+                  return <MessageImagePreview key={i} src={src} />;
                 })}
               </div>
             )}
