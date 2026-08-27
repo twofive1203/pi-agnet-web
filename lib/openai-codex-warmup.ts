@@ -4,7 +4,7 @@ import type { AssistantMessage } from "@earendil-works/pi-ai";
 import { getOAuthAccountAccessToken, OPENAI_CODEX_PROVIDER_ID, readOAuthAccountCredential } from "@/lib/oauth-accounts";
 import { getOAuthAccountSubscriptionQuota } from "@/lib/subscription-quota";
 
-export const OPENAI_CODEX_WARMUP_MODEL_ID = "gpt-5.4-mini";
+export const OPENAI_CODEX_WARMUP_MODEL_ID = "gpt-5.6-luna";
 
 const WARMUP_TIMEOUT_MS = 30_000;
 const WARMUP_PROMPT = "Reply with OK only.";
