@@ -2,6 +2,7 @@
 
 import { useI18n } from "@/components/I18nProvider";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { SettingsButton, SettingsNotice, SettingsState, SettingsSurface, SettingsToggle } from "@/components/ui/SettingsPrimitives";
 import { formatQuotaQueriedAt, formatResetCountdown, knownQuotaTiers, QUOTA_TIER_LABELS } from "@/lib/quota-display";
 import type { OAuthAccountSummary } from "@/lib/oauth-accounts";
@@ -228,12 +229,13 @@ export function ChatGptWarmupDialog({ accounts, onClose, onComplete }: Props) {
     }
   }, [loadHistory, onComplete, running, selectedIds, t]);
 
-  return (
-    <div className="pi-modal-overlay" onClick={(event) => { if (event.target === event.currentTarget && !running && !scheduleSaving) onClose(); }}>
+  if (typeof document === "undefined") return null;
+  return createPortal(
+    <div className="pi-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="chatgpt-warmup-title" onClick={(event) => { if (event.target === event.currentTarget && !running && !scheduleSaving) onClose(); }}>
       <div className="pi-modal-panel warmup-dialog-panel">
         <div className="pi-modal-header">
           <div className="pi-modal-header-copy">
-            <div className="pi-modal-title">{t("panels.warmup.title")}</div>
+            <div id="chatgpt-warmup-title" className="pi-modal-title">{t("panels.warmup.title")}</div>
             <div className="pi-modal-subtitle">{t("panels.warmup.subtitle")}</div>
           </div>
           <button type="button" disabled={running || scheduleSaving} onClick={onClose} className="pi-modal-close">×</button>
@@ -371,6 +373,7 @@ export function ChatGptWarmupDialog({ accounts, onClose, onComplete }: Props) {
           <SettingsButton variant="primary" disabled={selectedCount === 0} busy={running} onClick={runWarmup}>{running ? "Warming…" : t("panels.warmup.warmNow")}</SettingsButton>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
