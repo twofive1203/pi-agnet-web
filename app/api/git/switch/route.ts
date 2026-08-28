@@ -1,12 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
+import { runSafeGitSwitch } from "@/lib/git-branch-switch";
 import {
-  GIT_WRITE_BUFFER,
-  GIT_WRITE_TIMEOUT_MS,
   GitWorkbenchError,
   assertNoGitOperation,
   gitErrorResponse,
   resolveGitRepository,
-  runGit,
   withGitMutationLock,
 } from "@/lib/git-executor";
 import { readGitWorkbenchOverview } from "@/lib/git-workbench";
@@ -27,9 +25,6 @@ export async function POST(req: NextRequest) {
       const selected = overview.localBranches.find((ref) => ref.name === branch);
       if (!selected) throw new GitWorkbenchError("REF_NOT_FOUND", `Local branch not found: ${branch}`, { status: 404 });
       if (selected.current) return NextResponse.json({ success: true, branch, switchedTo: branch });
-      if (overview.isDirty) {
-        throw new GitWorkbenchError("DIRTY_WORKING_TREE", "Cannot switch branches while the working tree has uncommitted changes.", { status: 409 });
-      }
       if (overview.hasUnmerged) throw new GitWorkbenchError("UNMERGED_INDEX", "Cannot switch branches while the index has unmerged entries.", { status: 409 });
       await assertNoGitOperation(repo);
       if (selected.checkedOutPath && selected.checkedOutPath !== repo.repoRoot) {
@@ -38,7 +33,7 @@ export async function POST(req: NextRequest) {
           details: selected.checkedOutPath,
         });
       }
-      await runGit(repo.cwd, ["switch", branch], { timeoutMs: GIT_WRITE_TIMEOUT_MS, maxBuffer: GIT_WRITE_BUFFER });
+      await runSafeGitSwitch(repo, { kind: "existing", name: selected.name });
       return NextResponse.json({ success: true, branch, switchedTo: branch });
     });
   } catch (error) {

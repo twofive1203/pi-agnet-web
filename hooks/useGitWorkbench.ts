@@ -15,6 +15,14 @@ import {
   runGitWorkbenchOperation,
 } from "@/lib/git-workbench-client";
 const GIT_WORKBENCH_MAX_COMMITS = 500;
+const OPERATION_REFRESH_CODES = new Set([
+  "STALE_REVISION",
+  "STALE_HEAD",
+  "STALE_REF",
+  "CONFLICT_ABORTED",
+  "CHECKOUT_CONFLICT",
+  "GIT_TIMEOUT",
+]);
 
 export type GitWorkbenchOperationDraft = GitWorkbenchOperationRequest extends infer Request
   ? Request extends { cwd: string; expectedRevision: string }
@@ -235,7 +243,7 @@ export function useGitWorkbench(cwd: string | null) {
         setRecoveryRequired(true);
         refresh();
       }
-      if (["STALE_REVISION", "STALE_HEAD", "STALE_REF", "CONFLICT_ABORTED"].includes(clientError.code)) refresh();
+      if (OPERATION_REFRESH_CODES.has(clientError.code)) refresh();
       return null;
     } finally {
       setOperationBusy(false);

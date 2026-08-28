@@ -6,7 +6,9 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { NextRequest } from "next/server";
 import { POST as operateRoute } from "../app/api/git/operations/route";
+import { POST as switchRoute } from "../app/api/git/switch/route";
 import { registerAllowedRoot } from "../lib/allowed-roots";
+import { isGitCheckoutOverwriteRefusal, runSafeGitSwitch } from "../lib/git-branch-switch";
 import {
   GitWorkbenchError,
   resolveGitRepository,
@@ -52,6 +54,334 @@ async function commitFile(cwd: string, file: string, content: string, message: s
 
 async function currentOverview(cwd: string) {
   return readGitWorkbenchOverview(cwd);
+}
+
+async function readRepoFile(cwd: string, file: string): Promise<string> {
+  return readFile(path.join(cwd, file), "utf8");
+}
+
+async function currentBranchName(cwd: string): Promise<string> {
+  return git(cwd, "branch", "--show-current");
+}
+
+async function postSwitch(cwd: string, branch: string) {
+  return switchRoute(new NextRequest("http://localhost/api/git/switch", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ cwd, branch }),
+  }));
+}
+
+async function runSafeCheckoutSmoke(parent: string): Promise<void> {
+  const source = await readFile(path.join(process.cwd(), "lib", "git-branch-switch.ts"), "utf8");
+  assert.doesNotMatch(source, /--force|--discard-changes|--merge\b/);
+  assert.match(source, /--no-overwrite-ignore/);
+  assert.equal(isGitCheckoutOverwriteRefusal("error: Your local changes to the following files would be overwritten by checkout:\n\tshared.txt\n"), true);
+  assert.equal(isGitCheckoutOverwriteRefusal("error: The following untracked working tree files would be overwritten by checkout:\n\tonly-feature.txt\n"), true);
+  assert.equal(isGitCheckoutOverwriteRefusal("fatal: invalid reference: no-such-branch\n"), false);
+  assert.equal(isGitCheckoutOverwriteRefusal("fatal: 'feature' is already used by worktree at '/tmp/linked'\n"), false);
+
+  await mkdir(parent, { recursive: true });
+  const repo = path.join(parent, "repo");
+  const bare = path.join(parent, "remote.git");
+  const linked = path.join(parent, "linked");
+  await mkdir(repo);
+  await git(repo, "init", "-b", "main");
+  await git(repo, "config", "user.email", "smoke@example.test");
+  await git(repo, "config", "user.name", "Smoke 用户");
+  registerAllowedRoot(repo);
+
+  await commitFile(repo, "keep.txt", "keep\n", "keep");
+  await commitFile(repo, "shared.txt", "base\n", "shared base");
+  await git(parent, "init", "--bare", bare);
+  await git(repo, "remote", "add", "origin", bare);
+  await git(repo, "push", "-u", "origin", "main");
+  await git(repo, "switch", "-c", "feature");
+  await commitFile(repo, "shared.txt", "feature\n", "feature shared");
+  await commitFile(repo, "only-feature.txt", "feature-only\n", "feature only");
+  await git(repo, "switch", "main");
+  const identity = await resolveGitRepository(repo);
+  const featureHash = await git(repo, "rev-parse", "feature");
+
+  await writeFile(path.join(repo, "keep.txt"), "keep local\n", "utf8");
+  await runSafeGitSwitch(identity, { kind: "existing", name: "feature" });
+  assert.equal(await currentBranchName(repo), "feature");
+  assert.equal(await readRepoFile(repo, "keep.txt"), "keep local\n");
+  assert.equal((await readGitStatus(repo)).unstaged.some((change) => change.file === "keep.txt"), true);
+
+  await git(repo, "switch", "main");
+  await git(repo, "reset", "--hard");
+  await writeFile(path.join(repo, "keep.txt"), "keep staged\n", "utf8");
+  await git(repo, "add", "--", "keep.txt");
+  await runSafeGitSwitch(identity, { kind: "existing", name: "feature" });
+  assert.equal(await currentBranchName(repo), "feature");
+  assert.equal(await readRepoFile(repo, "keep.txt"), "keep staged\n");
+  const stagedStatus = await readGitStatus(repo);
+  assert.equal(stagedStatus.staged.some((change) => change.file === "keep.txt"), true);
+  assert.equal(stagedStatus.unstaged.some((change) => change.file === "keep.txt"), false);
+
+  await git(repo, "switch", "main");
+  await git(repo, "reset", "--hard");
+  await writeFile(path.join(repo, "scratch 文件.txt"), "scratch\n", "utf8");
+  await runSafeGitSwitch(identity, { kind: "existing", name: "feature" });
+  assert.equal(await currentBranchName(repo), "feature");
+  assert.equal(await readRepoFile(repo, "scratch 文件.txt"), "scratch\n");
+  assert.equal((await readGitStatus(repo)).untracked.includes("scratch 文件.txt"), true);
+
+  await git(repo, "switch", "main");
+  await unlink(path.join(repo, "scratch 文件.txt"));
+  await git(repo, "reset", "--hard");
+  const conflictHead = await git(repo, "rev-parse", "HEAD");
+  await writeFile(path.join(repo, "shared.txt"), "main local\n", "utf8");
+  await assert.rejects(
+    () => runSafeGitSwitch(identity, { kind: "existing", name: "feature" }),
+    (error: unknown) => error instanceof GitWorkbenchError && error.code === "CHECKOUT_CONFLICT" && error.status === 409,
+  );
+  assert.equal(await currentBranchName(repo), "main");
+  assert.equal(await git(repo, "rev-parse", "HEAD"), conflictHead);
+  assert.equal(await readRepoFile(repo, "shared.txt"), "main local\n");
+  assert.equal((await readGitStatus(repo)).unstaged.some((change) => change.file === "shared.txt"), true);
+
+  await git(repo, "checkout", "--", "shared.txt");
+  await writeFile(path.join(repo, "only-feature.txt"), "untracked\n", "utf8");
+  await assert.rejects(
+    () => runSafeGitSwitch(identity, { kind: "existing", name: "feature" }),
+    (error: unknown) => error instanceof GitWorkbenchError && error.code === "CHECKOUT_CONFLICT",
+  );
+  assert.equal(await currentBranchName(repo), "main");
+  assert.equal(await readRepoFile(repo, "only-feature.txt"), "untracked\n");
+  await unlink(path.join(repo, "only-feature.txt"));
+
+  await writeFile(path.join(repo, ".gitignore"), "ignored.txt\n", "utf8");
+  await git(repo, "add", "--", ".gitignore");
+  await git(repo, "commit", "-m", "ignore ignored.txt");
+  await git(repo, "switch", "-c", "with-ignored");
+  await writeFile(path.join(repo, "ignored.txt"), "tracked-on-branch\n", "utf8");
+  await git(repo, "add", "-f", "--", "ignored.txt");
+  await git(repo, "commit", "-m", "track ignored");
+  await git(repo, "switch", "main");
+  await writeFile(path.join(repo, "ignored.txt"), "local-ignored\n", "utf8");
+  await assert.rejects(
+    () => runSafeGitSwitch(identity, { kind: "existing", name: "with-ignored" }),
+    (error: unknown) => error instanceof GitWorkbenchError && error.code === "CHECKOUT_CONFLICT",
+  );
+  assert.equal(await currentBranchName(repo), "main");
+  assert.equal(await readRepoFile(repo, "ignored.txt"), "local-ignored\n");
+  await unlink(path.join(repo, "ignored.txt"));
+
+  await assert.rejects(
+    () => runSafeGitSwitch(identity, { kind: "existing", name: "missing-branch" }),
+    (error: unknown) => error instanceof GitWorkbenchError && error.code === "GIT_FAILED",
+  );
+
+  await writeFile(path.join(repo, "keep.txt"), "keep create\n", "utf8");
+  let state = await currentOverview(repo);
+  const created = await executeGitWorkbenchOperation({
+    action: "create-branch",
+    cwd: repo,
+    hash: featureHash,
+    name: "from-feature",
+    checkout: true,
+    expectedRevision: state.revision,
+    expectedHead: state.head!,
+  });
+  assert.equal(created.overview.currentBranch, "from-feature");
+  assert.equal(await readRepoFile(repo, "keep.txt"), "keep create\n");
+
+  await git(repo, "switch", "main");
+  await git(repo, "reset", "--hard");
+  await writeFile(path.join(repo, "shared.txt"), "block create\n", "utf8");
+  state = await currentOverview(repo);
+  await assert.rejects(
+    () => executeGitWorkbenchOperation({
+      action: "create-branch",
+      cwd: repo,
+      hash: featureHash,
+      name: "blocked-create",
+      checkout: true,
+      expectedRevision: state.revision,
+      expectedHead: state.head!,
+    }),
+    (error: unknown) => error instanceof GitWorkbenchError && error.code === "CHECKOUT_CONFLICT",
+  );
+  assert.equal(await currentBranchName(repo), "main");
+  assert.equal(await readRepoFile(repo, "shared.txt"), "block create\n");
+  await assert.rejects(() => git(repo, "show-ref", "--verify", "--quiet", "refs/heads/blocked-create"));
+  await git(repo, "checkout", "--", "shared.txt");
+
+  await writeFile(path.join(repo, "keep.txt"), "keep route\n", "utf8");
+  const switchOk = await postSwitch(repo, "feature");
+  assert.equal(switchOk.status, 200);
+  assert.deepEqual(await switchOk.json(), { success: true, branch: "feature", switchedTo: "feature" });
+  assert.equal(await currentBranchName(repo), "feature");
+  assert.equal(await readRepoFile(repo, "keep.txt"), "keep route\n");
+
+  await git(repo, "switch", "main");
+  await git(repo, "reset", "--hard");
+  await writeFile(path.join(repo, "shared.txt"), "route conflict\n", "utf8");
+  const switchConflict = await postSwitch(repo, "feature");
+  assert.equal(switchConflict.status, 409);
+  assert.equal((await switchConflict.json()).code, "CHECKOUT_CONFLICT");
+  assert.equal(await currentBranchName(repo), "main");
+  assert.equal(await readRepoFile(repo, "shared.txt"), "route conflict\n");
+
+  const missing = await postSwitch(repo, "no-such");
+  assert.equal(missing.status, 404);
+  assert.equal((await missing.json()).code, "REF_NOT_FOUND");
+  const current = await postSwitch(repo, "main");
+  assert.equal(current.status, 200);
+  await git(repo, "checkout", "--", "shared.txt");
+
+  await writeFile(path.join(repo, "keep.txt"), "keep workbench\n", "utf8");
+  state = await currentOverview(repo);
+  const featureRef = state.localBranches.find((ref) => ref.name === "feature");
+  assert.ok(featureRef);
+  const localCheckout = await executeGitWorkbenchOperation({
+    action: "checkout-local",
+    cwd: repo,
+    ref: featureRef.ref,
+    expectedRevision: state.revision,
+  });
+  assert.equal(localCheckout.overview.currentBranch, "feature");
+  assert.equal(await readRepoFile(repo, "keep.txt"), "keep workbench\n");
+
+  await git(repo, "switch", "main");
+  await git(repo, "reset", "--hard");
+  await writeFile(path.join(repo, "shared.txt"), "ops conflict\n", "utf8");
+  state = await currentOverview(repo);
+  await assert.rejects(
+    () => executeGitWorkbenchOperation({
+      action: "checkout-local",
+      cwd: repo,
+      ref: featureRef.ref,
+      expectedRevision: state.revision,
+    }),
+    (error: unknown) => error instanceof GitWorkbenchError && error.code === "CHECKOUT_CONFLICT",
+  );
+  assert.equal(await currentBranchName(repo), "main");
+  assert.equal(await readRepoFile(repo, "shared.txt"), "ops conflict\n");
+  await git(repo, "checkout", "--", "shared.txt");
+
+  await git(repo, "push", "origin", "feature");
+  await git(repo, "fetch", "origin");
+  await writeFile(path.join(repo, "keep.txt"), "keep remote\n", "utf8");
+  state = await currentOverview(repo);
+  const remoteFeature = state.remoteBranches.find((ref) => ref.name === "origin/feature");
+  assert.ok(remoteFeature);
+  const remoteCheckout = await executeGitWorkbenchOperation({
+    action: "checkout-remote",
+    cwd: repo,
+    ref: remoteFeature.ref,
+    localName: "tracked-feature",
+    expectedRevision: state.revision,
+  });
+  assert.equal(remoteCheckout.overview.currentBranch, "tracked-feature");
+  assert.equal(await readRepoFile(repo, "keep.txt"), "keep remote\n");
+  assert.equal(remoteCheckout.overview.localBranches.find((ref) => ref.name === "tracked-feature")?.upstreamRef, remoteFeature.ref);
+
+  await git(repo, "switch", "main");
+  await writeFile(path.join(repo, "keep.txt"), "keep existing track\n", "utf8");
+  state = await currentOverview(repo);
+  const existingTrack = await executeGitWorkbenchOperation({
+    action: "checkout-remote",
+    cwd: repo,
+    ref: remoteFeature.ref,
+    localName: "tracked-feature",
+    expectedRevision: state.revision,
+  });
+  assert.equal(existingTrack.overview.currentBranch, "tracked-feature");
+  assert.equal(await readRepoFile(repo, "keep.txt"), "keep existing track\n");
+
+  await git(repo, "switch", "main");
+  await git(repo, "reset", "--hard");
+  state = await currentOverview(repo);
+  await assert.rejects(
+    () => executeGitWorkbenchOperation({
+      action: "checkout-remote",
+      cwd: repo,
+      ref: remoteFeature.ref,
+      localName: "main",
+      expectedRevision: state.revision,
+    }),
+    (error: unknown) => error instanceof GitWorkbenchError && error.code === "UNSAFE_OPERATION",
+  );
+
+  await writeFile(path.join(repo, "keep.txt"), "dirty history\n", "utf8");
+  state = await currentOverview(repo);
+  assert.equal(state.isDirty, true);
+  const dirtyHistory = (error: unknown) => error instanceof GitWorkbenchError && error.code === "UNSAFE_OPERATION" && error.details === "dirty-working-tree";
+  await assert.rejects(() => executeGitWorkbenchOperation({
+    action: "cherry-pick",
+    cwd: repo,
+    hash: featureHash,
+    expectedRevision: state.revision,
+    expectedHead: state.head!,
+  }), dirtyHistory);
+  await assert.rejects(() => executeGitWorkbenchOperation({
+    action: "revert",
+    cwd: repo,
+    hash: featureHash,
+    expectedRevision: state.revision,
+    expectedHead: state.head!,
+  }), dirtyHistory);
+  await assert.rejects(() => executeGitWorkbenchOperation({
+    action: "reword",
+    cwd: repo,
+    hash: state.head!,
+    message: "should not rewrite",
+    expectedRevision: state.revision,
+    expectedHead: state.head!,
+  }), dirtyHistory);
+  const dropTarget = await git(repo, "rev-parse", "HEAD^");
+  await assert.rejects(() => executeGitWorkbenchOperation({
+    action: "drop",
+    cwd: repo,
+    hash: dropTarget,
+    expectedRevision: state.revision,
+    expectedHead: state.head!,
+  }), dirtyHistory);
+  await git(repo, "reset", "--hard");
+
+  await git(repo, "worktree", "add", "-b", "occupied", linked, "main");
+  registerAllowedRoot(linked);
+  await writeFile(path.join(repo, "keep.txt"), "dirty occupied\n", "utf8");
+  state = await currentOverview(repo);
+  const occupied = state.localBranches.find((ref) => ref.name === "occupied");
+  assert.ok(occupied);
+  await assert.rejects(
+    () => executeGitWorkbenchOperation({
+      action: "checkout-local",
+      cwd: repo,
+      ref: occupied.ref,
+      expectedRevision: state.revision,
+    }),
+    (error: unknown) => error instanceof GitWorkbenchError && error.code === "BRANCH_IN_USE",
+  );
+  assert.equal(await currentBranchName(repo), "main");
+
+  const staleRevision = state.revision;
+  await git(repo, "reset", "--hard");
+  await commitFile(repo, "stale.txt", "stale\n", "stale marker");
+  await assert.rejects(
+    () => executeGitWorkbenchOperation({
+      action: "checkout-local",
+      cwd: repo,
+      ref: featureRef.ref,
+      expectedRevision: staleRevision,
+    }),
+    (error: unknown) => error instanceof GitWorkbenchError && error.code === "STALE_REVISION",
+  );
+  assert.equal(await currentBranchName(repo), "main");
+
+  await git(repo, "switch", "-c", "merge-left");
+  await commitFile(repo, "conflict-op.txt", "left\n", "left");
+  await git(repo, "switch", "main");
+  await commitFile(repo, "conflict-op.txt", "right\n", "right");
+  await assert.rejects(() => git(repo, "merge", "merge-left"));
+  const mergeSwitch = await postSwitch(repo, "feature");
+  assert.equal(mergeSwitch.status, 409);
+  assert.equal(["UNMERGED_INDEX", "OPERATION_IN_PROGRESS"].includes((await mergeSwitch.json()).code), true);
+  await git(repo, "merge", "--abort");
 }
 
 async function main(): Promise<void> {
@@ -405,6 +735,8 @@ async function main(): Promise<void> {
     const strictResponse = await operateRoute(strictRequest);
     assert.equal(strictResponse.status, 400);
     assert.equal((await strictResponse.json()).code, "INVALID_REQUEST");
+
+    await runSafeCheckoutSmoke(path.join(root, "safe-switch"));
 
     console.log("smoke-git-workbench: OK");
   } finally {

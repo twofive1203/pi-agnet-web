@@ -29,6 +29,14 @@ function gitStatusTone(status: string): string {
 /** Cap rendered rows per file section so huge repos cannot freeze the panel. */
 const MAX_FILE_ROWS = 200;
 
+const SWITCH_REFRESH_ERROR_CODES = new Set([
+  "CHECKOUT_CONFLICT",
+  "STALE_REVISION",
+  "STALE_HEAD",
+  "STALE_REF",
+  "GIT_TIMEOUT",
+]);
+
 function FileChangeRow({ change, onOpenDiff }: { change: GitFileChange; onOpenDiff: (change: GitFileChange) => void }) {
   const { t } = useI18n();
   return (
@@ -58,7 +66,7 @@ export function GitPanel({ cwd, refreshKey, agentRunning = false, onDirtyChange 
   const [loadError, setLoadError] = useState<string | null>(null);
   const [graphError, setGraphError] = useState<string | null>(null);
   const [switching, setSwitching] = useState(false);
-  const [switchError, setSwitchError] = useState<string | null>(null);
+  const [switchError, setSwitchError] = useState<{ message: string; details?: string } | null>(null);
   const [selectedCommitHash, setSelectedCommitHash] = useState<string | null>(null);
   const [commitDetail, setCommitDetail] = useState<GitCommitDetail | null>(null);
   const [commitDetailLoading, setCommitDetailLoading] = useState(false);
@@ -292,7 +300,7 @@ export function GitPanel({ cwd, refreshKey, agentRunning = false, onDirtyChange 
   }, [activeView, fetchAll, stashVisited, stashes]);
 
   const handleSwitchBranch = useCallback(async () => {
-    if (!cwd || !selectedBranch || status?.isDirty || switching) return;
+    if (!cwd || !selectedBranch || switching) return;
 
     setSwitching(true);
     setSwitchError(null);
@@ -302,9 +310,16 @@ export function GitPanel({ cwd, refreshKey, agentRunning = false, onDirtyChange 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ cwd, branch: selectedBranch }),
       });
-      const body = await res.json().catch(() => ({})) as { error?: string };
+      const body = await res.json().catch(() => ({})) as { error?: string; code?: string; details?: string };
       if (!res.ok || body.error) {
-        throw new Error(body.error ?? `Switch failed with HTTP ${res.status}`);
+        if (body.code && SWITCH_REFRESH_ERROR_CODES.has(body.code)) await fetchAll();
+        const key = body.code ? `git.workbench.errors.${body.code}` : "";
+        const translated = key ? t(key) : "";
+        setSwitchError({
+          message: translated && translated !== key ? translated : (body.error ?? `Switch failed with HTTP ${res.status}`),
+          details: body.details?.trim() || undefined,
+        });
+        return;
       }
       // Drop commit selection from the old branch so no stale detail flashes.
       setSelectedCommitHash(null);
@@ -319,11 +334,11 @@ export function GitPanel({ cwd, refreshKey, agentRunning = false, onDirtyChange 
       setGraphBranch(selectedBranch);
       await fetchAll();
     } catch (error) {
-      setSwitchError(error instanceof Error ? error.message : String(error));
+      setSwitchError({ message: error instanceof Error ? error.message : String(error) });
     } finally {
       setSwitching(false);
     }
-  }, [cwd, fetchAll, selectedBranch, status?.isDirty, switching]);
+  }, [cwd, fetchAll, selectedBranch, switching, t]);
 
   if (loaded && loadError && !loading) {
     return (
@@ -349,14 +364,12 @@ export function GitPanel({ cwd, refreshKey, agentRunning = false, onDirtyChange 
   const branchOptions = graphData?.branches ?? [];
   const previewBranch = graphBranch || status.branch;
   const selectedIsCurrent = selectedBranch === status.branch || branchOptions.some((branch) => branch.name === selectedBranch && branch.isCurrent);
-  const canSwitchBranch = Boolean(selectedBranch) && branchOptions.length > 0 && !loading && !switching && !status.isDirty && !selectedIsCurrent;
-  const switchDisabledReason = status.isDirty
-    ? t("git.switchDisabledDirty")
-    : branchOptions.length === 0
-      ? t("git.switchDisabledNoBranches")
-      : selectedIsCurrent
-        ? t("git.switchDisabledCurrent")
-        : null;
+  const canSwitchBranch = Boolean(selectedBranch) && branchOptions.length > 0 && !loading && !switching && !selectedIsCurrent;
+  const switchDisabledReason = branchOptions.length === 0
+    ? t("git.switchDisabledNoBranches")
+    : selectedIsCurrent
+      ? t("git.switchDisabledCurrent")
+      : null;
 
   const stashErrorMessage = stashes.operationError
     ? t(`git.stashManager.errors.${stashes.operationError.code}`)
@@ -477,8 +490,8 @@ export function GitPanel({ cwd, refreshKey, agentRunning = false, onDirtyChange 
             </button>
           </div>
           <div className="git-control-help">{t("git.previewSwitchHelp")}</div>
-          {switchDisabledReason && <div className={`git-control-message${status.isDirty ? " is-warning" : ""}`}>{switchDisabledReason}</div>}
-          {switchError && <div className="git-control-message is-error" role="alert">{switchError}</div>}
+          {switchDisabledReason && <div className="git-control-message">{switchDisabledReason}</div>}
+          {switchError && <div className="git-control-message is-error" role="alert" title={switchError.details}>{switchError.message}</div>}
         </div>
       </section>
 

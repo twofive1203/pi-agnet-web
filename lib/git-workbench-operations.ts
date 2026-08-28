@@ -8,6 +8,7 @@ import type {
   GitWorkbenchOverview,
   GitWorkbenchRef,
 } from "@/lib/types";
+import { runSafeGitSwitch } from "@/lib/git-branch-switch";
 import {
   GIT_WRITE_BUFFER,
   GIT_WRITE_TIMEOUT_MS,
@@ -55,12 +56,9 @@ function ensureNoOperation(overview: GitWorkbenchOverview): void {
   }
 }
 
-function ensureClean(overview: GitWorkbenchOverview): void {
+function ensureNoUnmerged(overview: GitWorkbenchOverview): void {
   if (overview.hasUnmerged) {
     throw new GitWorkbenchError("UNMERGED_INDEX", "The index has unmerged entries.", { status: 409 });
-  }
-  if (overview.isDirty) {
-    throw new GitWorkbenchError("DIRTY_WORKING_TREE", "The working tree has uncommitted changes.", { status: 409 });
   }
 }
 
@@ -236,19 +234,19 @@ export async function executeGitWorkbenchOperation(
 
     switch (request.action) {
       case "checkout-local": {
-        ensureClean(overview);
+        ensureNoUnmerged(overview);
         const selected = overview.localBranches.find((ref) => ref.ref === request.ref);
         if (!selected) throw new GitWorkbenchError("REF_NOT_FOUND", "Local branch not found.", { status: 404 });
         if (selected.current) return refreshedResponse(request.action, repo.cwd, selected.target, "up-to-date");
         if (branchInAnotherWorktree(selected, repo)) {
           throw new GitWorkbenchError("BRANCH_IN_USE", "The branch is checked out in another linked worktree.", { status: 409, details: selected.checkedOutPath ?? undefined });
         }
-        await gitWrite(repo, ["switch", "--", selected.name]);
+        await runSafeGitSwitch(repo, { kind: "existing", name: selected.name });
         return refreshedResponse(request.action, repo.cwd, selected.target, "updated");
       }
 
       case "checkout-remote": {
-        ensureClean(overview);
+        ensureNoUnmerged(overview);
         const remoteRef = overview.remoteBranches.find((ref) => ref.ref === request.ref);
         if (!remoteRef) throw new GitWorkbenchError("REF_NOT_FOUND", "Remote-tracking branch not found.", { status: 404 });
         const split = splitRemoteTrackingRef(remoteRef.ref);
@@ -263,10 +261,10 @@ export async function executeGitWorkbenchOperation(
           if (branchInAnotherWorktree(local, repo)) {
             throw new GitWorkbenchError("BRANCH_IN_USE", "The local tracking branch is checked out in another linked worktree.", { status: 409, details: local.checkedOutPath ?? undefined });
           }
-          if (!local.current) await gitWrite(repo, ["switch", local.name]);
+          if (!local.current) await runSafeGitSwitch(repo, { kind: "existing", name: local.name });
           return refreshedResponse(request.action, repo.cwd, local.target, local.current ? "up-to-date" : "updated");
         }
-        await gitWrite(repo, ["switch", "--track", "-c", localName, remoteRef.ref]);
+        await runSafeGitSwitch(repo, { kind: "create-tracking", name: localName, startPoint: remoteRef.ref });
         return refreshedResponse(request.action, repo.cwd, remoteRef.target, "created");
       }
 
@@ -391,8 +389,8 @@ export async function executeGitWorkbenchOperation(
         }
         if (request.checkout) {
           ensureExpectedHead(overview, request.expectedHead);
-          ensureClean(overview);
-          await gitWrite(repo, ["switch", "-c", request.name, selected.hash]);
+          ensureNoUnmerged(overview);
+          await runSafeGitSwitch(repo, { kind: "create", name: request.name, startPoint: selected.hash });
         } else {
           await gitWrite(repo, ["branch", request.name, selected.hash]);
         }
