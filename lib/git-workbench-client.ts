@@ -202,6 +202,20 @@ export interface GitRemoteRefGroup {
   refs: GitWorkbenchRef[];
 }
 
+export interface GitPushUpstreamDestination {
+  remote: string;
+  target: string;
+}
+
+export function parseGitPushUpstreamDestination(upstreamRef: string | null | undefined): GitPushUpstreamDestination | null {
+  const prefix = "refs/remotes/";
+  if (!upstreamRef?.startsWith(prefix)) return null;
+  const short = upstreamRef.slice(prefix.length);
+  const slash = short.indexOf("/");
+  if (slash <= 0 || slash === short.length - 1) return null;
+  return { remote: short.slice(0, slash), target: short.slice(slash + 1) };
+}
+
 export function buildGitRemoteRefGroups(
   remotes: readonly string[],
   remoteBranches: readonly GitWorkbenchRef[],

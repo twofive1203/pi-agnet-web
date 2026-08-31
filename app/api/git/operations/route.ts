@@ -30,11 +30,33 @@ function optionalString(body: Record<string, unknown>, key: string): string | un
   return value.trim() || undefined;
 }
 
+function requiredNullableString(body: Record<string, unknown>, key: string): string | null {
+  if (!Object.hasOwn(body, key)) {
+    throw new GitWorkbenchError("INVALID_REQUEST", `${key} is required.`, { status: 400 });
+  }
+  const value = body[key];
+  if (value === null) return null;
+  if (typeof value !== "string" || !value.trim()) {
+    throw new GitWorkbenchError("INVALID_REQUEST", `${key} must be a non-empty string or null.`, { status: 400 });
+  }
+  return value.trim();
+}
+
+function requiredBoolean(body: Record<string, unknown>, key: string): boolean {
+  const value = body[key];
+  if (typeof value !== "boolean") throw new GitWorkbenchError("INVALID_REQUEST", `${key} must be a boolean.`, { status: 400 });
+  return value;
+}
+
 function optionalBoolean(body: Record<string, unknown>, key: string): boolean | undefined {
   const value = body[key];
   if (value === undefined) return undefined;
   if (typeof value !== "boolean") throw new GitWorkbenchError("INVALID_REQUEST", `${key} must be a boolean.`, { status: 400 });
   return value;
+}
+
+function requiredRecord(body: Record<string, unknown>, key: string): Record<string, unknown> {
+  return recordBody(body[key]);
 }
 
 function assertExactKeys(body: Record<string, unknown>, allowed: readonly string[]): void {
@@ -53,30 +75,65 @@ function parseOperationRequest(value: unknown): GitWorkbenchOperationRequest {
 
   switch (action) {
     case "checkout-local":
-      assertExactKeys(body, ["action", "cwd", "ref", "expectedRevision"]);
-      return { action, cwd, ref: requiredString(body, "ref"), expectedRevision };
+      assertExactKeys(body, ["action", "cwd", "ref", "expectedRevision", "expectedHeadRef"]);
+      return { action, cwd, ref: requiredString(body, "ref"), expectedRevision, expectedHeadRef: requiredNullableString(body, "expectedHeadRef") };
     case "checkout-remote":
-      assertExactKeys(body, ["action", "cwd", "ref", "localName", "expectedRevision"]);
-      return { action, cwd, ref: requiredString(body, "ref"), localName: optionalString(body, "localName"), expectedRevision };
-    case "push":
-      assertExactKeys(body, ["action", "cwd", "ref", "remote", "target", "setUpstream", "expectedRevision", "expectedRefTip"]);
+      assertExactKeys(body, ["action", "cwd", "ref", "localName", "expectedRevision", "expectedHeadRef"]);
       return {
         action,
         cwd,
         ref: requiredString(body, "ref"),
-        remote: optionalString(body, "remote"),
-        target: optionalString(body, "target"),
-        setUpstream: optionalBoolean(body, "setUpstream"),
+        localName: optionalString(body, "localName"),
         expectedRevision,
-        expectedRefTip: requiredString(body, "expectedRefTip"),
+        expectedHeadRef: requiredNullableString(body, "expectedHeadRef"),
       };
+    case "push": {
+      assertExactKeys(body, ["action", "cwd", "ref", "destination", "expectedRevision", "expectedRefTip"]);
+      const destination = requiredRecord(body, "destination");
+      const mode = requiredString(destination, "mode");
+      if (mode === "upstream") {
+        assertExactKeys(destination, ["mode", "expectedUpstreamRef"]);
+        return {
+          action,
+          cwd,
+          ref: requiredString(body, "ref"),
+          destination: { mode, expectedUpstreamRef: requiredString(destination, "expectedUpstreamRef") },
+          expectedRevision,
+          expectedRefTip: requiredString(body, "expectedRefTip"),
+        };
+      }
+      if (mode === "explicit") {
+        assertExactKeys(destination, ["mode", "remote", "target", "setUpstream"]);
+        return {
+          action,
+          cwd,
+          ref: requiredString(body, "ref"),
+          destination: {
+            mode,
+            remote: requiredString(destination, "remote"),
+            target: requiredString(destination, "target"),
+            setUpstream: requiredBoolean(destination, "setUpstream"),
+          },
+          expectedRevision,
+          expectedRefTip: requiredString(body, "expectedRefTip"),
+        };
+      }
+      throw new GitWorkbenchError("INVALID_REQUEST", "Unsupported push destination mode.", { status: 400 });
+    }
     case "cherry-pick":
     case "revert":
     case "drop":
-      assertExactKeys(body, ["action", "cwd", "hash", "expectedRevision", "expectedHead"]);
-      return { action, cwd, hash: requiredString(body, "hash"), expectedRevision, expectedHead: requiredString(body, "expectedHead") };
+      assertExactKeys(body, ["action", "cwd", "hash", "expectedRevision", "expectedHead", "expectedHeadRef"]);
+      return {
+        action,
+        cwd,
+        hash: requiredString(body, "hash"),
+        expectedRevision,
+        expectedHead: requiredString(body, "expectedHead"),
+        expectedHeadRef: requiredNullableString(body, "expectedHeadRef"),
+      };
     case "reset": {
-      assertExactKeys(body, ["action", "cwd", "hash", "mode", "confirmTarget", "expectedRevision", "expectedHead"]);
+      assertExactKeys(body, ["action", "cwd", "hash", "mode", "confirmTarget", "expectedRevision", "expectedHead", "expectedHeadRef"]);
       const mode = requiredString(body, "mode") as GitResetMode;
       if (!RESET_MODES.has(mode)) throw new GitWorkbenchError("INVALID_REQUEST", "Invalid reset mode.", { status: 400 });
       return {
@@ -87,10 +144,11 @@ function parseOperationRequest(value: unknown): GitWorkbenchOperationRequest {
         confirmTarget: optionalString(body, "confirmTarget"),
         expectedRevision,
         expectedHead: requiredString(body, "expectedHead"),
+        expectedHeadRef: requiredNullableString(body, "expectedHeadRef"),
       };
     }
     case "reword":
-      assertExactKeys(body, ["action", "cwd", "hash", "message", "expectedRevision", "expectedHead"]);
+      assertExactKeys(body, ["action", "cwd", "hash", "message", "expectedRevision", "expectedHead", "expectedHeadRef"]);
       return {
         action,
         cwd,
@@ -98,18 +156,33 @@ function parseOperationRequest(value: unknown): GitWorkbenchOperationRequest {
         message: requiredString(body, "message"),
         expectedRevision,
         expectedHead: requiredString(body, "expectedHead"),
+        expectedHeadRef: requiredNullableString(body, "expectedHeadRef"),
       };
-    case "create-branch":
-      assertExactKeys(body, ["action", "cwd", "hash", "name", "checkout", "expectedRevision", "expectedHead"]);
+    case "create-branch": {
+      const checkout = optionalBoolean(body, "checkout");
+      if (checkout) {
+        assertExactKeys(body, ["action", "cwd", "hash", "name", "checkout", "expectedRevision", "expectedHead", "expectedHeadRef"]);
+        return {
+          action,
+          cwd,
+          hash: requiredString(body, "hash"),
+          name: requiredString(body, "name"),
+          checkout,
+          expectedRevision,
+          expectedHead: requiredString(body, "expectedHead"),
+          expectedHeadRef: requiredNullableString(body, "expectedHeadRef"),
+        };
+      }
+      assertExactKeys(body, ["action", "cwd", "hash", "name", "checkout", "expectedRevision"]);
       return {
         action,
         cwd,
         hash: requiredString(body, "hash"),
         name: requiredString(body, "name"),
-        checkout: optionalBoolean(body, "checkout"),
+        checkout,
         expectedRevision,
-        expectedHead: optionalString(body, "expectedHead"),
       };
+    }
     case "create-tag":
       assertExactKeys(body, ["action", "cwd", "hash", "name", "expectedRevision"]);
       return { action, cwd, hash: requiredString(body, "hash"), name: requiredString(body, "name"), expectedRevision };
@@ -124,9 +197,16 @@ export async function POST(req: NextRequest) {
     if (contentLength > MAX_BODY_BYTES) {
       throw new GitWorkbenchError("INVALID_REQUEST", "Request body is too large.", { status: 413 });
     }
-    const body = await req.json().catch(() => {
+    const rawBody = await req.text();
+    if (Buffer.byteLength(rawBody, "utf8") > MAX_BODY_BYTES) {
+      throw new GitWorkbenchError("INVALID_REQUEST", "Request body is too large.", { status: 413 });
+    }
+    let body: unknown;
+    try {
+      body = JSON.parse(rawBody) as unknown;
+    } catch {
       throw new GitWorkbenchError("INVALID_REQUEST", "Request body must be valid JSON.", { status: 400 });
-    });
+    }
     return NextResponse.json(await executeGitWorkbenchOperation(parseOperationRequest(body)));
   } catch (error) {
     const mapped = gitErrorResponse(error);

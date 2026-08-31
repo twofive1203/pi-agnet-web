@@ -666,7 +666,10 @@ export interface GitWorkbenchOverview {
   commonDir: string;
   repositoryName: string;
   revision: string;
+  revisionComplete: boolean;
   head: string | null;
+  /** Full symbolic HEAD ref, or null when HEAD is detached. */
+  headRef: string | null;
   currentBranch: string | null;
   isDetached: boolean;
   isEmpty: boolean;
@@ -734,16 +737,27 @@ export interface GitWorkbenchLogPage {
 
 export type GitResetMode = "soft" | "mixed" | "hard" | "keep";
 
+export type GitPushDestination =
+  | { mode: "upstream"; expectedUpstreamRef: string }
+  | { mode: "explicit"; remote: string; target: string; setUpstream: boolean };
+
+export interface GitPushResultDestination {
+  mode: GitPushDestination["mode"];
+  remote: string;
+  target: string;
+  ref: string;
+}
+
 export type GitWorkbenchOperationRequest =
-  | { action: "checkout-local"; cwd: string; ref: string; expectedRevision: string }
-  | { action: "checkout-remote"; cwd: string; ref: string; localName?: string; expectedRevision: string }
-  | { action: "push"; cwd: string; ref: string; remote?: string; target?: string; setUpstream?: boolean; expectedRevision: string; expectedRefTip: string }
-  | { action: "cherry-pick"; cwd: string; hash: string; expectedRevision: string; expectedHead: string }
-  | { action: "reset"; cwd: string; hash: string; mode: GitResetMode; confirmTarget?: string; expectedRevision: string; expectedHead: string }
-  | { action: "revert"; cwd: string; hash: string; expectedRevision: string; expectedHead: string }
-  | { action: "reword"; cwd: string; hash: string; message: string; expectedRevision: string; expectedHead: string }
-  | { action: "drop"; cwd: string; hash: string; expectedRevision: string; expectedHead: string }
-  | { action: "create-branch"; cwd: string; hash: string; name: string; checkout?: boolean; expectedRevision: string; expectedHead?: string }
+  | { action: "checkout-local"; cwd: string; ref: string; expectedRevision: string; expectedHeadRef: string | null }
+  | { action: "checkout-remote"; cwd: string; ref: string; localName?: string; expectedRevision: string; expectedHeadRef: string | null }
+  | { action: "push"; cwd: string; ref: string; destination: GitPushDestination; expectedRevision: string; expectedRefTip: string }
+  | { action: "cherry-pick"; cwd: string; hash: string; expectedRevision: string; expectedHead: string; expectedHeadRef: string | null }
+  | { action: "reset"; cwd: string; hash: string; mode: GitResetMode; confirmTarget?: string; expectedRevision: string; expectedHead: string; expectedHeadRef: string | null }
+  | { action: "revert"; cwd: string; hash: string; expectedRevision: string; expectedHead: string; expectedHeadRef: string | null }
+  | { action: "reword"; cwd: string; hash: string; message: string; expectedRevision: string; expectedHead: string; expectedHeadRef: string | null }
+  | { action: "drop"; cwd: string; hash: string; expectedRevision: string; expectedHead: string; expectedHeadRef: string | null }
+  | { action: "create-branch"; cwd: string; hash: string; name: string; checkout?: boolean; expectedRevision: string; expectedHead?: string; expectedHeadRef?: string | null }
   | { action: "create-tag"; cwd: string; hash: string; name: string; expectedRevision: string };
 
 export interface GitWorkbenchOperationResponse {
@@ -752,6 +766,7 @@ export interface GitWorkbenchOperationResponse {
   overview: GitWorkbenchOverview;
   selectedHash: string | null;
   outcome?: "updated" | "created" | "up-to-date";
+  destination?: GitPushResultDestination;
 }
 
 export interface GitWorkbenchErrorResponse {

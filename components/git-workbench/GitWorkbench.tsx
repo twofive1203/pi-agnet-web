@@ -215,7 +215,7 @@ export function GitWorkbench({ cwd }: { cwd: string | null }) {
   }
 
   const overview = workbench.overview;
-  const writesDisabled = workbench.operationBusy || workbench.recoveryRequired || Boolean(overview.operationState);
+  const writesDisabled = !overview.revisionComplete || workbench.operationBusy || workbench.recoveryRequired || Boolean(overview.operationState);
   const layoutWidth = layoutRef.current?.clientWidth ?? 1280;
   const refsWidthBounds = getGitWorkbenchRefsWidthBounds(layoutWidth, layoutPreference.inspectorWidth);
   const inspectorWidthBounds = getGitWorkbenchInspectorWidthBounds(layoutWidth, layoutPreference.refsWidth);
@@ -232,6 +232,11 @@ export function GitWorkbench({ cwd }: { cwd: string | null }) {
           <strong>{t("git.workbench.recoveryRequired")}</strong>
           <span>{t("git.workbench.recoveryHelp", { cwd: overview.cwd, state: overview.operationState ?? "unknown" })}</span>
           <Link href="/">{t("git.workbench.openWorkspace")}</Link>
+        </div>
+      )}
+      {!overview.revisionComplete && (
+        <div className="git-workbench-warning-banner" role="status">
+          {t("git.workbench.snapshotIncomplete")}
         </div>
       )}
       {overview.operationState && !workbench.recoveryRequired && (

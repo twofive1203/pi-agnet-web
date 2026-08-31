@@ -6,6 +6,7 @@ import { useI18n } from "@/components/I18nProvider";
 import { SettingsButton } from "@/components/ui/SettingsPrimitives";
 import type { CommitAction } from "./GitLogPane";
 import type { GitWorkbenchOperationDraft } from "@/hooks/useGitWorkbench";
+import { parseGitPushUpstreamDestination } from "@/lib/git-workbench-client";
 import type { GitCommitDetail, GitGraphCommit, GitResetMode, GitWorkbenchOverview, GitWorkbenchRef } from "@/lib/types";
 
 export type GitWorkbenchDialogRequest =
@@ -55,12 +56,9 @@ export function GitWorkbenchDialogs({
       setMessage([request.detail.subject, request.detail.body].filter(Boolean).join("\n\n"));
       setName("");
     } else if (request.action === "push") {
-      const upstream = request.ref.upstreamRef?.replace(/^refs\/remotes\//, "") ?? "";
-      const slash = upstream.indexOf("/");
-      const upstreamRemote = slash > 0 ? upstream.slice(0, slash) : "";
-      const upstreamTarget = slash > 0 ? upstream.slice(slash + 1) : "";
-      setRemote(upstreamRemote || overview.remotes[0] || "");
-      setTarget(upstreamTarget || request.ref.name);
+      const upstream = parseGitPushUpstreamDestination(request.ref.upstreamRef);
+      setRemote(upstream?.remote || overview.remotes[0] || "");
+      setTarget(upstream?.target || request.ref.name);
       setSetUpstream(!request.ref.upstreamRef);
     } else {
       const remoteParts = request.ref.name.split("/");
@@ -88,6 +86,9 @@ export function GitWorkbenchDialogs({
   if (!request || !mounted || typeof document === "undefined") return null;
 
   const selectedCommit = request.type === "commit" ? request.detail : null;
+  const pushUpstream = request.type === "ref" && request.action === "push"
+    ? parseGitPushUpstreamDestination(request.ref.upstreamRef)
+    : null;
   const shortHash = selectedCommit?.shortHash ?? "";
   const requiresConfirmation = request.type === "commit"
     && (request.action === "drop" || (request.action === "reset" && resetMode === "hard"));
@@ -100,7 +101,9 @@ export function GitWorkbenchDialogs({
           ? confirmation === shortHash || confirmation === selectedCommit?.hash
           : true
     : request.action === "push"
-      ? Boolean(remote && target)
+      ? request.ref.upstreamRef
+        ? Boolean(pushUpstream && overview.remotes.includes(pushUpstream.remote))
+        : Boolean(remote && target && overview.remotes.includes(remote))
       : request.ref.kind === "remote"
         ? Boolean(name.trim())
         : true;
@@ -112,9 +115,9 @@ export function GitWorkbenchDialogs({
         draft = {
           action: "push",
           ref: request.ref.ref,
-          remote,
-          target,
-          setUpstream,
+          destination: request.ref.upstreamRef
+            ? { mode: "upstream", expectedUpstreamRef: request.ref.upstreamRef }
+            : { mode: "explicit", remote, target, setUpstream },
           expectedRefTip: request.ref.target,
         };
       } else if (request.ref.kind === "remote") {
@@ -203,17 +206,25 @@ export function GitWorkbenchDialogs({
             <>
               <div className="git-workbench-push-preview"><code>{request.ref.name}</code><span>→</span><code>{remote || "?"}/{target || "?"}</code></div>
               <div className="git-workbench-dialog-note">{t("git.workbench.dialog.outgoing", { count: request.ref.ahead ?? 0 })}</div>
-              <label className="git-workbench-field">
-                <span>{t("git.workbench.dialog.remote")}</span>
-                <select value={remote} onChange={(event) => setRemote(event.currentTarget.value)}>
-                  {overview.remotes.map((item) => <option key={item} value={item}>{item}</option>)}
-                </select>
-              </label>
-              <label className="git-workbench-field">
-                <span>{t("git.workbench.dialog.targetBranch")}</span>
-                <input value={target} onChange={(event) => setTarget(event.currentTarget.value)} autoComplete="off" />
-              </label>
-              {!request.ref.upstreamRef && <label className="git-workbench-check"><input type="checkbox" checked={setUpstream} onChange={(event) => setSetUpstream(event.currentTarget.checked)} /> {t("git.workbench.dialog.setUpstream")}</label>}
+              {request.ref.upstreamRef ? (
+                <div className="git-workbench-dialog-note">
+                  {t("git.workbench.dialog.upstreamDestination", { destination: pushUpstream ? `${pushUpstream.remote}/${pushUpstream.target}` : request.ref.upstreamRef })}
+                </div>
+              ) : (
+                <>
+                  <label className="git-workbench-field">
+                    <span>{t("git.workbench.dialog.remote")}</span>
+                    <select value={remote} onChange={(event) => setRemote(event.currentTarget.value)}>
+                      {overview.remotes.map((item) => <option key={item} value={item}>{item}</option>)}
+                    </select>
+                  </label>
+                  <label className="git-workbench-field">
+                    <span>{t("git.workbench.dialog.targetBranch")}</span>
+                    <input value={target} onChange={(event) => setTarget(event.currentTarget.value)} autoComplete="off" />
+                  </label>
+                  <label className="git-workbench-check"><input type="checkbox" checked={setUpstream} onChange={(event) => setSetUpstream(event.currentTarget.checked)} /> {t("git.workbench.dialog.setUpstream")}</label>
+                </>
+              )}
               <div className="git-workbench-dialog-note is-warning">{t("git.workbench.dialog.noForcePush")}</div>
             </>
           )}

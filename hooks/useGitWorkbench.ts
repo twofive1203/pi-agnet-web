@@ -18,7 +18,9 @@ const GIT_WORKBENCH_MAX_COMMITS = 500;
 const OPERATION_REFRESH_CODES = new Set([
   "STALE_REVISION",
   "STALE_HEAD",
+  "STALE_HEAD_REF",
   "STALE_REF",
+  "STALE_UPSTREAM",
   "CONFLICT_ABORTED",
   "CHECKOUT_CONFLICT",
   "GIT_TIMEOUT",
@@ -26,7 +28,7 @@ const OPERATION_REFRESH_CODES = new Set([
 
 export type GitWorkbenchOperationDraft = GitWorkbenchOperationRequest extends infer Request
   ? Request extends { cwd: string; expectedRevision: string }
-    ? Omit<Request, "cwd" | "expectedRevision" | "expectedHead">
+    ? Omit<Request, "cwd" | "expectedRevision" | "expectedHead" | "expectedHeadRef">
     : never
   : never;
 
@@ -187,7 +189,7 @@ export function useGitWorkbench(cwd: string | null) {
   }, []);
 
   const loadMore = useCallback(async () => {
-    if (!cwd || !overview || loadingMore || !hasMore || commits.length >= GIT_WORKBENCH_MAX_COMMITS) return;
+    if (!cwd || !overview || !overview.revisionComplete || loadingMore || !hasMore || commits.length >= GIT_WORKBENCH_MAX_COMMITS) return;
     const sequence = ++logSeq.current;
     setLoadingMore(true);
     try {
@@ -215,16 +217,18 @@ export function useGitWorkbench(cwd: string | null) {
   }, [authorId, commits.length, cwd, debouncedQuery, hasMore, loadingMore, overview, refresh, selectedScope]);
 
   const operate = useCallback(async (draft: GitWorkbenchOperationDraft) => {
-    if (!cwd || !overview || operationBusy || recoveryRequired) return null;
+    if (!cwd || !overview || !overview.revisionComplete || operationBusy || recoveryRequired) return null;
     setOperationBusy(true);
     setOperationError(null);
     try {
       const requiresHead = ["cherry-pick", "reset", "revert", "reword", "drop"].includes(draft.action)
         || (draft.action === "create-branch" && Boolean(draft.checkout));
+      const requiresHeadRef = requiresHead || draft.action === "checkout-local" || draft.action === "checkout-remote";
       const request = {
         ...draft,
         cwd,
         expectedRevision: overview.revision,
+        ...(requiresHeadRef ? { expectedHeadRef: overview.headRef } : {}),
         ...(requiresHead && overview.head ? { expectedHead: overview.head } : {}),
       } as GitWorkbenchOperationRequest;
       const response = await runGitWorkbenchOperation(request);

@@ -15,6 +15,7 @@ import {
   withGitMutationLock,
 } from "../lib/git-executor";
 import {
+  GIT_WORKBENCH_MAX_REFS,
   readGitCommitDetail,
   readGitStatus,
   readGitWorkbenchLog,
@@ -29,6 +30,7 @@ import {
   collectGitFileTreeFolderIds,
   DEFAULT_GIT_WORKBENCH_LAYOUT,
   getGitWorkbenchChangesRatioBounds,
+  parseGitPushUpstreamDestination,
   parseGitWorkbenchLayoutPreference,
 } from "../lib/git-workbench-client";
 import { buildGitWorkbenchUrl } from "../lib/git-workbench-url";
@@ -184,6 +186,7 @@ async function runSafeCheckoutSmoke(parent: string): Promise<void> {
     checkout: true,
     expectedRevision: state.revision,
     expectedHead: state.head!,
+    expectedHeadRef: state.headRef,
   });
   assert.equal(created.overview.currentBranch, "from-feature");
   assert.equal(await readRepoFile(repo, "keep.txt"), "keep create\n");
@@ -201,6 +204,7 @@ async function runSafeCheckoutSmoke(parent: string): Promise<void> {
       checkout: true,
       expectedRevision: state.revision,
       expectedHead: state.head!,
+      expectedHeadRef: state.headRef,
     }),
     (error: unknown) => error instanceof GitWorkbenchError && error.code === "CHECKOUT_CONFLICT",
   );
@@ -241,6 +245,7 @@ async function runSafeCheckoutSmoke(parent: string): Promise<void> {
     cwd: repo,
     ref: featureRef.ref,
     expectedRevision: state.revision,
+    expectedHeadRef: state.headRef,
   });
   assert.equal(localCheckout.overview.currentBranch, "feature");
   assert.equal(await readRepoFile(repo, "keep.txt"), "keep workbench\n");
@@ -255,6 +260,7 @@ async function runSafeCheckoutSmoke(parent: string): Promise<void> {
       cwd: repo,
       ref: featureRef.ref,
       expectedRevision: state.revision,
+      expectedHeadRef: state.headRef,
     }),
     (error: unknown) => error instanceof GitWorkbenchError && error.code === "CHECKOUT_CONFLICT",
   );
@@ -274,6 +280,7 @@ async function runSafeCheckoutSmoke(parent: string): Promise<void> {
     ref: remoteFeature.ref,
     localName: "tracked-feature",
     expectedRevision: state.revision,
+    expectedHeadRef: state.headRef,
   });
   assert.equal(remoteCheckout.overview.currentBranch, "tracked-feature");
   assert.equal(await readRepoFile(repo, "keep.txt"), "keep remote\n");
@@ -288,6 +295,7 @@ async function runSafeCheckoutSmoke(parent: string): Promise<void> {
     ref: remoteFeature.ref,
     localName: "tracked-feature",
     expectedRevision: state.revision,
+    expectedHeadRef: state.headRef,
   });
   assert.equal(existingTrack.overview.currentBranch, "tracked-feature");
   assert.equal(await readRepoFile(repo, "keep.txt"), "keep existing track\n");
@@ -302,9 +310,78 @@ async function runSafeCheckoutSmoke(parent: string): Promise<void> {
       ref: remoteFeature.ref,
       localName: "main",
       expectedRevision: state.revision,
+      expectedHeadRef: state.headRef,
     }),
     (error: unknown) => error instanceof GitWorkbenchError && error.code === "UNSAFE_OPERATION",
   );
+
+  await git(repo, "branch", "twin", "HEAD");
+  const sameTipMain = await currentOverview(repo);
+  const sameTipHead = sameTipMain.head!;
+  const sameTipParent = await git(repo, "rev-parse", "HEAD^");
+  assert.equal(sameTipMain.headRef, "refs/heads/main");
+  await git(repo, "switch", "twin");
+  const sameTipTwin = await currentOverview(repo);
+  assert.equal(sameTipTwin.head, sameTipHead);
+  assert.equal(sameTipTwin.headRef, "refs/heads/twin");
+  assert.notEqual(sameTipTwin.revision, sameTipMain.revision);
+  const staleHeadRef = (error: unknown) => error instanceof GitWorkbenchError && error.code === "STALE_HEAD_REF";
+  await assert.rejects(() => executeGitWorkbenchOperation({
+    action: "reset",
+    cwd: repo,
+    hash: sameTipParent,
+    mode: "soft",
+    expectedRevision: sameTipMain.revision,
+    expectedHead: sameTipHead,
+    expectedHeadRef: sameTipMain.headRef,
+  }), staleHeadRef);
+  await assert.rejects(() => executeGitWorkbenchOperation({
+    action: "reword",
+    cwd: repo,
+    hash: sameTipHead,
+    message: "must not rewrite twin",
+    expectedRevision: sameTipMain.revision,
+    expectedHead: sameTipHead,
+    expectedHeadRef: sameTipMain.headRef,
+  }), staleHeadRef);
+  await assert.rejects(() => executeGitWorkbenchOperation({
+    action: "checkout-local",
+    cwd: repo,
+    ref: featureRef.ref,
+    expectedRevision: sameTipMain.revision,
+    expectedHeadRef: sameTipMain.headRef,
+  }), staleHeadRef);
+  assert.equal(await git(repo, "rev-parse", "refs/heads/main"), sameTipHead);
+  assert.equal(await git(repo, "rev-parse", "refs/heads/twin"), sameTipHead);
+  assert.equal(await currentBranchName(repo), "twin");
+
+  await git(repo, "switch", "main");
+  const attachedSnapshot = await currentOverview(repo);
+  await git(repo, "switch", "--detach", attachedSnapshot.head!);
+  const detachedSnapshot = await currentOverview(repo);
+  assert.equal(detachedSnapshot.head, attachedSnapshot.head);
+  assert.equal(detachedSnapshot.headRef, null);
+  assert.notEqual(detachedSnapshot.revision, attachedSnapshot.revision);
+  await assert.rejects(() => executeGitWorkbenchOperation({
+    action: "reset",
+    cwd: repo,
+    hash: sameTipParent,
+    mode: "soft",
+    expectedRevision: attachedSnapshot.revision,
+    expectedHead: attachedSnapshot.head!,
+    expectedHeadRef: attachedSnapshot.headRef,
+  }), staleHeadRef);
+  await git(repo, "switch", "main");
+  const reattachedSnapshot = await currentOverview(repo);
+  assert.notEqual(reattachedSnapshot.revision, detachedSnapshot.revision);
+  await assert.rejects(() => executeGitWorkbenchOperation({
+    action: "checkout-local",
+    cwd: repo,
+    ref: featureRef.ref,
+    expectedRevision: detachedSnapshot.revision,
+    expectedHeadRef: detachedSnapshot.headRef,
+  }), staleHeadRef);
+  await git(repo, "branch", "-D", "twin");
 
   await writeFile(path.join(repo, "keep.txt"), "dirty history\n", "utf8");
   state = await currentOverview(repo);
@@ -316,6 +393,7 @@ async function runSafeCheckoutSmoke(parent: string): Promise<void> {
     hash: featureHash,
     expectedRevision: state.revision,
     expectedHead: state.head!,
+    expectedHeadRef: state.headRef,
   }), dirtyHistory);
   await assert.rejects(() => executeGitWorkbenchOperation({
     action: "revert",
@@ -323,6 +401,7 @@ async function runSafeCheckoutSmoke(parent: string): Promise<void> {
     hash: featureHash,
     expectedRevision: state.revision,
     expectedHead: state.head!,
+    expectedHeadRef: state.headRef,
   }), dirtyHistory);
   await assert.rejects(() => executeGitWorkbenchOperation({
     action: "reword",
@@ -331,6 +410,7 @@ async function runSafeCheckoutSmoke(parent: string): Promise<void> {
     message: "should not rewrite",
     expectedRevision: state.revision,
     expectedHead: state.head!,
+    expectedHeadRef: state.headRef,
   }), dirtyHistory);
   const dropTarget = await git(repo, "rev-parse", "HEAD^");
   await assert.rejects(() => executeGitWorkbenchOperation({
@@ -339,6 +419,7 @@ async function runSafeCheckoutSmoke(parent: string): Promise<void> {
     hash: dropTarget,
     expectedRevision: state.revision,
     expectedHead: state.head!,
+    expectedHeadRef: state.headRef,
   }), dirtyHistory);
   await git(repo, "reset", "--hard");
 
@@ -354,6 +435,7 @@ async function runSafeCheckoutSmoke(parent: string): Promise<void> {
       cwd: repo,
       ref: occupied.ref,
       expectedRevision: state.revision,
+      expectedHeadRef: state.headRef,
     }),
     (error: unknown) => error instanceof GitWorkbenchError && error.code === "BRANCH_IN_USE",
   );
@@ -368,6 +450,7 @@ async function runSafeCheckoutSmoke(parent: string): Promise<void> {
       cwd: repo,
       ref: featureRef.ref,
       expectedRevision: staleRevision,
+      expectedHeadRef: state.headRef,
     }),
     (error: unknown) => error instanceof GitWorkbenchError && error.code === "STALE_REVISION",
   );
@@ -384,10 +467,99 @@ async function runSafeCheckoutSmoke(parent: string): Promise<void> {
   await git(repo, "merge", "--abort");
 }
 
+async function runCompleteSnapshotSmoke(parent: string): Promise<void> {
+  const repo = path.join(parent, "repo");
+  const bare = path.join(parent, "remote.git");
+  await mkdir(parent, { recursive: true });
+  await mkdir(repo);
+  await git(repo, "init", "-b", "main");
+  await git(repo, "config", "user.email", "snapshot@example.test");
+  await git(repo, "config", "user.name", "Snapshot Smoke");
+  registerAllowedRoot(repo);
+
+  const base = await commitFile(repo, "base.txt", "base\n", "snapshot base");
+  const tip = await commitFile(repo, "tip.txt", "tip\n", "snapshot tip");
+  await git(parent, "init", "--bare", bare);
+  await git(repo, "remote", "add", "zremote", bare);
+  await git(repo, "branch", "zz-current", tip);
+  await git(repo, "switch", "zz-current");
+  await git(repo, "update-ref", "refs/remotes/zremote/zz-current", tip);
+  await git(repo, "branch", "--set-upstream-to=zremote/zz-current", "zz-current");
+  await git(repo, "pack-refs", "--all", "--prune");
+
+  const packedRefs = new Map<string, string>();
+  for (const line of (await git(repo, "show-ref")).split("\n")) {
+    const [target, ref] = line.trim().split(/\s+/, 2);
+    if (target && ref) packedRefs.set(ref, target);
+  }
+  for (let index = 0; index < GIT_WORKBENCH_MAX_REFS + 20; index += 1) {
+    packedRefs.set(`refs/heads/bulk/${String(index).padStart(5, "0")}`, base);
+  }
+  const packedBody = [
+    "# pack-refs with: peeled fully-peeled sorted",
+    ...[...packedRefs].sort(([left], [right]) => left.localeCompare(right)).map(([ref, target]) => `${target} ${ref}`),
+    "",
+  ].join("\n");
+  await writeFile(path.join(repo, ".git", "packed-refs"), packedBody, "utf8");
+
+  const overview = await currentOverview(repo);
+  assert.equal(overview.revisionComplete, true);
+  assert.equal(overview.truncation.refs, true);
+  const current = overview.localBranches.find((ref) => ref.ref === "refs/heads/zz-current");
+  assert.ok(current?.current);
+  assert.equal(current.upstreamRef, "refs/remotes/zremote/zz-current");
+  assert.equal(overview.remoteBranches.some((ref) => ref.ref === current.upstreamRef), true);
+  const hiddenRef = `refs/heads/bulk/${String(GIT_WORKBENCH_MAX_REFS + 10).padStart(5, "0")}`;
+  assert.equal(overview.localBranches.some((ref) => ref.ref === hiddenRef), false);
+
+  await git(repo, "update-ref", hiddenRef, tip);
+  const changed = await currentOverview(repo);
+  assert.notEqual(changed.revision, overview.revision);
+  await assert.rejects(
+    () => readGitWorkbenchLog({ cwd: repo, revision: overview.revision, offset: 1, limit: 1 }),
+    (error: unknown) => error instanceof GitWorkbenchError && error.code === "STALE_REVISION",
+  );
+
+  const constrainedRead = { completeRefMaxBufferBytes: 128 };
+  const incomplete = await readGitWorkbenchOverview(repo, constrainedRead);
+  assert.equal(incomplete.revisionComplete, false);
+  assert.equal(incomplete.truncation.refs, true);
+  const firstPage = await readGitWorkbenchLog({
+    cwd: repo,
+    revision: incomplete.revision,
+    limit: 1,
+    readOptions: constrainedRead,
+  });
+  assert.equal(firstPage.commits.length, 1);
+  assert.equal(firstPage.hasMore, false);
+  await assert.rejects(
+    () => readGitWorkbenchLog({
+      cwd: repo,
+      revision: incomplete.revision,
+      offset: 1,
+      limit: 1,
+      readOptions: constrainedRead,
+    }),
+    (error: unknown) => error instanceof GitWorkbenchError && error.code === "SNAPSHOT_INCOMPLETE",
+  );
+  await assert.rejects(
+    () => executeGitWorkbenchOperation({
+      action: "create-tag",
+      cwd: repo,
+      hash: tip,
+      name: "must-not-write",
+      expectedRevision: incomplete.revision,
+    }, constrainedRead),
+    (error: unknown) => error instanceof GitWorkbenchError && error.code === "SNAPSHOT_INCOMPLETE",
+  );
+  await assert.rejects(() => git(repo, "show-ref", "--verify", "--quiet", "refs/tags/must-not-write"));
+}
+
 async function main(): Promise<void> {
   const root = await mkdtemp(path.join(os.tmpdir(), "pi-web-git-workbench-"));
   const repo = path.join(root, "repo");
   const bare = path.join(root, "remote.git");
+  const teamBare = path.join(root, "team-remote.git");
   const linked = path.join(root, "linked");
   try {
     await mkdir(repo);
@@ -398,9 +570,11 @@ async function main(): Promise<void> {
 
     const base = await commitFile(repo, "base.txt", "base\n", "base commit");
     await git(root, "init", "--bare", bare);
+    await git(root, "init", "--bare", teamBare);
     await git(repo, "remote", "add", "origin", bare);
     await git(repo, "push", "-u", "origin", "main");
-    await git(repo, "remote", "add", "team", bare);
+    await git(repo, "remote", "add", "team", teamBare);
+    await git(repo, "push", "team", "main");
     await git(repo, "fetch", "team", "main");
 
     await git(repo, "switch", "-c", "source", base);
@@ -471,6 +645,18 @@ async function main(): Promise<void> {
     const authorPage = await readGitWorkbenchLog({ cwd: repo, revision: overview.revision, authorId: author.id, limit: 20 });
     assert.ok(authorPage.commits.length >= 3);
 
+    const hiddenTree = await git(repo, "rev-parse", "HEAD^{tree}");
+    const hiddenCommit = await git(repo, "commit-tree", hiddenTree, "-m", "custom-ref-only commit");
+    await git(repo, "update-ref", "refs/custom/hidden", hiddenCommit);
+    await git(repo, "update-ref", "refs/stash", hiddenCommit);
+    const narrowUniverse = await currentOverview(repo);
+    const narrowPage = await readGitWorkbenchLog({ cwd: repo, revision: narrowUniverse.revision, limit: 200 });
+    assert.equal(narrowPage.commits.some((commit) => commit.hash === hiddenCommit), false);
+    await git(repo, "update-ref", "refs/custom/hidden", base);
+    assert.equal((await currentOverview(repo)).revision, narrowUniverse.revision);
+    await git(repo, "update-ref", "-d", "refs/custom/hidden");
+    await git(repo, "update-ref", "-d", "refs/stash");
+
     await git(repo, "tag", "stale-marker", "HEAD");
     await assert.rejects(
       () => readGitWorkbenchLog({ cwd: repo, revision: overview.revision, offset: 2, limit: 2 }),
@@ -519,6 +705,7 @@ async function main(): Promise<void> {
       message: "linear one rewritten — \"quoted\"",
       expectedRevision: state.revision,
       expectedHead: state.head!,
+      expectedHeadRef: state.headRef,
     });
     assert.equal(rewordResponse.success, true);
     assert.match(await git(repo, "log", "--format=%s", "-6"), /linear one rewritten/);
@@ -532,6 +719,7 @@ async function main(): Promise<void> {
       hash: rewrittenFirst,
       expectedRevision: state.revision,
       expectedHead: state.head!,
+      expectedHeadRef: state.headRef,
     });
     assert.doesNotMatch(await git(repo, "log", "--format=%s", "-6"), /linear one rewritten/);
 
@@ -542,6 +730,7 @@ async function main(): Promise<void> {
       hash: sourceCommit,
       expectedRevision: state.revision,
       expectedHead: state.head!,
+      expectedHeadRef: state.headRef,
     });
     assert.equal(await git(repo, "show", "HEAD:source.txt"), "source");
 
@@ -552,6 +741,7 @@ async function main(): Promise<void> {
       hash: sourceCommit,
       expectedRevision: state.revision,
       expectedHead: state.head!,
+      expectedHeadRef: state.headRef,
     });
     await assert.rejects(() => git(repo, "show", "HEAD:source.txt"));
 
@@ -565,6 +755,7 @@ async function main(): Promise<void> {
       mode: "soft",
       expectedRevision: state.revision,
       expectedHead: beforeReset,
+      expectedHeadRef: state.headRef,
     });
     assert.equal((await readGitStatus(repo)).staged.length > 0, true);
     state = soft.overview;
@@ -576,6 +767,7 @@ async function main(): Promise<void> {
       confirmTarget: beforeReset.slice(0, 8),
       expectedRevision: state.revision,
       expectedHead: state.head!,
+      expectedHeadRef: state.headRef,
     });
     assert.equal((await readGitStatus(repo)).isDirty, false);
 
@@ -587,6 +779,7 @@ async function main(): Promise<void> {
       mode: "mixed",
       expectedRevision: state.revision,
       expectedHead: state.head!,
+      expectedHeadRef: state.headRef,
     });
     assert.equal((await readGitStatus(repo)).unstaged.length > 0, true);
     state = mixed.overview;
@@ -598,6 +791,7 @@ async function main(): Promise<void> {
       confirmTarget: beforeReset.slice(0, 8),
       expectedRevision: state.revision,
       expectedHead: state.head!,
+      expectedHeadRef: state.headRef,
     });
 
     await writeFile(path.join(repo, "base.txt"), "base\nlocal keep\n", "utf8");
@@ -609,6 +803,7 @@ async function main(): Promise<void> {
       mode: "keep",
       expectedRevision: state.revision,
       expectedHead: state.head!,
+      expectedHeadRef: state.headRef,
     });
     assert.match(await readFile(path.join(repo, "base.txt"), "utf8"), /local keep/);
     state = kept.overview;
@@ -620,6 +815,7 @@ async function main(): Promise<void> {
       confirmTarget: beforeReset.slice(0, 8),
       expectedRevision: state.revision,
       expectedHead: state.head!,
+      expectedHeadRef: state.headRef,
     });
     assert.equal((await readGitStatus(repo)).isDirty, false);
 
@@ -637,6 +833,7 @@ async function main(): Promise<void> {
         hash: conflictSource,
         expectedRevision: state.revision,
         expectedHead: conflictHead,
+        expectedHeadRef: state.headRef,
       }),
       (error: unknown) => error instanceof GitWorkbenchError && error.code === "CONFLICT_ABORTED",
     );
@@ -666,15 +863,54 @@ async function main(): Promise<void> {
     state = createBranch.overview;
     const pushRef = state.localBranches.find((ref) => ref.name === "pushme");
     assert.ok(pushRef);
-    const pushed = await executeGitWorkbenchOperation({
+    assert.equal(pushRef.upstreamRef, null);
+    assert.deepEqual(parseGitPushUpstreamDestination("refs/remotes/origin/topic/name"), { remote: "origin", target: "topic/name" });
+    assert.equal(parseGitPushUpstreamDestination("refs/heads/main"), null);
+    await assert.rejects(
+      () => executeGitWorkbenchOperation({
+        action: "push",
+        cwd: repo,
+        ref: pushRef.ref,
+        destination: { mode: "upstream", expectedUpstreamRef: "refs/remotes/origin/pushme" },
+        expectedRevision: state.revision,
+        expectedRefTip: pushRef.target,
+      }),
+      (error: unknown) => error instanceof GitWorkbenchError && error.code === "STALE_UPSTREAM",
+    );
+
+    const explicitTeamPush = await executeGitWorkbenchOperation({
       action: "push",
       cwd: repo,
       ref: pushRef.ref,
-      remote: "origin",
-      target: "pushme",
-      setUpstream: true,
+      destination: { mode: "explicit", remote: "team", target: "team-topic", setUpstream: false },
       expectedRevision: state.revision,
       expectedRefTip: pushRef.target,
+    });
+    assert.deepEqual(explicitTeamPush.destination, {
+      mode: "explicit",
+      remote: "team",
+      target: "team-topic",
+      ref: "refs/heads/team-topic",
+    });
+    assert.equal(await git(teamBare, "rev-parse", "refs/heads/team-topic"), pushRef.target);
+    await assert.rejects(() => git(bare, "rev-parse", "--verify", "refs/heads/team-topic"));
+    state = explicitTeamPush.overview;
+    const stillExplicit = state.localBranches.find((ref) => ref.ref === pushRef.ref)!;
+    assert.equal(stillExplicit.upstreamRef, null);
+
+    const pushed = await executeGitWorkbenchOperation({
+      action: "push",
+      cwd: repo,
+      ref: stillExplicit.ref,
+      destination: { mode: "explicit", remote: "origin", target: "pushme", setUpstream: true },
+      expectedRevision: state.revision,
+      expectedRefTip: stillExplicit.target,
+    });
+    assert.deepEqual(pushed.destination, {
+      mode: "explicit",
+      remote: "origin",
+      target: "pushme",
+      ref: "refs/heads/pushme",
     });
     assert.equal(await git(bare, "rev-parse", "refs/heads/pushme"), pushRef.target);
 
@@ -686,19 +922,77 @@ async function main(): Promise<void> {
       cwd: repo,
       ref: remotePushme.ref,
       expectedRevision: state.revision,
+      expectedHeadRef: state.headRef,
     });
     assert.equal(checkedOut.overview.currentBranch, "pushme");
 
-    const prePushHook = path.join(repo, ".git", "hooks", "pre-push");
-    await writeFile(prePushHook, "#!/bin/sh\necho 'pre-push hook declined' >&2\nexit 1\n", "utf8");
-    await chmod(prePushHook, 0o755);
+    await commitFile(repo, "push-exact.txt", "push exact\n", "push exact destination");
     state = await currentOverview(repo);
-    const currentPushRef = state.localBranches.find((ref) => ref.name === "pushme")!;
+    let currentPushRef = state.localBranches.find((ref) => ref.name === "pushme")!;
+    const originBeforeExact = await git(bare, "rev-parse", "refs/heads/pushme");
     await assert.rejects(
       () => executeGitWorkbenchOperation({
         action: "push",
         cwd: repo,
         ref: currentPushRef.ref,
+        destination: { mode: "explicit", remote: "team", target: "alternate", setUpstream: false },
+        expectedRevision: state.revision,
+        expectedRefTip: currentPushRef.target,
+      }),
+      (error: unknown) => error instanceof GitWorkbenchError && error.code === "STALE_UPSTREAM",
+    );
+    assert.equal(await git(bare, "rev-parse", "refs/heads/pushme"), originBeforeExact);
+    await assert.rejects(() => git(teamBare, "rev-parse", "--verify", "refs/heads/alternate"));
+
+    const exactUpstreamPush = await executeGitWorkbenchOperation({
+      action: "push",
+      cwd: repo,
+      ref: currentPushRef.ref,
+      destination: { mode: "upstream", expectedUpstreamRef: currentPushRef.upstreamRef! },
+      expectedRevision: state.revision,
+      expectedRefTip: currentPushRef.target,
+    });
+    assert.deepEqual(exactUpstreamPush.destination, {
+      mode: "upstream",
+      remote: "origin",
+      target: "pushme",
+      ref: "refs/heads/pushme",
+    });
+    assert.equal(await git(bare, "rev-parse", "refs/heads/pushme"), currentPushRef.target);
+    await assert.rejects(() => git(teamBare, "rev-parse", "--verify", "refs/heads/alternate"));
+
+    state = exactUpstreamPush.overview;
+    currentPushRef = state.localBranches.find((ref) => ref.name === "pushme")!;
+    const expectedUpstreamRef = currentPushRef.upstreamRef!;
+    await git(repo, "branch", "--set-upstream-to=team/main", "pushme");
+    const staleUpstreamState = await currentOverview(repo);
+    assert.equal(staleUpstreamState.revision, state.revision);
+    await assert.rejects(
+      () => executeGitWorkbenchOperation({
+        action: "push",
+        cwd: repo,
+        ref: currentPushRef.ref,
+        destination: { mode: "upstream", expectedUpstreamRef },
+        expectedRevision: state.revision,
+        expectedRefTip: currentPushRef.target,
+      }),
+      (error: unknown) => error instanceof GitWorkbenchError && error.code === "STALE_UPSTREAM",
+    );
+    assert.equal(await git(bare, "rev-parse", "refs/heads/pushme"), currentPushRef.target);
+    assert.equal(await git(teamBare, "rev-parse", "refs/heads/main"), base);
+    await git(repo, "branch", "--set-upstream-to=origin/pushme", "pushme");
+
+    const prePushHook = path.join(repo, ".git", "hooks", "pre-push");
+    await writeFile(prePushHook, "#!/bin/sh\necho 'pre-push hook declined' >&2\nexit 1\n", "utf8");
+    await chmod(prePushHook, 0o755);
+    state = await currentOverview(repo);
+    currentPushRef = state.localBranches.find((ref) => ref.name === "pushme")!;
+    await assert.rejects(
+      () => executeGitWorkbenchOperation({
+        action: "push",
+        cwd: repo,
+        ref: currentPushRef.ref,
+        destination: { mode: "upstream", expectedUpstreamRef: currentPushRef.upstreamRef! },
         expectedRevision: state.revision,
         expectedRefTip: currentPushRef.target,
       }),
@@ -714,6 +1008,7 @@ async function main(): Promise<void> {
         action: "push",
         cwd: repo,
         ref: currentPushRef.ref,
+        destination: { mode: "upstream", expectedUpstreamRef: currentPushRef.upstreamRef! },
         expectedRevision: state.revision,
         expectedRefTip: currentPushRef.target,
       }),
@@ -727,6 +1022,7 @@ async function main(): Promise<void> {
         action: "push",
         cwd: repo,
         ref: "refs/heads/pushme",
+        destination: { mode: "upstream", expectedUpstreamRef: currentPushRef.upstreamRef },
         expectedRevision: state.revision,
         expectedRefTip: currentPushRef.target,
         force: true,
@@ -736,7 +1032,88 @@ async function main(): Promise<void> {
     assert.equal(strictResponse.status, 400);
     assert.equal((await strictResponse.json()).code, "INVALID_REQUEST");
 
+    const mixedDestinationResponse = await operateRoute(new NextRequest("http://localhost/api/git/operations", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        action: "push",
+        cwd: repo,
+        ref: currentPushRef.ref,
+        destination: {
+          mode: "upstream",
+          expectedUpstreamRef: currentPushRef.upstreamRef,
+          remote: "team",
+          target: "alternate",
+        },
+        expectedRevision: state.revision,
+        expectedRefTip: currentPushRef.target,
+      }),
+    }));
+    assert.equal(mixedDestinationResponse.status, 400);
+    assert.equal((await mixedDestinationResponse.json()).code, "INVALID_REQUEST");
+
+    const missingHeadRefResponse = await operateRoute(new NextRequest("http://localhost/api/git/operations", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        action: "checkout-local",
+        cwd: repo,
+        ref: "refs/heads/main",
+        expectedRevision: state.revision,
+      }),
+    }));
+    assert.equal(missingHeadRefResponse.status, 400);
+    assert.equal((await missingHeadRefResponse.json()).code, "INVALID_REQUEST");
+
+    const validBodyState = await currentOverview(repo);
+    const validBodyResponse = await operateRoute(new NextRequest("http://localhost/api/git/operations", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        action: "create-tag",
+        cwd: repo,
+        hash: validBodyState.head,
+        name: "route-body-ok",
+        expectedRevision: validBodyState.revision,
+      }),
+    }));
+    assert.equal(validBodyResponse.status, 200);
+    assert.equal((await validBodyResponse.json()).success, true);
+
+    const declaredTooLarge = await operateRoute(new NextRequest("http://localhost/api/git/operations", {
+      method: "POST",
+      headers: { "content-type": "application/json", "content-length": String(64 * 1024 + 1) },
+      body: "{}",
+    }));
+    assert.equal(declaredTooLarge.status, 413);
+
+    const oversizedBody = JSON.stringify({ action: "create-tag", padding: "界".repeat(30_000) });
+    const missingLengthRequest = new NextRequest("http://localhost/api/git/operations", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: oversizedBody,
+    });
+    missingLengthRequest.headers.delete("content-length");
+    const missingLengthResponse = await operateRoute(missingLengthRequest);
+    assert.equal(missingLengthResponse.status, 413);
+
+    const forgedLengthResponse = await operateRoute(new NextRequest("http://localhost/api/git/operations", {
+      method: "POST",
+      headers: { "content-type": "application/json", "content-length": "1" },
+      body: oversizedBody,
+    }));
+    assert.equal(forgedLengthResponse.status, 413);
+
+    const invalidJsonResponse = await operateRoute(new NextRequest("http://localhost/api/git/operations", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{not-json",
+    }));
+    assert.equal(invalidJsonResponse.status, 400);
+    assert.equal((await invalidJsonResponse.json()).code, "INVALID_REQUEST");
+
     await runSafeCheckoutSmoke(path.join(root, "safe-switch"));
+    await runCompleteSnapshotSmoke(path.join(root, "complete-snapshot"));
 
     console.log("smoke-git-workbench: OK");
   } finally {

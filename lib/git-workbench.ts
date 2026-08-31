@@ -17,6 +17,7 @@ import type {
   GitWorkbenchRef,
 } from "@/lib/types";
 import {
+  GIT_READ_BUFFER,
   GitWorkbenchError,
   readGitOperationState,
   resolveGitRepository,
@@ -33,6 +34,12 @@ export const GIT_WORKBENCH_MAX_REFS = 5_000;
 export const GIT_WORKBENCH_MAX_AUTHORS = 500;
 export const GIT_WORKBENCH_MAX_FILES = 5_000;
 const LOG_AUTHOR_SCAN_LIMIT = 20_000;
+const REF_FORMAT = "%(refname)%00%(objectname)%00%(HEAD)%00%(upstream)%00%(upstream:short)%00%(upstream:track)";
+
+export interface GitWorkbenchReadOptions {
+  /** Internal/test seam; production uses the shared 8 MiB Git read budget. */
+  completeRefMaxBufferBytes?: number;
+}
 
 function trimmed(value: string): string {
   return value.trim();
@@ -121,6 +128,31 @@ interface RefProjection {
   truncated: boolean;
 }
 
+interface RawRefRow {
+  ref: string;
+  target: string;
+  headMarker: string;
+  upstreamRef: string;
+  upstreamName: string;
+  track: string;
+}
+
+interface CompleteRefDigest {
+  digest: string | null;
+  complete: boolean;
+}
+
+function parseRawRefRow(line: string): RawRefRow | null {
+  const [ref, target, headMarker = "", upstreamRef = "", upstreamName = "", track = ""] = line.split("\0");
+  return ref && target ? { ref, target, headMarker, upstreamRef, upstreamName, track } : null;
+}
+
+function isProjectedRef(ref: string): boolean {
+  return ref.startsWith("refs/heads/")
+    || (ref.startsWith("refs/remotes/") && !ref.endsWith("/HEAD"))
+    || ref.startsWith("refs/tags/");
+}
+
 async function readCheckedOutBranches(repo: GitRepositoryIdentity): Promise<Map<string, string>> {
   const output = await tryGitText(repo, ["worktree", "list", "--porcelain"]);
   const checkedOut = new Map<string, string>();
@@ -134,55 +166,114 @@ async function readCheckedOutBranches(repo: GitRepositoryIdentity): Promise<Map<
   return checkedOut;
 }
 
-async function readRefs(repo: GitRepositoryIdentity): Promise<RefProjection> {
-  const output = await gitText(repo, [
-    "for-each-ref",
-    `--count=${GIT_WORKBENCH_MAX_REFS + 1}`,
-    "--sort=refname",
-    "--format=%(refname)%00%(objectname)%00%(HEAD)%00%(upstream)%00%(upstream:short)%00%(upstream:track)",
-    "refs/heads",
-    "refs/remotes",
-    "refs/tags",
+async function readExactRef(repo: GitRepositoryIdentity, ref: string): Promise<RawRefRow | null> {
+  const output = await gitText(repo, ["for-each-ref", `--format=${REF_FORMAT}`, ref]);
+  for (const line of output.trimEnd() ? output.trimEnd().split("\n") : []) {
+    const row = parseRawRefRow(line);
+    if (row?.ref === ref) return row;
+  }
+  return null;
+}
+
+async function readRefs(repo: GitRepositoryIdentity, headRef: string | null): Promise<RefProjection> {
+  const [output, checkedOut] = await Promise.all([
+    gitText(repo, [
+      "for-each-ref",
+      `--count=${GIT_WORKBENCH_MAX_REFS + 1}`,
+      "--sort=refname",
+      `--format=${REF_FORMAT}`,
+      "refs/heads",
+      "refs/remotes",
+      "refs/tags",
+    ]),
+    readCheckedOutBranches(repo),
   ]);
   const lines = output.trimEnd() ? output.trimEnd().split("\n") : [];
   const truncated = lines.length > GIT_WORKBENCH_MAX_REFS;
-  const checkedOut = await readCheckedOutBranches(repo);
+  const rows = lines.map(parseRawRefRow).filter((row): row is RawRefRow => Boolean(row));
+  const byRef = new Map(rows.map((row) => [row.ref, row]));
+
+  if (headRef && !byRef.has(headRef)) {
+    const current = await readExactRef(repo, headRef);
+    if (current) byRef.set(current.ref, current);
+  }
+  const upstreamRef = headRef ? byRef.get(headRef)?.upstreamRef || null : null;
+  if (upstreamRef && !byRef.has(upstreamRef)) {
+    const upstream = await readExactRef(repo, upstreamRef);
+    if (upstream) byRef.set(upstream.ref, upstream);
+  }
+
+  const selectedRefs = new Set<string>();
+  for (const priorityRef of [headRef, upstreamRef]) {
+    if (priorityRef && byRef.has(priorityRef) && isProjectedRef(priorityRef)) selectedRefs.add(priorityRef);
+  }
+  for (const row of [...byRef.values()].sort((left, right) => left.ref.localeCompare(right.ref))) {
+    if (selectedRefs.size >= GIT_WORKBENCH_MAX_REFS) break;
+    if (isProjectedRef(row.ref)) selectedRefs.add(row.ref);
+  }
+
   const localBranches: GitWorkbenchRef[] = [];
   const remoteBranches: GitWorkbenchRef[] = [];
   const tags: GitWorkbenchRef[] = [];
-
-  for (const line of lines.slice(0, GIT_WORKBENCH_MAX_REFS)) {
-    const [ref, target, headMarker, upstreamRef = "", upstreamName = "", track = ""] = line.split("\0");
-    if (!ref || !target) continue;
-    const tracking = parseTrack(track);
+  for (const ref of [...selectedRefs].sort((left, right) => left.localeCompare(right))) {
+    const row = byRef.get(ref);
+    if (!row) continue;
+    const tracking = parseTrack(row.track);
     if (ref.startsWith("refs/heads/")) {
       localBranches.push({
         kind: "local",
         ref,
         name: shortRefName(ref),
-        target,
-        current: headMarker === "*",
-        upstreamRef: upstreamRef || null,
-        upstreamName: upstreamName || null,
+        target: row.target,
+        current: ref === headRef || row.headMarker === "*",
+        upstreamRef: row.upstreamRef || null,
+        upstreamName: row.upstreamName || null,
         ahead: tracking.ahead,
         behind: tracking.behind,
         checkedOutPath: checkedOut.get(ref) ?? null,
       });
     } else if (ref.startsWith("refs/remotes/")) {
-      // Symbolic remote HEAD aliases are navigation noise, not branches.
-      if (ref.endsWith("/HEAD")) continue;
       remoteBranches.push({
         kind: "remote",
         ref,
         name: shortRefName(ref),
-        target,
+        target: row.target,
         remote: remoteFromRef(ref),
       });
-    } else if (ref.startsWith("refs/tags/")) {
-      tags.push({ kind: "tag", ref, name: shortRefName(ref), target });
+    } else {
+      tags.push({ kind: "tag", ref, name: shortRefName(ref), target: row.target });
     }
   }
   return { localBranches, remoteBranches, tags, truncated };
+}
+
+async function readCompleteRefDigest(
+  repo: GitRepositoryIdentity,
+  maxBuffer: number,
+): Promise<CompleteRefDigest> {
+  let output: string;
+  try {
+    output = (await runGit(repo.cwd, [
+      "for-each-ref",
+      "--sort=refname",
+      "--format=%(refname)%00%(objectname)",
+      "refs/heads",
+      "refs/remotes",
+      "refs/tags",
+    ], { maxBuffer })).stdout;
+  } catch (error) {
+    if (error instanceof GitWorkbenchError && (error.code === "GIT_OUTPUT_TOO_LARGE" || error.code === "GIT_TIMEOUT")) {
+      return { digest: null, complete: false };
+    }
+    throw error;
+  }
+  const digest = createHash("sha256");
+  for (const line of output.trimEnd() ? output.trimEnd().split("\n") : []) {
+    const [ref, target] = line.split("\0");
+    if (!ref || !target) return { digest: null, complete: false };
+    digest.update(`${ref}\0${target}\0`, "utf8");
+  }
+  return { digest: digest.digest("hex"), complete: true };
 }
 
 function authorId(name: string, email: string): string {
@@ -193,7 +284,9 @@ async function readAuthors(repo: GitRepositoryIdentity, hasHead: boolean): Promi
   if (!hasHead) return { authors: [], truncated: false };
   const output = await tryGitText(repo, [
     "log",
-    "--all",
+    "--branches",
+    "--remotes",
+    "--tags",
     `--max-count=${LOG_AUTHOR_SCAN_LIMIT}`,
     "--format=%aN%x00%aE",
   ]);
@@ -217,32 +310,41 @@ async function readAuthors(repo: GitRepositoryIdentity, hasHead: boolean): Promi
   };
 }
 
-function buildRevision(head: string | null, refs: readonly GitWorkbenchRef[]): string {
+function buildRevision(
+  head: string | null,
+  headRef: string | null,
+  completeRefs: CompleteRefDigest,
+): string {
   const digest = createHash("sha256");
-  digest.update(`HEAD\0${head ?? ""}\0`, "utf8");
-  for (const ref of [...refs].sort((left, right) => left.ref.localeCompare(right.ref))) {
-    digest.update(`${ref.ref}\0${ref.target}\0`, "utf8");
-  }
+  digest.update(`HEAD\0${head ?? "(empty)"}\0`, "utf8");
+  digest.update(`HEAD_REF\0${headRef ?? (head ? "(detached)" : "(none)")}\0`, "utf8");
+  digest.update(`REFS\0${completeRefs.digest ?? "(incomplete)"}\0`, "utf8");
   return digest.digest("hex");
 }
 
-export async function readGitWorkbenchOverview(cwd: string): Promise<GitWorkbenchOverview> {
+export async function readGitWorkbenchOverview(
+  cwd: string,
+  options: GitWorkbenchReadOptions = {},
+): Promise<GitWorkbenchOverview> {
   const repo = await resolveGitRepository(cwd);
-  const [status, refs, operationState, remotesOutput] = await Promise.all([
-    readRepositoryStatus(repo),
-    readRefs(repo),
+  const status = await readRepositoryStatus(repo);
+  const completeRefMaxBufferBytes = options.completeRefMaxBufferBytes ?? GIT_READ_BUFFER;
+  const [refs, completeRefs, operationState, remotesOutput] = await Promise.all([
+    readRefs(repo, status.headRef),
+    readCompleteRefDigest(repo, completeRefMaxBufferBytes),
     readGitOperationState(repo),
     tryGitText(repo, ["remote"]),
   ]);
   const authorsProjection = await readAuthors(repo, Boolean(status.head));
-  const allRefs = [...refs.localBranches, ...refs.remoteBranches, ...refs.tags];
   return {
     cwd: repo.cwd,
     repoRoot: repo.repoRoot,
     commonDir: repo.commonDir,
     repositoryName: path.basename(repo.repoRoot),
-    revision: buildRevision(status.head, allRefs),
+    revision: buildRevision(status.head, status.headRef, completeRefs),
+    revisionComplete: completeRefs.complete,
     head: status.head,
+    headRef: status.headRef,
     currentBranch: status.branch,
     isDetached: Boolean(status.head && !status.branch),
     isEmpty: !status.head,
@@ -377,10 +479,14 @@ export async function readGitWorkbenchLog(options: {
   authorId?: string | null;
   offset?: number;
   limit?: number;
+  readOptions?: GitWorkbenchReadOptions;
 }): Promise<GitWorkbenchLogPage> {
-  const overview = await readGitWorkbenchOverview(options.cwd);
+  const overview = await readGitWorkbenchOverview(options.cwd, options.readOptions);
   if (options.revision !== overview.revision) {
     throw new GitWorkbenchError("STALE_REVISION", "Repository refs changed. Refresh the workbench before loading more commits.", { status: 409 });
+  }
+  if (!overview.revisionComplete && (options.offset ?? 0) > 0) {
+    throw new GitWorkbenchError("SNAPSHOT_INCOMPLETE", "The complete Git refs snapshot exceeded the read budget. Refresh after reducing repository refs.", { status: 409 });
   }
   const scope = options.scope?.trim() || "all";
   const allowedRefs = new Set([
@@ -406,7 +512,7 @@ export async function readGitWorkbenchLog(options: {
 
   const repo = await resolveGitRepository(overview.cwd);
   const byTarget = refsByTarget(overview);
-  const targetArgs = scope === "all" ? ["--all"] : [scope];
+  const targetArgs = scope === "all" ? ["--branches", "--remotes", "--tags"] : [scope];
   const format = "--format=%H%x00%P%x00%aN%x00%aE%x00%at%x00%aI%x00%ar%x00%s";
 
   if (/^[0-9a-fA-F]{4,40}$/.test(query)) {
@@ -446,7 +552,7 @@ export async function readGitWorkbenchLog(options: {
     offset,
     limit,
     commits,
-    hasMore: rows.length > limit,
+    hasMore: overview.revisionComplete && rows.length > limit,
   };
 }
 

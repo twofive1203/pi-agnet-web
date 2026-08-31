@@ -11,6 +11,7 @@ import {
 export interface RepositoryStatusProjection {
   branch: string | null;
   head: string | null;
+  headRef: string | null;
   upstream: string | null;
   ahead: number;
   behind: number;
@@ -46,14 +47,16 @@ export async function readRepositoryStatus(repo: GitRepositoryIdentity): Promise
   const parsed = parseStatusPorcelainV1Z(porcelain);
   const [headOutput, branchOutput, upstreamOutput, aheadBehindOutput] = await Promise.all([
     tryGitText(repo, ["rev-parse", "--verify", "HEAD"]),
-    tryGitText(repo, ["symbolic-ref", "--quiet", "--short", "HEAD"]),
+    tryGitText(repo, ["symbolic-ref", "--quiet", "HEAD"]),
     tryGitText(repo, ["rev-parse", "--abbrev-ref", "@{upstream}"]),
     tryGitText(repo, ["rev-list", "--count", "--left-right", "HEAD...@{upstream}"]),
   ]);
   const counts = parseAheadBehind(aheadBehindOutput);
+  const headRef = branchOutput.trim() || null;
   return {
-    branch: branchOutput.trim() || null,
+    branch: headRef?.startsWith("refs/heads/") ? headRef.slice("refs/heads/".length) : null,
     head: headOutput.trim() || null,
+    headRef,
     upstream: upstreamOutput.trim() || null,
     ahead: counts.ahead,
     behind: counts.behind,

@@ -2,6 +2,7 @@ import { access } from "node:fs/promises";
 import path from "node:path";
 import type {
   GitCommitCapability,
+  GitPushResultDestination,
   GitResetMode,
   GitWorkbenchOperationRequest,
   GitWorkbenchOperationResponse,
@@ -24,13 +25,26 @@ import {
   normalizeGitCommit,
   readCommitCapabilities,
   readGitWorkbenchOverview,
+  type GitWorkbenchReadOptions,
 } from "@/lib/git-workbench";
 
 const RESET_MODES = new Set<GitResetMode>(["soft", "mixed", "hard", "keep"]);
 
+function ensureCompleteSnapshot(overview: GitWorkbenchOverview): void {
+  if (!overview.revisionComplete) {
+    throw new GitWorkbenchError("SNAPSHOT_INCOMPLETE", "The complete Git refs snapshot exceeded the read budget. Reduce repository refs before running mutations.", { status: 409 });
+  }
+}
+
 function ensureExpectedRevision(overview: GitWorkbenchOverview, expectedRevision: string): void {
   if (!expectedRevision || overview.revision !== expectedRevision) {
     throw new GitWorkbenchError("STALE_REVISION", "Repository refs changed. Refresh before running this operation.", { status: 409 });
+  }
+}
+
+function ensureExpectedHeadRef(overview: GitWorkbenchOverview, expectedHeadRef: string | null | undefined): void {
+  if (expectedHeadRef === undefined || overview.headRef !== expectedHeadRef) {
+    throw new GitWorkbenchError("STALE_HEAD_REF", "The symbolic HEAD ref changed. Refresh before running this operation.", { status: 409 });
   }
 }
 
@@ -101,6 +115,7 @@ async function refreshedResponse(
   cwd: string,
   selectedHash: string | null,
   outcome?: GitWorkbenchOperationResponse["outcome"],
+  destination?: GitPushResultDestination,
 ): Promise<GitWorkbenchOperationResponse> {
   return {
     success: true,
@@ -108,6 +123,7 @@ async function refreshedResponse(
     overview: await readGitWorkbenchOverview(cwd),
     selectedHash,
     outcome,
+    destination,
   };
 }
 
@@ -225,15 +241,18 @@ function mapPushError(error: unknown): never {
 
 export async function executeGitWorkbenchOperation(
   request: GitWorkbenchOperationRequest,
+  readOptions: GitWorkbenchReadOptions = {},
 ): Promise<GitWorkbenchOperationResponse> {
   const repo = await resolveGitRepository(request.cwd);
   return withGitMutationLock(repo, async () => {
-    const overview = await readGitWorkbenchOverview(repo.cwd);
-    ensureExpectedRevision(overview, request.expectedRevision);
+    const overview = await readGitWorkbenchOverview(repo.cwd, readOptions);
+    ensureCompleteSnapshot(overview);
     ensureNoOperation(overview);
 
     switch (request.action) {
       case "checkout-local": {
+        ensureExpectedHeadRef(overview, request.expectedHeadRef);
+        ensureExpectedRevision(overview, request.expectedRevision);
         ensureNoUnmerged(overview);
         const selected = overview.localBranches.find((ref) => ref.ref === request.ref);
         if (!selected) throw new GitWorkbenchError("REF_NOT_FOUND", "Local branch not found.", { status: 404 });
@@ -246,6 +265,8 @@ export async function executeGitWorkbenchOperation(
       }
 
       case "checkout-remote": {
+        ensureExpectedHeadRef(overview, request.expectedHeadRef);
+        ensureExpectedRevision(overview, request.expectedRevision);
         ensureNoUnmerged(overview);
         const remoteRef = overview.remoteBranches.find((ref) => ref.ref === request.ref);
         if (!remoteRef) throw new GitWorkbenchError("REF_NOT_FOUND", "Remote-tracking branch not found.", { status: 404 });
@@ -272,34 +293,53 @@ export async function executeGitWorkbenchOperation(
         const local = overview.localBranches.find((ref) => ref.ref === request.ref);
         if (!local) throw new GitWorkbenchError("REF_NOT_FOUND", "Local branch not found.", { status: 404 });
         ensureExpectedRef(local, request.expectedRefTip);
-        let remote = request.remote?.trim() ?? "";
-        let target = request.target?.trim() ?? "";
+
+        let remote: string;
+        let target: string;
+        let mode: GitPushResultDestination["mode"];
+        let setUpstream = false;
         if (local.upstreamRef) {
-          const split = splitRemoteTrackingRef(local.upstreamRef);
-          if (split) {
-            remote = split.remote;
-            target = split.branch;
+          if (request.destination.mode !== "upstream" || request.destination.expectedUpstreamRef !== local.upstreamRef) {
+            throw new GitWorkbenchError("STALE_UPSTREAM", "The selected branch upstream changed. Refresh before pushing.", { status: 409 });
           }
+          const split = splitRemoteTrackingRef(local.upstreamRef);
+          if (!split) {
+            throw new GitWorkbenchError("INVALID_REQUEST", "The selected branch upstream is not a remote-tracking ref.", { status: 400 });
+          }
+          ({ remote, branch: target } = split);
+          mode = "upstream";
+        } else {
+          if (request.destination.mode !== "explicit") {
+            throw new GitWorkbenchError("STALE_UPSTREAM", "The selected branch no longer has the expected upstream. Refresh before pushing.", { status: 409 });
+          }
+          remote = request.destination.remote.trim();
+          target = request.destination.target.trim();
+          setUpstream = request.destination.setUpstream;
+          mode = "explicit";
         }
+        ensureExpectedRevision(overview, request.expectedRevision);
         if (remote.startsWith("-") || !overview.remotes.includes(remote)) {
           throw new GitWorkbenchError("INVALID_REQUEST", "Selected Git remote is not configured.", { status: 400 });
         }
         await validateBranchName(repo, target);
+        const destination: GitPushResultDestination = { mode, remote, target, ref: `refs/heads/${target}` };
         const args = ["push", "--porcelain"];
-        if (request.setUpstream || !local.upstreamRef) args.push("--set-upstream");
-        args.push(remote, `${local.ref}:refs/heads/${target}`);
+        if (setUpstream) args.push("--set-upstream");
+        args.push(remote, `${local.ref}:${destination.ref}`);
         try {
           const output = await gitWrite(repo, args, { network: true });
           const text = `${output.stdout}\n${output.stderr}`;
           const outcome = /\[up to date\]|up-to-date/i.test(text) ? "up-to-date" : /\[new branch\]/i.test(text) ? "created" : "updated";
-          return refreshedResponse(request.action, repo.cwd, local.target, outcome);
+          return refreshedResponse(request.action, repo.cwd, local.target, outcome, destination);
         } catch (error) {
           mapPushError(error);
         }
       }
 
       case "cherry-pick": {
+        ensureExpectedHeadRef(overview, request.expectedHeadRef);
         const expectedHead = ensureExpectedHead(overview, request.expectedHead);
+        ensureExpectedRevision(overview, request.expectedRevision);
         const selected = await normalizedCommitWithCapabilities(repo, overview, request.hash);
         ensureCapability(selected.capabilities.cherryPick);
         try {
@@ -312,7 +352,9 @@ export async function executeGitWorkbenchOperation(
       }
 
       case "revert": {
+        ensureExpectedHeadRef(overview, request.expectedHeadRef);
         const expectedHead = ensureExpectedHead(overview, request.expectedHead);
+        ensureExpectedRevision(overview, request.expectedRevision);
         const selected = await normalizedCommitWithCapabilities(repo, overview, request.hash);
         ensureCapability(selected.capabilities.revert);
         try {
@@ -325,7 +367,9 @@ export async function executeGitWorkbenchOperation(
       }
 
       case "reset": {
+        ensureExpectedHeadRef(overview, request.expectedHeadRef);
         ensureExpectedHead(overview, request.expectedHead);
+        ensureExpectedRevision(overview, request.expectedRevision);
         const selected = await normalizedCommitWithCapabilities(repo, overview, request.hash);
         ensureCapability(selected.capabilities.reset);
         if (!RESET_MODES.has(request.mode)) throw new GitWorkbenchError("INVALID_REQUEST", "Invalid reset mode.", { status: 400 });
@@ -337,7 +381,9 @@ export async function executeGitWorkbenchOperation(
       }
 
       case "reword": {
+        ensureExpectedHeadRef(overview, request.expectedHeadRef);
         const expectedHead = ensureExpectedHead(overview, request.expectedHead);
+        ensureExpectedRevision(overview, request.expectedRevision);
         const message = request.message.trim();
         if (!message || message.length > 16_000) throw new GitWorkbenchError("INVALID_REQUEST", "Commit message must be between 1 and 16000 characters.", { status: 400 });
         const selected = await normalizedCommitWithCapabilities(repo, overview, request.hash);
@@ -366,7 +412,9 @@ export async function executeGitWorkbenchOperation(
       }
 
       case "drop": {
+        ensureExpectedHeadRef(overview, request.expectedHeadRef);
         const expectedHead = ensureExpectedHead(overview, request.expectedHead);
+        ensureExpectedRevision(overview, request.expectedRevision);
         const selected = await normalizedCommitWithCapabilities(repo, overview, request.hash);
         ensureCapability(selected.capabilities.drop);
         const parent = selected.parents[0];
@@ -381,6 +429,11 @@ export async function executeGitWorkbenchOperation(
       }
 
       case "create-branch": {
+        if (request.checkout) {
+          ensureExpectedHeadRef(overview, request.expectedHeadRef);
+          ensureExpectedHead(overview, request.expectedHead);
+        }
+        ensureExpectedRevision(overview, request.expectedRevision);
         const selected = await normalizedCommitWithCapabilities(repo, overview, request.hash);
         ensureCapability(selected.capabilities.newBranch);
         await validateBranchName(repo, request.name);
@@ -388,7 +441,6 @@ export async function executeGitWorkbenchOperation(
           throw new GitWorkbenchError("INVALID_REQUEST", "A local branch with this name already exists.", { status: 409 });
         }
         if (request.checkout) {
-          ensureExpectedHead(overview, request.expectedHead);
           ensureNoUnmerged(overview);
           await runSafeGitSwitch(repo, { kind: "create", name: request.name, startPoint: selected.hash });
         } else {
@@ -398,6 +450,7 @@ export async function executeGitWorkbenchOperation(
       }
 
       case "create-tag": {
+        ensureExpectedRevision(overview, request.expectedRevision);
         const selected = await normalizedCommitWithCapabilities(repo, overview, request.hash);
         ensureCapability(selected.capabilities.newTag);
         await validateTagName(repo, request.name);
