@@ -591,8 +591,8 @@ pub fn assert_renderer_view_safe(view: &Value) -> Result<(), String> {
                 .and_then(|server| server.get("origin"))
                 .and_then(Value::as_str)
         });
-    for url in extract_urls(&json) {
-        if is_allowed_view_url(url, allowed_origin) {
+    for url in extract_urls(view) {
+        if is_allowed_view_url(&url, allowed_origin) {
             continue;
         }
         return Err(format!(
@@ -602,18 +602,52 @@ pub fn assert_renderer_view_safe(view: &Value) -> Result<(), String> {
     Ok(())
 }
 
-fn extract_urls(json: &str) -> Vec<&str> {
+fn is_inert_renderer_text_key(key: &str) -> bool {
+    matches!(key, "title" | "displayName" | "projectName" | "name")
+}
+
+fn collect_urls(value: &Value, field_name: Option<&str>, urls: &mut Vec<String>) {
+    // These fields are rendered only as text. A first-message title may quote
+    // a registry/docs URL without creating a navigation surface.
+    if value.is_string() && field_name.is_some_and(is_inert_renderer_text_key) {
+        return;
+    }
+    match value {
+        Value::String(text) => urls.extend(extract_urls_from_text(text).map(ToString::to_string)),
+        Value::Array(items) => {
+            for item in items {
+                collect_urls(item, None, urls);
+            }
+        }
+        Value::Object(object) => {
+            for (key, item) in object {
+                collect_urls(item, Some(key), urls);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn extract_urls(value: &Value) -> Vec<String> {
     let mut urls = Vec::new();
-    let mut rest = json;
-    while let Some(index) = rest.find("http://").or_else(|| rest.find("https://")) {
+    collect_urls(value, None, &mut urls);
+    urls
+}
+
+fn extract_urls_from_text(mut rest: &str) -> impl Iterator<Item = &str> {
+    std::iter::from_fn(move || {
+        let index = [rest.find("http://"), rest.find("https://")]
+            .into_iter()
+            .flatten()
+            .min()?;
         let candidate = &rest[index..];
         let end = candidate
             .find(|ch: char| ch == '"' || ch.is_whitespace())
             .unwrap_or(candidate.len());
-        urls.push(&candidate[..end]);
+        let url = &candidate[..end];
         rest = &candidate[end..];
-    }
-    urls
+        Some(url)
+    })
 }
 
 fn is_allowed_view_url(url: &str, allowed_origin: Option<&str>) -> bool {

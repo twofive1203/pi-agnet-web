@@ -32,7 +32,7 @@ import {
 } from "./connection-state";
 import { pushTransitionLru, type DesktopPetSettings } from "./settings-store";
 
-/** Sanitized activity row for the renderer / tray (no token, cwd, absolute URL). */
+/** Sanitized activity row for the renderer / tray (no token, cwd, or navigable absolute URL). */
 export type DesktopActivityRow = {
   taskKey: string;
   activityId: string;
@@ -485,9 +485,46 @@ export function listUnreadTransitionIds(view: DesktopActivityView): string[] {
   return ids;
 }
 
+const RENDERER_INERT_TEXT_URL_KEYS = new Set([
+  "title",
+  "displayName",
+  "projectName",
+  "name",
+]);
+
+function listRendererAbsoluteUrls(
+  value: unknown,
+  fieldName?: string,
+  urls: string[] = [],
+): string[] {
+  // These fields are rendered only through textContent. A first-message title
+  // may legitimately quote a registry/docs URL without creating navigation.
+  if (
+    typeof value === "string" &&
+    fieldName &&
+    RENDERER_INERT_TEXT_URL_KEYS.has(fieldName)
+  ) {
+    return urls;
+  }
+  if (typeof value === "string") {
+    urls.push(...(value.match(/https?:\/\/[^"\s]+/gi) ?? []));
+    return urls;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) listRendererAbsoluteUrls(item, undefined, urls);
+    return urls;
+  }
+  if (value && typeof value === "object") {
+    for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+      listRendererAbsoluteUrls(item, key, urls);
+    }
+  }
+  return urls;
+}
+
 /**
  * Ensure a renderer-bound payload cannot smuggle tokens or absolute navigations.
- * Throws if forbidden keys appear at the top level or nested JSON.
+ * Display-only text may contain inert URL text; every other field remains gated.
  */
 export function assertRendererViewSafe(view: unknown): void {
   const json = JSON.stringify(view);
@@ -516,8 +553,7 @@ export function assertRendererViewSafe(view: unknown): void {
     (record?.activeServer && typeof record.activeServer === "object"
       ? String((record.activeServer as { origin?: unknown }).origin ?? "")
       : "");
-  const absoluteUrls = json.match(/https?:\/\/[^"\s]+/gi) ?? [];
-  for (const url of absoluteUrls) {
+  for (const url of listRendererAbsoluteUrls(view)) {
     const loopback = /^https?:\/\/127\.0\.0\.1(?::\d+)?\/?$/i.test(url);
     const matchesOrigin =
       origin.length > 0 && (url === origin || url.startsWith(`${origin.replace(/\/$/, "")}/`) || url === origin.replace(/\/$/, ""));

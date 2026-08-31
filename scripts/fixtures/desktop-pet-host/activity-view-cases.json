@@ -521,6 +521,21 @@
       "expectThrow": true
     },
     {
+      "id": "allows-external-url-in-activity-title",
+      "payload": {
+        "presentation": "running",
+        "origin": "http://127.0.0.1:62666",
+        "projects": [
+          {
+            "activities": [
+              { "title": "安装依赖 --registry=https://registry.npmjs.org" }
+            ]
+          }
+        ]
+      },
+      "expectThrow": false
+    },
+    {
       "id": "allows-remote-origin",
       "payload": { "presentation": "idle", "origin": "https://10.0.0.8:8443", "projects": [] },
       "expectThrow": false
