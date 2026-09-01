@@ -1,4 +1,3 @@
-import { createRequire } from "node:module";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { existsSync, readFileSync } from "node:fs";
 import type { PiWebBundledExtensionsConfig } from "./pi-web-config";
@@ -86,25 +85,11 @@ type LoaderWithBundleState = ResourceLoaderLike & {
   [BUNDLE_STATE]?: BundledPiExtensionRuntimeStatus[];
 };
 
-function resolveRequireFilename(): string {
-  try {
-    const cjsFilename = Function(
-      "return typeof __filename !== 'undefined' ? __filename : null",
-    )() as string | null;
-    if (cjsFilename) return cjsFilename;
-  } catch {
-    // ESM runtimes do not define __filename.
-  }
-  try {
-    if (typeof import.meta.url === "string" && import.meta.url) return import.meta.url;
-  } catch {
-    // Bundled runtimes may not expose import.meta.url.
-  }
-  return join(process.cwd(), "lib", "bundled-pi-extensions.js");
-}
-
 function getNodeRequire(): NodeRequire {
-  return createRequire(resolveRequireFilename());
+  // Next/webpack replaces a static createRequire import inside production server
+  // chunks. Resolve it from Node itself so published builds keep real package lookup.
+  const nodeModule = process.getBuiltinModule("module") as typeof import("node:module");
+  return nodeModule.createRequire(join(process.cwd(), "package.json"));
 }
 
 function findPackageRoot(packageName: string): { root?: string; version?: string; diagnostic?: string } {

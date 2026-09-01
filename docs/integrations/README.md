@@ -104,9 +104,9 @@ Web sessions call `AgentSession.bindExtensions()` with a Web/RPC UI adapter so e
 
 ### WebUI-bundled core extensions
 
-`lib/bundled-pi-extension-registry.ts` owns the four pinned package definitions/defaults and `lib/bundled-pi-extensions.ts` is their single interactive loader adapter. It adds each enabled package root as a temporary resource source, preserving package-relative extension/skill/prompt behavior. Before factories bind, it removes another loaded copy with the same package manifest name, so the WebUI-pinned copy wins without duplicate tools, commands, or lifecycle handlers. The user's Pi `settings.json` is never rewritten; disabling a bundle only changes `pi-web.json → bundledExtensions` and applies to new sessions or `/reload`.
+`lib/bundled-pi-extension-registry.ts` owns the four pinned package definitions/defaults and `lib/bundled-pi-extensions.ts` is their single interactive loader adapter. It adds each enabled package root as a temporary resource source, preserving package-relative extension/skill/prompt behavior. Package resolution obtains `createRequire` through Node's runtime `process.getBuiltinModule("module")`; do not replace it with a static `node:module` import because Next/webpack can erase that call in production server chunks. Before factories bind, it removes another loaded copy with the same package manifest name, so the WebUI-pinned copy wins without duplicate tools, commands, or lifecycle handlers. The user's Pi `settings.json` is never rewritten; disabling a bundle only changes `pi-web.json → bundledExtensions` and applies to new sessions or `/reload`.
 
-This helper is used by interactive chat, command/resource/skill inspection, native subagent discovery, extension-settings discovery, and the legacy SnFlow host. Automation deliberately keeps its reviewed resource loader and never calls it.
+This helper is used by interactive chat, command/resource/skill inspection, native subagent discovery, extension-settings discovery, and the legacy SnFlow host. Automation deliberately keeps its reviewed resource loader and never calls it. After `npm run build`, `npm run test:bundled-extensions:production` starts the emitted production server with a fresh agent directory and verifies that all four bundles are available and their six extension tools reach the session schema.
 
 ### Web Search provider configuration
 

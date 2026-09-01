@@ -76,6 +76,16 @@ async function main(): Promise<void> {
   const originalPathMixed = process.env.Path;
 
   try {
+    const loaderSource = readFileSync(join(process.cwd(), "lib", "bundled-pi-extensions.ts"), "utf8");
+    assert(
+      loaderSource.includes('process.getBuiltinModule("module")'),
+      "bundle package resolution uses the runtime Node module API that webpack cannot replace",
+    );
+    assert(
+      !loaderSource.includes('import { createRequire } from "node:module"'),
+      "bundle package resolution does not statically import createRequire into Next server chunks",
+    );
+
     const freshAgentDir = join(root, "fresh-agent");
     writeWebConfig(freshAgentDir);
     const fresh = await createRuntime(sdk, freshAgentDir);

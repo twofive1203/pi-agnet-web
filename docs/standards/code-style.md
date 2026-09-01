@@ -58,6 +58,8 @@ npm run test:file-upload     # chat upload path-boundary / sanitize / exclusive-
 npm run test:quick-commands # project quick-command config/trust/runner/cancel/output bounds
 npm run test:snflow       # SnFlow setup/store/session-link/spec-review smokes
 npm run test:runtime      # Next server externals + published launcher invariants
+npm run test:bundled-extensions # source-mode bundled extension registry/loading smoke
+npm run test:bundled-extensions:production # post-build production startup + extension tool-schema E2E
 npm run test:automation   # Automation store/schedule/policy/runner/API/security smokes
 npm run test:server-auth  # Access-key domain + Proxy policy + launcher options
 npm run test:server-auth:e2e  # Post-build production auth matrix (requires npm run build)

@@ -57,6 +57,7 @@ npm run dev     # http://localhost:62666
 | `npm run test:i18n` | zh/en catalog parity and i18n contract checks. |
 | `npm run test:package-update-check` | npm latest version-check helpers (semver compare + in-process cache) smoke suite. |
 | `npm run test:bundled-extensions` | Bundled Pi extension registry/loading smoke suite. |
+| `npm run test:bundled-extensions:production` | Post-build production startup check that all four bundled Pi extensions reach the session tool schema. |
 | `npm run test:web-tools-config` | Web Search provider/secret configuration smoke suite. |
 | `npm run test:vision` | Vision fallback configuration, routing, and evidence-boundary smoke suite. |
 | `npm run test:ui-theme` | Theme registry, semantic Token, responsive, focus, and motion contract checks. |
